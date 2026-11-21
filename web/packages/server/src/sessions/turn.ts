@@ -17,7 +17,7 @@ import { runtimeFailureDetails, SidecarError } from '../sidecar/client.js'
 import type { SessionStore } from './store.js'
 import type { SessionService } from './service.js'
 import type { StateDbRead, StateDbSettlementRead } from './state-db.js'
-import { HttpFailure, markSessionTitleGenerated } from './service.js'
+import { HttpFailure, markSessionTitleGenerated, UNSAVED_REPLY } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
 import { TRANSCRIPT_WINDOW, ChatUsageSchema, type TurnUsage, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ApprovalAnswerer, type ApprovalInstructionOutcome, type ClarifyAnswers, type VaultPrompt, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
@@ -62,6 +62,8 @@ const IMAGE_MODE_TIMEOUT_MS = 15_000
 const METERING_INTERVAL_S = 1
 /** The Agent's content frames, which end a rate-limit wait (TAL-821) and a compression span (TAL-1006). A terminal frame ends the run, its wait, and its span. */
 const CONTENT_EVENTS = new Set(['token', 'reasoning', 'interim_assistant', 'tool', 'tool_complete'])
+/** The frames that carry a turn's outcome; a stream publishes one (TAL-2313). `stream_end` only closes it. */
+const OUTCOME_EVENTS = new Set(['done', 'cancel', 'apperror', 'error'])
 /** How long a user's message waits for a stopped background turn to unwind before its own turn is admitted. */
 const BACKGROUND_UNWIND_WAIT_MS = 30_000
 /** TAL-1628: a shutdown's interrupt waits this long for the Agent's checkpoint, inside the drain's settlement margin. */
@@ -196,7 +198,7 @@ export interface StartTurnOptions {
   admissionCheck?: ((session: Session) => void) | undefined
   /** The settled turn's answer: its last non-error assistant reply, or `` when it produced none. */
   onDone?: (answer: string) => void | Promise<void>
-  /** TAL-1841: the outcome write of a turn that did not complete. It runs once, before the frame announcing that end: `apperror`, `cancel`, or a `stream_end` the title or goal work failed. A rejection is logged and never holds the frame back. */
+  /** TAL-1841: the outcome write of a turn that did not complete. It runs once, before the frame announcing that end: `apperror` or `cancel`. A rejection is logged and never holds the frame back. */
   onFailing?: () => void | Promise<void>
   /** Runs on every other end, after teardown: an error, a cancel, or a writeback another stream took over. */
   onFailed?: (failure: TurnFailure) => void | Promise<void>
@@ -876,6 +878,9 @@ export class TurnRunner {
     // TAL-2337: the session's workspace, once loaded, so the status names a running call's path as its row does.
     let workspace: string | null = null
     let statusEnded = false
+    // TAL-2313: the outcome frame this worker published, and whether its `stream_end` followed. Each is sent once.
+    let outcome: string | null = null
+    let streamEnded = false
     // TAL-1006: the open compression span closes on the Agent's end of it, else on the next content frame.
     const closeCompression = async (createdAt?: number): Promise<void> => {
       if (!this.compressionSpans.has(streamId)) return
@@ -884,6 +889,13 @@ export class TurnRunner {
     const put = async (event: string, data: Record<string, unknown>, meta: JournalEventMeta = {}): Promise<void> => {
       if (data.talaria_activity) data = redactNestedMessageContainers(data, deps.redactEnabled()) as Record<string, unknown>
       if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn', 'run_status'].includes(event)) return
+      // TAL-2313: a published outcome is final. A later failure (housekeeping after `done`) is a diagnostic, never a second
+      // terminal that would replace the journal's outcome, Relay's phase or the turn's settlement.
+      if (OUTCOME_EVENTS.has(event) && outcome !== null) {
+        deps.log(`[webui] WARNING: ${event} after ${outcome} not published for stream ${streamId}: ${str(data.message)}`)
+        return
+      }
+      if (event === 'stream_end' && streamEnded) return
       const terminal = ['done', 'cancel', 'apperror', 'error', 'stream_end'].includes(event)
       if (terminal) {
         statusEnded = true
@@ -917,6 +929,8 @@ export class TurnRunner {
       for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) (await put(steerEvent[0], steerEvent[1]))
       if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn', 'run_status'].includes(event)) return
       if (event === 'apperror' || event === 'cancel') await settleFailure()
+      if (OUTCOME_EVENTS.has(event)) outcome = event
+      else if (event === 'stream_end') streamEnded = true
       // `cancel()` already wrote the terminal row and closed the stream: the worker's unwind adds no second one. A stopped
       // run's terminal frame is sent once, by whichever of the worker and the Stop gets there first.
       const stopTerminal = event === 'cancel' || (event === 'apperror' && this.registry.cancelled.has(streamId))
@@ -951,6 +965,9 @@ export class TurnRunner {
       timing?.frame(event, data)
     }
     this.sessionPuts.set(sessionId, put)
+    const logAfterOutcome = (error: unknown): void => {
+      deps.log(`[webui] ERROR after turn ${streamId} ended with ${String(outcome)}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
+    }
     const activeRun = this.registry.activeRuns.get(streamId)
     let s: Session
     try {
@@ -1377,6 +1394,8 @@ export class TurnRunner {
       try { current = (await deps.store.get(sessionId)) } catch { current = s }
       if (current.active_stream_id !== streamId) {
         deps.log(`[webui] Skipping stale stream writeback for session ${sessionId} stream ${streamId}; active_stream_id=${current.active_stream_id ?? ''}`)
+        // TAL-2313: without write authority the worker saves nothing, and its stream still ends on its own terminal.
+        await put(...(await this.stopFrame(sessionId, streamId, UNSAVED_REPLY)))
         return
       }
       s = current
@@ -1594,28 +1613,33 @@ export class TurnRunner {
       // `done` released admission, so a follow-up message is accepted while the (up to two) title prompts run; the
       // channel and journal stay open for the `title` events (Python retired the worker before its title generation).
       await put('done', donePayload)
-      for (const [event, payload] of steerEvents) (await put(event, payload))
-      // TAL-1005: a turn that settled at or above the next turn's threshold starts the compaction now, so the next message
-      // usually finds the session compacted; a follow-up turn admitted meanwhile joins it.
-      void deps.service().ensureCompacted(sessionId)
-      await this.startSteerFollowUp(sessionId, leftovers)
-      // Before the title work, so a generated title's own state.db sync lands after this one's provisional title.
-      await deps.syncUsage?.(s, usedModel || null)
+      // TAL-2313: the published `done` is the turn's outcome (a Stop that won the race dropped it). The work below is
+      // housekeeping: its failure is logged, and the outcome write and `stream_end` still follow.
+      succeeded = outcome === 'done'
+      try {
+        for (const [event, payload] of steerEvents) (await put(event, payload))
+        // TAL-1005: a turn that settled at or above the next turn's threshold starts the compaction now, so the next message
+        // usually finds the session compacted; a follow-up turn admitted meanwhile joins it.
+        void deps.service().ensureCompacted(sessionId)
+        await this.startSteerFollowUp(sessionId, leftovers)
+        // Before the title work, so a generated title's own state.db sync lands after this one's provisional title.
+        await deps.syncUsage?.(s, usedModel || null)
+      } catch (error) { logAfterOutcome(error) }
       // Title work and the goal judge run side by side; `stream_end` follows both, so their frames reach the stream.
-      const work = await Promise.allSettled([this.backgroundTitle(s, put), this.continueGoal(s, streamId, put)])
-      const rejected = work.find((r) => r.status === 'rejected')
+      for (const work of await Promise.allSettled([this.backgroundTitle(s, put), this.continueGoal(s, streamId, put)])) if (work.status === 'rejected') logAfterOutcome(work.reason)
       // TAL-1841: `stream_end` follows the turn's outcome write, and a write that rejects still ends the stream.
       try {
-        if (rejected) await settleFailure()
-        else {
-          succeeded = true
-          await opts.onDone?.(lastAnswer(s.messages))
-        }
-      } finally {
+        if (succeeded) await opts.onDone?.(lastAnswer(s.messages))
+      } catch (error) { logAfterOutcome(error) } finally {
         await put('stream_end', { session_id: sessionId })
       }
-      if (rejected) throw rejected.reason
     } catch (error) {
+      // TAL-2313: a failure after this worker published its outcome is a diagnostic; a published `done` still closes.
+      if (outcome !== null) {
+        logAfterOutcome(error)
+        if (outcome === 'done') await put('stream_end', { session_id: sessionId })
+        return
+      }
       timing?.fail(error)
       await streamWrites
       const readOnly = !agentDispatched ? (await deps.service().readOnlyReason(s)) : null
@@ -1901,13 +1925,15 @@ export class TurnRunner {
    * reload. TAL-364: no copy — clients show their one localized status for the `cancelled` outcome. TAL-1628: the server's
    * shutdown ends the turn with an interrupted `apperror` instead, so no client shows it as the user's Stop.
    */
-  private async stopFrame(sessionId: string | null, streamId: string): Promise<[string, Record<string, unknown>]> {
+  private async stopFrame(sessionId: string | null, streamId: string, unstopped?: ShutdownNotice): Promise<[string, Record<string, unknown>]> {
     let snapshot: Record<string, unknown> | null = null
     if (sessionId) try { snapshot = (await this.publicTerminalSession((await this.deps.store.get(sessionId)), streamId)) } catch { snapshot = null }
     const context = { ...(sessionId ? { session_id: sessionId } : {}), ...(snapshot ? { session: snapshot } : {}) }
-    const notice = this.shutdownStops.get(streamId)
+    const shutdown = this.shutdownStops.get(streamId)
+    // TAL-2313: a worker that lost the session without a Stop ends interrupted with `unstopped`'s notice.
+    const notice = shutdown ?? (this.registry.cancelled.has(streamId) ? undefined : unstopped)
     if (notice) {
-      const withdrawn = sessionId ? this.deps.pending.approvalPending(sessionId).withdrawn : null
+      const withdrawn = shutdown && sessionId ? this.deps.pending.approvalPending(sessionId).withdrawn : null
       return ['apperror', { type: 'interrupted', terminal_state: 'interrupted', message: `${notice.summary}.`, hint: notice.hint, ...(withdrawn ? { withdrawn } : {}), ...context }]
     }
     return ['cancel', { type: 'cancelled', status: 'cancelled', terminal_state: 'cancelled', ...context }]

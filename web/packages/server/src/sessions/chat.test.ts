@@ -2811,7 +2811,8 @@ describe('chat turns through the sidecar', () => {
   it.each<[string, string, Json, { arrange?: () => void; stop?: boolean }]>([
     ['a completed turn', 'stream_end', { status: 'completed', result: 'slow store answer' }, {}],
     ['a failed turn', 'apperror', { status: 'failed', result: '(background task failed)' }, { arrange: () => { sidecar.respond('chat.start', () => { throw new SidecarError('provider exploded', { condition: 'sidecar_error' }) }) } }],
-    ['a turn whose goal judge failed', 'stream_end', { status: 'failed', result: '(background task failed)' }, { arrange: () => { vi.spyOn(s.deps.turns as unknown as { continueGoal: () => Promise<void> }, 'continueGoal').mockRejectedValueOnce(new Error('goal judge failed')) } }],
+    // TAL-2313: housekeeping after `done` cannot fail the completed turn.
+    ['a turn whose goal judge failed', 'stream_end', { status: 'completed', result: 'slow store answer' }, { arrange: () => { vi.spyOn(s.deps.turns as unknown as { continueGoal: () => Promise<void> }, 'continueGoal').mockRejectedValueOnce(new Error('goal judge failed')) } }],
     ['a stopped turn', 'cancel', { status: 'failed', result: '(background task failed)' }, { stop: true }],
   ])('settles the /background record before %s publishes %s', async (_name, terminal, expected, { arrange, stop }) => {
     const sid = await newSession(s)
@@ -2842,19 +2843,19 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
-  it('still ends the stream and surfaces the error when a /background settle rejects (TAL-1841)', async () => {
+  it('still ends the completed stream and logs the error when a /background settle rejects (TAL-1841, TAL-2313)', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'answer' }]))
     vi.spyOn(s.deps.background, 'settleCommand').mockRejectedValueOnce(new Error('record store down'))
+    const log = vi.spyOn(s.deps.turns.deps, 'log')
     try {
       const task = await json(await post(s, '/api/background', { session_id: sid, prompt: 'doomed settle' }))
       await s.sse(`/api/chat/stream?stream_id=${String(task.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
       await s.deps.turns.finished(String(task.stream_id))
       const journal = await s.deps.journal.readRunEvents(String(task.session_id), String(task.stream_id))
-      const ends = journal.filter((e) => e.event === 'stream_end' || e.event === 'apperror')
-      expect(ends.map((e) => e.event)).toEqual(['stream_end', 'apperror'])
-      expect(JSON.stringify(ends[1])).toContain('record store down')
-      await s.deps.sessionStore.delete(String(task.session_id), { tombstone: false })
+      expect(journal.filter((e) => e.terminal).map((e) => [e.event, e.terminal_state])).toEqual([['done', 'completed'], ['stream_end', 'completed']])
+      expect(log.mock.calls.some(([line]) => line.includes('record store down'))).toBe(true)
+      expect(existsSync(sessionPath(s.deps.sessionStore, String(task.session_id)))).toBe(false)
     } finally {
       vi.restoreAllMocks()
     }
@@ -5402,6 +5403,58 @@ describe('chat streams, cancel, and error settlement', () => {
     const before = await messagesOf(sid)
     expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: false })
     expect(await messagesOf(sid)).toEqual(before)
+  })
+
+  it('keeps a published completion final when the usage sync after it rejects (TAL-2313)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'finished' }]))
+    vi.spyOn(s.deps.turns.deps, 'syncUsage').mockRejectedValueOnce(new Error('usage store down'))
+    const relay = vi.spyOn(s.deps.turns.deps, 'onTerminal')
+    const log = vi.spyOn(s.deps.turns.deps, 'log')
+    try {
+      const streamId = await start(sid, 'quick')
+      await s.deps.turns.finished(streamId)
+      const replay = await frames(streamId, (f) => f.event === 'stream_end' || f.event === 'apperror')
+      expect(eventNames(replay).filter((e) => ['done', 'apperror', 'cancel', 'stream_end'].includes(e))).toEqual(['done', 'stream_end'])
+      expect(await json(await s.get(`/api/chat/stream/status?stream_id=${streamId}`))).toMatchObject({ active: false, activity_phase: 'completed', journal: { last_event: 'stream_end', terminal: true, terminal_state: 'completed' } })
+      expect(relay.mock.calls.filter(([id]) => id === streamId).map(([, phase]) => phase)).toEqual(['completed'])
+      expect((await messagesOf(sid)).filter((m) => m._error)).toEqual([])
+      expect(log.mock.calls.some(([line]) => line.includes('usage store down'))).toBe(true)
+    } finally { vi.restoreAllMocks() }
+  })
+
+  it.each<[string, string | null]>([['a successor turn', 'successor-stream'], ['no successor', null]])('a worker whose session %s took over before its writeback publishes its own terminal and saves nothing (TAL-2313)', async (_name, owner) => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'stale answer' }]))
+    // The gate: the worker holds its Agent result when another settlement (a successor's admission, or a server
+    // settlement with no successor) changes the stored session under it.
+    const service = s.deps.sessions
+    const read = service.settlementRead.bind(service)
+    const spy = vi.spyOn(service, 'settlementRead').mockImplementation(async (session) => {
+      const rows = await read(session)
+      spy.mockRestore()
+      if (owner) {
+        s.deps.registry.liveIds.add(owner)
+        s.deps.registry.activeRuns.set(owner, { stream_id: owner, session_id: sid, started_at: Date.now() / 1000, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+      }
+      const stored = await s.deps.sessionStore.get(sid)
+      Object.assign(stored, { active_stream_id: owner, title: 'Renamed elsewhere', pending_user_message: owner ? 'successor prompt' : null })
+      await s.deps.sessionStore.save(stored)
+      return rows
+    })
+    try {
+      const streamId = await start(sid, 'first')
+      await s.deps.turns.finished(streamId)
+      expect(await json(await s.get(`/api/chat/stream/status?stream_id=${streamId}`))).toMatchObject({ active: false, journal: { last_event: 'apperror', terminal: true, terminal_state: 'interrupted-by-crash' } })
+      const replay = await frames(streamId, terminal)
+      expect(replay.filter(terminal).map((f) => [f.event, (f.data as Json).type])).toEqual([['apperror', 'interrupted']])
+      const saved = await s.deps.sessionStore.get(sid)
+      expect({ owner: saved.active_stream_id, title: saved.title, pending: saved.pending_user_message }).toEqual({ owner, title: 'Renamed elsewhere', pending: owner ? 'successor prompt' : null })
+      expect(saved.messages.map((m) => str(m.content))).not.toContain('stale answer')
+    } finally {
+      spy.mockRestore()
+      if (owner) { s.deps.registry.activeRuns.delete(owner); s.deps.registry.liveIds.delete(owner) }
+    }
   })
 
   it('a follow-up started once a turn\'s terminal frame is journaled is admitted (TAL-1840)', async () => {

@@ -79,6 +79,8 @@ export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Pr
 
 /** The health probe is also the browser's server-reachability probe (30 s), so the readiness check answers well inside it. */
 const CHAT_READINESS_CHECK_TIMEOUT_MS = 5_000
+/** A reply whose worker ended without saving it: a dead run's repair, or a worker another settlement took the session from (TAL-2313). */
+export const UNSAVED_REPLY = { summary: 'The reply was interrupted before it could be saved', hint: 'Send a new message to continue.' } as const
 const SESSION_OPEN_TIMEOUT_MS = 5_000
 /** TAL-1760: how often a client rereads a running delegated child's transcript. */
 const RUNNING_CHILD_REFRESH_SECONDS = 5
@@ -1607,8 +1609,8 @@ export class SessionService {
       if (!answered) {
         // TAL-2270: shown as the same `web_interrupted` Talaria activity a shutdown saves.
         const messageId = randomUUID()
-        recordTalariaActivity(target, `message:${messageId}`, { ...talariaActivity('web_interrupted', 'The reply was interrupted before it could be saved'), details: 'Send a new message to continue.' })
-        target.messages.push({ role: 'assistant', message_id: messageId, content: '**Interrupted:** The reply was interrupted before it could be saved.', _terminal_state: 'interrupted', timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: turnId })
+        recordTalariaActivity(target, `message:${messageId}`, { ...talariaActivity('web_interrupted', UNSAVED_REPLY.summary), details: UNSAVED_REPLY.hint })
+        target.messages.push({ role: 'assistant', message_id: messageId, content: `**Interrupted:** ${UNSAVED_REPLY.summary}.`, _terminal_state: 'interrupted', timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: turnId })
       }
       // Settled like a turn: the Agent's own rows are covered by the recovered turn; without them, every row past the run's start is.
       this.settleStateDb(target, { turnId, previousContext, agentRows: ownRows, startId: stateDbSeenId(before) ?? (read.idCapable ? 0 : null), read })

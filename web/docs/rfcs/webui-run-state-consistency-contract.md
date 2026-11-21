@@ -63,6 +63,14 @@ supply the missing row. Failed, partial, stopped and interrupted turns do not
 promote streamed progress to success. Terminal frames, replay, reload and export
 all read the reconciled transcript; clients retain no text-matching fallback.
 
+Each direct worker publishes one outcome frame (`done`, `cancel` or `apperror`),
+and a published `done` is followed by exactly one `stream_end`. Usage sync, title
+and goal work, and completion callbacks after `done` are housekeeping: a failure
+there is logged and never becomes a second outcome, a Relay failure, or failure
+cleanup. A worker whose session another settlement took before its writeback
+saves nothing and still ends its stream: `cancel` (or the shutdown's
+`interrupted`) after a Stop, otherwise an `interrupted` `apperror`.
+
 The frontend's stream reducer (`packages/frontend/src/stream/reducer.ts`) is a
 projection of SSE frames that converges on the server's settled fields.
 

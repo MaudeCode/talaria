@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A completed reply in Talaria Web stays completed when follow-up work such as title or usage sync fails, and a reply another turn replaced now ends with a clear interrupted status instead of hanging.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
