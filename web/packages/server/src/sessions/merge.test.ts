@@ -583,6 +583,9 @@ describe('compaction markers (TAL-305)', () => {
     const cases: [Record<string, unknown>, boolean][] = [
       [{ role: 'assistant', content: waiting, display_metadata: { interrupted: true } }, true],
       [{ role: 'assistant', content: `Operation interrupted.\n${waiting}` }, true],
+      [{ role: 'assistant', content: 'Operation interrupted: handling API error (APIError: upstream (502) closed).' }, true],
+      [{ role: 'assistant', content: 'Operation interrupted during retry (empty response, attempt 2/3).' }, true],
+      [{ role: 'assistant', content: 'Operation interrupted means the process was cancelled before completion.' }, false],
       [{ role: 'assistant', content: 'Partial answer the model streamed before the stop.', display_metadata: { interrupted: true } }, false],
       [{ role: 'assistant', content: 'The log said Operation interrupted: waiting for model response.' }, false],
       [{ role: 'assistant', content: `${waiting}\nThen the real reply.` }, false],
