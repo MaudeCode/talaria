@@ -15,6 +15,7 @@ import { settledFileStatKey } from '../fs/stat.js'
 import type { AgentStorage, ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { stateDbMessageFingerprint, stateDbMessageKey } from './state-db-identity.js'
+import { userPromptText } from './prompt-text.js'
 import { INTERACTIVE_SOURCES, MESSAGING_SOURCES } from './source-kind.js'
 import { looksLikeDefaultCliTitle, normalizeSourceName } from './titles.js'
 
@@ -1596,19 +1597,22 @@ function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolea
     // TAL-825: a display read paints the Agent's display rows; identity passes below treat both projections alike.
     const display = opts.display && opts.afterId === undefined ? displayRows(db, available, selected, chain) : null
     const read = display ? [...rows, ...display] : rows
-    let twinOf = new Map<unknown, unknown>()
+    const twinOf = new Map<unknown, unknown>()
     // TAL-709: an in-place compaction archives the live rows and re-inserts each as a copy that keeps its role and timestamp
     // (content may be pruned). A copy takes the id of the oldest archived row it copies, so the merge sees a row it has
     // already read instead of a new one. Only a compaction archive (`compacted = 1`) vouches for a changed copy: a rewound
     // row (`compacted = 0`, also the compaction's carried tail) counts only for the same tool call or the same content, so
-    // an edit that kept its timestamp stays new.
+    // an edit that kept its timestamp stays new. TAL-2619: a carried user row also counts when its text is the same once the
+    // server's own decorations are stripped (a prompt carried forward in its model form), or when it is empty (a consumed
+    // steer carried forward without its text); an empty user row is never authored text.
     if (hasId && available.has('active')) {
       // One indexed lookup per live row ((session_id, active, timestamp)): the archive is never loaded, however many
-      // compactions it holds.
+      // compactions it holds. User candidates come back with both texts and are compared here.
       const sameCall = available.has('tool_call_id') ? " AND COALESCE(a.tool_call_id, '') = COALESCE(m.tool_call_id, '')" : ''
       const vouched = [available.has('compacted') ? 'a.compacted = 1' : '', available.has('tool_call_id') ? 'm.tool_call_id IS NOT NULL' : '', 'a.content = m.content'].filter(Boolean).join(' OR ')
-      const twins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.role = m.role AND a.timestamp = m.timestamp AND a.id < m.id${sameCall} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) AND (${vouched})${opts.afterId === undefined ? '' : ' AND m.id > ?'} GROUP BY m.id`).all(...chain, ...rangeArgs) as Dict[]
-      twinOf = new Map(twins.map((row) => [row.id, row.twin]))
+      const pairs = db.prepare(`SELECT m.id AS id, a.id AS twin, CASE WHEN ${vouched} THEN 1 ELSE 0 END AS vouched, CASE WHEN m.role = 'user' THEN m.content END AS copy, CASE WHEN m.role = 'user' THEN a.content END AS original FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.role = m.role AND a.timestamp = m.timestamp AND a.id < m.id${sameCall} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) AND (${vouched} OR m.role = 'user')${opts.afterId === undefined ? '' : ' AND m.id > ?'} ORDER BY a.id`).all(...chain, ...rangeArgs) as Dict[]
+      const carriedPrompt = (pair: Dict): boolean => str(pair.copy).trim() === '' || userPromptText(str(pair.copy)) === userPromptText(str(pair.original))
+      for (const pair of pairs) if (!twinOf.has(pair.id) && (pair.vouched === 1 || carriedPrompt(pair))) twinOf.set(pair.id, pair.twin)
     }
     let identities: ReturnType<typeof replayIdentities> | undefined
     if (hasId && ['message_uid', 'active', 'compacted'].every((c) => available.has(c))) identities = replayIdentities(db, local?.context ?? chain, read, available)

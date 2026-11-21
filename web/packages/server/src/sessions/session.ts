@@ -11,6 +11,8 @@ import { randomUUID } from 'node:crypto'
 import { resolvePathLikePython } from '../workspace/paths.js'
 import { turnOrigin } from './background-updates.js'
 import { withLegacyCompactionRow } from './compress.js'
+import { attachedFilesNamed, escapeWorkspacePrefixPath, stripAttachedFilesMarker, stripWorkspacePrefix, userPromptText } from './prompt-text.js'
+export { stripAttachedFilesMarker, stripWorkspacePrefix, WORKSPACE_PREFIX_RE } from './prompt-text.js'
 
 export type Message = Record<string, unknown>
 export type ToolCall = Record<string, unknown>
@@ -18,21 +20,41 @@ export type ToolCall = Record<string, unknown>
 /**
  * TAL-709: rows an earlier release appended from the Agent's in-place compaction copies. A row read from state.db that is
  * no turn's own repeats an earlier row's role, timestamp, and tool call: the same message, with pruned or tagged content.
+ * TAL-2619: the copy of a prompt with attachments carries the Agent's own timestamp and the server's attached-files line,
+ * and the copy of a consumed steer is empty, so neither pairs by timestamp.
  */
 function withoutCompactionCopies(messages: Message[]): Message[] {
   const seen = new Map<string, string>()
+  // A user row that showed attachments, by its typed text: the attached-files lists the prompt builder wrote for it.
+  const attached = new Map<string, Set<string>>()
   // A tool result is its call; any other row is the same message only with the same text (a compaction re-insert tags the
   // prompt with the workspace), so an edit that kept its timestamp stays.
   const sameAs = (m: Message): string => (m.tool_call_id ? '' : stripWorkspacePrefix(typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? null)))
+  const attachmentPaths = (m: Message): string[] => (Array.isArray(m.attachments) ? m.attachments : []).map((a) => (isDict(a) ? str(a.path).trim() : '')).filter(Boolean)
+  const isAttachedCopy = (m: Message): boolean => {
+    const text = typeof m.content === 'string' ? m.content : ''
+    const named = attachedFilesNamed(text)
+    return named !== null && (attached.get(userPromptText(text))?.has(named) ?? false)
+  }
   return messages.filter((m) => {
-    const key = m && typeof m === 'object' && m.timestamp !== null && m.timestamp !== undefined ? JSON.stringify([m.role, m.timestamp, m.tool_call_id ?? null]) : null
+    if (!m || typeof m !== 'object') return true
+    const agentCopy = m._state_db_row_id !== undefined && m._turn_id === undefined
+    if (agentCopy && m.role === 'user' && !attachmentPaths(m).length) {
+      // An empty user row is never authored text; an attached-files line is written only by the Web's own prompt builder.
+      if ((typeof m.content === 'string' ? m.content.trim() : m.content ?? '') === '' || isAttachedCopy(m)) return false
+    }
+    if (m.role === 'user' && attachmentPaths(m).length) {
+      const typed = userPromptText(typeof m.content === 'string' ? m.content : '')
+      attached.set(typed, (attached.get(typed) ?? new Set()).add(attachmentPaths(m).map(escapeWorkspacePrefixPath).join(', ')))
+    }
+    const key = m.timestamp !== null && m.timestamp !== undefined ? JSON.stringify([m.role, m.timestamp, m.tool_call_id ?? null]) : null
     if (key === null) return true
     const first = seen.get(key)
     if (first === undefined) {
       seen.set(key, sameAs(m))
       return true
     }
-    return m._state_db_row_id === undefined || m._turn_id !== undefined || first !== sameAs(m)
+    return !agentCopy || first !== sameAs(m)
   })
 }
 
@@ -651,22 +673,6 @@ export function titleFrom(messages: unknown[], fallback = 'Untitled'): string {
     if (text) return text.slice(0, 64)
   }
   return fallback
-}
-
-// Paths are escaped like the workspace prefix (`\\` and `\]`), so a `]` in a path stays inside the line.
-const ATTACHED_FILES_RE = /\n\n\[Attached files: (?:\\.|[^\]\\])+\]$/
-export function stripAttachedFilesMarker(text: string): string {
-  return text.replace(ATTACHED_FILES_RE, '').trim()
-}
-
-export const WORKSPACE_PREFIX_RE = /^\s*\[Workspace::v1:\s*(?:\\.|[^\]\\])+\]\s*/
-const LEGACY_WORKSPACE_PREFIX_RE = /^\s*\[Workspace:[^\]]+\]\s*/
-
-export function stripWorkspacePrefix(text: string, includeLegacy = false): string {
-  const value = str(text)
-  let stripped = value.replace(WORKSPACE_PREFIX_RE, '')
-  if (includeLegacy && stripped === value) stripped = value.replace(LEGACY_WORKSPACE_PREFIX_RE, '')
-  return stripped.trim()
 }
 
 /** Python `_collapse_adjacent_duplicate_partials`. */

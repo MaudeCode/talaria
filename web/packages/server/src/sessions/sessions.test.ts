@@ -1622,12 +1622,12 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
    * The Agent's in-place compaction: archive every live row (`compacted = 1`; the carried tail, here the tool results,
    * `compacted = 0`) and re-insert each as a copy that keeps its role, timestamp and tool call.
    */
-  function compactInPlace(sid: string, rewrite: (content: string) => string): void {
+  function compactInPlace(sid: string, rewrite: (content: string) => string, carried: (row: { role: string; tool_call_id: string | null }) => boolean = (row) => row.tool_call_id !== null): void {
     const db = openStateDb(join(s.state, 'state.db'))
     try {
       ensureAgentColumns(db)
-      const live = db.prepare('SELECT role, content, timestamp, tool_call_id FROM messages WHERE session_id = ? AND (active IS NULL OR active != 0) ORDER BY id').all(sid) as { role: string; content: string; timestamp: number; tool_call_id: string | null }[]
-      db.prepare('UPDATE messages SET active = 0, compacted = CASE WHEN tool_call_id IS NULL THEN 1 ELSE 0 END WHERE session_id = ? AND (active IS NULL OR active != 0)').run(sid)
+      const live = db.prepare('SELECT id, role, content, timestamp, tool_call_id FROM messages WHERE session_id = ? AND (active IS NULL OR active != 0) ORDER BY id').all(sid) as { id: number; role: string; content: string; timestamp: number; tool_call_id: string | null }[]
+      for (const row of live) db.prepare('UPDATE messages SET active = 0, compacted = ? WHERE id = ?').run(carried(row) ? 0 : 1, row.id)
       for (const row of live) db.prepare('INSERT INTO messages (session_id, role, content, timestamp, tool_call_id) VALUES (?, ?, ?, ?, ?)').run(sid, row.role, rewrite(row.content), row.timestamp, row.tool_call_id)
     } finally { db.close() }
   }
@@ -1659,6 +1659,35 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     // A CLI row committed after the compaction still arrives.
     commit(sid, [['user', 'late CLI', 400]])
     expect((await served(sid)).slice(-2)).toEqual(['CLI meanwhile', 'late CLI'])
+  })
+
+  it('a compaction that carries an attachment prompt forward with its attached-files line and a steer emptied appends neither (TAL-2619)', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const attachment = { name: 'shot.jpg', path: '/w/shot.jpg', mime: 'image/jpeg' }
+    await writeMessages(s, sid, [
+      { role: 'user', content: 'look at this', timestamp: 100, attachments: [attachment] },
+      { role: 'user', content: 'and the whole list', timestamp: 101 },
+      { role: 'assistant', content: 'a1', timestamp: 102 },
+    ])
+    commit(sid, [['user', 'look at this', 100], ['user', 'and the whole list', 101], ['assistant', 'a1', 102]])
+    await turn(sid, 'status')
+    const before = await served(sid)
+    sidecar.respond('chat.start', (params) => {
+      commit(sid, [['user', 'redo', 300], ['user', 'CLI meanwhile', 300.5]])
+      // The carried tail (`active = 0, compacted = 0`): the prompt comes back in its model form, the steer comes back empty.
+      compactInPlace(sid, (content) => (content === 'look at this' ? 'look at this\n\n[Attached files: /w/shot.jpg]' : content === 'and the whole list' ? '' : content), (row) => row.role === 'user')
+      commit(sid, [['assistant', 'redone', 301]])
+      return completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'redone' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'redo' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const settled = await served(sid)
+    expect(settled).toEqual([...before, 'redo', 'redone', 'CLI meanwhile'])
+    expect(((frames.find((f) => f.event === 'done')?.data as Json).session as Json).message_count).toBe(settled.length)
+    s.deps.sessionStore.sessions.delete(sid)
+    const reloaded = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(reloaded.map((m) => m.content)).toEqual(settled)
+    expect(reloaded[0]).toMatchObject({ content: 'look at this', attachments: [attachment] })
   })
 
   it('a CLI edit that keeps its timestamp after a rewind is not mistaken for a compaction copy (TAL-709)', async () => {
@@ -1695,6 +1724,34 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await s.deps.sessionStore.save((await s.deps.sessionStore.get(sid)))
     s.deps.sessionStore.sessions.delete(sid)
     expect(await served(sid)).toEqual(['u1', 'full output', 'a1', 'from CLI', 'from CLI, edited'])
+  })
+
+  it('drops an appended copy of an earlier attachment prompt and an empty state.db user row from a saved transcript (TAL-2619)', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const attachment = { name: 'shot.jpg', path: '/w/shot.jpg', mime: 'image/jpeg' }
+    const kept: Json[] = [
+      { role: 'user', content: 'look at this', timestamp: 100.4, attachments: [attachment], _turn_id: 't1' },
+      { role: 'user', content: 'and the whole list', timestamp: 101, _turn_id: 't1' },
+      { role: 'assistant', content: 'a1', timestamp: 102, _turn_id: 't1' },
+      { role: 'user', content: 'from CLI', timestamp: 103, _state_db_row_id: 4 },
+      { role: 'assistant', content: 'redone', timestamp: 202, _turn_id: 't2' },
+    ]
+    await writeMessages(s, sid, [
+      ...kept,
+      // The Agent's copies carry their own timestamps, so the [role, timestamp] rule cannot pair them.
+      { role: 'user', content: '[Workspace::v1: /w]\nlook at this\n\n[Attached files: /w/shot.jpg]', timestamp: 100.9, _state_db_row_id: 20 },
+      { role: 'user', content: '', timestamp: 101.2, _state_db_row_id: 21 },
+      // A CLI prompt naming a file no earlier row shows is its own message.
+      { role: 'user', content: 'from CLI\n\n[Attached files: /w/other.jpg]', timestamp: 104, _state_db_row_id: 22 },
+      // So is the same text naming a file whose path only starts with the earlier attachment's.
+      { role: 'user', content: 'look at this\n\n[Attached files: /w/shot.jpg.backup]', timestamp: 105, _state_db_row_id: 23 },
+    ])
+    const expected = [...kept.map((m) => m.content), 'from CLI\n\n[Attached files: /w/other.jpg]', 'look at this\n\n[Attached files: /w/shot.jpg.backup]']
+    s.deps.sessionStore.sessions.delete(sid)
+    expect(await served(sid)).toEqual(expected)
+    await s.deps.sessionStore.save((await s.deps.sessionStore.get(sid)))
+    s.deps.sessionStore.sessions.delete(sid)
+    expect(await served(sid)).toEqual(expected)
   })
 
   it('a settlement whose state.db read fails keeps the marker', async () => {
