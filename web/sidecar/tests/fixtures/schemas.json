@@ -14343,6 +14343,12 @@
       },
       "content_refused_notice": {
         "type": "string"
+      },
+      "terminal_cwd": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     },
     "required": [
