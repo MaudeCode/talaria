@@ -42,12 +42,23 @@ export interface ModelGroup {
   icon?: ProviderIcon
 }
 
-/** TAL-301: every entry names its routing provider and bare id, split once by `parseProviderQualifiedModel`. */
+const NATURAL_ORDER = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
+
+/**
+ * TAL-301: every entry names its routing provider and bare id, split once by `parseProviderQualifiedModel`.
+ * TAL-1130: a `custom`/`custom:<name>` list arrives in gateway insertion order, so it is sorted whole by bare id in
+ * case-insensitive natural order (model-2 before model-10); the exact bare id, routing provider and id break ties, so
+ * picker groups, provider cards and the live list agree whether or not an id carries its route. Built-in lists keep
+ * their curated order.
+ */
 function stampModelEntries(models: ModelEntry[], providerId: string): ModelEntry[] {
-  return models.map((m) => {
+  const stamped = models.map((m) => {
     const [bare, provider] = parseProviderQualifiedModel(m.id) ?? [m.id, providerId]
     return { ...m, bare_id: bare, provider_id: provider }
   })
+  if (providerId !== 'custom' && !providerId.startsWith('custom:')) return stamped
+  const exact = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
+  return stamped.sort((a, b) => NATURAL_ORDER.compare(a.bare_id, b.bare_id) || exact(a.bare_id, b.bare_id) || exact(a.provider_id, b.provider_id) || exact(a.id, b.id))
 }
 
 /** TAL-301: the catalog entry a stored `(model, provider)` pair selects, so clients render the pairing instead of computing it. */

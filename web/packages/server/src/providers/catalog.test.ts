@@ -830,6 +830,51 @@ describe('long provider model lists (TAL-1864)', () => {
   })
 })
 
+describe('natural model order (TAL-1130)', () => {
+  it('sorts whole custom groups by bare id in natural order on every response and keeps built-in order', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-catalog-'))
+    const sidecar = new FakeSidecar()
+    // Insertion order a gateway returns; a namespace stays part of the id, and a twin routed to another group keeps its route.
+    const gateway = ['model-10', 'Model-2', 'model-1', 'acme/zeta', 'model-01', 'model-٣', '@custom:other:model-1']
+    const config = {
+      model: { provider: 'anthropic', default: 'claude-z' },
+      providers: { anthropic: { api_key: 'sk-ant-12345678', models: ['claude-z', 'claude-10', 'claude-2'] } },
+      custom_providers: [{ name: 'Gateway', base_url: 'http://gateway.invalid/v1', api_key: 'sk-gw', model: gateway[0], models: gateway }],
+    }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
+    sidecar.respond('plugins.providers', () => ({ providers: [] }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'deepseek' ? ['ds-10', 'ds-2'] : [] }))
+    writeFileSync(join(home, 'config.yaml'), '# cfg\n')
+    writeEnvFile(join(home, '.env'), { DEEPSEEK_API_KEY: 'sk-ds-12345678' })
+    const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+    const sorted = [
+      { id: 'acme/zeta', bare_id: 'acme/zeta', provider_id: 'custom:gateway' },
+      { id: '@custom:gateway:model-01', bare_id: 'model-01', provider_id: 'custom:gateway' },
+      { id: '@custom:gateway:model-1', bare_id: 'model-1', provider_id: 'custom:gateway' },
+      { id: '@custom:other:model-1', bare_id: 'model-1', provider_id: 'custom:other' },
+      { id: '@custom:gateway:Model-2', bare_id: 'Model-2', provider_id: 'custom:gateway' },
+      { id: '@custom:gateway:model-٣', bare_id: 'model-٣', provider_id: 'custom:gateway' },
+      { id: '@custom:gateway:model-10', bare_id: 'model-10', provider_id: 'custom:gateway' },
+    ]
+    const route = (entries: ModelEntry[]) => entries.map(({ id, bare_id, provider_id }) => ({ id, bare_id, provider_id }))
+    try {
+      const built = await catalog.models(home)
+      const group = (pid: string): ModelEntry[] => built.groups.find((g) => g.provider_id === pid)!.models
+      expect(route(group('custom:gateway'))).toEqual(sorted)
+      expect(group('anthropic').map((m) => m.id)).toEqual(['claude-z', 'claude-10', 'claude-2'])
+      expect(group('deepseek').map((m) => m.bare_id)).toEqual(['ds-10', 'ds-2'])
+      const card = (await catalog.providers(home)).providers.find((p) => p.id === 'custom:gateway')!
+      expect((card.models as ModelEntry[]).map((m) => m.bare_id)).toEqual(sorted.map((m) => m.bare_id))
+      const live = await catalog.liveModels(home, 'custom:gateway')
+      expect(route(live.models as ModelEntry[]).map((m) => m.bare_id)).toEqual(sorted.map((m) => m.bare_id))
+      expect(((await catalog.liveModels(home, 'deepseek')).models as ModelEntry[]).map((m) => m.bare_id)).toEqual(['ds-10', 'ds-2'])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
 /** TAL-301: every `/api/models` and `/api/providers` entry carries the server's split of its id. */
 describe('catalog entries carry their routing provider and bare id', () => {
   let s: TestServer
