@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Read aloud with Edge speech now picks an English or Italian voice to match the reply's language, and falls back to your configured voice when the language is unclear.",
+      "highlight": false,
+      "components": ["web"],
+      "announcement": {
+        "title": "Voices that match the language",
+        "description": "Edge read-aloud speaks English and Italian replies in a voice for that language.",
+        "icon": "voice"
+      }
+    }
+  ]
+}
