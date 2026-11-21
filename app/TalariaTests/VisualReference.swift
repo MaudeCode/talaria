@@ -119,12 +119,13 @@ enum VisualReference {
 
     // MARK: - Rendering
 
-    /// Reads of one render, 0.5 s apart. 30 s covers the 12 to 17 s first GPU pipeline builds
+    /// Reads of one render, 0.5 s apart. 20 s covers the 12 to 17 s first GPU pipeline builds
     /// seen on hosted runners (TAL-1281).
-    private static let settleReads = 61
+    private static let settleReads = 41
 
     /// Reads of the fresh render made once the first one timed out. The pipeline exists by
-    /// then, so the image draws within a second.
+    /// then, so the image draws within a second. Both renders together wait at most 25 s,
+    /// inside CI's 30 s per-test budget.
     private static let freshRenderReads = 11
 
     @MainActor
@@ -297,7 +298,7 @@ enum VisualReferenceError: Error, CustomStringConvertible {
         case let .renderUnfinished(name):
             """
             Visual reference "\(name)" never finished rendering: ImageRenderer returned no \
-            stable opaque image within 30 seconds, nor from a fresh renderer after that.
+            stable opaque image within 20 seconds, nor from a fresh renderer after that.
             """
         }
     }
