@@ -795,16 +795,14 @@ scope, and schedule times use its timezone. Reads keep the bare store override.
 
 `cron.create` and `cron.update` pass a job's `timezone`, `catch_up` and
 `grace_minutes` to the Agent, which validates them; a null clears one, and `''`
-also clears the zone. `cron.list` with `probe_store` reports `schedule_policy`,
-whether the Agent's `create_job` takes these fields. An Agent without them
-receives none, and the server answers `schedule_policy_available: false`.
+also clears the zone. Every supported Agent's `create_job` takes these fields.
 
 `cron.cancel` writes the Agent's per-attempt cancel marker in the store home's
 scope, so it reaches a run whoever started it. The Agent's scheduler polls that
 marker itself; `cron.run` polls it for a Web manual run, cancels through the
 owner, and books `cancelled` with no output or failure notice. A script job has
 no owner, so its Web run opens its own ledger row and the marker stops its
-process group. An Agent without the API refuses with `cron_cancel_unsupported`.
+process group.
 
 New Agent records retain the creating Web profile in additive `owner_profile`
 metadata. The server uses it to keep those jobs in the creator's list and route
@@ -1126,13 +1124,6 @@ serialization; this does not introduce multi-server shared-state support.
 The existing background-update projection uses the structured delegation event
 to render an unknown result as a notice needing attention. A typed Agent row's
 `completed_count` alone is not evidence of success.
-
-RPC v39 extends the existing session-delete refusal enum with
-`runtime_history_unsupported`. Older Agents may open state written by a newer
-Agent, but cannot retire its canonical runtime history or local-reset receipts.
-The guarded legacy path detects that retained state inside its write transaction
-and refuses without deleting rows or artifacts. Single and bulk HTTP deletion
-return the same actionable conflict before Web cleanup.
 
 `models.selection_warnings` evaluates the profile's Agent selection guard registry
 without mutating the session or evicting its Agent. It receives current and target

@@ -2233,7 +2233,7 @@ describe('a compressed Web session follows its state.db lineage (TAL-529)', () =
     sidecar.respond('state_db.delete_cli_session', (params) => { calls.push(params); return { ok: true } })
     expect(await json(await post(s, '/api/session/delete', { session_id: sid }))).toEqual({ ok: true, state_db_cleanup_failed: false })
     // The sidecar resolves the continuations inside its delete transaction, so a compression finishing meanwhile is covered.
-    expect(calls).toEqual([expect.objectContaining({ session_id: sid, include_compression_lineage: true })])
+    expect(calls).toEqual([expect.objectContaining({ session_id: sid })])
     expect(calls[0]).not.toHaveProperty('session_ids')
   })
 })

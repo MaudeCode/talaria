@@ -56,7 +56,6 @@ extension ChatViewModelSendTests {
         // TAL-1531: the server counts the inputs it shows; zero is said, never inferred.
         XCTAssertEqual([normal.queuedInputCount, unknown.queuedInputCount], [0, 1])
 
-        XCTAssertEqual(try attachment("batch").reason, "native_clarify_batch_unavailable")
         XCTAssertEqual(try attachment("served").reason, "served_profile_sessions_unavailable")
         XCTAssertFalse(try attachment("served").isAttached)
 
@@ -241,15 +240,13 @@ extension ChatViewModelSendTests {
     }
 
     func testReadOnlyOwnerStatesKeepTheComposerReadOnlyWithTheServersReason() async throws {
-        for (key, reason) in [("batch", "native_clarify_batch_unavailable"), ("served", "served_profile_sessions_unavailable")] {
-            let attachment = try Self.ownerAttachmentJSON(key)
-            let viewModel = try ownerViewModel(OwnerRequestLog(), session: { Self.ownerSessionObject(attachment: attachment) })
-            await viewModel.loadMessages()
-            XCTAssertTrue(viewModel.isComposerReadOnly, key)
-            XCTAssertEqual(viewModel.ownerAttachment?.reason, reason)
-            let started = await viewModel.sendMessage("Try anyway")
-            XCTAssertFalse(started, "\(key): an owner that is not attached takes no input")
-        }
+        let served = try Self.ownerAttachmentJSON("served")
+        let viewModel = try ownerViewModel(OwnerRequestLog(), session: { Self.ownerSessionObject(attachment: served) })
+        await viewModel.loadMessages()
+        XCTAssertTrue(viewModel.isComposerReadOnly)
+        XCTAssertEqual(viewModel.ownerAttachment?.reason, "served_profile_sessions_unavailable")
+        let started = await viewModel.sendMessage("Try anyway")
+        XCTAssertFalse(started, "An owner that is not attached takes no input")
 
         let normal = try Self.ownerAttachmentJSON("normal")
         let attached = try ownerViewModel(OwnerRequestLog(), session: { Self.ownerSessionObject(attachment: normal) })

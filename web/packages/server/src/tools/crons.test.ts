@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { completionOutcome, CronService, jobForApi, type CronDeps } from './crons.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { Dict } from '../config/agent-config.js'
-import { SidecarError } from '../sidecar/client.js'
 
 afterEach(() => { vi.useRealTimers() })
 
@@ -26,21 +25,15 @@ describe('per-job schedule policy (TAL-1820)', () => {
     expect(jobForApi(recurring)).toMatchObject({ timezone: null, catch_up: null, grace_minutes: null, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *' })
   })
 
-  it('reports whether the Agent takes the fields, and forwards them on create and an explicit clear on update', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
+  it('forwards the fields on create and an explicit clear on update', async () => {
     const sidecar = new FakeSidecar()
-    let schedulePolicy = true
     const home = '/homes/default'
     const calls: Dict[] = []
     const stored = { ...recurring, profile: null, toast_notifications: true, monitor: '', continuity: false } as never
-    sidecar.respond('cron.list', (params) => ({ jobs: [stored], ...(params.probe_store ? { schedule_policy: schedulePolicy } : {}) }))
+    sidecar.respond('cron.list', () => ({ jobs: [stored] }))
     sidecar.respond('cron.create', (params) => { calls.push(params.job); return { job: stored } })
     sidecar.respond('cron.update', (params) => { calls.push(params.updates); return { job: stored } })
     const service = new CronService({ sidecar: () => sidecar, profileHome: () => home, profileNames: () => Promise.resolve([{ name: 'default', visible: true }]), profilesMatch: (a, b) => a === b, isolatedProfileMode: () => false, log: () => undefined })
-    expect(await service.list('default', 'counted')).toMatchObject({ schedule_policy_available: true })
-    schedulePolicy = false
-    vi.advanceTimersByTime(5 * 60_000)
-    expect(await service.list('default', 'counted')).toMatchObject({ schedule_policy_available: false })
     await service.create(home, { schedule: '0 9 * * *', prompt: 'hi', timezone: 'America/New_York', catch_up: true, grace_minutes: 30 })
     expect(calls[0]).toMatchObject({ timezone: 'America/New_York', catch_up: true, grace_minutes: 30 })
     await service.update(home, { job_id: recurring.id, timezone: null, catch_up: null, grace_minutes: null })
@@ -201,10 +194,8 @@ describe('cron job payloads carry the derived fields', () => {
     expect((await service.list('default', 'counted')).jobs).toMatchObject([{ can_stop: false, stopping: true, shown_state: 'stopping' }])
   })
 
-  it('refuses a Stop the sidecar refuses and never offers Stop on another profile\'s task (TAL-1819)', async () => {
-    const { service, home, jobs, sidecar } = setup()
-    sidecar.respond('cron.cancel', () => { throw new SidecarError('This Agent cannot stop a running task', { condition: 'cron_cancel_unsupported' }) })
-    await expect(service.cancel(home, String(recurring.id))).rejects.toMatchObject({ status: 400, message: 'This Agent cannot stop a running task' })
+  it('never offers Stop on another profile\'s task (TAL-1819)', async () => {
+    const { jobs, sidecar } = setup()
     const readOnly = new CronService({ sidecar: () => sidecar, profileHome: (name) => `/synthetic/${name}`, profileNames: () => Promise.resolve([{ name: 'default', visible: true }, { name: 'other', visible: true }]), profilesMatch: (a, b) => a === b, isolatedProfileMode: () => false, log: () => undefined })
     Object.assign(jobs[0]!, { live_execution: { id: 'exec-1', stopping: false } })
     sidecar.respond('cron.list', (params) => ({ jobs: params.profile_home === '/synthetic/other' ? jobs as never[] : [] }))

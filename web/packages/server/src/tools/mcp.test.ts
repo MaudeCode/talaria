@@ -440,7 +440,7 @@ describe('MCP runtime state outranks the health probe (TAL-1845)', () => {
 describe('MCP view round trips (TAL-1734)', () => {
   const costPolicy = (name: string) => ({ name, source: 'native' as const, valid: true, can_edit: true, error: null, package_revision: `package-${name}`, overrides: { tool_costs: null, spend_limit: null, cost_unit: null }, tool_costs: [], spend_limit: 0, cost_unit: 'credits', budget_enabled: false, field_sources: { tool_costs: 'default' as const, spend_limit: 'default' as const, cost_unit: 'default' as const } })
   const costPolicies = (servers: Dict) => ({ supported: true, policies: Object.keys(servers).map(costPolicy) })
-  const events = { supported: false, callback: 'ready' as const, servers: [] }
+  const events = { supported: true, callback: 'ready' as const, servers: [] }
   const service = (sidecar: FakeSidecar, config: Dict) => new McpService({ sidecar: () => sidecar, config: { read: () => Promise.resolve(config) } as unknown as AgentConfig })
 
   it('asks for status, cost policies and events at once', async () => {
@@ -479,7 +479,7 @@ describe('MCP view round trips (TAL-1734)', () => {
     const revision = (name: string) => ({ one: 'c50d978279d13b36e6f9d4c773a63b77b04ea3869642fc87996417e500204557', two: 'e86320a7eec7cd7c86e44a19354deb6a7536fdc2d6c94d86284d642979e54393' })[name]
     const { package_revision: _, ...policyFields } = costPolicy('')
     const policy = (name: string) => ({ ...policyFields, name, revision: revision(name), provenance: 'declared_estimate', reload_required: true, runtime_state: 'unknown' })
-    const noEvents = { supported: false, enabled: false, can_edit: false, state: 'unsupported', detail: '', utilities: 0, counts: [], show_state: false, show_panel: false }
+    const noEvents = { supported: true, enabled: false, can_edit: true, state: 'off', detail: '', utilities: 0, counts: [], show_state: false, show_panel: true }
     const shared = { timeout: 120, connect_timeout: 60, enabled: true, can_toggle: true, health_detail: '', health_checked_at: null, health_pending: false, events: noEvents }
     expect(await service(sidecar, config).servers('/profiles/a')).toEqual({
       servers: [

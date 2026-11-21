@@ -4161,8 +4161,7 @@
       "refused": {
         "type": "string",
         "enum": [
-          "active_turn",
-          "runtime_history_unsupported"
+          "active_turn"
         ]
       },
       "deleted_ids": {
@@ -5488,7 +5487,6 @@
         "type": "string",
         "enum": [
           "ok",
-          "unavailable",
           "not_found",
           "unreadable",
           "failed"
@@ -7532,9 +7530,6 @@
             "type": "null"
           }
         ]
-      },
-      "schedule_policy": {
-        "type": "boolean"
       }
     },
     "required": [

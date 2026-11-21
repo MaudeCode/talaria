@@ -76,7 +76,7 @@ describe('McpSection', () => {
     vi.mocked(api.fetchMcpServers).mockImplementation(() => Promise.resolve({ servers: [
       { name: 'pending', events: cases.opt_in_without_public_url },
       { name: 'hooks', events: pushEvents },
-      { name: 'legacy', events: cases.older_agent },
+      { name: 'unread', events: cases.native_error_opted_out },
     ] }))
     let settle: { resolve: () => void; reject: (error: Error) => void } = { resolve: () => undefined, reject: () => undefined }
     vi.mocked(api.saveMcpEvents).mockImplementation(() => new Promise((done, fail) => { settle = { resolve: () => done({ ok: true, server: { name: 'hooks' } }), reject: fail } }))
@@ -84,8 +84,8 @@ describe('McpSection', () => {
       renderMcp()
       const pendingRow = (await screen.findByText('pending')).closest('li')!
       expect(within(pendingRow).getByText('Needs HTTPS public URL')).toBeInTheDocument()
-      const legacyRow = screen.getByText('legacy').closest('li')!
-      expect(within(legacyRow).queryByText('Events')).not.toBeInTheDocument()
+      const unreadRow = screen.getByText('unread').closest('li')!
+      expect(within(unreadRow).queryByText('Events')).not.toBeInTheDocument()
       const hooksRow = screen.getByText('hooks').closest('li')!
       expect(within(hooksRow).queryByText('Off')).not.toBeInTheDocument()
       await userEvent.click(within(hooksRow).getByText('Events'))

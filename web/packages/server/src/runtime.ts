@@ -470,7 +470,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
         if (!sidecar) return { ok: false }
         const targetProfile = profile ?? activeProfile()
         await sessions.assertWritable(sid, targetProfile)
-        return await sidecar.call('state_db.delete_cli_session', { profile_home: profileHome(targetProfile), session_id: sid, include_compression_lineage: true })
+        return await sidecar.call('state_db.delete_cli_session', { profile_home: profileHome(targetProfile), session_id: sid })
       },
     },
     attachmentDir,

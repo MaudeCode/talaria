@@ -88,7 +88,6 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
 
   it.each([
     ['ok', 200, { ok: true, name: 'mine', locked: true }],
-    ['unavailable', 409, { error: 'This Agent version cannot lock skills' }],
     ['not_found', 404, { error: "Skill 'mine' not found" }],
     ['unreadable', 409, { error: 'skills/.usage.json could not be read; repair it before changing a lock' }],
     ['failed', 409, { error: 'skills/.usage.json could not be written' }],
@@ -940,15 +939,13 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
-  it('TAL-1914: Update all returns the Agent rows, and an old Agent refuses it', async () => {
+  it('TAL-1914: Update all returns the Agent rows', async () => {
     const calls: unknown[] = []
     const rows = [{ name: 'moved', status: 'updated', detail: '' }, { name: 'wider', status: 'needs_review', detail: 'adds tools: x' }, { name: 'held', status: 'skipped', detail: 'held with --ref' }] as const
     sidecar.respond('plugins.update_all', (params) => { calls.push(params); return { results: [...rows], current: 3 } })
     try {
       expect(await json(await post(s, '/api/plugins/update-all', {}))).toEqual({ results: rows, current: 3 })
       expect(calls).toEqual([{ profile_home: s.deps.profileHome('default') }])
-      sidecar.respond('plugins.update_all', () => { throw new SidecarError('Too old', { condition: 'plugin_update_unsupported' }) })
-      expect((await post(s, '/api/plugins/update-all', {})).status).toBe(503)
     } finally {
       sidecar.respond('plugins.update_all', undefined)
     }

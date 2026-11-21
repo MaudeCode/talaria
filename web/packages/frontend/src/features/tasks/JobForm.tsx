@@ -43,8 +43,8 @@ const cronReads = () => [keys.crons.list(false), keys.crons.list(true), keys.cro
 // docs/scheduled-jobs.md: the server refuses a script-only job with a monitor; the toast names it in the user's language.
 const showError = (e: unknown) => { if (isApiError(e) && e.code === 'cron_monitor_no_agent') showToast(m.cron_monitor_no_agent_conflict(), 4000, 'error'); else showErrorToast(e) }
 
-/** `onSubmitted` closes the editor on submit; `onCreated` names the job the server created; `schedulePolicy` says the Agent takes a zone, missed-run policy and grace window. */
-export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted, onCreated }: { mode: EditorMode; job: CronJob | null; jobs: CronJob[]; schedulePolicy: boolean; onCancel: () => void; onSubmitted: (id?: string) => void; onCreated: (id?: string) => void }) {
+/** `onSubmitted` closes the editor on submit; `onCreated` names the job the server created. */
+export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: { mode: EditorMode; job: CronJob | null; jobs: CronJob[]; onCancel: () => void; onSubmitted: (id?: string) => void; onCreated: (id?: string) => void }) {
   // The list shows the submitted job at once and adopts the server's normalized schedule and next run on its reread.
   const update = useResourceMutation({
     resource: ({ resource }: JobWrite) => resource, queryKey: keys.crons.all, readKeys: cronReads,
@@ -119,9 +119,9 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
       const provider = model ? (untouched ? job?.provider ?? null : v.model_provider) : null
       const zone = v.timezone.trim() || null
       // Null clears a knob on edit; the server and Agent validate what is set.
-      const policy = schedulePolicy ? { timezone: zone, catch_up: v.catch_up === '' ? null : v.catch_up === 'true', grace_minutes: v.grace_minutes === '' ? null : Number(v.grace_minutes) } : {}
+      const policy = { timezone: zone, catch_up: v.catch_up === '' ? null : v.catch_up === 'true', grace_minutes: v.grace_minutes === '' ? null : Number(v.grace_minutes) }
       // Shown in the list until the server's reread replaces it.
-      const shown = { ...policy, name: v.name, schedule_input: v.schedule, schedule_display: schedulePolicy && zone ? `${v.schedule} (${zone})` : v.schedule, prompt: v.prompt, script: v.script, no_agent: v.no_agent, monitor: v.monitor, continuity: v.continuity, context_from: v.context_from, deliver: v.deliver || 'local', deliver_label: platforms.find((p) => p.value === v.deliver)?.label ?? (v.deliver || 'local'), profile: v.profile, toast_notifications: v.toast_notifications, reasoning_effort: v.reasoning_effort || null,
+      const shown = { ...policy, name: v.name, schedule_input: v.schedule, schedule_display: zone ? `${v.schedule} (${zone})` : v.schedule, prompt: v.prompt, script: v.script, no_agent: v.no_agent, monitor: v.monitor, continuity: v.continuity, context_from: v.context_from, deliver: v.deliver || 'local', deliver_label: platforms.find((p) => p.value === v.deliver)?.label ?? (v.deliver || 'local'), profile: v.profile, toast_notifications: v.toast_notifications, reasoning_effort: v.reasoning_effort || null,
         // A picked catalog entry shows as its bare model, as the server stores it.
         model: untouched ? model : catalogEntryById(models.data, v.model)?.bare_id ?? model, provider, model_option_id: untouched ? job?.model_option_id ?? null : v.model || null }
       if (isEdit && job) {
@@ -223,12 +223,12 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
           <div className={group}>
             <form.Field name="name">{(f) => <FieldRow label={m.cron_name_label()} htmlFor="cronName"><TextInput id="cronName" value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} placeholder={m.cron_name_placeholder()} /></FieldRow>}</form.Field>
             <form.Field name="schedule">{(f) => <FieldRow label={m.cron_schedule_preset_label()} htmlFor="cronSchedule" hint={m.cron_schedule_hint()}><TextInput id="cronSchedule" required value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} placeholder="0 9 * * *" /></FieldRow>}</form.Field>
-            {schedulePolicy && <form.Field name="timezone">{(f) => (
+            <form.Field name="timezone">{(f) => (
               <FieldRow label={m.cron_timezone_label()} hint={m.cron_timezone_hint()} htmlFor="cronTimezone">
                 <TextInput id="cronTimezone" list="cronTimezones" value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} placeholder="America/New_York" />
                 <datalist id="cronTimezones">{TIME_ZONES.map((zone) => <option key={zone} value={zone} />)}</datalist>
               </FieldRow>
-            )}</form.Field>}
+            )}</form.Field>
             {canManage && <form.Field name="no_agent">{(f) => <FieldRow label={m.cron_no_agent_label()} hint={m.cron_no_agent_hint()} htmlFor="cronNoAgent" inline><Switch id="cronNoAgent" checked={f.state.value} onCheckedChange={(checked) => f.handleChange(checked)} /></FieldRow>}</form.Field>}
           </div>
           <form.Subscribe selector={(s) => s.values.no_agent}>{(noAgent) => (
@@ -281,7 +281,7 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
               <details className="mt-6" open={!!(job && (job.monitor || job.continuity || job.reasoning_effort || contextFromList(job).length || job.catch_up != null || job.grace_minutes != null))}>
                 <summary className="cursor-pointer text-xs font-medium text-muted">{m.cron_advanced_label()}</summary>
                 <div className={group}>
-                  {schedulePolicy && <form.Field name="catch_up">{(f) => (
+                  <form.Field name="catch_up">{(f) => (
                     <FieldRow label={m.cron_catch_up_label()} hint={m.cron_catch_up_hint()} htmlFor="cronCatchUp" inline>
                       <Select id="cronCatchUp" value={f.state.value} onValueChange={(v) => f.handleChange(v)} className="w-56 max-w-full">
                         <option value="">{m.cron_catch_up_default()}</option>
@@ -289,8 +289,8 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
                         <option value="false">{m.cron_catch_up_skip()}</option>
                       </Select>
                     </FieldRow>
-                  )}</form.Field>}
-                  {schedulePolicy && <form.Field name="grace_minutes">{(f) => <FieldRow label={m.cron_grace_minutes_label()} hint={m.cron_grace_minutes_hint()} htmlFor="cronGraceMinutes" inline><TextInput id="cronGraceMinutes" type="number" inputMode="numeric" className="w-28" value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} /></FieldRow>}</form.Field>}
+                  )}</form.Field>
+                  <form.Field name="grace_minutes">{(f) => <FieldRow label={m.cron_grace_minutes_label()} hint={m.cron_grace_minutes_hint()} htmlFor="cronGraceMinutes" inline><TextInput id="cronGraceMinutes" type="number" inputMode="numeric" className="w-28" value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} /></FieldRow>}</form.Field>
                   <form.Field name="monitor">{(f) => <FieldRow label={m.cron_monitor_label()} hint={noAgent ? m.cron_monitor_no_agent_hint() : m.cron_monitor_hint()} htmlFor="cronMonitor"><TextInput id="cronMonitor" value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} placeholder={m.cron_monitor_placeholder()} /></FieldRow>}</form.Field>
                   <form.Field name="continuity">{(f) => <FieldRow label={m.cron_continuity_label()} hint={m.cron_continuity_hint()} htmlFor="cronContinuity" inline><Switch id="cronContinuity" checked={f.state.value} onCheckedChange={(checked) => f.handleChange(checked)} disabled={noAgent} /></FieldRow>}</form.Field>
                   <form.Subscribe selector={(s) => s.values.profile}>{(profile) => (

@@ -156,7 +156,6 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         mode={editor.mode}
         job={editor.job}
         jobs={jobs}
-        schedulePolicy={!!crons.data?.schedule_policy_available}
         onCancel={() => setEditor(null)}
         onSubmitted={(id) => { setEditor(null); if (id) onSelect(id) }}
         onCreated={(id) => { if (id && context === getStreamContext()) onSelect(id) }}

@@ -44,8 +44,8 @@ const ROOM_DELIVERY_RE = /^room:\s*([A-Za-z0-9][A-Za-z0-9._:-]*)(?:@([A-Za-z0-9_
 const OWNER_FIELDS = ['script', 'no_agent']
 const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort', 'timezone', 'catch_up', 'grace_minutes']
 interface StoredJob { home: string; profile: string; job: Dict; managed: boolean }
-/** What a probing list collects from each store: failing writes (TAL-810) and whether the Agent takes a per-job schedule policy (TAL-1820). */
-interface StoreProbe { unwritable: CronStoreHealth[]; schedulePolicy: boolean }
+/** What a probing list collects from each store: failing writes (TAL-810). */
+interface StoreProbe { unwritable: CronStoreHealth[] }
 const isContextSource = (job: Dict): boolean => job.recovery_only !== true
 /** TAL-1716: how long a store's listing answers repeat reads. A write through this service ends it sooner; one from outside shows after this. */
 const LISTING_TTL_MS = 2_000
@@ -408,7 +408,6 @@ export class CronService {
       if (!store) continue
       const health = store.probed?.store_health
       if (probe && health) probe.unwritable.push({ profile: store.profile, store: health.store, error: health.error, fix: health.fix, since: completedAtSeconds(health.since) })
-      if (probe && store.probed?.schedule_policy) probe.schedulePolicy = true
       for (const job of store.jobs) {
         const creator = str(job.owner_profile).trim()
         rows.push({ home: store.home, profile: store.profile, job, managed: store.local || Boolean(creator && this.deps.profilesMatch(creator, active)) })
@@ -525,17 +524,17 @@ export class CronService {
   /** Python `/api/crons`: the active profile's rows plus foreign rows (hidden unless `all_profiles`). */
   async list(active: string, reach: ProfileReach): Promise<Dict> {
     const pickerHome = this.deps.profileHome(active)
-    const probe: StoreProbe = { unwritable: [], schedulePolicy: false }
+    const probe: StoreProbe = { unwritable: [] }
     const all = reach === 'all'
     let rows: StoredJob[]
-    try { rows = await this.storedJobs(active, probe) } catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [], schedule_policy_available: false }; throw error }
+    try { rows = await this.storedJobs(active, probe) } catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [] }; throw error }
     // TAL-1381: hidden foreign rows are only counted, so they cost no projection.
     const managed = rows.filter((row) => row.managed)
     const others = rows.filter((row) => !row.managed)
     const shown = all ? [...managed, ...others] : managed
     // TAL-810: a failing store is reported for the active profile and for every store whose jobs this list shows.
     const shownStores = new Set([active, ...shown.map((row) => row.profile)])
-    return { jobs: (await this.views(shown, pickerHome)).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: reach === 'counted' ? others.length : 0, unwritable_stores: probe.unwritable.filter((store) => shownStores.has(store.profile)), schedule_policy_available: probe.schedulePolicy }
+    return { jobs: (await this.views(shown, pickerHome)).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: reach === 'counted' ? others.length : 0, unwritable_stores: probe.unwritable.filter((store) => shownStores.has(store.profile)) }
   }
 
   /**

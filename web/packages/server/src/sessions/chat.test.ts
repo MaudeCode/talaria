@@ -3688,8 +3688,9 @@ describe('chat turns through the sidecar', () => {
     expect(deletes).toEqual([sid])
   })
 
-  it.each(['active_turn', 'runtime_history_unsupported'] as const)('keeps every cleanup side effect behind a %s refusal, including bulk delete', async (refused) => {
-    const error = refused === 'active_turn' ? 'In use by another Agent process. Try again later.' : 'This Agent cannot retire the session\'s retained runtime history. Use an Agent that supports retiring this history, or explicitly restore a pre-upgrade backup before deleting it.'
+  it('keeps every cleanup side effect behind an active_turn refusal, including bulk delete', async () => {
+    const refused = 'active_turn'
+    const error = 'In use by another Agent process. Try again later.'
     const persisted = async (): Promise<string> => {
       const sid = await newSession(s)
       const stored = (await s.deps.sessionStore.get(sid))

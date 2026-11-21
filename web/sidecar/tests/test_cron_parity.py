@@ -265,4 +265,3 @@ def test_schedule_policy_round_trips_clears_and_returns_the_agents_refusal(hands
         assert refusal in message["error"]["message"], message
         message, _ = handshaken.call("cron.create", {"profile_home": home, "job": {"schedule": "0 9 * * *", "prompt": "say hi", **updates}})
         assert refusal in message["error"]["message"], message
-    assert handshaken.result("cron.list", {"profile_home": home, "probe_store": True})["schedule_policy"] is True

@@ -573,7 +573,7 @@ describe('canonical owner attachment', () => {
     const call = vi.spyOn(sidecar, 'call')
     sidecar.respond('gateway.session', () => {
       if (failure === 'timeout') throw new Error('timeout')
-      if (failure === 'unsupported') return { state: 'incompatible', reason: 'native_sessions_unavailable', snapshot: null, receipt: null }
+      if (failure === 'unsupported') return { state: 'incompatible', reason: 'owner_shell_unsupported', snapshot: null, receipt: null }
       return { state: 'attached', reason: null, snapshot: null, receipt: null,
         ...(failure === 'missing' ? {} : { export: { format: failure === 'format' ? 'html' : 'json', filename: 'owner.json',
           content: failure === 'oversize' ? '界'.repeat(1_500_000) : 'not JSON' } }) }
@@ -719,7 +719,6 @@ describe('diagnostic execution modes (TAL-1040)', () => {
   })
 
   it.each([
-    [{ state: 'incompatible', reason: 'native_sessions_unavailable' }, 'agent_unsupported'],
     [{ state: 'incompatible', reason: 'execution_mode_unavailable' }, 'agent_unsupported'],
     [{ state: 'incompatible', reason: 'served_profile_sessions_unavailable' }, 'served_profile'],
     [{ state: 'stopped', reason: 'stopped' }, 'gateway_stopped'],

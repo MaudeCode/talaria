@@ -23,10 +23,10 @@ export const McpEventsDataSchema = z.object({
 /**
  * Server-derived event state, in precedence order once opted in: `needs_public_url` / `invalid_public_url` (the callback
  * prerequisite), `lapsed`, `refresh_overdue`, `subscribed`, then `ready` (connected, nothing subscribed) or `unavailable`
- * (not connected in this runtime: idle, lazy, connecting or failed). `off` is not opted in, `unsupported` an Agent
- * without MCP events, `error` an unreadable native state.
+ * (not connected in this runtime: idle, lazy, connecting or failed). `off` is not opted in, `error` an unreadable
+ * native state.
  */
-export const McpEventsStateSchema = z.enum(['unsupported', 'off', 'needs_public_url', 'invalid_public_url', 'unavailable', 'ready', 'subscribed', 'refresh_overdue', 'lapsed', 'error'])
+export const McpEventsStateSchema = z.enum(['off', 'needs_public_url', 'invalid_public_url', 'unavailable', 'ready', 'subscribed', 'refresh_overdue', 'lapsed', 'error'])
 
 /**
  * TAL-1510: one MCP server's experimental events opt-in and native subscription health. Field notes live here, not in

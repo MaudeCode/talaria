@@ -45,8 +45,8 @@ final class ComposerDropHostedTests: XCTestCase {
     }
 
     func testAReadOnlyComposerRefusesADropAndKeepsItsDraft() async throws {
-        let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerChatBatchArgument], size: HostedSize.duoInnerLandscape)
-        _ = try await requireElement(in: window, label: "Continue this chat in its native CLI.")
+        let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerChatServedArgument], size: HostedSize.duoInnerLandscape)
+        _ = try await requireElement(in: window, label: "This gateway's chats are read-only here.")
         let draft = composerDraftText(in: window)
 
         let operation = try await drop([textProvider("Refused text"), imageProvider(named: "refused.png")], in: window)

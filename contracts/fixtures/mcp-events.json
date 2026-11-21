@@ -2,61 +2,6 @@
   "description": "TAL-1510: sidecar mcp.events data for one server named `events`, its config.yaml entry and mcp.status runtime entry, and the server-derived McpServer.events view. `data: null` is a sidecar that could not answer.",
   "cases": [
     {
-      "name": "older_agent",
-      "config": {
-        "command": "events-mcp"
-      },
-      "runtime": {
-        "connected": true,
-        "status": "connected",
-        "tools": 4
-      },
-      "data": {
-        "supported": false,
-        "callback": "missing",
-        "servers": []
-      },
-      "expected": {
-        "supported": false,
-        "enabled": false,
-        "can_edit": false,
-        "state": "unsupported",
-        "detail": "",
-        "utilities": 0,
-        "counts": [],
-        "show_state": false,
-        "show_panel": false
-      }
-    },
-    {
-      "name": "older_agent_opted_in",
-      "config": {
-        "command": "events-mcp",
-        "events": true
-      },
-      "runtime": {
-        "connected": true,
-        "status": "connected",
-        "tools": 4
-      },
-      "data": {
-        "supported": false,
-        "callback": "missing",
-        "servers": []
-      },
-      "expected": {
-        "supported": false,
-        "enabled": true,
-        "can_edit": true,
-        "state": "unsupported",
-        "detail": "",
-        "utilities": 0,
-        "counts": [],
-        "show_state": true,
-        "show_panel": true
-      }
-    },
-    {
       "name": "opt_out",
       "config": {
         "command": "events-mcp"

@@ -44,7 +44,7 @@ function Workbench() {
 }
 
 function cronList(jobs: CronJob[], unwritable_stores: CronStoreHealth[] = []): Awaited<ReturnType<typeof api.fetchCrons>> {
-  return { jobs, active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores, schedule_policy_available: true }
+  return { jobs, active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores }
 }
 
 let qc: QueryClient
@@ -408,16 +408,6 @@ describe('TasksPage', () => {
     expect(detail.getByText('0 9 * * *')).toBeInTheDocument()
   })
 
-  it('offers no schedule policy when the Agent takes none (TAL-1820)', async () => {
-    const detail = await openJob('Digest')
-    vi.mocked(api.fetchCrons).mockResolvedValue({ ...cronList([full, feed]), schedule_policy_available: false })
-    await act(async () => { await qc.refetchQueries({ queryKey: keys.crons.all }) })
-    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
-    const without = within(await screen.findByRole('form', { name: /edit job/i }))
-    expect(without.queryByLabelText(/^time zone$/i)).toBeNull()
-    expect(without.queryByRole('combobox', { name: /^missed runs$/i })).toBeNull()
-  })
-
   it('shows a created job at once and opens the server job once it answers', async () => {
     const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
     vi.mocked(api.cronAction).mockImplementation(() => held.promise)
@@ -526,7 +516,7 @@ describe('TasksPage', () => {
     await openJob('Digest')
     await waitFor(() => expect(api.fetchCronHistory).toHaveBeenCalledTimes(1))
     // The next list poll (every 30s in the app) carries the new last_run_at; the status map never saw this run.
-    vi.mocked(api.fetchCrons).mockResolvedValue({ jobs: [{ ...full, last_run_at: '2026-09-18T09:00:00+02:00' }, feed], active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores: [], schedule_policy_available: true })
+    vi.mocked(api.fetchCrons).mockResolvedValue({ jobs: [{ ...full, last_run_at: '2026-09-18T09:00:00+02:00' }, feed], active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores: [] })
     await qc.refetchQueries({ queryKey: keys.crons.list(false) })
     await waitFor(() => expect(api.fetchCronHistory).toHaveBeenCalledTimes(2))
   })

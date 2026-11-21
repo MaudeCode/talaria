@@ -2058,8 +2058,6 @@ export const CronsSchema = z.looseObject({
   ordered: z.boolean().optional(),
   active_profile: z.string().optional(), all_profiles: z.boolean().optional(), other_profile_count: z.number().optional(), cron_unavailable: z.boolean().optional(),
   unwritable_stores: z.array(CronStoreHealthSchema),
-  /** TAL-1820: whether the running Agent takes `timezone`, `catch_up` and `grace_minutes`. When false, clients offer none of them and the server sends none. */
-  schedule_policy_available: z.boolean(),
 })
 export type Crons = z.infer<typeof CronsSchema>
 export const CronContextSourcesSchema = z.object({ profile: z.string(), sources: z.array(z.object({ job_id: z.string(), label: z.string(), selectable: z.boolean() })) })

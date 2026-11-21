@@ -3,8 +3,8 @@ import Foundation
 import os
 
 /// TAL-1043: the fixture chat as one another Agent client owns. `--ui-test-owner-chat` serves an attached owner holding
-/// an input whose outcome is unknown and a queued one; `--ui-test-owner-chat-batch` serves an owner the App cannot
-/// reattach. Owner actions settle the input they name, and Retry returns its text as the server's draft.
+/// an input whose outcome is unknown and a queued one; `--ui-test-owner-chat-served` serves a served-profile owner
+/// the App keeps read-only. Owner actions settle the input they name, and Retry returns its text as the server's draft.
 extension UITestFixtureURLProtocol {
     static let nativeNoticesArgument = "--ui-test-native-notices"
     static let nativeNoticePhase = OSAllocatedUnfairLock(initialState: 0)
@@ -29,7 +29,7 @@ extension UITestFixtureURLProtocol {
     }
 
     static let ownerChatArgument = "--ui-test-owner-chat"
-    static let ownerChatBatchArgument = "--ui-test-owner-chat-batch"
+    static let ownerChatServedArgument = "--ui-test-owner-chat-served"
     static let ownerUnknownText = "Run the migration against staging"
     static let ownerSettledAdmissions = OSAllocatedUnfairLock<Set<String>>(initialState: [])
     /// The full chat's approval as an owner sends it: only the choices its owner accepts, and no approval bypass.
@@ -42,7 +42,7 @@ extension UITestFixtureURLProtocol {
 
     static var servesOwnerChat: Bool {
         let arguments = ProcessInfo.processInfo.arguments
-        return arguments.contains(ownerChatArgument) || arguments.contains(ownerChatBatchArgument) || servesNativeNotices || servesOwnerWork
+        return arguments.contains(ownerChatArgument) || arguments.contains(ownerChatServedArgument) || servesNativeNotices || servesOwnerWork
     }
 
     /// TAL-1337: `--ui-test-owner-work` is the owner chat with its owner's work in Background Work, as
@@ -157,8 +157,8 @@ extension UITestFixtureURLProtocol {
             return ["state": "attached", "reason": NSNull(), "can_submit": true, "can_interrupt": false, "can_attach": false,
                     "revision": 1, "execution_generation": 0, "active_admission": NSNull(), "admissions": [], "queued_input_count": 0]
         }
-        if ProcessInfo.processInfo.arguments.contains(ownerChatBatchArgument) {
-            return ["state": "incompatible", "reason": "native_clarify_batch_unavailable", "can_submit": false, "can_interrupt": false,
+        if ProcessInfo.processInfo.arguments.contains(ownerChatServedArgument) {
+            return ["state": "incompatible", "reason": "served_profile_sessions_unavailable", "can_submit": false, "can_interrupt": false,
                     "can_attach": false, "revision": NSNull(), "execution_generation": NSNull(), "active_admission": NSNull(), "admissions": [], "queued_input_count": 0]
         }
         let settled = ownerSettledAdmissions.withLock { $0 }

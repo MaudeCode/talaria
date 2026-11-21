@@ -65,9 +65,8 @@ export async function bootDemoServer() {
 }
 
 async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server'], sidecar: FakeSidecar, discussion: ReturnType<typeof groupFixture>): Promise<string> {
-  sidecar.respond('cron.list', (params) => ({
+  sidecar.respond('cron.list', () => ({
     jobs: [job('digest', 'Morning digest', {}), job('backup', 'Weekly backup', { enabled: false, state: 'paused' }), job('audit', 'Dependency audit', { last_status: 'error', last_error: 'Synthetic failure: registry unreachable' })] as never[],
-    ...(params.probe_store ? { schedule_policy: true } : {}),
   }))
   // A config.yaml with a default model and two synthetic provider keys gives the model picker a catalog to show.
   writeFileSync(join(server.state, 'config.yaml'), '# demo\n')

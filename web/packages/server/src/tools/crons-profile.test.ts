@@ -59,18 +59,18 @@ describe('cron store read cost (TAL-1716)', () => {
     const health = { store: `${homes.default}/cron`, error: 'EROFS', since: 'unknown', fix: 'remount' }
     const held: (() => void)[] = []
     sidecar.respond('cron.list', ({ profile_home, probe_store }) => new Promise((resolve) => {
-      held.push(() => { resolve({ jobs: [], ...(probe_store ? { schedule_policy: true, store_health: profile_home === homes.default ? health : null } : {}) }) })
+      held.push(() => { resolve({ jobs: [], ...(probe_store ? { store_health: profile_home === homes.default ? health : null } : {}) }) })
     }))
     const release = async (count: number) => { await new Promise(setImmediate); expect(held).toHaveLength(count); for (const run of held.splice(0)) run() }
     const first = service.list('default', 'counted')
     await release(4)
-    await expect(first).resolves.toMatchObject({ schedule_policy_available: true, unwritable_stores: [{ profile: 'default', store: health.store }] })
+    await expect(first).resolves.toMatchObject({ unwritable_stores: [{ profile: 'default', store: health.store }] })
     expect(listCalls(sidecar).filter((call) => call.probe_store)).toHaveLength(4)
 
     vi.advanceTimersByTime(5 * 60_000 - 1)
     const memoized = service.list('default', 'counted')
     await release(4)
-    await expect(memoized).resolves.toMatchObject({ schedule_policy_available: true, unwritable_stores: [{ profile: 'default', store: health.store }] })
+    await expect(memoized).resolves.toMatchObject({ unwritable_stores: [{ profile: 'default', store: health.store }] })
     expect(listCalls(sidecar).filter((call) => call.probe_store)).toHaveLength(4)
 
     vi.advanceTimersByTime(1)

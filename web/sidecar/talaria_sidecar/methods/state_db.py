@@ -449,7 +449,7 @@ def _delete_runtime_rows(requested: str, home: Path, agent_db, guarded, delete_i
 
 def delete_cli_session(home: Path, sid: str) -> dict:
     """Delete ``sid`` with its whole conversation: the Agent's canonical targets take every compression and
-    receipt-backed reset segment, so ``include_compression_lineage`` needs no separate walk."""
+    receipt-backed reset segment."""
     try:
         with _thread_lock(home), _process_lock(home):
             return _delete_locked(sid, home)

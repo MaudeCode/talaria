@@ -520,9 +520,9 @@ describe('Composer', () => {
     expect(document.querySelector('#composerReasoningChip') !== null).toBe(shown)
   })
 
-  it('explains an unsupported native CLI batch without offering a send', () => {
-    renderComposer({ ...writable, read_only: true, owner_attachment: { state: 'incompatible', reason: 'native_clarify_batch_unavailable', can_submit: false, can_interrupt: false, can_attach: false, restarting: false, revision: null, execution_generation: null, admissions: [], queued_input_count: 0 } })
-    expect(screen.getByText(/Continue in its native client/)).toBeInTheDocument()
+  it('explains an unverified served profile without offering a send', () => {
+    renderComposer({ ...writable, read_only: true, owner_attachment: { state: 'incompatible', reason: 'served_profile_sessions_unavailable', can_submit: false, can_interrupt: false, can_attach: false, restarting: false, revision: null, execution_generation: null, admissions: [], queued_input_count: 0 } })
+    expect(screen.getByText(/shared-profile execution cannot be verified/)).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
   beforeEach(() => {
