@@ -175,7 +175,6 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertEqual(response.effectiveEffort, "high")
         XCTAssertNil(response.supportedEfforts)
         XCTAssertNil(response.supportsReasoningEffort)
-        XCTAssertNil(response.normalizedSupportedEfforts)
     }
 
     func testReasoningStatusPassesModelProviderQueryAndDecodesSupportedEfforts() async throws {
@@ -204,23 +203,6 @@ final class APIClientConfigurationTests: APIClientTestCase {
 
         XCTAssertEqual(response.supportedEfforts, ["minimal", "low", "medium", "high", "xhigh"])
         XCTAssertEqual(response.supportsReasoningEffort, true)
-        XCTAssertEqual(response.normalizedSupportedEfforts, ["minimal", "low", "medium", "high", "xhigh"])
-    }
-
-    func testReasoningStatusNormalizesSupportedEfforts() throws {
-        let json = """
-        {
-          "reasoning_effort": "low",
-          "supported_efforts": [" Low ", "low", "", "HIGH"],
-          "supports_reasoning_effort": false
-        }
-        """
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let response = try decoder.decode(ReasoningStatusResponse.self, from: Data(json.utf8))
-
-        XCTAssertEqual(response.normalizedSupportedEfforts, ["low", "high"])
-        XCTAssertEqual(response.supportsReasoningEffort, false)
     }
 
     func testSaveReasoningEffortBuildsExpectedBodyAndDecodesResponse() async throws {

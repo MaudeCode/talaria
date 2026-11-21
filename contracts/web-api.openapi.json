@@ -3157,7 +3157,8 @@
                                     "type": "array",
                                     "items": {
                                       "type": "string"
-                                    }
+                                    },
+                                    "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                   },
                                   "supports_reasoning_effort": {
                                     "type": "boolean"
@@ -4362,7 +4363,8 @@
                                     "type": "array",
                                     "items": {
                                       "type": "string"
-                                    }
+                                    },
+                                    "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                   },
                                   "supports_reasoning_effort": {
                                     "type": "boolean"
@@ -5396,7 +5398,8 @@
                                     "type": "array",
                                     "items": {
                                       "type": "string"
-                                    }
+                                    },
+                                    "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                   },
                                   "supports_reasoning_effort": {
                                     "type": "boolean"
@@ -6737,7 +6740,8 @@
                                     "type": "array",
                                     "items": {
                                       "type": "string"
-                                    }
+                                    },
+                                    "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                   },
                                   "supports_reasoning_effort": {
                                     "type": "boolean"
@@ -13333,7 +13337,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -14320,7 +14325,8 @@
                               "type": "array",
                               "items": {
                                 "type": "string"
-                              }
+                              },
+                              "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                             },
                             "supports_reasoning_effort": {
                               "type": "boolean"
@@ -21063,7 +21069,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -27464,7 +27471,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -28563,7 +28571,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -29645,7 +29654,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -30734,7 +30744,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -37080,7 +37091,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -38212,7 +38224,8 @@
                                       "type": "array",
                                       "items": {
                                         "type": "string"
-                                      }
+                                      },
+                                      "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                     },
                                     "supports_reasoning_effort": {
                                       "type": "boolean"
@@ -39363,7 +39376,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -46030,7 +46044,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -47344,7 +47359,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -48424,7 +48440,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -55561,7 +55578,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -61906,7 +61924,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -68313,7 +68332,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -74718,7 +74738,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -79546,7 +79567,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -80625,7 +80647,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -94098,7 +94121,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -100495,7 +100519,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -101559,7 +101584,8 @@
                               "type": "array",
                               "items": {
                                 "type": "string"
-                              }
+                              },
+                              "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                             },
                             "supports_reasoning_effort": {
                               "type": "boolean"
@@ -107578,7 +107604,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -108535,7 +108562,8 @@
                                   "type": "array",
                                   "items": {
                                     "type": "string"
-                                  }
+                                  },
+                                  "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
@@ -114119,7 +114147,8 @@
                                       "type": "array",
                                       "items": {
                                         "type": "string"
-                                      }
+                                      },
+                                      "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                     },
                                     "supports_reasoning_effort": {
                                       "type": "boolean"
@@ -127923,7 +127952,8 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "TAL-2506: the route's levels, trimmed, lowercased, non-empty and unique, in the Agent's order; render them as shipped. Absent only on the `auxiliary_task` preview."
                     },
                     "supports_reasoning_effort": {
                       "type": "boolean"
@@ -128093,7 +128123,8 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "TAL-2506: the route's levels, trimmed, lowercased, non-empty and unique, in the Agent's order; render them as shipped. Absent only on the `auxiliary_task` preview."
                     },
                     "supports_reasoning_effort": {
                       "type": "boolean"

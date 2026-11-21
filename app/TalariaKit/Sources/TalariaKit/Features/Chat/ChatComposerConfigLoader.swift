@@ -208,7 +208,7 @@ struct ChatComposerConfigLoader {
             provider: Self.nonEmpty(state.currentModelProvider), sessionID: sessionID
         )
         state.selectedReasoningEffort = reasoningResponse.effectiveEffort
-        state.supportedReasoningEfforts = reasoningResponse.normalizedSupportedEfforts
+        state.supportedReasoningEfforts = reasoningResponse.supportedEfforts
         state.supportsReasoningEffort = reasoningResponse.supportsReasoningEffort
     }
 

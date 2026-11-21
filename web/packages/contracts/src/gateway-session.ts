@@ -192,7 +192,7 @@ export type OwnerActionRequest = z.infer<typeof OwnerActionRequestSchema>
 /** TAL-1319: one owner chat's own level, in `ReasoningStatus` terms. Read from its owner, never from the profile config. */
 export const OwnerReasoningSchema = z.object({
   reasoning_effort: z.string().nullable().describe('The level this chat runs now, clamped for its route. Null is the provider default.'),
-  supported_efforts: z.array(z.string()), supports_reasoning_effort: z.boolean(), supports_thinking_toggle: z.boolean(),
+  supported_efforts: z.array(z.string()).describe('TAL-2506: normalized as `ReasoningStatus.supported_efforts`.'), supports_reasoning_effort: z.boolean(), supports_thinking_toggle: z.boolean(),
   actions: z.array(z.enum(['set', 'reset'])).describe('What this client may ask the owner now. Empty while the owner cannot take a change.'),
   deferred: z.object({ effort: z.string().nullable() }).nullable().describe('A pick the owner holds for the end of the running turn; `reasoning_effort` stays the actual level. Null effort is a held reset.'),
 })

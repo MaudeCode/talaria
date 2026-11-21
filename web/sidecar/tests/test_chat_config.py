@@ -127,3 +127,12 @@ def test_declares_key_answers_for_the_discussion_limits_the_agent_reads_without_
 def test_declares_key_denies_the_discussion_limits_on_an_agent_without_them(monkeypatch):
     _discussion_limits_module(monkeypatch)
     assert config_methods.declares_key('hosted_rooms.discussion.max_rounds') is False
+
+
+def test_reasoning_efforts_ships_the_agent_levels_trimmed_lowercased_and_unique(monkeypatch):
+    """TAL-2506: the sidecar normalizes the Agent's levels once, so no client has to."""
+    module = types.ModuleType('hermes_cli.main_provider_setup')
+    module._main_model_reasoning_efforts = lambda model, provider: [' High', 'high', '', 'LOW']
+    monkeypatch.setitem(sys.modules, 'hermes_cli', types.ModuleType('hermes_cli'))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.main_provider_setup', module)
+    assert config_methods.reasoning_efforts('m', 'p')['efforts'] == ['high', 'low']

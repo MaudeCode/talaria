@@ -108,22 +108,15 @@ public struct ReasoningEffortOption: Identifiable, CaseIterable, Sendable {
         return options.count == 1 ? options[0].title : nil
     }
 
-    /// Menu options for a server-provided effort vocabulary (issue #18).
-    /// `nil` or empty → the full static list (older servers / defensive fallback;
-    /// an empty list also means `supports_reasoning_effort == false`, which hides
-    /// the control before this is ever rendered). Unknown ids are kept with a
-    /// capitalized title so a newer server's vocabulary still works.
+    /// Menu options for the server's effort vocabulary (issue #18), which the
+    /// server ships normalized (TAL-2506). `nil` or empty → the full static list
+    /// (older servers / defensive fallback; an empty list also means
+    /// `supports_reasoning_effort == false`, which hides the control before this
+    /// is ever rendered). Unknown ids keep a capitalized title so a newer
+    /// server's vocabulary still works.
     public static func options(forSupportedEfforts supportedEfforts: [String]?) -> [ReasoningEffortOption] {
         guard let supportedEfforts, !supportedEfforts.isEmpty else { return allCases }
-
-        var seen = Set<String>()
-        return supportedEfforts
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-            .filter { !$0.isEmpty && seen.insert($0).inserted }
-            .map { id in
-                allCases.first(where: { $0.id == id })
-                    ?? ReasoningEffortOption(id: id, title: id.capitalized)
-            }
+        return supportedEfforts.map { ReasoningEffortOption(id: $0, title: title(for: $0)) }
     }
 
     /// Whether the composer should show the effort control at all (issue #18).

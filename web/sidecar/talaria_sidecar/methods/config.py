@@ -370,7 +370,8 @@ def env_write(home: Path, updates) -> dict:
 
 
 def reasoning_efforts(model: str, provider: str) -> dict:
-    """Levels the Agent would offer for ``model`` on ``provider`` (``hermes_cli.main_provider_setup``)."""
+    """Levels the Agent would offer for ``model`` on ``provider`` (``hermes_cli.main_provider_setup``), trimmed,
+    lowercased, non-empty and unique in the Agent's order (TAL-2506): every caller ships this list as is."""
     efforts: list[str] | None = None
     supports_reasoning: bool | None = None
     try:
@@ -387,7 +388,8 @@ def reasoning_efforts(model: str, provider: str) -> dict:
             supports_reasoning = bool(getattr(meta, "supports_reasoning", False))
     except Exception:  # noqa: BLE001
         pass
-    return {"efforts": [str(e) for e in (efforts or [])], "supports_reasoning": supports_reasoning}
+    levels = dict.fromkeys(level for level in (str(e).strip().lower() for e in (efforts or [])) if level)
+    return {"efforts": list(levels), "supports_reasoning": supports_reasoning}
 
 
 def personalities(config) -> list[dict]:
