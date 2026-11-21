@@ -79,7 +79,8 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
   const auth = await authStatusPayload(ctx)
   let csrfToken = ''
   if (auth.auth_enabled && auth.logged_in) {
-    const cookieVal = ctx.authCookie() ?? ctx.trusted.cookieValue ?? null
+    // A trusted reconciliation may have replaced the request's cookie (TAL-2577); the token belongs to the session it set.
+    const cookieVal = ctx.trusted.cookieValue ?? ctx.authCookie() ?? null
     if (cookieVal && deps.auth.verifySession(cookieVal)) csrfToken = deps.auth.csrfTokenForSession(cookieVal) ?? ''
   }
   const authenticated = !auth.auth_enabled || auth.logged_in

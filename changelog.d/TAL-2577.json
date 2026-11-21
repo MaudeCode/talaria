@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web pages behind a sign-in proxy keep their activity status and saves working when a page load renews the proxy session.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
