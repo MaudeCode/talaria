@@ -312,9 +312,16 @@ final class ChatHostedTests: XCTestCase {
         // At this size only the newest reply fits on screen.
         _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("FixturePlainLead") == true }
         let draft = "Keep this accessibility draft visible"
-        try await typeIntoComposer(draft, in: window)
+        let keyboardShown = try await awaitKeyboard(UIResponder.keyboardDidShowNotification) {
+            try await self.typeIntoComposer(draft, in: window)
+        }
+        guard keyboardShown else {
+            XCTFail("The keyboard must finish opening before resizing its pane")
+            return
+        }
         let loadedEditor = await composerTextView(in: window)
         let editor = try XCTUnwrap(loadedEditor)
+        XCTAssertTrue(editor.isFirstResponder, "The editor must be focused before the first resize")
         let lineHeight = try XCTUnwrap(editor.font).lineHeight
         let selection = editor.selectedRange
         // The keyboard leaves a landscape chat about 200 pt. Rotate there, back to portrait, and there again.
