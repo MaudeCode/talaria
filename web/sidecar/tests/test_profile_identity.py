@@ -7,42 +7,36 @@ import json
 import pathlib
 import subprocess
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, isolated_env, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, requires_agent, run_store_script
 
-# Seeds one profile's state.db through the Agent's own writer: argv = agent dir, state.db, scenario.
-_SEED = r"""
-import pathlib, sys
-sys.path.insert(0, sys.argv[1])
-from hermes_state import SessionDB
-db = SessionDB(pathlib.Path(sys.argv[2]))
-scenario = sys.argv[3]
+# Seeds one profile's state.db through the Agent's own writer.
+_SEED = """
 def chat(sid, title, source="tui"):
     db.create_session(sid, source=source)
     db.append_message(sid, role="user", content="hello")
     db.set_session_title(sid, title)
 if scenario == "canonical":
     chat("scout-root", "Bot Chat")
-    db.set_session_hidden("scout-root", True)
+    hide("scout-root")
     db.end_session("scout-root", "compression")
     db.create_session("scout-tip", source="tui", parent_session_id="scout-root")
     db.append_message("scout-tip", role="user", content="continued")
     chat("scout-side", "Side chat")
-    db.set_session_hidden("scout-side", True)
+    hide("scout-side")
 elif scenario == "near-titles":
     chat("default-near", "Bot Chat 2")
     chat("default-case", "bot chat")
 elif scenario == "archived":
     chat("retired-chat", "Bot Chat")
-    db.set_session_archived("retired-chat", True)
+    archive("retired-chat")
 elif scenario == "worker":
     chat("worker-chat", "Bot Chat", source="tool")
-db.close()
 """
 
 
 def _seed(home: pathlib.Path, scenario: str) -> None:
     home.mkdir(parents=True, exist_ok=True)
-    subprocess.run([AGENT_PYTHON, "-c", _SEED, str(AGENT_DIR), str(home / "state.db"), scenario], check=True, env=isolated_env(home, PATH="/usr/bin:/bin"))
+    run_store_script(home, f"scenario = {scenario!r}\n" + _SEED, PATH="/usr/bin:/bin")
 
 
 def _db_files(home: pathlib.Path) -> dict[pathlib.Path, tuple[int, int]]:

@@ -599,9 +599,9 @@ def _goal_text(content) -> str:
     if not isinstance(content, str):
         return ""
     if content.startswith(_CONTENT_JSON_PREFIX):
-        from hermes_state import SessionDB
+        from ..agent_store import decode_content
 
-        content = SessionDB._decode_content(content)
+        content = decode_content(content)
     if isinstance(content, list):
         texts = [p.get("text") for p in content if isinstance(p, dict) and p.get("type") == "text"]
         return str(texts[0]) if texts and texts[0] else ""

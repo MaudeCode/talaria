@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, NATIVE_STORE, SidecarProcess, isolated_env, requires_agent
 
 pytestmark = requires_agent
 
@@ -172,7 +172,7 @@ def _model_rows(home, session_id: str) -> list[dict]:
 def test_a_refused_turn_leaves_the_model_context_and_stays_on_screen(home) -> None:
     # Agent v0.23.1 added the owner retention; an older Agent keeps the refused turn as it always has.
     # agent-shim: content-refused-retention
-    retains = "def retain_refused_turn_for_display" in (AGENT_DIR / "hermes_state_rewind.py").read_text()
+    retains = NATIVE_STORE or "def retain_refused_turn_for_display" in (AGENT_DIR / "hermes_state_rewind.py").read_text()
     proc = SidecarProcess(home)
     try:
         _turn(proc, home, "web-refused", "ping")

@@ -1,4 +1,4 @@
-"""``state_db.*``: writes to the Agent's ``state.db`` through ``hermes_state.SessionDB``.
+"""``state_db.*``: writes to the Agent's ``state.db`` through its session store (``agent_store``).
 
 Ported from api/state_sync.py (usage/title mirroring) and
 api/models.py::delete_cli_session (lineage-aware CLI session deletion with
@@ -18,6 +18,7 @@ import uuid
 from contextlib import closing, contextmanager
 from pathlib import Path
 
+from .. import agent_store
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
@@ -27,21 +28,6 @@ STATE_DB_CONNECT_TIMEOUT_S = 5.0
 _SAFE_SESSION_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 _cleanup_locks_guard = threading.Lock()
 _cleanup_locks: dict[str, threading.Lock] = {}
-
-
-def _session_db(home: Path):
-    try:
-        from hermes_state import SessionDB
-    except ImportError as exc:
-        raise RpcError("hermes_state unavailable", condition="state_db_unavailable") from exc
-    db_path = home / "state.db"
-    if not db_path.exists():
-        return None
-    try:
-        return SessionDB(db_path)
-    except Exception as exc:  # noqa: BLE001
-        log.debug("Failed to open state.db at %s: %s", db_path, exc)
-        return None
 
 
 def _session_id(params: dict) -> str:
@@ -63,13 +49,11 @@ _idle_threads: dict[str, threading.Thread] = {}
 
 
 def release_session_db(db) -> None:
-    """Give back a registry reference (a cached agent's or a write pin); the final one closes the handle."""
+    """Give back a store handle (a cached agent's or a write pin); the final one closes it."""
     if db is None:
         return
     try:
-        from hermes_state_registry import release_or_close
-
-        release_or_close(db)
+        agent_store.release(db)
     except Exception:  # noqa: BLE001
         log.warning("releasing a state.db handle failed", exc_info=True)
 
@@ -77,15 +61,13 @@ def release_session_db(db) -> None:
 def _write(home: Path, what: str, op, *, level: int = logging.DEBUG) -> bool:
     """Run ``op(db)`` on the shared handle; False without a state.db or when it fails. A failed write unpins the handle,
     so the next one reopens it unless another holder keeps it."""
-    try:
-        from hermes_state_registry import acquire
-    except ImportError as exc:
-        raise RpcError("hermes_state unavailable", condition="state_db_unavailable") from exc
     db_path = home / "state.db"
     if not db_path.exists():
         return False
     try:
-        db = acquire(db_path)
+        db = agent_store.acquire(home)
+    except ImportError as exc:
+        raise RpcError("hermes_state unavailable", condition="state_db_unavailable") from exc
     except Exception as exc:  # noqa: BLE001
         log.debug("Failed to open state.db at %s: %s", db_path, exc)
         return False
@@ -153,30 +135,29 @@ def release_all() -> None:
 def request_prompt_refresh(home: Path) -> bool:
     """Every continuing session in ``home`` rebuilds its stored system prompt once, on its next turn. False without a
     state.db."""
-    return _write(home, "request a prompt refresh", lambda db: db.request_prompt_refresh(), level=logging.WARNING)
+    return _write(home, "request a prompt refresh", agent_store.request_prompt_refresh, level=logging.WARNING)
 
 
 def sync_session_start(home: Path, session_id: str, model=None) -> bool:
-    return _write(home, "sync session start", lambda db: db.ensure_session(session_id=session_id, source="webui", model=model))
+    return _write(home, "sync session start", lambda db: agent_store.ensure_session(db, session_id, source="webui", model=model))
 
 
 def sync_session_usage(home: Path, session_id: str, *, input_tokens=0, output_tokens=0, estimated_cost=None, model=None, title=None,
                        message_count=None, cache_read_tokens=0, cache_write_tokens=0, api_call_count=None) -> bool:
     def op(db) -> None:
         # The token update's own row guard creates the session with this source, like ``ensure_session``.
-        db.update_token_counts(
-            session_id=session_id, input_tokens=input_tokens, output_tokens=output_tokens, cache_read_tokens=cache_read_tokens,
-            cache_write_tokens=cache_write_tokens, api_call_count=api_call_count or 0, estimated_cost_usd=estimated_cost, model=model, absolute=True,
-            source="webui",
+        agent_store.set_usage(
+            db, session_id, input_tokens=input_tokens, output_tokens=output_tokens, cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens, api_call_count=api_call_count or 0, estimated_cost=estimated_cost, model=model, source="webui",
         )
         if title:
             try:
-                db.set_session_title(session_id, title)
+                agent_store.set_title(db, session_id, title, manual=True)
             except Exception:  # noqa: BLE001
                 log.debug("Failed to sync session title", exc_info=True)
         if message_count is not None:
             try:
-                db._execute_write(lambda conn: conn.execute("UPDATE sessions SET message_count = ? WHERE id = ?", (message_count, session_id)))
+                agent_store.set_message_count(db, session_id, message_count)
             except Exception:  # noqa: BLE001
                 log.debug("Failed to sync message count", exc_info=True)
 
@@ -189,30 +170,22 @@ def sync_session_title(home: Path, session_id: str, title: str, *, manual: bool 
         return False
 
     def op(db) -> None:
-        db.ensure_session(session_id=session_id, source="webui")
-        source = getattr(db, "TITLE_SOURCE_LLM", "llm")
-
-        def write(value: str) -> None:
-            if manual:
-                db.set_session_title(session_id, value)
-            else:
-                db.set_auto_title(session_id, value, source=source)
-
+        agent_store.ensure_session(db, session_id, source="webui")
         try:
-            write(title)
+            agent_store.set_title(db, session_id, title, manual=manual)
         except ValueError:
-            alt = db.get_next_title_in_lineage(title)
+            alt = agent_store.next_title_in_lineage(db, title)
             if alt and alt != title:
-                write(alt)
+                agent_store.set_title(db, session_id, alt, manual=manual)
 
     return _write(home, "sync session title", op)
 
 
 def append_message(home: Path, session_id: str, *, role: str, content: str, tool_name=None, timestamp=None) -> bool:
-    """TAL-258 (predecessor ``_persist_handoff_summary_to_state_db``): one row through ``SessionDB.append_message``,
+    """TAL-258 (predecessor ``_persist_handoff_summary_to_state_db``): one row through the Agent's transcript append,
     which also bumps the session's ``message_count``. False without a state.db or when the write fails."""
     return _write(home, f"append a {role} row to state.db for {session_id}",
-                  lambda db: db.append_message(session_id, role, content=content, tool_name=tool_name or None, timestamp=timestamp),
+                  lambda db: agent_store.append_message(db, session_id, role=role, content=content, tool_name=tool_name or None, timestamp=timestamp),
                   level=logging.WARNING)
 
 
@@ -337,6 +310,10 @@ def _process_stale_manifests(home: Path) -> bool:
 
 # The Agent's ``_CHAIN_CAP`` and the server's ``COMPRESSION_CHAIN_CAP``: the most hops a compression-chain walk takes.
 _COMPRESSION_CHAIN_CAP = 1000
+# How long the guards a storage-interface delete takes outlive a sidecar that dies holding them.
+_DELETE_GUARD_TTL_S = 60.0
+# The Agent's local conversation owner receipt, keyed by the conversation's creation id.
+_LOCAL_POLICY_PREFIX = "gateway.local_policy.v1:"
 
 
 class _ActiveWriteGuard(Exception):
@@ -348,7 +325,10 @@ def _delete_locked(sid: str, home: Path) -> dict:
     db_path = home / "state.db"
     if not db_path.exists():
         return {"ok": False}
-    agent_db = _session_db(home)
+    if agent_store.native():  # the branch below serves Agents before v0.23.3
+        result = _delete_conversation(sid, home)
+        return {**result, "ok": result["ok"] and stale_complete}
+    agent_db = _legacy_session_db(home)
     if agent_db is None:
         return {"ok": False}
     try:
@@ -364,6 +344,79 @@ def _delete_locked(sid: str, home: Path) -> dict:
         _close(agent_db)
 
 
+def _legacy_session_db(home: Path):
+    """A writer ``SessionDB`` of an Agent before the storage interface, or None when it does not open."""
+    try:
+        from hermes_state import SessionDB
+    except ImportError as exc:
+        raise RpcError("hermes_state unavailable", condition="state_db_unavailable") from exc
+    try:
+        return SessionDB(home / "state.db")
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Failed to open state.db under %s: %s", home, exc)
+        return None
+
+
+def _delete_conversation(requested: str, home: Path) -> dict:
+    """The storage interface's delete of the conversation's whole footprint, the rows the Agent's own canonical delete
+    reaches: the compression chain both ways, every local reset segment, delegate subtrees and their continuations. An
+    owner receipt that does not hold refuses first. The interface has no read of another holder's guards, so the
+    sidecar takes the Agent's turn lease and compression lock on every row under its own holder: any it cannot take is
+    a live writer's, and nothing is removed. Holding them all, it records the cleanup manifest (a failed one removes
+    nothing) and deletes every row in one transaction, which the retirement fence refuses while queued, started or
+    unknown work owns one. Then the plugin hook and retired media, as the Agent runs them after its own delete; the
+    manifest owns the transcript files, since the Agent's file sweep would also take the legacy name of a live
+    ``session_<id>`` session's own transcript."""
+    from gateway.session_ingress_media import native_inputs_root
+    from persistence import AuthorityRefusal
+    from session_retention import collect_retired_media, emit_session_deleted
+
+    with scoped_home(home, read_only=True):
+        media_root = str(native_inputs_root())
+    db = agent_store.acquire(home)
+    holder, leased, locked = f"talaria-sidecar-delete:{uuid.uuid4().hex}", [], []
+    try:
+        def members(ids: list[str]) -> list[tuple]:
+            rows = [row for sid in ids if (row := db.sessions.get(sid)) is not None]
+            return [(row.session_id, row.chat_id, row.user_id, row.session_key, row.source, dict(row.model_config)) for row in rows]
+
+        _check_local_receipt(requested, lambda sid: getattr(db.sessions.get(sid), "chat_id", None), db.state_meta.get, members)
+        reach = [sid for sid in db.runtime.delete_footprint(requested, owner=None).targets if db.sessions.get(sid) is not None]
+        if not reach:
+            return {"ok": _process_stale_manifests(home), "deleted_ids": []}
+        for sid in reach:
+            if not db.coordination.try_acquire_turn_lease(session_id=sid, holder=holder, ttl_seconds=_DELETE_GUARD_TTL_S):
+                raise _ActiveWriteGuard
+            leased.append(sid)
+            if not db.coordination.try_acquire_compression_lock(session_id=sid, holder=holder, ttl_seconds=_DELETE_GUARD_TTL_S):
+                raise _ActiveWriteGuard
+            locked.append(sid)
+        manifest = _write_cleanup_manifest(home, reach)
+        try:
+            outcome = db.sessions.delete_many(reach, skip_guarded=False, include_compression_chain=False, media_root=media_root)
+        except BaseException as exc:
+            manifest.unlink(missing_ok=True)  # nothing was removed: no files to clean
+            if isinstance(exc, AuthorityRefusal) and exc.reason in ("session_busy", "unknown_execution"):
+                raise _ActiveWriteGuard from exc
+            raise
+        deleted_ids = list(outcome.removed_ids)
+        if extra := sorted(set(deleted_ids) - set(reach)):
+            _write_cleanup_manifest(home, extra)
+        emit_session_deleted(db.scope.profile_dir, deleted_ids, reason="delete", primary=requested, sessions_dir=home / "sessions")
+        try:
+            collect_retired_media(db, db.scope.profile_dir)
+        except Exception:  # noqa: BLE001 - committed; the manifest keeps the files for the next delete
+            log.warning("Failed to collect retired session media", exc_info=True)
+            return {"ok": False, "deleted_ids": deleted_ids}
+        return {"ok": _process_stale_manifests(home), "deleted_ids": deleted_ids}
+    finally:
+        for sid in locked:
+            db.coordination.release_compression_lock(session_id=sid, holder=holder)
+        for sid in leased:
+            db.coordination.release_turn_lease(session_id=sid, holder=holder)
+        agent_store.release(db)
+
+
 def _write_guard_check(agent_db):
     """The Agent's own user-delete guard, ``(conn, ids) -> bool``: true when a live turn lease or compression lock protects
     any id; expired or dead-holder guards are reclaimed. None, refusing the delete, on an Agent without that guard."""
@@ -373,7 +426,7 @@ def _write_guard_check(agent_db):
     return None
 
 
-def _write_cleanup_manifest(home: Path, removed_ids: list[str]) -> None:
+def _write_cleanup_manifest(home: Path, removed_ids: list[str]) -> Path:
     sessions_dir = home / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
     base = f".cleanup_manifest_{uuid.uuid4().hex}"
@@ -384,6 +437,33 @@ def _write_cleanup_manifest(home: Path, removed_ids: list[str]) -> None:
     except OSError:
         tmp.unlink(missing_ok=True)
         raise
+    return manifest
+
+
+def _check_local_receipt(requested: str, owner_of, meta, members_of, validate=None) -> None:
+    """Refuse (``ValueError``) to delete a local conversation whose owner receipt does not hold: the Agent's owner lookup
+    falls back to the physical id on an unreadable receipt, so its delete would take one segment and strand the rest.
+    ``members_of(ids)`` gives each existing row as ``(id, chat_id, user_id, session_key, source, model_config)``."""
+    owner = owner_of(requested)
+    raw = meta(_LOCAL_POLICY_PREFIX + owner) if owner else None
+    if raw is None:
+        return
+    if len(raw) > 1_000_000:
+        raise ValueError("local receipt exceeds read budget")
+    receipt = json.loads(raw)
+    ids = receipt.get("lineage", [owner])
+    if (receipt.get("session_id") != owner or not isinstance(ids, list) or not ids
+            or len(ids) > _COMPRESSION_CHAIN_CAP or not all(isinstance(sid, str) and sid for sid in ids)):
+        raise ValueError("invalid local receipt")
+    if validate is not None:
+        validate(receipt)
+    members = members_of(ids)
+    if len(members) != len(ids) or any(tuple(member)[1:4] != (owner, receipt["principal_id"], receipt["route"]) for member in members):
+        raise ValueError("local receipt owner mismatch")
+    for member in members:
+        config = member[5]
+        if member[0] != owner and (member[4] == 'tool' or any(config.get(key) is not None for key in ('_branched_from', '_delegate_from'))):
+            raise ValueError("explicit child is not a local continuation")
 
 
 def _delete_runtime_rows(requested: str, home: Path, agent_db, guarded, delete_in_transaction) -> dict:
@@ -397,29 +477,20 @@ def _delete_runtime_rows(requested: str, home: Path, agent_db, guarded, delete_i
     from hermes_state_media import collect_retired_media
 
     def write(conn):
-        # The Agent's owner lookup falls back to the physical id on an unreadable receipt; refuse before that loses its owner.
-        row = conn.execute("SELECT chat_id FROM sessions WHERE id=?", (requested,)).fetchone()
-        owner = row[0] if row else None
-        saved = conn.execute("SELECT value FROM state_meta WHERE key=?", ("gateway.local_policy.v1:" + owner,)).fetchone() if owner else None
-        if saved is not None:
-            from hermes_state_local_lineage import validate_local_lineage
-            raw = saved[0]
-            if len(raw) > 1_000_000:
-                raise ValueError("local receipt exceeds read budget")
-            receipt = json.loads(raw)
-            ids = receipt.get("lineage", [owner])
-            if (receipt.get("session_id") != owner or not isinstance(ids, list) or not ids
-                    or len(ids) > _COMPRESSION_CHAIN_CAP or not all(isinstance(sid, str) and sid for sid in ids)):
-                raise ValueError("invalid local receipt")
-            validate_local_lineage(conn, receipt)
-            members = conn.execute("SELECT id,chat_id,user_id,session_key,source,model_config FROM sessions WHERE id IN (SELECT value FROM json_each(?))",
-                                   (json.dumps(ids),)).fetchall()
-            if len(members) != len(ids) or any(tuple(member)[1:4] != (owner, receipt["principal_id"], receipt["route"]) for member in members):
-                raise ValueError("local receipt owner mismatch")
-            for member in members:
-                config = json.loads(member[5] or '{}')
-                if member[0] != owner and (member[4] == 'tool' or any(config.get(key) is not None for key in ('_branched_from', '_delegate_from'))):
-                    raise ValueError("explicit child is not a local continuation")
+        from hermes_state_local_lineage import validate_local_lineage
+
+        def one(sql: str, *args):
+            row = conn.execute(sql, args).fetchone()
+            return row[0] if row else None
+
+        def members(ids: list[str]) -> list[tuple]:
+            rows = conn.execute("SELECT id,chat_id,user_id,session_key,source,model_config FROM sessions WHERE id IN (SELECT value FROM json_each(?))",
+                                (json.dumps(ids),)).fetchall()
+            return [(*tuple(row)[:5], json.loads(row[5] or '{}')) for row in rows]
+
+        _check_local_receipt(requested, lambda sid: one("SELECT chat_id FROM sessions WHERE id=?", sid),
+                             lambda key: one("SELECT value FROM state_meta WHERE key=?", key), members,
+                             lambda receipt: validate_local_lineage(conn, receipt))
         # Preserve the older user-delete guard over the complete canonical set, including closed ancestors.
         if guarded(conn, delete_targets(conn, requested)):
             raise _ActiveWriteGuard

@@ -7,14 +7,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import subprocess
-import textwrap
 from contextlib import closing
 from pathlib import Path
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, SidecarProcess, assert_matches, isolated_env, requires_agent
+from conftest import NATIVE_STORE, SIDECAR_ROOT, SidecarProcess, assert_matches, requires_agent, run_store_script
 
 # Every supported Agent guards: v0.21.6+ through ``_guarded_ids``, older ones through ``_write_guards_reject``.
 pytestmark = requires_agent
@@ -24,8 +22,7 @@ OTHER_PROCESS = "other-terminal-turn"
 
 
 def _agent(home, body: str) -> None:
-    script = "from pathlib import Path\nfrom hermes_state import SessionDB\n" + f"db = SessionDB(db_path=Path({str(home / 'state.db')!r}))\n" + textwrap.dedent(body) + "\ndb.close()\n"
-    subprocess.run([AGENT_PYTHON, "-c", script], env=isolated_env(home, PYTHONPATH=str(AGENT_DIR)), check=True, timeout=60)
+    run_store_script(home, body)
 
 
 def _seed(home, session_id: str, *, delegate: str | None = None) -> None:
@@ -52,30 +49,35 @@ def test_a_live_turn_lease_or_compression_lock_refuses_the_delete(hermes_home) -
     _seed(hermes_home, "cli-a")
     _seed(hermes_home, "cli-b")
     _seed(hermes_home, "cli-c", delegate="cli-c-child")
+    # A compressed delegate's continuation goes with the conversation too, so its compression lock refuses the whole delete.
+    _seed(hermes_home, "cli-d", delegate="cli-d-child")
     _agent(hermes_home, f"""
-        assert db.try_acquire_session_turn_lease("cli-a", {OTHER_PROCESS!r})
-        assert db.try_acquire_compression_lock("cli-b", {OTHER_PROCESS!r})
-        assert db.try_acquire_session_turn_lease("cli-c-child", {OTHER_PROCESS!r})
+        db.end_session("cli-d-child", "compression")
+        db.create_session(session_id="cli-d-child-tip", source="subagent", parent_session_id="cli-d-child")
+        assert lease("cli-a", {OTHER_PROCESS!r})
+        assert lock("cli-b", {OTHER_PROCESS!r})
+        assert lease("cli-c-child", {OTHER_PROCESS!r})
+        assert lock("cli-d-child-tip", {OTHER_PROCESS!r})
     """)
     proc = SidecarProcess(hermes_home)
     try:
-        for sid in ("cli-a", "cli-b", "cli-c"):
+        for sid in ("cli-a", "cli-b", "cli-c", "cli-d"):
             assert _delete(proc, hermes_home, sid) == {"ok": False, "refused": "active_turn"}, sid
     finally:
         proc.close()
     # Nothing was removed: the rows, their transcripts, and the guards the live writer holds all remain.
-    assert sorted(_rows(hermes_home, "SELECT id FROM sessions")) == ["cli-a", "cli-b", "cli-c", "cli-c-child"]
-    assert sorted(_rows(hermes_home, "SELECT DISTINCT session_id FROM messages")) == ["cli-a", "cli-b", "cli-c"]
+    assert sorted(_rows(hermes_home, "SELECT id FROM sessions")) == ["cli-a", "cli-b", "cli-c", "cli-c-child", "cli-d", "cli-d-child", "cli-d-child-tip"]
+    assert sorted(_rows(hermes_home, "SELECT DISTINCT session_id FROM messages")) == ["cli-a", "cli-b", "cli-c", "cli-d"]
     assert sorted(_rows(hermes_home, "SELECT conversation_id FROM session_turn_leases")) == ["cli-a", "cli-c-child"]
-    assert _rows(hermes_home, "SELECT session_id FROM compression_locks") == ["cli-b"]
+    assert sorted(_rows(hermes_home, "SELECT session_id FROM compression_locks")) == ["cli-b", "cli-d-child-tip"]
 
 
 def test_an_expired_guard_is_reclaimed_and_the_delete_proceeds(hermes_home) -> None:
     _seed(hermes_home, "cli-a", delegate="cli-a-child")
     _seed(hermes_home, "cli-b")
     _agent(hermes_home, f"""
-        assert db.try_acquire_session_turn_lease("cli-a", {OTHER_PROCESS!r})
-        assert db.try_acquire_compression_lock("cli-b", {OTHER_PROCESS!r})
+        assert lease("cli-a", {OTHER_PROCESS!r})
+        assert lock("cli-b", {OTHER_PROCESS!r})
     """)
     with closing(sqlite3.connect(hermes_home / "state.db")) as db, db:
         db.execute("UPDATE session_turn_leases SET expires_at = 1")
@@ -100,7 +102,7 @@ def test_the_lineage_is_resolved_and_guarded_inside_the_delete_transaction(herme
         db.end_session("cli-root", "compression")
         db.create_session(session_id="cli-tip", source="cli", parent_session_id="cli-root")
         db.append_message("cli-tip", "user", "continued")
-        assert db.try_acquire_compression_lock("cli-tip", {OTHER_PROCESS!r})
+        assert lock("cli-tip", {OTHER_PROCESS!r})
     """)
     proc = SidecarProcess(hermes_home)
     try:
@@ -169,15 +171,25 @@ def test_the_legacy_name_of_a_live_prefixed_session_is_its_own_transcript(hermes
 
 
 def _settled(home, sid="cli-a") -> None:
+    """A settled turn on ``sid`` whose result carries the user's prompt, and a gateway route naming ``sid``."""
     _agent(home, f"""
-        import hermes_state_runtime as rt
-        epoch = rt.begin_runtime_epoch(db, instance_id="fixture")
-        request = dict(epoch=epoch, principal_id="human", session_id={sid!r}, request_id="once", payload={{"text": "private prompt"}})
-        admitted = rt.admit_session_input(db, **request)
-        claim = rt.claim_session_input(db, epoch=epoch, session_id={sid!r})
-        rt.settle_session_input(db, epoch=epoch, admission_id=admitted["admission_id"], generation=claim["generation"],
-            outcome="completed", result={{"result": {{"messages": [{{"role": "user", "content": "private prompt"}}], "last_reasoning": "private reasoning", "final_response": "done"}}}})
-        db.save_gateway_routing_entry("route:" + {sid!r}, '{{"session_id": "{sid}"}}')
+        sid = {sid!r}
+        request = dict(principal_id="human", session_id=sid, request_id="once", payload={{"text": "private prompt"}})
+        result = {{"result": {{"messages": [{{"role": "user", "content": "private prompt"}}], "last_reasoning": "private reasoning", "final_response": "done"}}}}
+        route = '{{"session_id": "{sid}"}}'
+        if store:
+            epoch = store.runtime.begin_epoch(instance_id="fixture")
+            admitted, _ = store.admissions.admit(epoch=epoch, **request)
+            claim = store.admissions.claim(epoch=epoch, session_id=sid)
+            store.admissions.settle(epoch=epoch, admission_id=admitted.admission_id, generation=claim.generation, outcome="completed", result=result)
+            store.routing.upsert_routing_entry("route:" + sid, route)
+        else:
+            import hermes_state_runtime as rt
+            epoch = rt.begin_runtime_epoch(db, instance_id="fixture")
+            admitted = rt.admit_session_input(db, epoch=epoch, **request)
+            claim = rt.claim_session_input(db, epoch=epoch, session_id=sid)
+            rt.settle_session_input(db, epoch=epoch, admission_id=admitted["admission_id"], generation=claim["generation"], outcome="completed", result=result)
+            db.save_gateway_routing_entry("route:" + sid, route)
     """)
 
 
@@ -198,6 +210,26 @@ def test_terminal_ledger_retirement_cleans_files_and_fences_retries(hermes_home)
     assert _rows(hermes_home, "SELECT id FROM sessions") == ["cli-b"]
     assert _rows(hermes_home, "SELECT DISTINCT session_id FROM messages") == ["cli-b"]
     assert sorted(p.name for p in sessions.iterdir()) == ["cli-b.json"]
+    if NATIVE_STORE:
+        # The retirement fence: an exact retry answers its terminal receipt, the route is gone, and a late write cannot
+        # bring the deleted row back.
+        _agent(hermes_home, """
+            from persistence import AuthorityRefusal
+            from persistence.conversation.sessions import NewSession
+            epoch = store.runtime.begin_epoch(instance_id="retry")
+            assert store.runtime.retired_session("cli-a")
+            retry, _ = store.admissions.admit(epoch=epoch, principal_id="human", session_id="cli-a", request_id="once", payload={"text": "private prompt"})
+            assert retry.status == "terminal"
+            assert store.routing.load_routing_entries() == {}
+            try:
+                store.sessions.create(NewSession(session_id="cli-a", source="cli"))
+            except AuthorityRefusal as exc:
+                assert exc.reason == "not_found"
+            else:
+                raise AssertionError("deleted session was recreated")
+            assert store.sessions.get("cli-a") is None
+        """)
+        return
     _agent(hermes_home, """
         import json
         import hermes_state_runtime as rt
@@ -229,20 +261,36 @@ def test_terminal_ledger_retirement_cleans_files_and_fences_retries(hermes_home)
 def test_live_ledger_obligations_refuse_the_entire_delete(hermes_home, state) -> None:
     _seed(hermes_home, "cli-a", delegate="cli-child")
     _agent(hermes_home, f"""
-        import hermes_state_runtime as rt
-        epoch = rt.begin_runtime_epoch(db, instance_id="fixture")
         state = {state!r}
-        if state.endswith("_worker"):
-            generation = db.get_session("cli-child")["runtime_generation"]
-            rt.register_worker_execution(db, epoch=epoch, execution_id="worker", session_id="cli-child", generation=generation, kind="compute", adoption_secret="test-secret")
-            if state != "registered_worker":
-                db._execute_write(lambda c: c.execute("UPDATE worker_executions SET status=?", (state.removesuffix("_worker"),)))
+        if store:
+            epoch = store.runtime.begin_epoch(instance_id="fixture")
+            if state.endswith("_worker"):
+                generation = store.sessions.get("cli-child").runtime_generation
+                store.worker_executions.register(epoch=epoch, execution_id="worker", session_id="cli-child", generation=generation, kind="compute", adoption_secret="test-secret")
+                if state != "registered_worker":
+                    import sqlite3
+                    with sqlite3.connect(HOME / "state.db") as conn:
+                        conn.execute("UPDATE worker_executions SET status=?", (state.removesuffix("_worker"),))
+            else:
+                store.admissions.admit(epoch=epoch, principal_id="human", session_id="cli-child", request_id="live", payload={{"text": "working"}})
+                if state != "queued":
+                    store.admissions.claim(epoch=epoch, session_id="cli-child")
+                if state == "unknown":
+                    store.admissions.recover(epoch=store.runtime.begin_epoch(instance_id="restart"))
         else:
-            rt.admit_session_input(db, epoch=epoch, principal_id="human", session_id="cli-child", request_id="live", payload={{"text": "working"}})
-            if state != "queued":
-                rt.claim_session_input(db, epoch=epoch, session_id="cli-child")
-            if state == "unknown":
-                rt.begin_runtime_epoch(db, instance_id="restart")
+            import hermes_state_runtime as rt
+            epoch = rt.begin_runtime_epoch(db, instance_id="fixture")
+            if state.endswith("_worker"):
+                generation = db.get_session("cli-child")["runtime_generation"]
+                rt.register_worker_execution(db, epoch=epoch, execution_id="worker", session_id="cli-child", generation=generation, kind="compute", adoption_secret="test-secret")
+                if state != "registered_worker":
+                    db._execute_write(lambda c: c.execute("UPDATE worker_executions SET status=?", (state.removesuffix("_worker"),)))
+            else:
+                rt.admit_session_input(db, epoch=epoch, principal_id="human", session_id="cli-child", request_id="live", payload={{"text": "working"}})
+                if state != "queued":
+                    rt.claim_session_input(db, epoch=epoch, session_id="cli-child")
+                if state == "unknown":
+                    rt.begin_runtime_epoch(db, instance_id="restart")
     """)
     sessions = hermes_home / "sessions"
     sessions.mkdir(exist_ok=True)
@@ -293,6 +341,9 @@ def test_canonical_compression_targets_include_delegates_and_preserve_forks(herm
     assert _rows(other_profile, "SELECT id FROM sessions") == ["root"]
 
 
+# Before v0.23.3 only. On the storage interface the same receipt-backed lineage is the server's real
+# fixture in test_state_db_local_lineage.py; its seeding here calls the removed gateway lineage modules.
+@pytest.mark.skipif(NATIVE_STORE, reason="seeds through the gateway lineage modules the storage interface removed")
 @pytest.mark.parametrize("tip", [False, True])
 def test_receipt_backed_reset_conversation_deletes_from_either_end(hermes_home, tip) -> None:
     _agent(hermes_home, """
@@ -357,6 +408,11 @@ def test_runtime_delete_cleanup_failure_recovers_after_restart(hermes_home, fail
             Path.write_text = fail_manifest
         elif {failure!r} == "artifact":
             state_db._clean_artifacts = lambda *args, **kwargs: False
+        elif store:
+            import session_retention
+            def fail_media(*args, **kwargs):
+                raise OSError("injected media failure")
+            session_retention.collect_retired_media = fail_media
         else:
             import hermes_state_media
             def fail_media(db):
@@ -379,6 +435,9 @@ def test_runtime_delete_cleanup_failure_recovers_after_restart(hermes_home, fail
     assert list(sessions.iterdir()) == []
 
 
+# Before v0.23.3 only. The receipt compaction it reads back is the Agent's retirement, through modules the
+# storage interface removed; the delete's own refusal of live workers is test_live_ledger_obligations_refuse_the_entire_delete.
+@pytest.mark.skipif(NATIVE_STORE, reason="reads the Agent's worker receipts through modules the storage interface removed")
 def test_terminal_worker_receipts_keep_only_the_closing_result(hermes_home) -> None:
     _seed(hermes_home, "cli-a")
     _agent(hermes_home, """
