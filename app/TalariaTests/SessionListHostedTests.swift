@@ -1238,7 +1238,8 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertNil(HostedAccessibility.element(in: reopened, label: "Hermes is checking the response stream"), "Checking stream competed with Syncing messages")
         XCTAssertNil(HostedAccessibility.element(in: reopened, label: "Hermes is reconnecting the response stream"), "Reconnecting stream competed with Syncing messages")
 
-        fixture.releaseHeldLoads()
+        // Syncing shows when the reload starts; its request reaches the fixture later (TAL-987).
+        await releaseHeldRequest(of: fixture)
         let synced = await awaitNoElement(in: reopened) { $0.accessibilityLabel == "Syncing messages with the server" }
         XCTAssertTrue(synced, "Syncing messages stayed after the server answered")
     }
