@@ -21,28 +21,44 @@ test('chat switches keep title slots stable and retarget the painted selection w
       await link.click()
       await expect(page).toHaveURL(new RegExp(`/session/${id}$`))
     }
+    const selection = page.locator('[data-list-selection]')
+    // On a phone the drawer closes immediately, so its hidden highlight settles when reopened.
+    const desktop = info.project.name === 'desktop'
+    // Hold each selection move as it starts, named for the chat it travels to: a loaded runner finishes a running move before any later read.
+    if (desktop) await selection.evaluate((el) => {
+      const animate = el.animate.bind(el)
+      el.animate = (...args) => {
+        const animation = animate(...args)
+        animation.id = document.querySelector('#sessionList [aria-current="page"]')?.getAttribute('data-sid') ?? ''
+        animation.pause()
+        return animation
+      }
+    })
+    const moving = (id: string) => expect.poll(() => selection.evaluate((el, id) => el.getAnimations().some((a) => a.id === id), id)).toBe(true)
     await open(second)
+    if (desktop) await moving(second)
     await expect(page.locator('#messages')).toContainText('Done: plan the release.')
     expect((await title.boundingBox())!.width).toBeCloseTo(width, 0)
-    expect(await page.locator('[data-list-selection]').count()).toBe(1)
-    const before = await page.locator('[data-list-selection]').evaluate((el) => {
+    expect(await selection.count()).toBe(1)
+    const before = await selection.evaluate((el) => {
       const animation = el.getAnimations()[0]
       if (animation) { animation.pause(); animation.currentTime = 160 }
-      return { top: el.getBoundingClientRect().top, moving: !!animation }
+      return { top: el.getBoundingClientRect().top }
     })
-    // On a phone the drawer closes immediately, so its hidden highlight settles when reopened.
-    if (info.project.name === 'desktop') expect(before.moving).toBe(true)
     await open(third)
     await expect(page.locator('#messages')).toContainText('Done: fix the flaky upload test.')
     await expect(page.locator('#messages')).not.toContainText('Done: plan the release.')
     expect((await title.boundingBox())!.width).toBeCloseTo(width, 0)
-    if (info.project.name === 'desktop') {
-      const move = await page.locator('[data-list-selection]').evaluate((el) => {
-        const animation = el.getAnimations()[0]
+    if (desktop) {
+      await moving(third)
+      const move = await selection.evaluate((el, id) => {
+        const animation = el.getAnimations().find((a) => a.id === id)
         const target = document.querySelector('#sessionList [aria-current="page"]')!.getBoundingClientRect()
         const frame = (animation?.effect as KeyframeEffect | null)?.getKeyframes()[0]
+        Reflect.deleteProperty(el, 'animate')
+        animation?.play()
         return { delta: frame?.transform ? new DOMMatrix(String(frame.transform)).m42 : null, top: target.top }
-      })
+      }, third)
       expect(move.delta).not.toBeNull()
       expect(move.delta!).toBeCloseTo(before.top - move.top, 0)
     }
