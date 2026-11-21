@@ -192,6 +192,8 @@ def path_suites(path):
             ".agy/config.json", ".codex/environments/environment.toml", ".xcodebuildmcp/config.yaml", ".gitleaksignore"):
         return {"tooling"}
     if component == "scripts":
+        if local.startswith("phone-test-scenarios/"):
+            return {"tooling"}  # Phone test server scenarios; its test seeds the example (TAL-2622).
         return SCRIPTS.get(local, SUITES)
     if component == "app":
         if local == "ci/ui-rules.json":

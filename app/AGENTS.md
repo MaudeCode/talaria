@@ -94,9 +94,11 @@ Every exception requires a non-empty reason.
 - A UI change attaches the [screen gallery](docs/visual-references.md#screen-gallery) screenshots of each page it touches to the PR.
 - For an explicitly requested physical iPhone install, run
   `scripts/run-ios-device --no-launch` from `app/`.
-- A phone check that needs server state runs `scripts/phone-test-server start` from the repository root: a disposable
-  Talaria Web server from this commit on the Mac's Tailscale address. Hand its URL and password over with the DevApps
-  link, and run `scripts/phone-test-server stop <stateDir>` after the verdict.
+- A phone check that needs server state runs `scripts/phone-test-server start --scenario <file>` from the repository
+  root: a disposable Talaria Web server from this commit on the Mac's Tailscale address, seeded with the scenario's
+  projects, files and chats and checked against it. `scripts/phone-test-scenarios/example.json` shows every field:
+  scripted tool rows, Markdown replies, and chats left waiting for an approval or a clarification. Hand its URL and
+  password over with the DevApps link, and run `scripts/phone-test-server stop <stateDir>` after the verdict.
 - Report files changed, validation commands and results, and any unresolved risk.
   For docs-only changes, `git diff --check` is sufficient.
 - Propose an `AGENTS.md` edit when these instructions drift; do not silently work
