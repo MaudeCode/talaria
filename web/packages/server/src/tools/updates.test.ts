@@ -1478,6 +1478,21 @@ describe('Agent checkout updates', () => {
     expect(held).toBe(false)
   })
 
+  it('holds a test server close until the refresh check an apply owed has finished', async () => {
+    const server = await bootTestServer()
+    let open = (): void => undefined
+    const gate = new Promise<Dict>((resolve) => { open = () => { resolve({}) } })
+    vi.spyOn(server.deps.updates, 'check').mockReturnValue(gate)
+    await (server.deps.updates as unknown as { invalidate: (target: 'webui', applied: Dict) => Promise<void> }).invalidate('webui', { tag: 'web-v2.0.0' })
+    let closed = false
+    const closing = server.close().then(() => { closed = true })
+    await macrotask()
+    expect(closed).toBe(false)
+    open()
+    await closing
+    expect(closed).toBe(true)
+  })
+
   it.each([false, true])('keeps the runtime writer lease through dependency repair and verifies resume before restart, failure=%s', async (resumeFailure) => {
     const a = agentInstall(true)
     const sidecar = new FakeSidecar()

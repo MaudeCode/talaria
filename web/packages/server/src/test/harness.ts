@@ -171,6 +171,8 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
     }),
     close: async () => {
       await running.close()
+      // TAL-2601: an apply's owed refresh check still runs git in the test's checkouts; finish it before they are removed.
+      await deps.updates.settled()
       // A test that names its own state directory may boot it again, like a SQLite database inside it.
       if (postgresSchema && env.TALARIA_WEB_STATE_DIR === state) await dropTestSchema(env.TALARIA_STORAGE_URL ?? '', postgresSchema)
       rmSync(root, { recursive: true, force: true })

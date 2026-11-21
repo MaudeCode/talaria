@@ -235,6 +235,10 @@ def path_suites(path):
             return {"web_server", "web_frontend", "web_sidecar", "contracts"}
         if local.startswith("packages/server/src/test/fixtures/"):
             return {"web_server"} | ({"web_frontend"} if Path(local).name in E2E_SERVER_FIXTURES else set())
+        # Test support: the server's tests and the Playwright suite (through dist/test/) read it, and neither binary the
+        # contracts probe runs reaches it (test_server_binaries_skip_test_support).
+        if local.startswith("packages/server/src/test/"):
+            return {"web_server", "web_frontend"}
         if local.startswith("packages/server/"):
             return {"web_server", "web_frontend", "contracts"}
         # Only the contracts/server and frontend lint steps read the shared lint config.

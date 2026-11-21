@@ -76,6 +76,8 @@ class RoutingTests(unittest.TestCase):
             # Only the server's unit tests read most server fixtures; the Playwright suite reads the ones it names.
             (["web/packages/server/src/test/fixtures/gateway-owner-events.json"], {"web_server"}),
             (["web/packages/server/src/test/fixtures/compaction-carrier.json"], {"web_server", "web_frontend"}),
+            # The test harness is test support: the contracts probe runs a binary that never imports it (TAL-2601).
+            (["web/packages/server/src/test/harness.ts"], {"web_server", "web_frontend"}),
             (["web/packages/server/package.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/packages/server/tsconfig.build.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/sidecar/talaria_sidecar/x.py"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
@@ -224,6 +226,21 @@ class RoutingTests(unittest.TestCase):
         e2e = subprocess.check_output(["git", "ls-files", "-z", "web/packages/frontend/e2e"], cwd=root).decode().split("\0")
         read = {name for path in e2e if path for name in re.findall(r"server/src/test/fixtures/([\w.-]+\.json)", (root / path).read_text())}
         self.assertEqual(read, routing.E2E_SERVER_FIXTURES)
+
+    def test_server_binaries_skip_test_support(self):
+        src = SCRIPT.resolve().parent.parent / "web/packages/server/src"
+        seen, queue = set(), sorted((src / "bin").glob("talaria-web*.ts"))
+        queue = [path for path in queue if not path.name.endswith(".test.ts")]
+        while queue:
+            path = queue.pop()
+            if path in seen:
+                continue
+            seen.add(path)
+            for spec in re.findall(r"""\b(?:from|import)\s*\(?\s*['"](\.[^'"]+)['"]""", path.read_text()):
+                target = (path.parent / spec).resolve()
+                queue += [c for c in (target.with_suffix(".ts"), target.with_suffix(".tsx"), target / "index.ts") if c.is_file()][:1]
+        self.assertIn(src / "runtime.ts", seen)
+        self.assertEqual({str(path.relative_to(src)) for path in seen if path.is_relative_to(src / "test")}, set())
 
     def test_tracked_paths_have_explicit_routes(self):
         root = SCRIPT.resolve().parent.parent
