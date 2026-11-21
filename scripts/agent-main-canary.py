@@ -178,7 +178,7 @@ def outcome(receipt_path, sha):
     return True, None, receipt
 
 
-def summary(state, sha, passed, failure, receipt, failures, tail, range_text, run_url):
+def summary(state, sha, passed, failure, receipt, failures, tail, kept, range_text, run_url):
     tests = receipt.get("tests") or {}
     counts = ", ".join(f"{tests[key]} {key}" for key in ("passed", "failed", "skipped") if key in tests) or "none recorded"
     passing = state["lastPassing"]
@@ -193,7 +193,9 @@ def summary(state, sha, passed, failure, receipt, failures, tail, range_text, ru
         if failures:
             lines += ["", f"Failing tests ({min(len(failures), LISTED_TESTS)} of {len(failures)}):", ""]
             lines += [f"- `{line}`" for line in failures[:LISTED_TESTS]]
-        lines.append(f"\nThe receipt, JUnit report and checker log are this run's `agent-main-canary-diagnostics` artifact: {run_url}")
+        if kept:  # A failure before the sidecar suite leaves no JUnit report; one before the checker, no receipt.
+            names = ", ".join(kept[:-1]) + " and " + kept[-1] if len(kept) > 1 else kept[0]
+            lines.append(f"\nThis run's `agent-main-canary-diagnostics` artifact keeps the {names}: {run_url}")
     return "\n".join([*lines, "", "### Unreleased Agent changes", "", *range_text, ""])
 
 
@@ -236,8 +238,10 @@ def main():
             compare = (error.stderr or b"").decode(errors="replace").strip() or str(error)
     run_url = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY', '')}" \
               f"/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}"
-    text = summary(state, args.sha, passed, failure, receipt, failed_tests(args.receipt.with_suffix(".junit.xml")),
-                   log_tail(args.log),
+    junit = args.receipt.with_suffix(".junit.xml")
+    kept = [name for name, path in (("receipt", args.receipt), ("JUnit report", junit), ("checker log", args.log))
+            if path is not None and path.is_file()]
+    text = summary(state, args.sha, passed, failure, receipt, failed_tests(junit), log_tail(args.log), kept,
                    range_lines(previous, args.sha, compare), run_url)
     print(text)
     if args.summary:

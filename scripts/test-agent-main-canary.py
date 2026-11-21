@@ -135,7 +135,17 @@ class ReportTests(unittest.TestCase):
         self.assertIn("AssertionError: sync_session_start", output)
         self.assertNotIn("setup line 60\n", output)
         self.assertNotIn("reraised", output)
+        self.assertIn("artifact keeps the receipt, JUnit report and checker log:", output)
         self.assertIn("::error title=Agent main canary failed::", output)
+
+    def test_a_failure_before_the_suite_names_only_the_diagnostics_it_kept(self):
+        # The first scheduled run's shape: the Agent probe failed, so the sidecar suite never wrote a JUnit report.
+        with tempfile.TemporaryDirectory() as directory:
+            code, output, _ = self.report(directory, {"kind": "canary", "sourceRevision": NEW, "result": "failure",
+                                                      "failure": "probe exited 1", "diagnostics": "receipt.junit.xml"})
+        self.assertEqual(code, 1)
+        self.assertIn("artifact keeps the receipt and checker log:", output)
+        self.assertNotIn("JUnit", output)
 
     def test_a_commit_the_checker_never_reported_on_is_checked_again(self):
         # A setup step failed before the checker ran, or the receipt names another commit: fail, but write no state.

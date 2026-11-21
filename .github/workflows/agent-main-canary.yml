@@ -70,6 +70,8 @@ jobs:
       # No token: the checker clones the public Agent commit and runs it on disposable state.
       - name: Check the exact Agent main commit
         if: steps.plan.outputs.run == 'true'
+        # An explicit bash adds pipefail, so the checker's exit status, not tee's, decides this step.
+        shell: bash
         env:
           SHA: ${{ steps.plan.outputs.sha }}
           TALARIA_SIDECAR_WORKERS: '2'
