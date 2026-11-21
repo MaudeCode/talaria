@@ -1743,8 +1743,10 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       { role: 'user', content: '', timestamp: 101.2, _state_db_row_id: 21 },
       // A CLI prompt naming a file no earlier row shows is its own message.
       { role: 'user', content: 'from CLI\n\n[Attached files: /w/other.jpg]', timestamp: 104, _state_db_row_id: 22 },
+      // So is the same text naming a file whose path only starts with the earlier attachment's.
+      { role: 'user', content: 'look at this\n\n[Attached files: /w/shot.jpg.backup]', timestamp: 105, _state_db_row_id: 23 },
     ])
-    const expected = [...kept.map((m) => m.content), 'from CLI\n\n[Attached files: /w/other.jpg]']
+    const expected = [...kept.map((m) => m.content), 'from CLI\n\n[Attached files: /w/other.jpg]', 'look at this\n\n[Attached files: /w/shot.jpg.backup]']
     s.deps.sessionStore.sessions.delete(sid)
     expect(await served(sid)).toEqual(expected)
     await s.deps.sessionStore.save((await s.deps.sessionStore.get(sid)))

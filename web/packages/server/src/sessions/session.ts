@@ -25,8 +25,8 @@ export type ToolCall = Record<string, unknown>
  */
 function withoutCompactionCopies(messages: Message[]): Message[] {
   const seen = new Map<string, string>()
-  // A user row that showed attachments, by its typed text: the escaped paths its attached-files line names.
-  const attached = new Map<string, string[]>()
+  // A user row that showed attachments, by its typed text: the attached-files lists the prompt builder wrote for it.
+  const attached = new Map<string, Set<string>>()
   // A tool result is its call; any other row is the same message only with the same text (a compaction re-insert tags the
   // prompt with the workspace), so an edit that kept its timestamp stays.
   const sameAs = (m: Message): string => (m.tool_call_id ? '' : stripWorkspacePrefix(typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? null)))
@@ -34,7 +34,7 @@ function withoutCompactionCopies(messages: Message[]): Message[] {
   const isAttachedCopy = (m: Message): boolean => {
     const text = typeof m.content === 'string' ? m.content : ''
     const named = attachedFilesNamed(text)
-    return named !== null && (attached.get(userPromptText(text)) ?? []).some((path) => named.includes(escapeWorkspacePrefixPath(path)))
+    return named !== null && (attached.get(userPromptText(text))?.has(named) ?? false)
   }
   return messages.filter((m) => {
     if (!m || typeof m !== 'object') return true
@@ -45,7 +45,7 @@ function withoutCompactionCopies(messages: Message[]): Message[] {
     }
     if (m.role === 'user' && attachmentPaths(m).length) {
       const typed = userPromptText(typeof m.content === 'string' ? m.content : '')
-      attached.set(typed, [...(attached.get(typed) ?? []), ...attachmentPaths(m)])
+      attached.set(typed, (attached.get(typed) ?? new Set()).add(attachmentPaths(m).map(escapeWorkspacePrefixPath).join(', ')))
     }
     const key = m.timestamp !== null && m.timestamp !== undefined ? JSON.stringify([m.role, m.timestamp, m.tool_call_id ?? null]) : null
     if (key === null) return true
