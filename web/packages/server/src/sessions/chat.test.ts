@@ -494,6 +494,46 @@ describe('chat turns through the sidecar', () => {
     expect(marks).toEqual([true, false])
   })
 
+  it('sends a chat back its own saved terminal directory until its workspace moves or it is cleared (TAL-2303)', async () => {
+    const sid = await newSession(s)
+    const other = await newSession(s)
+    const sent: [string, unknown][] = []
+    let reported: string | null = null
+    sidecar.respond('chat.start', (params) => {
+      sent.push([str(params.session_id), params.terminal_cwd])
+      // The Agent's record after the turn, whatever its outcome.
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], { status: sent.length === 2 ? 'cancelled' : 'completed', terminal_cwd: reported })
+    })
+    const turn = async (session: string): Promise<void> => {
+      const res = await post(s, '/api/chat/start', { session_id: session, message: 'go' })
+      expect(res.status).toBe(200)
+      await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}`, (f) => f.event === 'done' || f.event === 'cancel')
+    }
+    reported = '/work/one'
+    await turn(sid)
+    reported = '/work/two'
+    await turn(sid)
+    reported = '/work/elsewhere'
+    await turn(other)
+    // The restarted Agent only has what the server saved: the cancelled turn's directory, after a reload from disk too.
+    s.deps.sessionStore.sessions.delete(sid)
+    reported = '/work/two'
+    await turn(sid)
+    const session = await s.deps.sessionStore.get(sid)
+    const moved = join(session.workspace, 'terminal-cwd-moved')
+    mkdirSync(moved, { recursive: true })
+    try {
+      session.workspace = moved
+      await s.deps.sessionStore.save(session)
+      await turn(sid)
+      expect((await post(s, '/api/session/clear', { session_id: sid })).status).toBe(200)
+      await turn(sid)
+    } finally {
+      rmSync(moved, { recursive: true })
+    }
+    expect(sent).toEqual([[sid, null], [sid, '/work/one'], [other, null], [sid, '/work/two'], [sid, null], [sid, null]])
+  })
+
   it('persists a native plan gauge through done and reload, then clears an omitted complete snapshot (TAL-1508)', async () => {
     const sid = await newSession(s)
     const gauge = { id: 'day', label: 'Today', used_bp: 8000, resets_at_ms: null }

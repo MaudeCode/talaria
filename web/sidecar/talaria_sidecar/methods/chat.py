@@ -847,6 +847,28 @@ def _turn_identity(session_id: str, workspace: str):
                 log.debug("per-turn identity reset failed", exc_info=True)
 
 
+def _seed_terminal_cwd(session_id: str, params: dict) -> Callable[[], str | None] | None:
+    """TAL-2303: the chat's terminal directory across sidecar restarts. The Agent's terminal tool keeps each session's
+    ``cd`` in a process-local record; the server saves what the turn reports and sends it back. The server's value is
+    the chat's directory: a missing or non-directory one clears the record, so the terminal starts where it is
+    configured. Local terminals only (``workspace_local``): a remote directory cannot be checked from the host. An older
+    server that sends no ``terminal_cwd`` keeps the process-local behavior. Returns the record's reader for the result."""
+    if params.get("workspace_local") is not True:
+        return None
+    try:
+        from tools.terminal_tool import clear_session_cwd, get_session_cwd, record_session_cwd
+    except Exception:  # noqa: BLE001
+        log.debug("terminal cwd record unavailable", exc_info=True)
+        return None
+    if "terminal_cwd" in params:
+        saved = params.get("terminal_cwd")
+        if isinstance(saved, str) and os.path.isabs(saved) and os.path.isdir(saved):
+            record_session_cwd(session_id, saved)
+        else:
+            clear_session_cwd(session_id)
+    return lambda: get_session_cwd(session_id)
+
+
 def _turn_toolsets(toolsets, cfg: dict | None = None) -> list[str]:
     """The session's override as sent, else the profile's configured toolsets. ``None`` would hand the Agent every
     registered toolset."""
@@ -2776,7 +2798,9 @@ def register(registry) -> None:
             raise InvalidParams("workspace is required")
         with agent_scope(profile_home_param(params)):
             with _turn_identity(session_id, workspace):
-                return start(ctx, params)
+                terminal_cwd = _seed_terminal_cwd(session_id, params)
+                result = start(ctx, params)
+                return {**result, "terminal_cwd": terminal_cwd()} if terminal_cwd else result
 
     @registry.method("chat.compress")
     def compress_(ctx: CallContext, params: dict) -> dict:

@@ -644,6 +644,8 @@ export const ChatStartResultSchema = z.object({
    * context in state.db and kept the ask for display. Absent otherwise, and on an Agent without that retention (before v0.23.1).
    */
   failure_reason: z.string().optional(), content_refused_notice: z.string().optional(),
+  /** TAL-2303: where the chat's local terminal is after the turn (the Agent's per-session `cd` record), for the server to save and send back as `chat.start`'s `terminal_cwd`; null without one. Absent for a remote terminal. */
+  terminal_cwd: z.string().nullable().optional(),
 })
 const Text = z.object({ text: z.string() }).catchall(Json)
 /**
@@ -713,6 +715,8 @@ export const CHAT_METHODS = {
       skill_secret: z.boolean().optional(),
       /** TAL-903: `workspace` is a host path (the profile's terminal runs locally), so the Agent anchors AGENTS.md discovery and its memory provider there. A remote backend's target-side path is never read on the host. */
       workspace_local: z.boolean().optional(),
+      /** TAL-2303: the local terminal directory the chat's last turn reported in this workspace, which the Agent's record takes; null (a new chat, a workspace move) or a directory that is gone starts the terminal where it is configured. */
+      terminal_cwd: z.string().nullable().optional(),
     }),
     result: ChatStartResultSchema,
     stream: ChatStreamSchema,

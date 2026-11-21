@@ -1,4 +1,4 @@
-import { applyPlanGauge } from './session.js'
+import { applyPlanGauge, savedTerminalCwd, TERMINAL_CWD_KEY } from './session.js'
 /**
  * One agent turn: admission, pending-state persistence, the sidecar
  * `chat.start` call, live frame relay into the journal and stream channel,
@@ -1094,8 +1094,9 @@ export class TurnRunner {
       closePreparation?.()
       timing?.emit('dispatch')
       agentDispatched = true
+      const where = this.agentWorkspace(s, opts.workspace)
       const result = await sidecar.call('chat.start', {
-        profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, ...this.agentWorkspace(s, opts.workspace), model: opts.model ?? '', model_provider: opts.modelProvider,
+        profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, ...where, ...(where.workspace_local ? { terminal_cwd: savedTerminalCwd(s, opts.workspace) } : {}), model: opts.model ?? '', model_provider: opts.modelProvider,
         user_message: userMessage, ...turnContext, conversation_history: conversationHistory, enabled_toolsets: deps.toolsetsFor(s), ...(msgText ? { persist_user_message: msgText } : {}), ...(opts.ephemeral ? { ephemeral: true } : {}),
         ...(opts.voiceTurn ? { voice_turn: true } : {}),
         ...(opts.connectCard ? { connect_card: true } : {}),
@@ -1345,6 +1346,7 @@ export class TurnRunner {
       await streamWrites
       if (streamWriteError !== undefined) throw streamWriteError
       settledAt.value = true
+      if (!opts.ephemeral) await this.saveTerminalCwd(sessionId, streamId, opts.workspace, result.terminal_cwd)
       // TAL-1690: the sidecar does not repeat the leading rows the Agent handed back unchanged.
       if (result.history_prefix_len !== undefined) result.messages = [...conversationHistory.slice(0, result.history_prefix_len), ...result.messages]
       // TAL-545: every transcript the Agent hands back settles with the history's images, not the request's projection.
@@ -2117,6 +2119,24 @@ export class TurnRunner {
    */
   private agentWorkspace(s: Session, workspace: string): { workspace: string; workspace_local: boolean } {
     return { workspace, workspace_local: this.deps.workspaces.profileSupportsLocalIo(s.profile) }
+  }
+
+  /**
+   * TAL-2303: saves where the turn left the chat's local terminal, against the workspace it ran in, whatever the turn's
+   * outcome, while the turn still owns the session; the next `chat.start` sends it back. Only a change writes, and a
+   * failed write never fails the turn.
+   */
+  private async saveTerminalCwd(sessionId: string, streamId: string, workspace: string, cwd: string | null | undefined): Promise<void> {
+    if (cwd === undefined || this.registry.writebackOwners.get(sessionId) !== streamId) return
+    try {
+      const s = await this.deps.store.get(sessionId)
+      if (savedTerminalCwd(s, workspace) === cwd) return
+      if (cwd === null) Reflect.deleteProperty(s.extra, TERMINAL_CWD_KEY)
+      else s.extra[TERMINAL_CWD_KEY] = { cwd, workspace }
+      await this.deps.store.save(s, { touchUpdatedAt: false })
+    } catch (error) {
+      this.deps.log(`[webui] terminal directory save failed for ${sessionId}: ${String(error)}`)
+    }
   }
 
   /**

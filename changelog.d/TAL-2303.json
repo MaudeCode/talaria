@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A Talaria Web chat's terminal stays in the directory its last command left it in after the Web server or its Agent sidecar restarts; a new chat, a cleared chat or a workspace change starts where the terminal is configured.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

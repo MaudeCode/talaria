@@ -839,6 +839,13 @@
         ""
       ]
     },
+    "tests/test_chat_terminal_cwd.py::test_a_chats_terminal_directory_survives_a_restart_and_stays_its_own": {
+      "layer": "compatibility",
+      "reason": "The release's terminal tool keeps a session's cd in a process-local record; only a real sidecar restart empties it, and only its real terminal calls show the directory a command ran in. Real sidecar processes and stub model.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_chat_workspace_hints.py::test_a_turn_loads_the_local_workspace_subdirectory_hint_and_a_workspace_change_rebuilds_the_agent": {
       "layer": "compatibility",
       "reason": "The release's subdirectory-hint discovery must load AGENTS.md under a local workspace passed as AIAgent(cwd=), skip it for a remote workspace, and a workspace change must rebuild the agent. Real sidecar process and stub model.",
