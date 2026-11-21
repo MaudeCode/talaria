@@ -110,6 +110,9 @@ SCRIPTS = {
     "test-ci-concurrency.py": {"tooling"},
     "install-git-hooks": {"tooling"},
     "test-pre-push-hook.py": {"tooling"},
+    # The disposable phone test server (TAL-2621).
+    "phone-test-server": {"tooling"},
+    "test-phone-test-server.py": {"tooling"},
 }
 
 

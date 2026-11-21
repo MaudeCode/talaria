@@ -29,6 +29,7 @@ case "$component" in
   tooling)
     python3 scripts/test-changed-components.py
     python3 scripts/test-pre-push-hook.py
+    python3 scripts/test-phone-test-server.py
     python3 scripts/test-critical-markdown-check.py
     python3 scripts/test-check-committed-images.py
     python3 scripts/check-committed-images.py

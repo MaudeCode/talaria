@@ -64,11 +64,14 @@ jobs:
           tar -xzf "${archive}" actionlint
           echo "$PWD" >> "$GITHUB_PATH"
 
-      - name: Set up Node for the simulator protocol tests
+      # The phone test server's test also installs and builds the Web contracts and server.
+      - name: Set up Node for the simulator protocol and phone test server tests
         if: inputs.full
         uses: actions/setup-node@v7
         with:
           node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
 
       - name: Test repository tooling
         if: inputs.full

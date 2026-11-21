@@ -54,6 +54,8 @@ class RoutingTests(unittest.TestCase):
             (["app/ci/ui-rules-baseline.json"], {"app_tooling", "tooling"}),
             (["web/packages/frontend/scripts/ui-rules.json"], {"web_frontend"}),
             ([".githooks/pre-push", "scripts/install-git-hooks", "scripts/test-pre-push-hook.py"], {"tooling"}),
+            # The phone test server and its test run in the tooling job (TAL-2621).
+            (["scripts/phone-test-server", "scripts/test-phone-test-server.py"], {"tooling"}),
             ([".github/workflows/relay-bridge-image.yml"], {"relay", "tooling"}),
             (["scripts/generate-brand-icons.py"], {"web_frontend", "tooling"}),
             (["app/changelog.d/TAL-123.json"], set()),
