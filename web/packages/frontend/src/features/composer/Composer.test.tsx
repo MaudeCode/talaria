@@ -983,10 +983,11 @@ describe('Composer', () => {
     await userEvent.type(box, '/m')
     await screen.findByRole('option', { name: '/model' })
     await settled()
-    // `/m`'s rows stay on screen, marked busy, while the newer prefixes load; no key or click picks from them.
+    // `/m`'s rows stay on screen, marked busy, while the newer prefixes load; no key, hover or click picks from them.
     await userEvent.type(box, 'od')
     expect(screen.getByRole('listbox')).toHaveAttribute('aria-busy', 'true')
     for (const key of ['ArrowDown', 'Tab']) fireEvent.keyDown(box, { key })
+    fireEvent.mouseEnter(screen.getByRole('option', { name: '/mod' }))
     fireEvent.mouseDown(screen.getByRole('option', { name: '/model' }))
     expect(box).toHaveValue('/mod')
     // `/mo`'s answer arriving after `/mod`'s leaves the newer rows in place.
