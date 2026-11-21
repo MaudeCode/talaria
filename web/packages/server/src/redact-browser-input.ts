@@ -20,14 +20,16 @@ const VALUE_ASSIGN = String.raw`(?:\.\s*value|\[\s*['"\`]value['"\`]\s*\])\s*=(?
 /** Any way a snippet types into a page. */
 const TYPING_RE = /\b(?:fill_input|type_text|value|cdp)\b|insertText/
 const NAME_RE = /[\p{L}_][\p{L}\p{N}_]*/gu
-const NUMBER_RE = /(?<![\p{L}\p{N}_.])\d[\p{L}\p{N}_.]*/gu
+/** A number, a leading-dot float (`.5`) included. */
+const NUMBER_RE = /(?<![\p{L}\p{N}_.])\d[\p{L}\p{N}_.]*|(?<![\p{L}\p{N}_)\].])\.\d[\p{L}\p{N}_.]*/gu
 const TYPING_CALL_RE = /(?<![\p{L}\p{N}_])(fill_input|type_text)(?![\p{L}\p{N}_])(\s*\()?/gu
 const STRING_PREFIX_RE = /[fFrRbBuU]{1,2}(?=['"])/y
 /** A keyword argument's `=`, right after its name. */
 const KEYWORD_RE = /\s*=(?!=)/y
 /** A function or class the snippet defines: its name, up to its parameters (or a class's bases or colon). */
 const DEF_RE = /^\s*(?:async\s+)?(?:def|class)\s+([\p{L}_][\p{L}\p{N}_]*)\s*[(:]/u
-const IMPORT_RE = /^\s*(?:from|import)(?![\p{L}\p{N}_])/u
+/** An import that keeps the helper's own name: `as` gives it one this scan cannot follow. */
+const IMPORT_RE = /^\s*(?:from|import)(?![\p{L}\p{N}_])(?![^]*(?<![\p{L}\p{N}_])as(?![\p{L}\p{N}_]))/u
 /** Words a typed expression uses that bind nothing. */
 const KEYWORDS = new Set(['if', 'else', 'and', 'or', 'not', 'in', 'is', 'for', 'await', 'None', 'True', 'False'])
 /** ponytail: past this many followed names the snippet is withheld; raise it if real snippets hit it. */
