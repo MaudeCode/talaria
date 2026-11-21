@@ -1711,11 +1711,14 @@ function outsideInlineCode(line: string): string[] {
   return segments
 }
 
-/** The first http(s) URL in prose, without trailing punctuation or a closing bracket it did not open. */
+/** A Markdown link's destination, kept whole (one level of parentheses, an optional title), or a bare URL in prose. */
+const WEB_URL = /\]\((https?:\/\/[^\s()]*(?:\([^\s()]*\)[^\s()]*)*)(?:\s+"[^"]*")?\)|https?:\/\/[^\s<>"`]+/gi
+
+/** The first http(s) URL: a link destination as written, or a bare URL without trailing punctuation or an unopened bracket. */
 function firstWebUrl(segment: string): string | undefined {
-  for (const [match] of segment.matchAll(/https?:\/\/[^\s<>"`]+/gi)) {
-    let url = match
-    for (;;) {
+  for (const [match, destination] of segment.matchAll(WEB_URL)) {
+    let url = destination ?? match
+    while (!destination) {
       const last = url.at(-1) ?? ''
       const opener = last === ')' ? '(' : last === ']' ? '[' : null
       if (!(/[.,;:!?'*_~]/.test(last) || (opener && url.split(opener).length < url.split(last).length))) break
