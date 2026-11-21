@@ -40,19 +40,6 @@
     ],
     "queued_input_count": 1
   },
-  "batch": {
-    "state": "incompatible",
-    "reason": "native_clarify_batch_unavailable",
-    "restarting": false,
-    "can_submit": false,
-    "can_interrupt": false,
-    "can_attach": false,
-    "revision": null,
-    "execution_generation": null,
-    "active_admission": null,
-    "admissions": [],
-    "queued_input_count": 0
-  },
   "served": {
     "state": "incompatible",
     "reason": "served_profile_sessions_unavailable",

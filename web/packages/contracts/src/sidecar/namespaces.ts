@@ -210,12 +210,12 @@ export const STATE_DB_METHODS = {
   /** TAL-1821: every continuing session in the profile rebuilds its stored system prompt once, on its next turn. `ok: false` without a state.db or on an Agent before v0.22.6. */
   'state_db.request_prompt_refresh': { params: ProfileHomeParams, result: Ok },
   /**
-   * TAL-792: `include_compression_lineage` also removes the session's compression continuations, resolved and removed in the
-   * same transaction (tip first). `refused` when another Agent process holds a live turn lease or compression lock on any
-   * row the delete would remove, or the Agent lacks retirement APIs for retained canonical history; nothing is removed. `deleted_ids` is the transaction's committed target set,
-   * including continuations/delegates; it remains present when only post-commit artifact cleanup failed.
+   * TAL-792: also removes the session's compression continuations, resolved and removed in the same transaction (tip first).
+   * `refused` when another Agent process holds a live turn lease or compression lock on any row the delete would remove;
+   * nothing is removed. `deleted_ids` is the transaction's committed target set, including continuations/delegates; it
+   * remains present when only post-commit artifact cleanup failed.
    */
-  'state_db.delete_cli_session': { params: Session.extend({ include_compression_lineage: z.boolean().optional() }), result: Ok.extend({ refused: SessionDeleteRefusedSchema.optional(), deleted_ids: z.array(z.string().min(1)).optional() }) },
+  'state_db.delete_cli_session': { params: Session, result: Ok.extend({ refused: SessionDeleteRefusedSchema.optional(), deleted_ids: z.array(z.string().min(1)).optional() }) },
   /** TAL-258: append one row through the Agent's `SessionDB.append_message` (bumps `message_count`); `ok` is false without a state.db. */
   'state_db.append_message': { params: Session.extend({ role: z.string().min(1), content: z.string(), tool_name: z.string().nullable().optional(), timestamp: z.number().nullable().optional() }), result: Ok },
   /**
@@ -265,7 +265,7 @@ export const SKILLS_METHODS = {
   'skills.replay_case': { params: SkillReplayCaseParamsSchema, result: SkillReplayCaseResultSchema },
   'skills.list': { params: ProfileHomeParams.extend({ category: z.string().nullable().optional() }), result: z.object({ success: z.boolean().optional(), skills: z.array(SkillRowSchema), categories: z.array(z.string()), count: z.number().int(), message: z.string().optional() }) },
   'skills.view': { params: ProfileHomeParams.extend({ name: z.string().min(1) }), result: SkillViewSchema },
-  'skills.set_locked': { params: ProfileHomeParams.extend({ name: z.string().min(1), locked: z.boolean() }), result: z.object({ status: z.enum(['ok', 'unavailable', 'not_found', 'unreadable', 'failed']) }) },
+  'skills.set_locked': { params: ProfileHomeParams.extend({ name: z.string().min(1), locked: z.boolean() }), result: z.object({ status: z.enum(['ok', 'not_found', 'unreadable', 'failed']) }) },
   'skills.find': { params: ProfileHomeParams.extend({ name: z.string().min(1) }), result: z.object({ found: z.boolean(), skill_dir: z.string().nullable(), skill_md: z.string().nullable(), load_name: z.string().optional(), declared_name: z.string().optional(), sibling_load_names: z.array(z.string()).optional() }) },
 } as const
 
@@ -364,8 +364,8 @@ export const CronUsageSchema = z.object({ model: z.string().optional(), provider
 export const CRON_METHODS = {
   'cron.blueprints': { params: ProfileHomeParams, result: CronBlueprintsSchema },
   'cron.blueprint_fill': { params: CronBlueprintFillInputSchema.extend({ profile_home: z.string().optional() }), result: CronBlueprintFillSchema },
-  /** `probe_store` adds the store's write probe (TAL-810): null when writes land or the Agent predates the probe. */
-  'cron.list': { params: ProfileHomeParams.extend({ probe_store: z.boolean().optional() }), result: z.object({ jobs: z.array(CronJobSchema), store_health: z.object({ store: z.string(), error: z.string(), since: z.string(), fix: z.string() }).nullable().optional(), schedule_policy: z.boolean().optional() }) },
+  /** `probe_store` adds the store's write probe (TAL-810): null when writes land. */
+  'cron.list': { params: ProfileHomeParams.extend({ probe_store: z.boolean().optional() }), result: z.object({ jobs: z.array(CronJobSchema), store_health: z.object({ store: z.string(), error: z.string(), since: z.string(), fix: z.string() }).nullable().optional() }) },
   'cron.get': { params: CronJob, result: z.object({ job: CronJobSchema.nullable() }) },
   'cron.create': { params: ProfileHomeParams.extend({ job: Loose, execution_home: z.string().nullable().optional() }), result: JobEnvelope },
   'cron.update': { params: CronJob.extend({ updates: Loose }), result: JobEnvelope },
@@ -373,7 +373,7 @@ export const CRON_METHODS = {
   // Python answered pause/resume with the raw `pause_job`/`resume_job` record (no API decoration).
   'cron.pause': { params: CronJob.extend({ reason: z.string().nullable().optional() }), result: z.object({ job: z.object({ id: z.string() }).catchall(Json) }) },
   'cron.resume': { params: CronJob, result: z.object({ job: z.object({ id: z.string() }).catchall(Json) }) },
-  // TAL-1819: asks the job's live run to stop; `not_running` when nothing is in flight. Refused with `cron_cancel_unsupported` on an Agent without the API.
+  // TAL-1819: asks the job's live run to stop; `not_running` when nothing is in flight.
   'cron.cancel': { params: CronJob.extend({ reason: z.string().nullable().optional() }), result: z.object({ ok: z.literal(true), job_id: z.string(), status: z.enum(['stopping', 'not_running']) }) },
   'cron.run': { params: CronJob.extend({ execution_home: z.string().nullable().optional() }), result: z.union([
     z.object({ job_id: z.string(), status: z.literal('already_running'), elapsed: z.number() }),

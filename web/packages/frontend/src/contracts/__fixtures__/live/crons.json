@@ -4,7 +4,6 @@
     "all_profiles": false,
     "jobs": [],
     "other_profile_count": 0,
-    "schedule_policy_available": true,
     "unwritable_stores": []
   },
   "method": "GET",

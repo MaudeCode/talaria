@@ -42,9 +42,8 @@ def _rows(home, sql: str) -> list:
         return [row[0] for row in db.execute(sql).fetchall()]
 
 
-def _delete(proc: SidecarProcess, home, session_id: str, *, lineage: bool = False) -> dict:
-    params = {"profile_home": str(home), "session_id": session_id, **({"include_compression_lineage": True} if lineage else {})}
-    result = proc.result("state_db.delete_cli_session", params)
+def _delete(proc: SidecarProcess, home, session_id: str) -> dict:
+    result = proc.result("state_db.delete_cli_session", {"profile_home": str(home), "session_id": session_id})
     assert_matches("state_db.delete_cli_session", result)
     return {key: value for key, value in result.items() if key != "deleted_ids"}
 
@@ -105,11 +104,11 @@ def test_the_lineage_is_resolved_and_guarded_inside_the_delete_transaction(herme
     """)
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-root", lineage=True) == {"ok": False, "refused": "active_turn"}
+        assert _delete(proc, hermes_home, "cli-root") == {"ok": False, "refused": "active_turn"}
         assert sorted(_rows(hermes_home, "SELECT id FROM sessions")) == ["cli-root", "cli-tip"]
         with closing(sqlite3.connect(hermes_home / "state.db")) as db, db:
             db.execute("UPDATE compression_locks SET expires_at = 1")
-        assert _delete(proc, hermes_home, "cli-root", lineage=True) == {"ok": True}
+        assert _delete(proc, hermes_home, "cli-root") == {"ok": True}
     finally:
         proc.close()
     assert _rows(hermes_home, "SELECT id FROM sessions") == []
@@ -127,7 +126,7 @@ def test_the_delete_removes_every_segment_of_a_long_compression_lineage(hermes_h
     assert len(_rows(hermes_home, "SELECT id FROM sessions")) == 30
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-000", lineage=True) == {"ok": True}
+        assert _delete(proc, hermes_home, "cli-000") == {"ok": True}
     finally:
         proc.close()
     assert _rows(hermes_home, "SELECT id FROM sessions") == []
@@ -250,7 +249,7 @@ def test_live_ledger_obligations_refuse_the_entire_delete(hermes_home, state) ->
     (sessions / "session_cli-a.json").write_text("keep", encoding="utf-8")
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-a", lineage=True) == {"ok": False, "refused": "active_turn"}
+        assert _delete(proc, hermes_home, "cli-a") == {"ok": False, "refused": "active_turn"}
     finally:
         proc.close()
     assert sorted(_rows(hermes_home, "SELECT id FROM sessions")) == ["cli-a", "cli-child"]
@@ -285,7 +284,7 @@ def test_canonical_compression_targets_include_delegates_and_preserve_forks(herm
         (sessions / f"session_{sid}.json").write_text(sid, encoding="utf-8")
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, target, lineage=True) == {"ok": True}
+        assert _delete(proc, hermes_home, target) == {"ok": True}
     finally:
         proc.close()
     assert sorted(_rows(hermes_home, "SELECT id FROM sessions")) == ["branch", "reset-fork"]
@@ -328,7 +327,7 @@ def test_receipt_backed_reset_conversation_deletes_from_either_end(hermes_home, 
         (sessions / f"session_{sid}.json").write_text(sid, encoding="utf-8")
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, target, lineage=True) == {"ok": True}
+        assert _delete(proc, hermes_home, target) == {"ok": True}
     finally:
         proc.close()
     assert _rows(hermes_home, "SELECT id FROM sessions") == []
@@ -444,7 +443,7 @@ def register(ctx):
     """)
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, profile, "cli-root", lineage=True) == {"ok": True}
+        assert _delete(proc, profile, "cli-root") == {"ok": True}
     finally:
         proc.close()
     assert _rows(profile, "SELECT id FROM sessions") == []

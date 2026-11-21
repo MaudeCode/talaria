@@ -659,22 +659,17 @@ their existing arguments.
 
 ## Session deletion
 
-`state_db.delete_cli_session` uses the installed Agent's canonical deletion transaction
-when runtime-ledger retirement is available. The Agent resolves compression segments
-in both directions, receipt-backed local resets, and owned delegates; independent
-branches and reset forks survive. Queued, executing or unknown ledger work and live
-turn/compression guards refuse the whole operation with `refused: active_turn`.
-Terminal admission and worker receipts retire with the session, retaining retry
-evidence without transcript copies. The Agent's tombstones prevent late accounting
-from recreating deleted sessions. Older supported Agents retain the guarded legacy
-deletion path for fresh legacy sessions. If their deletion target retains canonical
-runtime rows or receipts, they return `refused: runtime_history_unsupported` before
-any Agent rows or transcript artifacts are removed. The HTTP server returns 409
-with recovery wording before revoking shares, removing Web metadata/attachments or
-journals, evicting runtimes, closing terminals, or clearing relay completions.
-Recovery requires an Agent capable of retiring that history, or an explicitly
-chosen pre-upgrade backup. No ledger/trigger edits or partial reset-tip deletion
-are used to bypass retirement. After the canonical transaction commits, Agents that
+`state_db.delete_cli_session` uses the installed Agent's canonical deletion transaction.
+The Agent resolves compression segments in both directions, receipt-backed local
+resets, and owned delegates; independent branches and reset forks survive. Queued,
+executing or unknown ledger work and live turn/compression guards refuse the whole
+operation with `refused: active_turn` before any Agent rows or transcript artifacts
+are removed. The HTTP server then returns 409 before revoking shares, removing Web
+metadata/attachments or journals, evicting runtimes, closing terminals, or clearing
+relay completions. Terminal admission and worker receipts retire with the session,
+retaining retry evidence without transcript copies. The Agent's tombstones prevent
+late accounting from recreating deleted sessions. No ledger/trigger edits or partial
+reset-tip deletion are used to bypass retirement. After the canonical transaction commits, Agents that
 provide `hermes_state_common.emit_session_deleted` (v0.22.3+) fire the profile's
 `on_session_delete` plugin hook once with the requested ID, `reason: "delete"` and
 every deleted ID; the hook is fail-open and never fails the delete.

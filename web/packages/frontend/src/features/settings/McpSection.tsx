@@ -33,7 +33,6 @@ const HEALTH: Record<string, { label: () => string; state: DotState }> = {
 
 type McpEvents = z.infer<typeof McpEventsSchema>
 const EVENT_STATE: Record<McpEvents['state'], { label: () => string; state: DotState }> = {
-  unsupported: { label: m.mcp_events_state_unsupported, state: 'idle' },
   off: { label: m.mcp_events_state_off, state: 'idle' },
   needs_public_url: { label: m.mcp_events_state_needs_public_url, state: 'warning' },
   invalid_public_url: { label: m.mcp_events_state_invalid_public_url, state: 'warning' },

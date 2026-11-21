@@ -2050,12 +2050,12 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "owner-retried-\(name)")
     }
 
-    /// TAL-1043: an owner the App cannot reattach keeps the chat read-only with the server's reason.
-    func testOwnerChatTheAppCannotReattachSaysWhy() async throws {
-        let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerChatBatchArgument])
-        _ = try await requireElement(in: window, label: "Continue this chat in its native CLI.")
+    /// TAL-1043: an owner the App cannot write to keeps the chat read-only with the server's reason.
+    func testAReadOnlyOwnerChatSaysWhy() async throws {
+        let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerChatServedArgument])
+        _ = try await requireElement(in: window, label: "This gateway's chats are read-only here.")
         settle(0.3)
-        attachHostedScreenshot(window, name: "owner-batch-phone")
+        attachHostedScreenshot(window, name: "owner-served-phone")
     }
 
     /// TAL-1043: an owner's approval offers only the choices its owner accepts, and no approval bypass.

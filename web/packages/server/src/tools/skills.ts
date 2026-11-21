@@ -217,7 +217,6 @@ export class SkillsService {
     switch (status) {
       case 'ok': return { ok: true, name, locked }
       case 'not_found': throw new HttpFailure(404, `Skill '${name}' not found`)
-      case 'unavailable': throw new HttpFailure(409, 'This Agent version cannot lock skills')
       case 'unreadable': throw new HttpFailure(409, 'skills/.usage.json could not be read; repair it before changing a lock')
       case 'failed': throw new HttpFailure(409, 'skills/.usage.json could not be written')
     }

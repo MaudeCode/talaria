@@ -47,9 +47,9 @@ it('shows the lock at once, then rolls it back and reports a refusal', async () 
   await userEvent.click(lock)
   expect(lock).toHaveAttribute('aria-pressed', 'true')
   expect(api.lockSkill).toHaveBeenCalledWith('demo', true)
-  await act(async () => { refuse(new ApiError({ kind: 'http', status: 409, path: '/api/skills/lock', message: 'This Agent version cannot lock skills' })); await Promise.resolve() })
+  await act(async () => { refuse(new ApiError({ kind: 'http', status: 409, path: '/api/skills/lock', message: 'skills/.usage.json could not be written' })); await Promise.resolve() })
   await vi.waitFor(() => expect(lock).toHaveAttribute('aria-pressed', 'false'))
-  expect(showToast).toHaveBeenCalledWith('This Agent version cannot lock skills', 4000, 'error')
+  expect(showToast).toHaveBeenCalledWith('skills/.usage.json could not be written', 4000, 'error')
 })
 
 it('unlocks a locked skill from its row menu, the same action as the row control', async () => {

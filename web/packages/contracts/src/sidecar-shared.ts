@@ -86,8 +86,8 @@ export const KanbanInspectionSnapshotSchema = z.object({
   nodes: z.array(KanbanInspectionNodeSchema).max(500),
   edges: z.array(KanbanInspectionEdgeSchema).max(2000), generated_at: z.number(), truncated: z.boolean(), read_only: z.boolean(),
 })
-/** Busy Agent work, or retained canonical history that this Agent cannot safely retire. */
-export const SessionDeleteRefusedSchema = z.enum(['active_turn', 'runtime_history_unsupported'])
+/** Busy Agent work: another Agent process holds a live turn lease or compression lock on a row the delete would remove. */
+export const SessionDeleteRefusedSchema = z.enum(['active_turn'])
 export type SessionDeleteRefused = z.infer<typeof SessionDeleteRefusedSchema>
 /** TAL-2093: a profile's display name and description, one printable line each, as `profiles.list` bounds them on read. */
 export const PROFILE_DISPLAY_NAME_MAX = 80

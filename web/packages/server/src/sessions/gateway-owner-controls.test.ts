@@ -170,7 +170,7 @@ describe('canonical owner attachment', () => {
   })
 
   it('retains the compatibility gate when the installed owner protocol is missing', async () => {
-    sidecar.respond('gateway.session', () => ({ state: 'incompatible', reason: 'native_sessions_unavailable', snapshot: null, receipt: null }))
+    sidecar.respond('gateway.session', () => ({ state: 'incompatible', reason: 'owner_shell_unsupported', snapshot: null, receipt: null }))
     const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
     expect(row.session.owner_attachment).toMatchObject({ state: 'incompatible', can_submit: false, can_interrupt: false })
     expect((await post('/api/chat/start', { session_id: sid, message: 'follow up', submission_id: 'stable' })).status).toBe(403)

@@ -41,8 +41,8 @@
         "action": "snapshot"
       },
       "result": {
-        "state": "incompatible",
-        "reason": "native_sessions_unavailable",
+        "state": "stopped",
+        "reason": "absent",
         "snapshot": null,
         "receipt": null
       }
@@ -249,8 +249,8 @@
         "probe": true
       },
       "result": {
-        "state": "incompatible",
-        "reason": "native_sessions_unavailable",
+        "state": "stopped",
+        "reason": "absent",
         "snapshot": null,
         "receipt": null
       }

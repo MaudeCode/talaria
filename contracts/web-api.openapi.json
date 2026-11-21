@@ -7274,8 +7274,7 @@
                           },
                           "refused": {
                             "enum": [
-                              "active_turn",
-                              "runtime_history_unsupported"
+                              "active_turn"
                             ],
                             "type": "string"
                           }
@@ -28009,7 +28008,7 @@
     "/api/session/delete": {
       "post": {
         "operationId": "session.delete",
-        "summary": "Delete a session and its Agent state.db rows. 409 with `refused: active_turn` while another Agent process runs or compresses it, or `runtime_history_unsupported` when this Agent cannot retire retained history; the session is kept.",
+        "summary": "Delete a session and its Agent state.db rows. 409 with `refused: active_turn` while another Agent process runs or compresses it; the session is kept.",
         "tags": [
           "sessions"
         ],
@@ -140169,7 +140168,6 @@
                               },
                               "state": {
                                 "enum": [
-                                  "unsupported",
                                   "off",
                                   "needs_public_url",
                                   "invalid_public_url",
@@ -140887,7 +140885,6 @@
                             },
                             "state": {
                               "enum": [
-                                "unsupported",
                                 "off",
                                 "needs_public_url",
                                 "invalid_public_url",
@@ -153085,15 +153082,11 @@
                           "since"
                         ]
                       }
-                    },
-                    "schedule_policy_available": {
-                      "type": "boolean"
                     }
                   },
                   "required": [
                     "jobs",
-                    "unwritable_stores",
-                    "schedule_policy_available"
+                    "unwritable_stores"
                   ],
                   "additionalProperties": {}
                 }

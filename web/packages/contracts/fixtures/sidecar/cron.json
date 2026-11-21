@@ -7,8 +7,7 @@
       },
       "result": {
         "jobs": [],
-        "store_health": null,
-        "schedule_policy": true
+        "store_health": null
       }
     }
   ],

@@ -155,7 +155,6 @@ function throwPluginUpdateError(error: unknown): never {
   if (error instanceof SidecarError) {
     if (error.condition === 'plugin_not_found') throw new HttpError(404, error.message)
     if (['plugin_update_refused', 'plugin_update_consent_changed'].includes(error.condition)) throw new HttpError(409, error.message, { condition: error.condition })
-    if (error.condition === 'plugin_update_unsupported') throw new HttpError(503, error.message, { condition: error.condition })
   }
   throw error
 }

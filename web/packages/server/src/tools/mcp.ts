@@ -102,7 +102,7 @@ export function eventsView(cfg: unknown, summary: Dict, runtime: Dict | null, da
   const row = data?.servers.find((s) => s.name === summary.name)
   const subscriptions = { ...(row?.subscriptions ?? NO_SUBSCRIPTIONS) }
   const supported = data?.supported === true
-  const state: McpEvents['state'] = !data ? (enabled ? 'error' : 'off') : !supported ? 'unsupported' : !enabled ? 'off'
+  const state: McpEvents['state'] = !data ? (enabled ? 'error' : 'off') : !enabled ? 'off'
     : data.callback === 'missing' ? 'needs_public_url' : data.callback === 'not_https' ? 'invalid_public_url'
       : subscriptions.lapsed ? 'lapsed' : subscriptions.refresh_overdue ? 'refresh_overdue' : subscriptions.active ? 'subscribed'
         : summary.active === true ? 'ready' : 'unavailable'

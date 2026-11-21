@@ -1167,8 +1167,6 @@ struct MessageComposerView: View {
     /// The server's reason an owner chat is read-only (TAL-1043), else the generic notice.
     private var readOnlyStatusText: String {
         switch ownerAttachment?.reason {
-        case "native_clarify_batch_unavailable":
-            String(localized: "Continue this chat in its native CLI.")
         case "served_profile_sessions_unavailable":
             String(localized: "This gateway's chats are read-only here.")
         default:

@@ -726,8 +726,6 @@ def register(registry) -> None:
             with _store(home):
                 from cron.store_health import probe_report
                 result["store_health"] = probe_report(jobs.get_cron_output_dir().parent)
-            # Every supported Agent's create_job takes the per-job schedule policy.
-            result["schedule_policy"] = True
         live = _live_executions(home, [str(job.get("id") or "") for job in listed])
         with _RUNNING_LOCK:
             active = set(_RUNNING)

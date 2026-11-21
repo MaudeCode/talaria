@@ -87,17 +87,6 @@
           "missing"
         ]
       }
-    },
-    {
-      "params": {
-        "profile_home": "<home>",
-        "session_id": "cli-root",
-        "include_compression_lineage": true
-      },
-      "result": {
-        "ok": false,
-        "refused": "runtime_history_unsupported"
-      }
     }
   ],
   "state_db.prune_advice": [
