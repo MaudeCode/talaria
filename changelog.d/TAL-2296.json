@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Saving a masked API key such as sk-pro...ABCD is refused instead of replacing the working key, with Agent v0.23.2 or later.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

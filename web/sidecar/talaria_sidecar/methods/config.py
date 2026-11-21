@@ -323,12 +323,19 @@ def env_write(home: Path, updates) -> dict:
         changes[key] = value
     from hermes_cli import config as agent_config
 
+    # TAL-2296: the Agent's refusal of a redacted display mask (``sk-pro...ABCD``) as a credential; v0.23.2+.
+    refuse_mask = getattr(agent_config, "refuse_redacted_env_value", None)
     with scoped_home(home):
         for key, value in changes.items():
             # The Agent's .env write lock: a package-managed install or an administrator-managed key.
             refusal = agent_config.env_write_refusal(key, "remove" if value is None else "set")
             if refusal:
                 raise RpcError(refusal, condition="env_write_refused")
+            if value is not None and refuse_mask is not None:
+                try:
+                    refuse_mask(key, value)
+                except ValueError as exc:
+                    raise RpcError(str(exc), condition="env_write_refused") from exc
         try:
             agent_config.ensure_hermes_home()
             path = agent_config.get_env_path()
