@@ -504,6 +504,20 @@ describe('server-classified session sources (TAL-310)', () => {
     for (const payload of [hit, detail, row]) expect(payload).toMatchObject({ source_kind: 'messaging', is_messaging_session: true })
   })
 
+  it('files a cron and a webhook session detail under the group the list gives it, and a chat under none (TAL-2518)', async () => {
+    const db = createStateDb(join(s.state, 'state.db'))
+    insertSession(db, { id: 'cron_groupprobe', source: 'cron', started_at: 1_100, messages: [['user', 1_100], ['assistant', 1_101]] })
+    insertSession(db, { id: 'hook-groupprobe', source: 'webhook', started_at: 1_100, messages: [['user', 1_100], ['assistant', 1_101]] })
+    db.close()
+    s.deps.cliSessions.invalidate()
+    const chat = await sidecar('Groupprobe chat', {})
+    const listed = await rowsOf('/api/sessions?show_cron_sessions=1&show_webhook_sessions=1')
+    const group = async (sid: string) => [((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).sidebar_group, listed.find((r) => r.session_id === sid)?.sidebar_group]
+    expect(await group('cron_groupprobe')).toEqual(['scheduled', 'scheduled'])
+    expect(await group('hook-groupprobe')).toEqual(['webhook', 'webhook'])
+    expect(await group(chat)).toEqual([null, 'recent'])
+  })
+
   it('keeps a WebUI-marked session with a stale is_cli_session out of CLI', async () => {
     const sid = await sidecar('Kindprobe stale', { session_source: 'webui', is_cli_session: true })
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json

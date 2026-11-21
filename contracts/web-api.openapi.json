@@ -3424,7 +3424,7 @@
                                 "type": "null"
                               }
                             ],
-                            "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                            "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                           },
                           "sidebar_children": {
                             "type": "array",
@@ -4634,7 +4634,7 @@
                                 "type": "null"
                               }
                             ],
-                            "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                            "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                           },
                           "sidebar_children": {
                             "type": "array",
@@ -5673,7 +5673,7 @@
                                 "type": "null"
                               }
                             ],
-                            "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                            "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                           },
                           "sidebar_children": {
                             "type": "array",
@@ -7019,7 +7019,7 @@
                                 "type": "null"
                               }
                             ],
-                            "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                            "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                           },
                           "sidebar_children": {
                             "type": "array",
@@ -13739,6 +13739,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -21504,6 +21519,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -27930,6 +27960,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -28935,7 +28980,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                         },
                         "sidebar_children": {
                           "type": "array",
@@ -30022,7 +30067,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                         },
                         "sidebar_children": {
                           "type": "array",
@@ -31116,7 +31161,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                         },
                         "sidebar_children": {
                           "type": "array",
@@ -37586,6 +37631,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -38624,7 +38684,7 @@
                                   "type": "null"
                                 }
                               ],
-                              "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                              "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                             },
                             "sidebar_children": {
                               "type": "array",
@@ -39792,7 +39852,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                         },
                         "sidebar_children": {
                           "type": "array",
@@ -46595,6 +46655,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -47815,7 +47890,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                         },
                         "sidebar_children": {
                           "type": "array",
@@ -48900,7 +48975,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                         },
                         "sidebar_children": {
                           "type": "array",
@@ -56161,6 +56236,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -62531,6 +62621,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -68963,6 +69068,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -75393,6 +75513,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -80127,7 +80262,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                         },
                         "sidebar_children": {
                           "type": "array",
@@ -81211,7 +81346,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
+                          "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null."
                         },
                         "sidebar_children": {
                           "type": "array",
@@ -94808,6 +94943,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -101230,6 +101380,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -108351,6 +108516,21 @@
                             }
                           ],
                           "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                        },
+                        "sidebar_group": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "scheduled",
+                                "webhook"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                         }
                       },
                       "required": [
@@ -114918,6 +115098,21 @@
                                 }
                               ],
                               "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
+                            },
+                            "sidebar_group": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "scheduled",
+                                    "webhook"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets."
                             }
                           },
                           "required": [

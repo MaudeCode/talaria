@@ -741,6 +741,17 @@ export const TodoStateSchema = z.looseObject({
 })
 export type TodoState = z.infer<typeof TodoStateSchema>
 
+/**
+ * TAL-1534: the sidebar group a listed row belongs to; `pinned` rows come first in the canonical order. TAL-1639: cron
+ * and webhook rows belong to `scheduled` and `webhook` instead, pinned or archived, and count in `scheduled_session_count`
+ * and `webhook_session_count`.
+ */
+export const SidebarGroupKindSchema = z.enum(['pinned', 'recent', 'scheduled', 'webhook'])
+export type SidebarGroupKind = z.infer<typeof SidebarGroupKindSchema>
+/** One group present in a session list, with its English caption; clients localize the known kinds. */
+export const SidebarGroupSchema = z.object({ kind: SidebarGroupKindSchema, title: z.string() })
+export type SidebarGroup = z.infer<typeof SidebarGroupSchema>
+
 export const SessionSchema = z.looseObject({
   plan_gauge: PlanGaugeSchema.nullable().optional(),
   show_reasoning: z.boolean().optional().describe('Server-resolved display preference. Hidden reasoning is omitted from live events, history and activity scenes; older servers omit this field.'),
@@ -789,20 +800,10 @@ export const SessionSchema = z.looseObject({
   place_label: NullableString.optional().describe("The chat header place: its workspace label, else its profile display name, else null."),
   focus_path: NullableString.optional().describe('TAL-1458: the last non-null `focus_path` of the session\'s persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count.'),
   branched_from: BranchedFromSchema.nullable().optional().describe('TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat.'),
+  sidebar_group: SidebarGroupKindSchema.extract(['scheduled', 'webhook']).nullable().optional().describe('TAL-2518: the automated group a cron or webhook session files under, the one `GET /api/sessions` gives its row; null for every other session, whose pinned or recent group only the list sets.'),
 })
 export type Session = z.infer<typeof SessionSchema>
 export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })
-
-/**
- * TAL-1534: the sidebar group a listed row belongs to; `pinned` rows come first in the canonical order. TAL-1639: cron
- * and webhook rows belong to `scheduled` and `webhook` instead, pinned or archived, and count in `scheduled_session_count`
- * and `webhook_session_count`.
- */
-export const SidebarGroupKindSchema = z.enum(['pinned', 'recent', 'scheduled', 'webhook'])
-export type SidebarGroupKind = z.infer<typeof SidebarGroupKindSchema>
-/** One group present in a session list, with its English caption; clients localize the known kinds. */
-export const SidebarGroupSchema = z.object({ kind: SidebarGroupKindSchema, title: z.string() })
-export type SidebarGroup = z.infer<typeof SidebarGroupSchema>
 
 /** Sidebar row from `GET /api/sessions`. */
 /** TAL-2159: the settings for chats from outside Talaria, one switch per source; the server lists each source by its own key. */
@@ -816,7 +817,7 @@ export const SessionRowSchema = z.looseObject({
   active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), share_url: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.enum(['title', 'metadata', 'content']).optional(), match_preview: NullableString.optional(),
   workspace_name: WorkspaceNameSchema,
   place_label: NullableString.optional().describe("The chat header place: its workspace label, else its profile display name, else null."),
-  sidebar_group: SidebarGroupKindSchema.nullable().optional().describe('TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it.'),
+  sidebar_group: SidebarGroupKindSchema.nullable().optional().describe('TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null.'),
   sidebar_children: z.array(z.string()).optional().describe('TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it.'),
   sidebar_parent_session_id: NullableString.optional().describe('TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent\'s project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it.'),
   meta: z.array(z.union([z.string(), z.number().int()])).optional().describe('TAL-2153: the detailed row\'s second line, in display order: the model\'s name, the message count (the one number part, which clients format as a localized plural), the source when the chat did not start in Talaria, and the profile when the list spans profiles. `GET /api/sessions` and its sidebar search send it only while `sidebar_density` is `detailed`; clients join the parts as one line.'),
