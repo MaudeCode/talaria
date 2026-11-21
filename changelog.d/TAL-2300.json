@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Generated chat titles now reject full answers and repair damaged characters when the conversation supplies the original spelling.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

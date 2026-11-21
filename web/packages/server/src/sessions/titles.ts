@@ -5,8 +5,9 @@ import { str } from '../util.js'
 export const GENERATED_TITLE_MAX_CHARS = 50
 const TITLE_CONTEXT_CHARS = 2000
 
-export function stripThinkingMarkup(text: string): string {
-  return text.replace(/<think(?:ing)?\b[^>]*>[\s\S]*?<\/think(?:ing)?>/gi, '').replace(/<think(?:ing)?\b[^>]*>[\s\S]*/i, '').trim()
+export function stripThinkingMarkup(text: string, trim = true): string {
+  const stripped = text.replace(/<think(?:ing)?\b[^>]*>[\s\S]*?<\/think(?:ing)?>/gi, '').replace(/<think(?:ing)?\b[^>]*>[\s\S]*/i, '')
+  return trim ? stripped.trim() : stripped
 }
 
 export function looksInvalidGeneratedTitle(text: unknown): boolean {
@@ -24,13 +25,63 @@ export function isBadNewTitle(text: unknown): boolean {
   return /^\s*(ok|okay|done|all set|complete|completed|finished)\b[\s.!?]*$/i.test(s)
 }
 
-export function sanitizeGeneratedTitle(text: unknown): string {
-  let s = stripThinkingMarkup(str(text))
+// Match Hermes's title limits. NFC counts decomposed Hangul as syllables;
+// NFKC folds fullwidth punctuation for judgment without changing the saved title.
+function isAnswerShaped(title: string): boolean {
+  const normalized = title.normalize('NFKC').trim()
+  if (normalized.split(/\s+/).length > 12) return true
+  const cjk = title.normalize('NFC').match(/[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uff01-\uff9f\u{20000}-\u{3134f}]/gu)?.length ?? 0
+  return cjk > 40 || (cjk > 20 && /[。!?,]|\.(?:\s|$)/u.test(normalized))
+}
+
+const TITLE_BYTE_GLYPHS = Array.from({ length: 128 }, (_, offset) => {
+  const byte = offset + 128
+  const glyphs = new Set([String.fromCharCode(byte)])
+  for (const encoding of ['windows-1250', 'windows-1252', 'windows-1253', 'windows-1254']) {
+    const glyph = new TextDecoder(encoding).decode(Uint8Array.of(byte))
+    if (glyph !== '\uFFFD') glyphs.add(glyph)
+  }
+  return `[${[...glyphs].join('')}]`
+})
+
+function repairTitleBytes(title: string, source: string): string {
+  const sourceChars = new Set(source)
+  const repairs = new Map<number, { char: string; length: number } | null>()
+  // A model can mix code pages within one character and mangle only part of a title.
+  // Build matches from source characters so an arbitrary byte sequence cannot invent text.
+  for (const char of sourceChars) {
+    if (char.charCodeAt(0) < 128) continue
+    const spelling = Buffer.from(char)
+    const pattern = new RegExp(Array.from(spelling, (byte) => TITLE_BYTE_GLYPHS[byte - 128]).join(''), 'gu')
+    for (const match of title.matchAll(pattern)) {
+      if (source.includes(match[0])) continue
+      const index = match.index
+      repairs.set(index, repairs.has(index) ? null : { char, length: match[0].length })
+    }
+  }
+  if (!repairs.size) return title
+  let fixed = ''
+  for (let index = 0; index < title.length;) {
+    const repair = repairs.get(index)
+    if (repair === null) return ''
+    fixed += repair?.char ?? title.charAt(index)
+    index += repair?.length ?? 1
+  }
+  // Once a repair establishes corruption, reject unexplained non-ASCII letter or symbol residue.
+  for (const char of fixed) {
+    if (char.charCodeAt(0) >= 128 && !sourceChars.has(char) && /[\p{L}\p{S}]/u.test(char)) return ''
+  }
+  return fixed
+}
+
+export function sanitizeGeneratedTitle(text: unknown, userText: string, assistantText: string): string {
+  let s = stripThinkingMarkup(str(text), false)
   s = s.replace(/^\s*(?:[*_`~]+\s*)?(?:session\s+title|title)\s*:\s*(?:[*_`~]+\s*)?/i, '')
   s = s.replace(/^\s*title\s*:\s*/i, '')
+  s = repairTitleBytes(s, `${userText}\n${assistantText}`)
   s = s.replace(/^[\s"'`*_~]+|[\s"'`*_~]+$/g, '')
   s = s.split(/\s+/).join(' ').trim()
-  if (isBadNewTitle(s)) return ''
+  if (isBadNewTitle(s) || isAnswerShaped(s)) return ''
   return s.slice(0, GENERATED_TITLE_MAX_CHARS)
 }
 
