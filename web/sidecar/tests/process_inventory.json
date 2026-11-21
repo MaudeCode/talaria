@@ -2401,6 +2401,13 @@
         ""
       ]
     },
+    "tests/test_state_db_title.py::test_a_local_summary_title_is_derived_so_a_later_model_title_replaces_it": {
+      "layer": "compatibility",
+      "reason": "The installed Agent store's title precedence must keep a local summary synced through state_db.sync_title at derived provenance, including its collision retry, so a later model title replaces it and no summary replaces a model title on a real sidecar (TAL-2588).",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_agent_store_reads.py::test_a_replay_case_reads_its_recorded_conversation_and_prompt": {
       "layer": "compatibility",
       "reason": "The installed Agent's store must serve a skill replay case's recorded transcript and session prompt to the sidecar reader in the Agent interpreter; on v0.23.3 that is the storage interface, which a fake cannot establish (TAL-2591).",

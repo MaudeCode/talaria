@@ -164,19 +164,20 @@ def sync_session_usage(home: Path, session_id: str, *, input_tokens=0, output_to
     return _write(home, "sync session usage", op)
 
 
-def sync_session_title(home: Path, session_id: str, title: str, *, manual: bool = False) -> bool:
-    """A manual (user-requested) title lands with ``user`` provenance; an auto title is ``llm`` and never replaces a user name."""
+def sync_session_title(home: Path, session_id: str, title: str, *, manual: bool = False, derived: bool = False) -> bool:
+    """A manual (user-requested) title lands with ``user`` provenance; an auto title is ``llm``, or ``derived`` for the
+    server's local summary (TAL-2588), and never replaces a user name."""
     if not title:
         return False
 
     def op(db) -> None:
         agent_store.ensure_session(db, session_id, source="webui")
         try:
-            agent_store.set_title(db, session_id, title, manual=manual)
+            agent_store.set_title(db, session_id, title, manual=manual, derived=derived)
         except ValueError:
             alt = agent_store.next_title_in_lineage(db, title)
             if alt and alt != title:
-                agent_store.set_title(db, session_id, alt, manual=manual)
+                agent_store.set_title(db, session_id, alt, manual=manual, derived=derived)
 
     return _write(home, "sync session title", op)
 
@@ -560,7 +561,8 @@ def register(registry) -> None:
 
     @registry.method("state_db.sync_title")
     def title(ctx: CallContext, params: dict) -> dict:
-        return {"ok": sync_session_title(profile_home_param(params), _session_id(params), str(params.get("title") or ""), manual=params.get("manual") is True)}
+        return {"ok": sync_session_title(profile_home_param(params), _session_id(params), str(params.get("title") or ""), manual=params.get("manual") is True,
+                                         derived=params.get("title_source") == "derived")}
 
     @registry.method("state_db.request_prompt_refresh")
     def prompt_refresh(ctx: CallContext, params: dict) -> dict:

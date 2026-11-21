@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With Sync to Insights on, a chat whose first title fell back to a local summary now takes the model's title in Insights when one is generated later.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -479,13 +479,16 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     hermesHome: config.hermesHome,
     home,
     // Python `_sync_session_title_to_state_db`: with `sync_to_insights` on, the state.db row follows a rename.
-    syncTitle: async (session, manual) => {
+    syncTitle: async (session, provenance) => {
       if (!sidecar || !pyBool(settings.peek().sync_to_insights)) return
       // Awaited by callers: the rename/regenerate response and the title stream's teardown follow the state.db write.
       try {
         const targetProfile = session.profile ?? activeProfile()
         await sessions.assertWritable(session, targetProfile)
-        await sidecar.call('state_db.sync_title', { profile_home: profileHome(targetProfile), session_id: session.session_id, title: session.title, manual: manual === true })
+        await sidecar.call('state_db.sync_title', {
+          profile_home: profileHome(targetProfile), session_id: session.session_id, title: session.title,
+          ...(provenance === 'user' ? { manual: true } : { manual: false, title_source: provenance ?? 'llm' }),
+        })
       } catch (error) {
         log(`[webui] state.db title sync failed for ${session.session_id}: ${(error as Error).message}`)
       }
@@ -621,7 +624,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     recordInterruptedChats: async (chats) => { appendContinuation(config.stateDir, (await Promise.all(chats.map((chat) => continuationRun(chat.session_id, chat.stream_id)))).map((run) => ({ ...run, restart: true }))) },
     workspaceBusy: (workspace) => deps.git.workspaceBusy(workspace),
     checkpointStoreBusy: (profile) => rollback.storeBusy(profileHome(profile ?? activeProfile())),
-    syncTitle: (session) => sessions.deps.syncTitle(session),
+    syncTitle: (session, provenance) => sessions.deps.syncTitle(session, provenance),
     // Python `sync_session_usage` after a settled turn: with `sync_to_insights` on, the state.db row carries the usage.
     syncUsage: async (session, model) => {
       if (!sidecar || !pyBool(settings.peek().sync_to_insights)) return

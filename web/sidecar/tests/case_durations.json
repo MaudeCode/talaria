@@ -978,6 +978,7 @@
  "tests/test_state_db_local_lineage.py::test_reset_target_plan_matches_server_fixture": 0.784,
  "tests/test_state_db_prompt_refresh.py::test_each_request_advances_the_epoch_on_an_agent_that_has_it": 1.453,
  "tests/test_state_db_shared_handle.py::test_sync_usage_reuses_one_handle_until_the_file_is_replaced": 0.412,
+ "tests/test_state_db_title.py::test_a_local_summary_title_is_derived_so_a_later_model_title_replaces_it": 1.5,
  "tests/test_state_db_title.py::test_a_manual_rename_replaces_a_generated_title": 1.434,
  "tests/test_status_events.py::test_marked_compaction_progress_and_compression_warnings_reach_their_frames": 0.073,
  "tests/test_status_events.py::test_pinned_compaction_progress_opens_the_span": 0.257,
