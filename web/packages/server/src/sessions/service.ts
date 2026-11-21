@@ -31,7 +31,7 @@ import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, ha
 import { sessionOutline } from './outline.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, withDisplayText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, attachmentViews, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, withheldRowForModel, newestSettledReply, refusedNotice, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
+import { agentSteerText, withDisplayText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentViews, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, withheldRowForModel, newestSettledReply, refusedNotice, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withResultFocusPaths } from './tool-display.js'
 import { inheritedTalariaActivities, pruneTalariaActivities, recordTalariaActivity, talariaActivity, withTalariaActivities } from './talaria-activities.js'
@@ -3118,7 +3118,7 @@ export class SessionService {
   }
 
   private resendAttachments(prompt: Message) {
-    return attachmentObjects(Array.isArray(prompt.attachments) ? prompt.attachments : []).filter((a): a is Record<string, unknown> => isDict(a) && Boolean(str(a.path).trim()))
+    return attachmentViews(Array.isArray(prompt.attachments) ? prompt.attachments : []).filter((a): a is Record<string, unknown> => isDict(a) && Boolean(str(a.path).trim()))
   }
 
   async retry(sid: string): Promise<Record<string, unknown>> {

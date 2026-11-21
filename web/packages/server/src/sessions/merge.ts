@@ -1564,16 +1564,13 @@ export function withoutRunningTurnOutput(rows: Message[], turn: { localCount: nu
 }
 
 /**
+ * Attachments as a client receives them: in a transcript, as pending files, and in a retry or edit reply.
  * TAL-277: the Python server stored attachments as bare filenames. Ship each as a filename-only object; it gets no `path`,
  * so clients never build a file URL from an untrusted name. Anything else passes through for output validation to judge.
+ * TAL-2507: each object carries the server-classified display `kind`. Admission drops it when a client sends one back.
  */
-export function attachmentObjects(items: unknown[]): unknown[] {
-  return items.map((a) => (typeof a === 'string' ? { name: a, filename: a } : a))
-}
-
-/** TAL-2507: `attachmentObjects` with each object's server-classified display `kind`, for the attachments a client renders. */
 export function attachmentViews(items: unknown[]): unknown[] {
-  return attachmentObjects(items).map((a) => (isDict(a) ? { ...a, kind: attachmentKind(a) } : a))
+  return items.map((a) => (typeof a === 'string' ? { name: a, filename: a } : a)).map((a) => (isDict(a) ? { ...a, kind: attachmentKind(a) } : a))
 }
 
 /** `attachmentViews` over every message's attachments. Returns copies; stored rows are untouched. */
