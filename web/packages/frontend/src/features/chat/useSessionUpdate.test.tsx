@@ -133,7 +133,7 @@ it('commits a model and level chosen together once, and a confirmation keeps bot
 })
 
 it('says a level waits for the turn when the owner holds it for the next one (TAL-1319)', () => {
-  const control = { reasoning_effort: 'high', supported_efforts: ['low', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, actions: ['set' as const, 'reset' as const] }
+  const control = { reasoning_effort: 'high', supported_efforts: ['low', 'high'], effort_options: ['low', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, actions: ['set' as const, 'reset' as const] }
   const view = render(<Chat owner={{ ...nativeOwner, reasoning_control: { ...control, deferred: null } }} />)
   expect(screen.queryByText('Applies after this turn')).toBeNull()
   view.rerender(<Chat owner={{ ...nativeOwner, reasoning_control: { ...control, deferred: { effort: 'low' } } }} />)

@@ -218,7 +218,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
   // The chosen effort shows at once; the server's answer replaces it.
   const reasoning = ownerPick && 'reasoning_effort' in ownerPick ? ownerPick.reasoning_effort as string | null
     : confirmingReasoning ?? (reasoningEffect && 'value' in reasoningEffect ? reasoningEffect.value ?? null : reasoningStatus?.reasoning_effort || null)
-  const reasoningLevels = reasoningStatus?.supported_efforts
+  const reasoningLevels = reasoningStatus?.effort_options
   const reasoningSupported = reasoningStatus?.supports_reasoning_effort !== false || reasoningStatus.supports_thinking_toggle === true
   const sendReasoning = useSetReasoningEffort((status) => showToast(`${m.composer_control_reasoning()}: ${status.reasoning_effort ? reasoningLevelLabel(status.reasoning_effort) : m.reasoning_default()}`)).mutate
   // Capture the chat and model fields, not the query's escaping key array, so the compiler keeps this handler stable; the

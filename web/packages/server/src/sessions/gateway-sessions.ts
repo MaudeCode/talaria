@@ -1,4 +1,4 @@
-import { validReasoningEffort } from '../config/agent-config.js'
+import { pickerEfforts, validReasoningEffort } from '../config/agent-config.js'
 import { applyPlanGauge } from './session.js'
 import { reasoningProjection } from './reasoning-display.js'
 import { CHECKPOINT_DIFF_MAX_BYTES, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail, type ApprovalInstructionOutcome } from '@maudecode/talaria-web-contracts'
@@ -834,9 +834,10 @@ export class GatewaySessions {
     const snapshot = result.snapshot
     if (!snapshot || !Object.hasOwn(snapshot.info, 'reasoning_effort')) return undefined
     const supported = await this.routeEfforts(target, str(snapshot.info.model), str(snapshot.info.provider))
+    const effort = str(snapshot.info.reasoning_effort_wire) || str(snapshot.info.reasoning_effort) || null
     return {
-      reasoning_effort: str(snapshot.info.reasoning_effort_wire) || str(snapshot.info.reasoning_effort) || null,
-      supported_efforts: supported, supports_reasoning_effort: supported.length > 0, supports_thinking_toggle: supported.length > 0,
+      reasoning_effort: effort,
+      supported_efforts: supported, effort_options: pickerEfforts(supported, effort), supports_reasoning_effort: supported.length > 0, supports_thinking_toggle: supported.length > 0,
       actions: this.attachment(result).can_submit ? ['set', 'reset'] : [],
       deferred: this.heldReasoning(target, snapshot),
     }

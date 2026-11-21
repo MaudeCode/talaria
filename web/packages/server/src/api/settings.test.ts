@@ -706,7 +706,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(res.status).toBe(200)
     let body = await json(res)
     expect(body.supports_session_scope).toBe(true)
-    expect(body).toEqual({ show_reasoning: false, reasoning_effort: 'high', supported_efforts: ['low', 'medium', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, supports_session_scope: true })
+    expect(body).toEqual({ show_reasoning: false, reasoning_effort: 'high', supported_efforts: ['low', 'medium', 'high'], effort_options: ['low', 'medium', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, supports_session_scope: true })
     res = await post(s, '/api/reasoning', { effort: 'xhigh' })
     body = await json(res)
     expect(body.reasoning_effort).toBe('high')
@@ -724,6 +724,17 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     body = await json(res)
     expect(body.supported_efforts).toEqual([])
     expect(body.supports_thinking_toggle).toBe(false)
+  })
+
+  it('offers a saved effort the model does not list after its own levels, and nothing more otherwise (TAL-2529)', async () => {
+    sidecar.respond('models.reasoning_efforts', () => ({ efforts: ['low', 'high'], supports_reasoning: true }))
+    const options = async (effort: string) => {
+      expect((await post(s, '/api/reasoning', { effort })).status).toBe(200)
+      return json(await s.get('/api/reasoning'))
+    }
+    expect(await options('none')).toMatchObject({ reasoning_effort: 'none', supported_efforts: ['low', 'high'], effort_options: ['low', 'high', 'none'] })
+    expect(await options('low')).toMatchObject({ reasoning_effort: 'low', effort_options: ['low', 'high'] })
+    expect(await options('')).toMatchObject({ reasoning_effort: '', effort_options: ['low', 'high'] })
   })
 
   it('reads the levels of a catalog id an unsaved chat picked, split into its model and provider (TAL-2078)', async () => {

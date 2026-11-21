@@ -10,7 +10,7 @@ vi.mock('../../api/endpoints', async (importOriginal) => {
     ...Object.fromEntries(Object.entries(real).map(([name, value]) => [name, typeof value === 'function' ? vi.fn(() => new Promise(() => undefined)) : value])),
     fetchModels: vi.fn(() => Promise.resolve({ groups: [] })),
     fetchAuxiliaryModels: vi.fn(() => Promise.resolve({ main: { model: 'gpt-6-astra', provider: 'openai-codex', supported_speed_tiers: [{ id: 'standard', service_tier: 'default' }] }, tasks: [] })),
-    fetchReasoning: vi.fn(() => Promise.resolve({ show_reasoning: true, reasoning_effort: '', supported_efforts: ['low'], supports_reasoning_effort: true, supports_thinking_toggle: true })),
+    fetchReasoning: vi.fn(() => Promise.resolve({ show_reasoning: true, reasoning_effort: '', effort_options: ['low'], supports_reasoning_effort: true, supports_thinking_toggle: true })),
     fetchConnectorsAvailable: vi.fn(() => Promise.resolve({ available: false })),
     fetchPlugins: vi.fn(() => Promise.resolve({ read_only: false, total: 0, empty: true, plugins: [], auto_update: { auto_apply: false, check_hours: 24, inactive_reason: null } })),
     fetchWebPushStatus: vi.fn(() => Promise.resolve({ public_key: 'key', subscription: { preferences: { notify_on_approval: true, notify_on_input: true, notify_on_completion: true, notify_on_failure: true } } })),

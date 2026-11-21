@@ -22,7 +22,7 @@ public final class ModelsSettingsViewModel {
 
     public var showsReasoningEffort: Bool { status?.supportsReasoningEffort == true }
     public var showsThinkingToggle: Bool { status?.supportsThinkingToggle == true }
-    public var supportedEfforts: [String] { status?.supportedEfforts ?? [] }
+    public var effortOptions: [String] { status?.effortOptions ?? [] }
     public var reasoningEffort: String { effortOverride?.value ?? status?.effectiveEffort ?? "" }
     public var showThinking: Bool { thinkingOverride?.value ?? status?.showReasoning ?? false }
 

@@ -679,7 +679,7 @@ export function discussionLimits(config: Config): DiscussionLimits {
 
 // ── reasoning ─────────────────────────────────────────────────────────
 
-export interface ReasoningStatus { show_reasoning: boolean; reasoning_effort: string; supported_efforts: string[]; supports_reasoning_effort: boolean; supports_thinking_toggle: boolean; supports_session_scope: boolean }
+export interface ReasoningStatus { show_reasoning: boolean; reasoning_effort: string; supported_efforts: string[]; effort_options: string[]; supports_reasoning_effort: boolean; supports_thinking_toggle: boolean; supports_session_scope: boolean }
 
 export type EffortsResolver = (model: string, provider: string, baseUrl: string) => Promise<string[]>
 
@@ -710,6 +710,11 @@ export function coerceReasoningEffort(effort: string, supported: string[], provi
     if (level && levels.includes(level)) return level
   }
   return raw
+}
+
+/** TAL-2529: a picker's levels: the route's own, then the current effort when it is set and not one of them (a saved `none`). */
+export function pickerEfforts(supported: string[], effort: string | null): string[] {
+  return effort && !supported.includes(effort) ? [...supported, effort] : supported
 }
 
 /** The Web display preference, shared by the settings response and native-owner watches. */
@@ -749,10 +754,12 @@ export async function reasoningStatus(config: Config, resolve: EffortsResolver, 
     if (!baseUrl && m.base_url) baseUrl = str(m.base_url).trim()
   }
   const supported = model ? await resolve(model, provider, baseUrl) : []
+  const effort = coerceReasoningEffort(effectiveReasoningEffort(config, opts.effort ?? null), supported, provider)
   return {
     show_reasoning: showReasoning(config),
-    reasoning_effort: coerceReasoningEffort(effectiveReasoningEffort(config, opts.effort ?? null), supported, provider),
+    reasoning_effort: effort,
     supported_efforts: supported,
+    effort_options: pickerEfforts(supported, effort),
     supports_reasoning_effort: supported.length > 0,
     supports_thinking_toggle: supported.length > 0,
     supports_session_scope: true,

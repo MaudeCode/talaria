@@ -71,7 +71,7 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
         XCTAssertEqual(result.state.currentModelProvider, "openrouter")
         XCTAssertEqual(result.state.currentWorkspace, "/tmp/workspace")
         XCTAssertEqual(result.state.selectedReasoningEffort, "medium")
-        // Older server: no supported_efforts / supports_reasoning_effort fields.
+        // Older server: no effort_options / supports_reasoning_effort fields.
         XCTAssertNil(result.state.supportedReasoningEfforts)
         XCTAssertNil(result.state.supportsReasoningEffort)
         XCTAssertEqual(result.state.workspaceSuggestions, ["/tmp/workspace"])
@@ -121,8 +121,9 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
                 )
                 return apiTestJSONResponse("""
                 {
-                  "reasoning_effort": "high",
+                  "reasoning_effort": "none",
                   "supported_efforts": ["low", "medium", "high"],
+                  "effort_options": ["low", "medium", "high", "none"],
                   "supports_reasoning_effort": true
                 }
                 """, for: request)
@@ -152,12 +153,13 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
         XCTAssertEqual(result.state.currentModel, sessionModel)
         XCTAssertEqual(result.state.currentModelProvider, "openai")
         XCTAssertEqual(result.state.selectedProfileName, "work")
-        XCTAssertEqual(result.state.selectedReasoningEffort, "high")
+        XCTAssertEqual(result.state.selectedReasoningEffort, "none")
         // The reasoning query is scoped to the session's model/provider so the
         // gating fields are model-accurate (issue #18).
         XCTAssertEqual(reasoningQueryItems["model"], sessionModel)
         XCTAssertEqual(reasoningQueryItems["provider"], "openai")
-        XCTAssertEqual(result.state.supportedReasoningEfforts, ["low", "medium", "high"])
+        // TAL-2529: the picker lists the server's `effort_options`, so a saved effort the model does not list keeps its row.
+        XCTAssertEqual(result.state.supportedReasoningEfforts, ["low", "medium", "high", "none"])
         XCTAssertEqual(result.state.supportsReasoningEffort, true)
     }
 

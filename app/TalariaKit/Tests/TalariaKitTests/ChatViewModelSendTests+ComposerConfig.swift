@@ -378,7 +378,7 @@ extension ChatViewModelSendTests {
                 }
                 """, for: request)
             case "/api/reasoning":
-                return apiTestJSONResponse(#"{"reasoning_effort":"medium","supported_efforts":["medium","high"]}"#, for: request)
+                return apiTestJSONResponse(#"{"reasoning_effort":"medium","effort_options":["medium","high"]}"#, for: request)
             case "/api/workspaces":
                 return apiTestJSONResponse(#"{"workspaces":[{"path":"/tmp/workspace"},{"path":"/tmp/saved"}]}"#, for: request)
             case "/api/commands":
@@ -840,7 +840,7 @@ extension ChatViewModelSendTests {
                 {
                   "show_reasoning": true,
                   "reasoning_effort": "high",
-                  "supported_efforts": ["low", "medium", "high"],
+                  "effort_options": ["low", "medium", "high"],
                   "supports_reasoning_effort": true,
                   "supports_session_scope": true
                 }
@@ -898,7 +898,7 @@ extension ChatViewModelSendTests {
                 {
                   "show_reasoning": true,
                   "reasoning_effort": "",
-                  "supported_efforts": [],
+                  "effort_options": [],
                   "supports_reasoning_effort": false
                 }
                 """, for: request)
@@ -952,7 +952,7 @@ extension ChatViewModelSendTests {
                     {
                       "show_reasoning": true,
                       "reasoning_effort": "",
-                      "supported_efforts": [],
+                      "effort_options": [],
                       "supports_reasoning_effort": false
                     }
                     """, for: request)

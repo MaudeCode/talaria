@@ -8,7 +8,7 @@ struct ChatComposerConfigState: Equatable, Sendable {
     var currentProfile: String?
     var selectedProfileName: String?
     var selectedReasoningEffort: String?
-    /// Model-aware effort vocabulary (`supported_efforts`); `nil` on older
+    /// The picker levels (`effort_options`, TAL-2529); `nil` on older
     /// servers → composer falls back to the full static list (issue #18).
     var supportedReasoningEfforts: [String]?
     /// `supports_reasoning_effort`; `false` hides the effort control, `nil`
@@ -208,7 +208,7 @@ struct ChatComposerConfigLoader {
             provider: Self.nonEmpty(state.currentModelProvider), sessionID: sessionID
         )
         state.selectedReasoningEffort = reasoningResponse.effectiveEffort
-        state.supportedReasoningEfforts = reasoningResponse.supportedEfforts
+        state.supportedReasoningEfforts = reasoningResponse.effortOptions
         state.supportsReasoningEffort = reasoningResponse.supportsReasoningEffort
     }
 

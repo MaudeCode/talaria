@@ -37,7 +37,7 @@ struct ModelsSettingsView: View {
                         accessibilityIdentifier: "settings-models-default-reasoning"
                     ) {
                         Text("Provider Default").tag("")
-                        ForEach(model.supportedEfforts, id: \.self) { effort in
+                        ForEach(model.effortOptions, id: \.self) { effort in
                             Text(ReasoningEffortOption.title(for: effort)).tag(effort)
                         }
                     }
