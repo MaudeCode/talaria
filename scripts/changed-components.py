@@ -37,7 +37,7 @@ FIXTURE_READERS = {
                     "talaria-tool-names.json", "tool-presentations.json", "web-native-notices.json", "web-native-todos.json", "web-native-work.json", "web-reactions.json"},
     "tooling": {"whats-new.json"},
     "app": {"answered-question.json", "connectors.json", "decision-review.json", "delegation-status.json", "execution-modes.json",
-            "model-confirmation.json", "proposal.json", "running-subagent.json", "settings-model-picker.json", "show.json",
+            "model-confirmation.json", "proposal.json", "provider-quotas.json", "running-subagent.json", "settings-model-picker.json", "show.json",
             "terminal-view.json", "tool-approval-and-agents.json", "vault-prompts.json", "web-native-work.json", "web-session.json"},
     "relay": {"app-registration.json", "feedback-attachment-limits.json", "feedback-report.json",
               "feedback-report-agent.json", "notification-alerts.json", "publisher-session-started.json", "publisher-snapshot.json",
