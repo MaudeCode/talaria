@@ -93,8 +93,8 @@ final class APIClientGitTests: APIClientTestCase {
                 "files": [
                   {
                     "path": "Sources/App.swift", "old_path": null, "workspace_path": "Sources/App.swift",
-                    "status": "M", "change_kind": "modified", "staged": false, "unstaged": true, "untracked": false,
-                    "ignored": false, "conflict": false, "additions": 10, "deletions": 4, "binary": false
+                    "status": "UU", "change_kind": "conflict", "diff_kind": "unstaged", "staged": true, "unstaged": false, "untracked": false,
+                    "ignored": false, "conflict": true, "additions": 10, "deletions": 4, "binary": false
                   },
                   {
                     "path": "New.swift", "old_path": null, "workspace_path": "New.swift",
@@ -123,7 +123,8 @@ final class APIClientGitTests: APIClientTestCase {
         XCTAssertEqual(status.totalAdditions, 10)
         XCTAssertEqual(status.totalDeletions, 4)
 
-        XCTAssertEqual(status.trackedFiles[0].changeKind, .modified)
+        XCTAssertEqual(status.trackedFiles[0].diffKind, "unstaged")
+        XCTAssertEqual(status.trackedFiles[0].changeKind, .conflict)
         XCTAssertEqual(status.trackedFiles[1].changeKind, .untracked)
         XCTAssertEqual(status.trackedFiles[0].fileName, "App.swift")
         XCTAssertEqual(status.trackedFiles[0].parentDirectory, "Sources")
@@ -166,6 +167,7 @@ final class APIClientGitTests: APIClientTestCase {
         XCTAssertEqual(file.path, "a.txt")
         XCTAssertNil(file.additions)
         XCTAssertEqual(file.changeKind, .unknown)
+        XCTAssertEqual(file.diffKind, "staged")
     }
 
     func testGitStatusTruncatedFlagDecodes() async throws {

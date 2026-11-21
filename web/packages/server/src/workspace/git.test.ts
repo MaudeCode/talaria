@@ -656,6 +656,32 @@ describe.skipIf(process.platform === 'win32')('status, branches and diff spawn b
   }
   const resetLog = (repo: string): void => { writeFileSync(join(dirname(repo), 'git.log'), '') }
 
+  it('ships the diff kind for each changed file', async () => {
+    const { repo, runner } = fixture()
+    for (const path of ['staged.txt', 'mixed.txt', 'unstaged.txt']) {
+      writeFileSync(join(repo, path), 'base\n')
+    }
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'init')
+    for (const path of ['staged.txt', 'mixed.txt']) {
+      writeFileSync(join(repo, path), 'base\nstaged\n')
+    }
+    git(repo, 'add', 'staged.txt', 'mixed.txt')
+    writeFileSync(join(repo, 'mixed.txt'), 'base\nstaged\nworktree\n')
+    writeFileSync(join(repo, 'unstaged.txt'), 'base\nworktree\n')
+    writeFileSync(join(repo, 'untracked.txt'), 'new\n')
+
+    const { files } = await runner.status(repo)
+    expect(Object.fromEntries((files ?? []).map((file) => [
+      file.path, Reflect.get(file, 'diff_kind'),
+    ]))).toEqual({
+      'staged.txt': 'staged',
+      'mixed.txt': 'unstaged',
+      'unstaged.txt': 'unstaged',
+      'untracked.txt': 'unstaged',
+    })
+  })
+
   it('status runs at most five Git processes and reports staged, unstaged, renamed, binary and untracked files as before', async () => {
     const { repo, runner, spawned } = fixture()
     writeFileSync(join(repo, 'staged.txt'), 'a\n')
@@ -678,7 +704,7 @@ describe.skipIf(process.platform === 'win32')('status, branches and diff spawn b
     vi.mocked(readSync).mockClear()
     const status = await runner.status(repo)
     const file = (path: string, fields: Partial<Record<string, unknown>>): Record<string, unknown> => ({
-      path, old_path: null, workspace_path: path, status: '??', change_kind: 'untracked', staged: false, unstaged: false, untracked: true, ignored: false, conflict: false, additions: 0, deletions: 0, binary: false, ...fields,
+      path, old_path: null, workspace_path: path, status: '??', change_kind: 'untracked', diff_kind: 'unstaged', staged: false, unstaged: false, untracked: true, ignored: false, conflict: false, additions: 0, deletions: 0, binary: false, ...fields,
     })
     expect(status).toEqual({
       is_git: true, branch: 'main', upstream: '', ahead: 0, behind: 0, truncated: false,
@@ -687,11 +713,11 @@ describe.skipIf(process.platform === 'win32')('status, branches and diff spawn b
       files: [
         file('crlf.txt', { additions: 3 }),
         file('empty.txt', {}),
-        file('image.bin', { status: 'M', change_kind: 'modified', staged: true, untracked: false, binary: true }),
+        file('image.bin', { status: 'M', change_kind: 'modified', diff_kind: 'staged', staged: true, untracked: false, binary: true }),
         file('latin.txt', { binary: true }),
         file('nul.bin', { binary: true }),
-        file('renamed.txt', { old_path: 'renamed-from.txt', status: 'R', change_kind: 'renamed', staged: true, untracked: false }),
-        file('staged.txt', { status: 'M', change_kind: 'modified', staged: true, untracked: false, additions: 1 }),
+        file('renamed.txt', { old_path: 'renamed-from.txt', status: 'R', change_kind: 'renamed', diff_kind: 'staged', staged: true, untracked: false }),
+        file('staged.txt', { status: 'M', change_kind: 'modified', diff_kind: 'staged', staged: true, untracked: false, additions: 1 }),
         file('text.txt', { additions: 3 }),
         file('unstaged.txt', { status: 'M', change_kind: 'modified', unstaged: true, untracked: false, additions: 2, deletions: 1 }),
       ],

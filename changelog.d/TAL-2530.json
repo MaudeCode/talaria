@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The App opens the working-tree diff for conflicted files.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

@@ -156,7 +156,7 @@ struct GitDiffView: View {
             diff = try await apiClient.gitDiff(
                 sessionID: sessionID,
                 path: file.displayPath,
-                kind: file.preferredDiffKind
+                kind: file.diffKind
             ).diff
         } catch {
             errorMessage = error.localizedDescription
