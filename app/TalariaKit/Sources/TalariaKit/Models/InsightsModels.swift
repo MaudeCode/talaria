@@ -147,13 +147,20 @@ public func insightsCalendarDay(_ text: String?) -> Date? {
     guard let text, text.count == 10 else { return nil }
     let parts = text.split(separator: "-").compactMap { Int($0) }
     guard parts.count == 3 else { return nil }
-    return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+    return wireCalendar().date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
 }
 
 /// A picked local day as the `YYYY-MM-DD` text the server reads on its own calendar.
 public func insightsDayText(_ date: Date) -> String {
-    let day = Calendar.current.dateComponents([.year, .month, .day], from: date)
+    let day = wireCalendar().dateComponents([.year, .month, .day], from: date)
     return String(format: "%04ld-%02ld-%02ld", day.year ?? 0, day.month ?? 0, day.day ?? 0)
+}
+
+/// Server days are Gregorian whatever calendar the iPhone uses; the local zone keeps them on the picker's midnights.
+private func wireCalendar() -> Calendar {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .current
+    return calendar
 }
 
 /// TAL-1117: the interval an Insights read covers, resolved on the server calendar. Clients render it as sent.
