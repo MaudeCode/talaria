@@ -717,6 +717,8 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertEqual(restored.first { $0.messageId == "long-body-reply" }?.displayExcerpt, messages[1].displayExcerpt)
         let newest = try XCTUnwrap(restored.first { $0.messageId == "newest-body-reply" })
         XCTAssertNil(newest.displayExcerpt)
+        // TAL-2504: offline, the reply keeps the server's link preview.
+        XCTAssertEqual(newest.linkPreviewURL?.absoluteString, "https://example.test/report")
         XCTAssertNil(newest.activityScene?.finalAnswerExcerpt)
         XCTAssertEqual(newest.content, messages.last?.content)
     }

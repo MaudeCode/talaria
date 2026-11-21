@@ -1521,6 +1521,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
             if !assistants || index != 49 || collapseNewest {
                 row["_display_truncated"] = true
                 row["_display_excerpt"] = String(content.prefix(2_900))
+            } else {
+                row["_link_preview_url"] = "https://example.test/long/\(index)"
             }
             return row
         }
@@ -1617,7 +1619,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
             ["role": "user", "content": "Plot the run", "message_id": "ui-fixture-media-user", "_turn_id": "media-turn", "_ts": 2_000_000_300],
             [
                 "role": "assistant", "content": content, "message_id": "ui-fixture-media-reply", "_turn_id": "media-turn", "_ts": 2_000_000_301,
-                "_display_content": display, "_media": media,
+                "_display_content": display, "_media": media, "_link_preview_url": "https://example.invalid/chart",
                 "_anchor_activity_scene": [
                     "version": "activity_scene_v1", "final_answer": content, "final_answer_display": display, "final_answer_media": media,
                     "terminal_state": "completed",
@@ -1665,6 +1667,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
                     + "[FixtureLinkTarget](https://example.invalid/fixture-link) FixturePlainTail"
                     + "\n\n## Lead [HeadingLink](https://example.invalid/heading-link)",
                 "message_id": "ui-fixture-link-assistant",
+                "_link_preview_url": "https://example.invalid/fixture-link",
                 "_ts": 2_000_000_101
             ]
         ]

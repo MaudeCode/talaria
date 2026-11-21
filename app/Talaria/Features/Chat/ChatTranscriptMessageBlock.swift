@@ -178,16 +178,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         outcomeRow
 
         if !turn.finalAnswer.isEmpty {
-            messageRow(
-                activityMessage(
-                    text: turn.finalAnswer,
-                    display: turn.finalAnswerDisplay,
-                    includesAttachments: true,
-                    includesTurnMetrics: true,
-                    displayExcerpt: finalAnswerExcerpt(for: turn)
-                ),
-                isStreaming: false
-            )
+            messageRow(finalAnswerMessage(for: turn), isStreaming: false)
         }
     }
 
@@ -233,16 +224,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         }
 
         if !turn.finalAnswer.isEmpty {
-            messageRow(
-                activityMessage(
-                    text: turn.finalAnswer,
-                    display: turn.finalAnswerDisplay,
-                    includesAttachments: true,
-                    includesTurnMetrics: true,
-                    displayExcerpt: finalAnswerExcerpt(for: turn)
-                ),
-                isStreaming: false
-            )
+            messageRow(finalAnswerMessage(for: turn), isStreaming: false)
         }
     }
 
@@ -544,10 +526,19 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         }
     }
 
-    /// The server's collapsed excerpt (TAL-456) when this turn shows the scene's own final answer.
-    private func finalAnswerExcerpt(for turn: CompletedAssistantTurn) -> String? {
-        guard let scene = transcriptMessage.message.activityScene, scene.finalAnswer == turn.finalAnswer else { return nil }
-        return scene.finalAnswerExcerpt
+    /// The turn's final answer as a message row. When it is the scene's own final answer it carries the server's collapsed
+    /// excerpt (TAL-456) and the row's link preview (TAL-2504).
+    private func finalAnswerMessage(for turn: CompletedAssistantTurn) -> ChatMessage {
+        let message = transcriptMessage.message
+        let isScenesOwn = message.activityScene.map { $0.finalAnswer == turn.finalAnswer } ?? false
+        return activityMessage(
+            text: turn.finalAnswer,
+            display: turn.finalAnswerDisplay,
+            includesAttachments: true,
+            includesTurnMetrics: true,
+            displayExcerpt: isScenesOwn ? message.activityScene?.finalAnswerExcerpt : nil,
+            linkPreviewURL: isScenesOwn ? message.linkPreviewURL : nil
+        )
     }
 
     private func activityMessage(
@@ -555,7 +546,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         display: TranscriptDisplayBody? = nil,
         includesAttachments: Bool,
         includesTurnMetrics: Bool,
-        displayExcerpt: String? = nil
+        displayExcerpt: String? = nil,
+        linkPreviewURL: URL? = nil
     ) -> ChatMessage {
         let message = transcriptMessage.message
         return ChatMessage(
@@ -573,6 +565,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             turnId: message.turnId,
             steer: message.steer,
             displayExcerpt: displayExcerpt,
+            linkPreviewURL: linkPreviewURL,
             displayBody: display
         )
     }
