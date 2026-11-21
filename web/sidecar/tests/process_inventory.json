@@ -626,13 +626,11 @@
         ""
       ]
     },
-    "tests/test_context_window_source.py::test_lookup_keeps_the_agents_runtime_key_and_url_together": {
+    "tests/test_context_window_source.py::test_repeated_lookups_leave_inference_credentials_untouched": {
       "layer": "compatibility",
-      "reason": "Supported-Agent credential routing: the real resolver pairs its key and URL for native custom, built-in legacy-name collisions and Anthropic proxy configs; only metadata network access is replaced by a recorder.",
+      "reason": "Supported-Agent credential selection: the real config loader, credential pool store, key_cmd provider and probe selector must leave a round-robin pool, a key_cmd helper and plugin delivery untouched across repeated lookups; only metadata network access and plugin delivery are replaced by recorders.",
       "cases": [
-        "[custom-owner]",
-        "[builtin-legacy-name]",
-        "[anthropic-proxy]"
+        ""
       ]
     },
     "tests/test_context_window_source.py::test_live_agent_and_lookup_report_the_agents_marker": {

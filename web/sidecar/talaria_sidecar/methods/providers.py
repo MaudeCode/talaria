@@ -579,6 +579,31 @@ def context_window_source(marker: str, *args: Any, **kwargs: Any) -> str | None:
     return value if value in ("pinned", "fallback") else None
 
 
+def context_probe_key(provider: str, base_url: str) -> str:
+    """The key a context-window probe of ``base_url`` sends: the Agent's metadata-only selection for the profile's
+    configured main endpoint (``main_endpoint_key_for``, new in 0.23.3), else "" (keyless).
+
+    Never ``resolve_runtime_provider``: that selects for inference, so a metadata read would count or rotate a pool
+    row, build a ``key_cmd`` source and deliver a left-core plugin. The selector picks the row a pool would use
+    without recording it and yields "" for a credential source or any URL other than ``model.base_url``. A route
+    other than the main one, an older Agent, or a failed read stays keyless rather than guessing ownership.
+    """
+    try:
+        from hermes_cli.config import load_config
+        from hermes_cli.runtime_provider_custom import main_endpoint_key_for
+    except ImportError:
+        return ""
+    try:
+        model_cfg = load_config().get("model")
+        if not isinstance(model_cfg, dict) or provider.strip().lower() not in ("", str(model_cfg.get("provider") or "").strip().lower()):
+            return ""
+        key = main_endpoint_key_for(model_cfg, base_url)
+    except (Exception, SystemExit):  # noqa: BLE001 - the config backend's outage is a SystemExit; a probe goes keyless
+        log.debug("context-window probe key unavailable", exc_info=True)
+        return ""
+    return key if isinstance(key, str) else ""
+
+
 def context_length(model: str, *, base_url: str, api_key: str, provider: str, config_context_length: int | None) -> int | None:
     try:
         from agent.model_metadata import get_model_context_length
@@ -752,15 +777,7 @@ def register(reg) -> None:
             raise InvalidParams("model is required")
         base_url, provider, pin = str(params.get("base_url") or ""), str(params.get("provider") or ""), params.get("config_context_length")
         with scoped_home(profile_home_param(params)):
-            api_key = ""
-            try:
-                from hermes_cli.runtime_provider import resolve_runtime_provider
-
-                runtime = resolve_runtime_provider(requested=provider or None, target_model=model)
-                # Resolve both together; the server URL is only a keyless fallback.
-                base_url, api_key = str(runtime["base_url"] or ""), str(runtime["api_key"] or "")
-            except Exception:  # noqa: BLE001 - missing or failed resolution must never forward a key
-                log.debug("context-window runtime provider unavailable")
+            api_key = context_probe_key(provider, base_url)
             value = context_length(model, base_url=base_url, api_key=api_key, provider=provider, config_context_length=pin)
             source = context_window_source("context_window_marker", value, pin, model=model, provider=provider, base_url=base_url) if value else None
         return {"model": model, "context_length": value, "context_window_source": source}
