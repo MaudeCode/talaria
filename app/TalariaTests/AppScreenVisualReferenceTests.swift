@@ -195,6 +195,25 @@ final class AppScreenVisualReferenceTests: XCTestCase {
         }
     }
 
+    /// The daily chart's stacked input and output bars over a month, with its legend and axes (TAL-764).
+    func testInsightsDailyChartReferences() throws {
+        let days = try InsightsHostedTests.dailySeries(InsightsHostedTests.consecutiveDays(30))
+        let variants: [(String, ColorScheme, DynamicTypeSize, CGSize)] = [
+            ("light", .light, .large, CGSize(width: 390, height: 270)),
+            ("dark", .dark, .large, CGSize(width: 390, height: 270)),
+            ("accessibility3", .light, .accessibility3, CGSize(width: 390, height: 360)),
+        ]
+        for (variant, scheme, typeSize, size) in variants {
+            try VisualReference.assertMatchesReference(
+                InsightsDailyChart(days: days, metric: .tokens).padding(16),
+                named: "insights-daily-chart-\(variant)",
+                size: size,
+                colorScheme: scheme,
+                dynamicTypeSize: typeSize
+            )
+        }
+    }
+
     // MARK: - Fixtures
 
     private static let fixtureID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!

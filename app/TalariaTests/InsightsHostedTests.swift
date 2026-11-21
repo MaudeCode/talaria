@@ -205,6 +205,51 @@ final class InsightsHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "insights-quota-detail")
     }
 
+    // MARK: Daily chart
+
+    /// A `daily_tokens` series with each row's figures distinct, as the server sends it: oldest first.
+    static func dailySeries(_ dates: [String]) throws -> [InsightsDailyToken] {
+        let rows = dates.enumerated().map { index, date in
+            #"{"date": "\#(date)", "input_tokens": \#(1_000 * (index + 1)), "output_tokens": \#(100 * (index + 1)), "cache_read_tokens": \#(10 * (index + 1)), "sessions": \#(index + 1), "cost": \#(Double(index + 1) / 4)}"#
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(InsightsResponse.self, from: Data(#"{"daily_tokens": [\#(rows.joined(separator: ","))]}"#.utf8))
+        return try XCTUnwrap(response.dailyTokens)
+    }
+
+    /// `count` consecutive server days from 2030-01-01.
+    static func consecutiveDays(_ count: Int) throws -> [String] {
+        let first = try XCTUnwrap(insightsCalendarDay("2030-01-01"))
+        return try (0..<count).map { insightsDayText(try XCTUnwrap(Calendar.current.date(byAdding: .day, value: $0, to: first))) }
+    }
+
+    /// VoiceOver's chart detail holds a year's every row as its own bar, in server order, read with that row's figures.
+    func testChartDescriptorReadsEveryRowWithItsOwnFigures() throws {
+        let days = try Self.dailySeries(try Self.consecutiveDays(365))
+        let descriptor = InsightsDailyChart.chartDescriptor(days: days, metric: .tokens, monthly: false, locale: Self.enUS)
+        let points = try XCTUnwrap(descriptor.series.first?.dataPoints)
+
+        XCTAssertEqual(points.map(\.xValue.__number), days.compactMap { $0.day?.timeIntervalSince1970 })
+        XCTAssertEqual(points.map { $0.yValue?.__number }, days.map { Double($0.totalTokens) })
+        XCTAssertEqual(points[1].label, "2,000 input, 200 output, 20 cache read, 2 sessions, $0.5000")
+    }
+
+    /// Pressing anywhere on a bar reads that bar's row, never the neighbour whose start is nearer the touch.
+    func testSelectingABarReadsTheRowItLandsOn() throws {
+        let days = try Self.dailySeries(["2030-01-01", "2030-01-02", "2030-01-03"])
+        let start = try XCTUnwrap(days[1].day)
+        for hours in [0.0, 6, 13, 23.5] {
+            let row = InsightsDailyChart.row(at: start.addingTimeInterval(hours * 3600), in: days, monthly: false)
+            XCTAssertEqual(row?.date, "2030-01-02", "\(hours) h into the bar")
+        }
+
+        // Month buckets are dated by their first day in the range, so the first can start mid-month.
+        let months = try Self.dailySeries(["2030-03-15", "2030-04-01"])
+        let lateMarch = try XCTUnwrap(insightsCalendarDay("2030-03-28"))
+        XCTAssertEqual(InsightsDailyChart.row(at: lateMarch, in: months, monthly: true)?.date, "2030-03-15")
+    }
+
     // MARK: Source routes
 
     /// A widget link or pinned row pushes the account once above the current screen, and Back returns there (TAL-1887).

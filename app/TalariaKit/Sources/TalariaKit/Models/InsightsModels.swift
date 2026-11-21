@@ -110,6 +110,8 @@ public struct InsightsDailyToken: Codable, Equatable, Sendable {
     public let outputTokens: Int?
     /// The server's day total (TAL-1750); a server that predates it leaves it nil and `totalTokens` sums the split.
     public let serverTotalTokens: Int?
+    /// Prompt tokens served from the cache; already counted inside `inputTokens`.
+    public let cacheReadTokens: Int?
     public let sessions: Int?
     public let cost: Double?
 
@@ -118,6 +120,7 @@ public struct InsightsDailyToken: Codable, Equatable, Sendable {
         case inputTokens
         case outputTokens
         case serverTotalTokens = "totalTokens"
+        case cacheReadTokens
         case sessions
         case cost
     }
@@ -128,6 +131,7 @@ public struct InsightsDailyToken: Codable, Equatable, Sendable {
         inputTokens = container.decodeLossyIntIfPresent(forKey: .inputTokens)
         outputTokens = container.decodeLossyIntIfPresent(forKey: .outputTokens)
         serverTotalTokens = container.decodeLossyIntIfPresent(forKey: .serverTotalTokens)
+        cacheReadTokens = container.decodeLossyIntIfPresent(forKey: .cacheReadTokens)
         sessions = container.decodeLossyIntIfPresent(forKey: .sessions)
         cost = container.decodeLossyCurrencyDoubleIfPresent(forKey: .cost)
     }

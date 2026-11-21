@@ -1,3 +1,4 @@
+import Accessibility
 import Charts
 import SwiftUI
 import TalariaKit
@@ -13,7 +14,9 @@ struct InsightsActivityCategory: Identifiable {
 /// Sessions per category (weekday or hour) in the server's order, as one accessibility element.
 struct InsightsActivityChart: View {
     let categories: [InsightsActivityCategory]
-    let accessibilityLabel: LocalizedStringKey
+    let title: String
+    /// What a category is, for VoiceOver's chart detail: a weekday or an hour.
+    let categoryTitle: String
     let summary: String?
     let identifier: String
 
@@ -39,16 +42,36 @@ struct InsightsActivityChart: View {
         .chartYAxis { InsightsChartAxis.yAxis }
         .frame(height: 120)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
+        .accessibilityLabel(Text(title))
         .accessibilityValue(Text(accessibilityValue))
+        .accessibilityChartDescriptor(InsightsChartAccessibility { [categories, title, categoryTitle] in
+            Self.chartDescriptor(categories: categories, title: title, categoryTitle: categoryTitle)
+        })
         .accessibilityIdentifier(identifier)
+    }
+
+    /// One data point per category, in server order, named the way the axis and VoiceOver name it.
+    static func chartDescriptor(categories: [InsightsActivityCategory], title: String, categoryTitle: String) -> AXChartDescriptor {
+        let names = categories.map(name)
+        let sessions = categories.map { Double($0.sessions) }
+        let xAxis = AXCategoricalDataAxisDescriptor(title: categoryTitle, categoryOrder: names)
+        let yAxis = AXNumericDataAxisDescriptor(
+            title: String(localized: "Sessions"), range: 0...max(sessions.max() ?? 0, 1), gridlinePositions: []
+        ) { String(localized: "\(Int($0)) sessions") }
+        let points = zip(names, sessions).map { AXDataPoint(x: $0, y: $1) }
+        return AXChartDescriptor(
+            title: title, summary: nil, xAxis: xAxis, yAxis: yAxis, additionalAxes: [],
+            series: [AXDataSeriesDescriptor(name: String(localized: "Sessions"), isContinuous: false, dataPoints: points)]
+        )
+    }
+
+    private static func name(_ category: InsightsActivityCategory) -> String {
+        category.label ?? InsightsActivitySummary.hourLabel(Int(category.id) ?? 0)
     }
 
     /// The peak, then every category with sessions, so VoiceOver reads the whole series.
     private var accessibilityValue: String {
-        let values = categories.filter { $0.sessions > 0 }.map { category in
-            "\(category.label ?? InsightsActivitySummary.hourLabel(Int(category.id) ?? 0)) \(category.sessions)"
-        }
+        let values = categories.filter { $0.sessions > 0 }.map { "\(Self.name($0)) \($0.sessions)" }
         guard !values.isEmpty else { return String(localized: "No data") }
         return ([summary].compactMap { $0 } + [values.joined(separator: ", ")]).joined(separator: ". ")
     }
