@@ -269,7 +269,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
     const open = match.index + match[0].length - 1
     const close = closes.get(open)!
     const first = literalAt(open + 1 + skeleton.slice(open + 1, close).search(/\S/))
-    const plain = first !== undefined && !skeleton.slice(open + 1, first.start).trim() && /^\s*(?:,|$)/.test(skeleton.slice(first.end, close))
+    const plain = first !== undefined && !first.f && !skeleton.slice(open + 1, first.start).trim() && /^\s*(?:,|$)/.test(skeleton.slice(first.end, close))
     if (!plain) maskTypedArguments(open, -1)
   }
   for (const match of code.matchAll(/insertText/g)) {

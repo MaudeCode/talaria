@@ -815,7 +815,7 @@ describe('values a browser_exec call types into a page (TAL-2299)', () => {
     ['a .value assigned a concatenation', `js("el.value = 'hun' + 'ter2'")`, `js('***')`],
     ['a CDP insertion of a converted number', `cdp('Input.insertText', {'text': str(123456)})`, `cdp('Input.insertText', {'text': str(***)})`],
     ['a CDP insertion computed from a dict key', `cdp('Input.insertText', {'text': next(iter({'hunter2': 1}))})`, `cdp('Input.insertText', {'text': next(iter({'***': ***}))})`],
-    ['a CDP call whose method name is built', `method = 'Input.insert' + 'Text'\ncdp(method, {'text': 'hunter2'})\ncdp('Input.insert' 'Text', text='hunter2')`, `method = '***' + '***'\ncdp('***', '***')\ncdp('***', text='***')`],
+    ['a CDP call whose method name is built', `method = 'Input.insert' + 'Text'\ncdp(method, {'text': 'hunter2'})\ncdp('Input.insert' 'Text', text='hunter2')\ncdp(f'Input.insert{suffix}', {'text': 'hunter2'})`, `method = '***' + '***'\ncdp('***', '***')\ncdp('***', text='***')\ncdp('***', '***')`],
     ['a CDP call that types nothing', `cdp('Page.navigate', url='https://example.com')`, `cdp('Page.navigate', url='https://example.com')`],
     ['a CDP insertion by keyword', `cdp("Input.insertText", text="hunter2")`, `cdp("Input.insertText", text='***')`],
     ['a CDP insertion by params, through a variable', `pw = 'hunter2'\ncdp('Input.insertText', {'text': pw}, session_id=sid)`, `pw = '***'\ncdp('Input.insertText', {'text': pw}, session_id=sid)`],
