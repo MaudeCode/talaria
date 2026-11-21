@@ -111,7 +111,10 @@ function ProviderQuota({ sources, pins, onRefresh }: { sources: QuotaSource[]; p
             </div>
             <QuotaWindowMeter window={w} source={s} mode="remaining" locale={locale} />
           </div>
-        ))])}
+        )),
+          // The account's own figures beside its windows, such as a usage API's remaining credits (TAL-1657).
+          ...(Array.isArray(s.details) ? s.details : []).filter((detail) => typeof detail === 'string').map((detail, i) => <div key={`${s.source_id}-detail-${String(i)}`} className="py-3 text-xs text-muted" data-quota-detail>{detail}</div>),
+        ])}
       {sources.map((s) => {
         const on = pinned.includes(s.source_id)
         const id = `providerSidebarQuota-${s.source_id}`

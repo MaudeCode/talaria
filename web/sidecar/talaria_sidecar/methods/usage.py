@@ -194,6 +194,9 @@ _BALANCE_URLS = {
     "openrouter": "https://openrouter.ai/api/v1/key",
     "deepseek": "https://api.deepseek.com/user/balance",
     "opencode-go": "https://opencode.ai/zen/go/v1/usage",
+    # TAL-1657: the Agent's commandcode-anthropic profile bills the same CommandCode account.
+    "commandcode": "https://api.commandcode.ai/alpha/billing/credits",
+    "commandcode-anthropic": "https://api.commandcode.ai/alpha/billing/credits",
 }
 _BALANCE_TIMEOUT_SECONDS = 15.0
 _BALANCE_MAX_BYTES = 256 * 1024
@@ -267,11 +270,47 @@ def _opencode_go(payload: Any) -> dict | None:
         if used is None or not 0 <= used <= 100:
             return None
         reset_at = reset_at if reset_at.tzinfo else reset_at.replace(tzinfo=timezone.utc)
-        windows.append({"key": key, "used_percent": used, "reset_at": _iso(reset_at.timestamp()), "rate_limited": window["status"] == "rate-limited"})
+        windows.append({"key": key, "used_percent": used, "reset_at": _iso(reset_at.timestamp()), "rate_limited": window["status"] == "rate-limited", "used": None, "limit": None})
     return {"windows": windows}
 
 
-_BALANCE_PARSERS = {"openrouter": _openrouter, "deepseek": _deepseek, "opencode-go": _opencode_go}
+def _reset_at(value: Any) -> str | None:
+    """Python `_usage_api_reset_at`: an ISO-8601 string (naive reads as UTC) or epoch seconds or milliseconds, else None,
+    so a response never echoes free text."""
+    try:
+        if isinstance(value, str):
+            moment = datetime.fromisoformat(value.strip().replace("Z", "+00:00").replace("z", "+00:00"))
+            return _iso((moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).timestamp())
+        epoch = _number(value) if isinstance(value, (int, float)) else None
+        return None if epoch is None or epoch <= 0 else _iso(epoch / 1000 if epoch >= 1e12 else epoch)
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def _commandcode(payload: Any) -> dict | None:
+    """Python `_sanitize_commandcode_quota`: each usable `windowLimits` window (a non-negative spend under a positive cap)
+    and the remaining credits, else nothing."""
+    limits = payload.get("windowLimits") if isinstance(payload, dict) else None
+    if not isinstance(limits, dict):
+        return None
+    amount = lambda value: number if (number := _number(value)) is not None and number >= 0 else None  # noqa: E731
+    windows = []
+    for source, key in (("fiveHour", "five_hour"), ("weekly", "weekly")):
+        window = limits.get(source)
+        if not isinstance(window, dict):
+            continue
+        used, limit = amount(window.get("used", window.get("used_amount"))), amount(window.get("limit", window.get("limit_amount", window.get("cap"))))
+        if used is None or not limit:
+            continue
+        windows.append({"key": key, "used_percent": min(100.0, used / limit * 100), "reset_at": _reset_at(window.get("reset_at", window.get("resetAt"))), "rate_limited": False, "used": used, "limit": limit})
+    if not windows:
+        return None
+    credits = payload.get("credits") if isinstance(payload.get("credits"), dict) else {}
+    parts = [part for key in ("monthlyCredits", "purchasedCredits", "freeCredits") if (part := amount(credits.get(key))) is not None]
+    return {"windows": windows, "credits_remaining": _number(sum(parts)) if parts else None}  # a sum past float range is dropped
+
+
+_BALANCE_PARSERS = {"openrouter": _openrouter, "deepseek": _deepseek, "opencode-go": _opencode_go, "commandcode": _commandcode, "commandcode-anthropic": _commandcode}
 
 
 def _error_code(exc: urllib.error.HTTPError) -> str | None:
@@ -288,7 +327,7 @@ def _error_code(exc: urllib.error.HTTPError) -> str | None:
 
 def balance(provider: str, *, credential_id: str | None, api_key: str | None, env_vars: list[str] | None = None) -> dict:
     """One key-based balance read. A pool credential's key resolves here; otherwise resolve the configured key inside the profile scope."""
-    result = {"status": "unavailable", "http_status": None, "error_code": None, "quota": None, "label": None, "is_available": None, "balances": [], "windows": []}
+    result = {"status": "unavailable", "http_status": None, "error_code": None, "quota": None, "label": None, "is_available": None, "balances": [], "windows": [], "credits_remaining": None}
     key = ""
     if credential_id:
         entry = _entry(provider, credential_id)
@@ -307,7 +346,7 @@ def balance(provider: str, *, credential_id: str | None, api_key: str | None, en
     except urllib.error.HTTPError as exc:
         with exc:
             return {**result, "status": "http_error", "http_status": exc.code, "error_code": _error_code(exc) if exc.code == 401 else None}
-    except (OSError, ValueError, http.client.HTTPException):  # URLError and timeouts are OSErrors; malformed JSON or UTF-8 are ValueErrors; a non-HTTP or truncated answer is an HTTPException
+    except (OSError, ValueError, RecursionError, http.client.HTTPException):  # URLError and timeouts are OSErrors; malformed JSON or UTF-8 are ValueErrors; a non-HTTP or truncated answer is an HTTPException
         log.debug("%s balance read failed", provider, exc_info=True)
         return result
     return {**result, **parsed, "status": "ok"} if parsed is not None else result

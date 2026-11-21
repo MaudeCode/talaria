@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "CommandCode accounts show their 5-hour and weekly limits and remaining credits beside your other provider usage, under CommandCode and CommandCode (Anthropic).",
+      "highlight": true,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "icon": "sparkles",
+        "title": "More provider quotas",
+        "description": "See OpenRouter credit and CommandCode quotas next to your other provider usage."
+      }
+    }
+  ]
+}

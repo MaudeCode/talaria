@@ -533,6 +533,16 @@ describe('ProviderDetail (TAL-2135)', () => {
     expect(within(signIn).queryByText('Configured')).toBeNull()
   })
 
+  it("keeps a usage API's credit details beside its windows (TAL-1657)", async () => {
+    providersResponse.current = { active_provider: 'commandcode', providers: [{ id: 'commandcode', display_name: 'CommandCode', has_key: true, configured: true }] }
+    quotaResponse.current = quotasWith([{ source_id: 'q-cc', provider_id: 'commandcode', status: 'available', provider_headline: true, headline_window_index: 0, details: ['Credits remaining: $10'],
+      windows: [{ label: 'Weekly', used_percent: 40, remaining_percent: 60, reset_at: null, detail: '$12 used of $30', window_seconds: 604800, pace: null, forecast: null, display_level: 'healthy' }] }])
+    await renderAt('/settings/providers/commandcode')
+    const quota = await found('[data-group="quota"]')
+    await waitFor(() => expect(within(quota).getByText('Credits remaining: $10')).toHaveAttribute('data-quota-detail'))
+    expect(within(quota).getByRole('meter')).toHaveAttribute('aria-valuenow', '60')
+  })
+
   it("keeps a plan's paused and credits status beside the windows its gauges became (TAL-2135)", async () => {
     providersResponse.current = { active_provider: 'nous', providers: [{ id: 'nous', display_name: 'Nous', has_key: true, configured: true, is_oauth: true }] }
     const plan = { kind: 'usage_window', plan: 'Pro', gauges: [{ label: 'week', title: 'Weekly', scope: 'all', left_fraction: 0.4, resets_at_ms: null, style: 'red' }], top_tier_model_ids: [], subscription_model_ids: [], featured_model_ids: [], paused_reason: 'allowance', credits_pay: true }
