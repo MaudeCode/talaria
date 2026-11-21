@@ -120,7 +120,7 @@ test('the composer drawing wraps without sideways scroll on the Duo\'s outer scr
   await page.goto('/settings/chat')
   await settle(page)
   const drawing = page.locator('[data-composer-preview]')
-  await expect(drawing.getByRole('button', { name: 'Show YOLO mode notice' })).toBeVisible()
+  await expect(drawing.getByRole('button', { name: 'Show YOLO Turn off button; the warning always shows' })).toBeVisible()
   expect(await drawing.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })

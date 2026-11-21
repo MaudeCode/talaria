@@ -1631,7 +1631,7 @@
 	"settings_label_composer_situational_controls": "Situational composer controls",
 	"settings_label_composer_toolsets": "도구 모음",
 	"settings_label_composer_workspace": "작업 공간",
-	"settings_label_composer_yolo": "YOLO 모드 알림",
+	"settings_label_composer_yolo": "YOLO 끄기 버튼(경고는 항상 표시됨)",
 	"settings_label_conversation_outline": "대화 개요",
 	"settings_label_cron_sessions": "예약된 작업",
 	"settings_label_dashboard_mode": "공식 Hermes 대시보드",

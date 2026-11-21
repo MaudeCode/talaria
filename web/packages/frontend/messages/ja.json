@@ -1566,7 +1566,7 @@
 	"settings_label_composer_situational_controls": "状況に応じたコンポーザーのコントロール",
 	"settings_label_composer_toolsets": "ツールセット",
 	"settings_label_composer_workspace": "ワークスペース",
-	"settings_label_composer_yolo": "YOLO モードの通知",
+	"settings_label_composer_yolo": "YOLO をオフにするボタン（警告は常に表示）",
 	"settings_label_conversation_outline": "会話のアウトライン",
 	"settings_label_cron_sessions": "スケジュールされたタスク",
 	"settings_label_dashboard_mode": "公式Hermesダッシュボード",

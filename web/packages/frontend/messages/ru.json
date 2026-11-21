@@ -1731,7 +1731,7 @@
 	"settings_label_composer_situational_controls": "Контекстные элементы композитора",
 	"settings_label_composer_toolsets": "Наборы инструментов",
 	"settings_label_composer_workspace": "Рабочее пространство",
-	"settings_label_composer_yolo": "Уведомление о режиме YOLO",
+	"settings_label_composer_yolo": "Кнопка «Выключить YOLO»; предупреждение видно всегда",
 	"settings_label_conversation_outline": "Структура беседы",
 	"settings_label_cron_sessions": "Запланированные задачи",
 	"settings_label_dashboard_mode": "Официальная панель Hermes",

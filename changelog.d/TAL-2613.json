@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The YOLO warning stays above the composer while YOLO is on, even with its Turn off button hidden in Settings.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

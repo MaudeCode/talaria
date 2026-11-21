@@ -1631,7 +1631,7 @@
 	"settings_label_composer_situational_controls": "Situational composer controls",
 	"settings_label_composer_toolsets": "Araç setleri",
 	"settings_label_composer_workspace": "Çalışma alanı",
-	"settings_label_composer_yolo": "YOLO modu bildirimi",
+	"settings_label_composer_yolo": "YOLO Kapat düğmesi; uyarı her zaman görünür",
 	"settings_label_conversation_outline": "Konuşma ana hattı",
 	"settings_label_cron_sessions": "Zamanlanmış görevler",
 	"settings_label_dashboard_mode": "Resmi Hermes Kontrol Paneli",

@@ -1657,7 +1657,7 @@
 	"settings_label_composer_situational_controls": "Contrôles contextuels du composeur",
 	"settings_label_composer_toolsets": "Jeux d’outils",
 	"settings_label_composer_workspace": "Espace de travail",
-	"settings_label_composer_yolo": "Avis du mode YOLO",
+	"settings_label_composer_yolo": "Bouton Désactiver YOLO ; l’avertissement reste toujours affiché",
 	"settings_label_conversation_outline": "Plan de la conversation",
 	"settings_label_cron_sessions": "Tâches planifiées",
 	"settings_label_dashboard_mode": "Tableau de bord officiel Hermes",
