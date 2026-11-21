@@ -7,6 +7,8 @@ export default defineConfig({
     environment: 'node',
     // Shared CI runners stall individual HTTP tests past the 5 s default under two workers.
     testTimeout: 20_000,
+    // Raises vi.waitFor's 1 s default to a ceiling below testTimeout.
+    setupFiles: ['src/test/setup.ts'],
     // TALARIA_STORAGE=postgres runs share one embedded Postgres (TAL-1067).
     globalSetup: ['src/test/postgres-global-setup.ts'],
     // Measure the event-loop budgets without another test file competing for the runner's CPU.
