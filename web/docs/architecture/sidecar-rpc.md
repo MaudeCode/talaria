@@ -432,8 +432,9 @@ are logged privately and returned as a generic 502. Node sends no provider reque
 Automatic Edge voice (TAL-2262) is the one approved exception to Agent-only speech
 policy: when the profile's engine is `edge`, the sidecar picks the voice from the
 spoken language. It runs the Agent's spoken-text cleaner, then votes English and
-Italian stopwords (accented letters count for Italian); a language needs at least
-three words, two votes and a strict lead. Precedence for a recognized language is a
+Italian stopwords (word-final accents count for Italian). French, Spanish, Portuguese
+and German stopwords and letters vote too, only to veto: English or Italian needs at
+least three words, two votes and a strict lead over every language. Precedence for a recognized language is a
 usable `tts.edge.voices.<en|it>` (on the reviewed Edge allowlist, no unresolved
 `${VAR}`), then `en-US-AvaNeural` or `it-IT-ElsaNeural`. Short, tied, mixed,
 unsupported or malformed input leaves the profile untouched, so `tts.edge.voice` or

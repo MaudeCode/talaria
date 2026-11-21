@@ -197,6 +197,8 @@ def test_edge_voice_follows_the_spoken_language(tts_call, text, edge, voice):
 
 @pytest.mark.parametrize('text', [
     'Ok thanks', 'The plan and il la tavola', 'Das ist ein Test der deutschen Stimme heute', 'Hello',
+    'La réponse est déjà prête pour le déploiement.', 'La aplicación funciona con una cuenta de prueba.',
+    'A aplicação funciona com uma conta de teste e não falha.',
 ])
 def test_uncertain_language_keeps_the_configured_voice(tts_call, text):
     call, _, _ = tts_call

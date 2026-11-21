@@ -26,7 +26,19 @@ _LANGUAGE_WORDS = {
     'en': frozenset({'the', 'and', 'is', 'are', 'you', 'for', 'with', 'this', 'that', 'not', 'have', 'what',
                      'when', 'there', 'from', 'would', 'should', 'about', 'can', 'will', 'your', 'but', 'just',
                      'very'}),
+    # Neighbours that share Italian's articles and accents only veto: a tie or lead abstains, keeping the voice.
+    'fr': frozenset({'le', 'la', 'les', 'un', 'une', 'des', 'du', 'est', 'et', 'pour', 'pas', 'que', 'qui', 'dans',
+                     'sur', 'avec', 'ce', 'cette', 'sont', 'mais', 'nous', 'vous', 'je', 'il', 'au', 'aux', 'ne'}),
+    'es': frozenset({'el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'es', 'y', 'por', 'para', 'que', 'en',
+                     'con', 'se', 'su', 'pero', 'muy', 'este', 'esta', 'son', 'como', 'cuando', 'lo', 'al'}),
+    'pt': frozenset({'os', 'um', 'uma', 'de', 'da', 'do', 'das', 'dos', 'com', 'para', 'que',
+                     'em', 'na', 'no', 'se', 'por', 'mais', 'mas', 'muito', 'este', 'esta', 'quando'}),
+    'de': frozenset({'der', 'die', 'das', 'und', 'ist', 'nicht', 'ein', 'eine', 'mit', 'für', 'auf', 'ich', 'sie',
+                     'es', 'den', 'dem', 'zu', 'auch', 'aber', 'sehr', 'wenn'}),
 }
+# Italian accents end a word (città, è, perché); these letters or placements belong to the neighbours.
+_LANGUAGE_LETTERS = {'it': re.compile(r'[àèéìòù]$'), 'fr': re.compile(r'[âêîôûçëïœ]|[éè].'),
+                     'es': re.compile(r'[áíóúñ]'), 'pt': re.compile(r'[ãõ]'), 'de': re.compile(r'[äöüß]')}
 _LANGUAGE_VOICES = {'en': 'en-US-AvaNeural', 'it': 'it-IT-ElsaNeural'}
 # Reviewed upstream Hermes WebUI Edge allowlist; a configured per-language voice must be one of these.
 _EDGE_VOICES = frozenset({
@@ -44,14 +56,16 @@ _install_lock = threading.Lock()
 
 
 def _spoken_language(text: str) -> str | None:
-    """Stopword/accent vote: three words, two votes and a strict winner, else no language."""
-    words = re.findall(r"[a-zàèéìòù']+", text.lower())
+    """Stopword/accent vote: three words, two votes and a strict lead over every language, else none."""
+    words = re.findall(r'[^\W\d_]+', text.lower())
     if len(words) < 3:
         return None
     votes = {lang: sum(word in vocabulary for word in words) for lang, vocabulary in _LANGUAGE_WORDS.items()}
-    votes['it'] += sum(any(char in 'àèéìòù' for char in word) for word in words)
+    for lang, letters in _LANGUAGE_LETTERS.items():
+        votes[lang] += sum(bool(letters.search(word)) for word in words)
     winner = max(votes, key=votes.get)
-    if votes[winner] >= 2 and all(count < votes[winner] for lang, count in votes.items() if lang != winner):
+    if (winner in _LANGUAGE_VOICES and votes[winner] >= 2
+            and all(count < votes[winner] for lang, count in votes.items() if lang != winner)):
         return winner
     return None
 
