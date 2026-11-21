@@ -122,7 +122,7 @@ final class ChatHostedTests: XCTestCase {
     func testExternalChatChecksAccessUntilTheServerVerifiesIt() async throws {
         let fixture = try FixtureApp(for: self)
         let release = DispatchSemaphore(value: 0)
-        let summary = SessionSummary(sessionId: "cli-hosted", title: "CLI chat", isCliSession: true)
+        let summary = SessionSummary(sessionId: "cli-hosted", title: "CLI chat", isCliSession: true, accessProvisional: true)
         let model = try makeScriptedChatViewModel(streamClient: ScriptedSSEStreamingClient(), sessionSummary: summary) { request in
             guard request.url?.path == "/api/session" else { return apiTestJSONResponse("{}", for: request) }
             XCTAssertEqual(release.wait(timeout: .now() + .seconds(10)), .success)

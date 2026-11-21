@@ -61,14 +61,11 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
         assertMinimum(samples, equals: Self.expectedTickWork, phase: "Stream tick")
     }
 
-    /// Typing follows a finished reply, as a reader's next message does, and waits for it to end: a live stream silent
-    /// for 12 s starts a stale-stream check (`ChatStreamCoordinatorTiming.transportFreshInterval`), which would make the
-    /// counts depend on how fast the host types. Each run types into an empty draft.
+    /// The fixture ends in a settled reply, so typing can start from the same state without sending a setup prompt.
+    /// Each run types into an empty draft.
     func testKeystrokesStayWithinTheWorkBudget() async throws {
         let harness = try await ChatStreamTickHarness(test: self)
         defer { harness.tearDown() }
-        try await harness.openReply(sending: "Show the change")
-        await harness.endReply()
         var samples: [ChatWorkSample] = []
         for _ in 1...Self.runCount {
             samples.append(try await harness.type(Self.keystrokeCount))
