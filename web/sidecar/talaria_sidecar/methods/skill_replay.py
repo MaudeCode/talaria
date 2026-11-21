@@ -81,7 +81,7 @@ def _names(value):
 
 def _fixture(home, case):
     """The recorded conversation up to the case's user message (Hermetic ``_aai_turn``), bounded and self-contained."""
-    from hermes_state import SessionDB
+    from ..agent_store import reader, session_row, transcript
 
     session_id, message_id = case.get('session_id'), case.get('message_id')
     if not isinstance(session_id, str) or not session_id or not str(message_id or '').isdigit():
@@ -89,12 +89,9 @@ def _fixture(home, case):
     path = home / 'state.db'
     if not path.is_file() or path.is_symlink():
         raise _Unavailable('case_unavailable')
-    db = SessionDB(path, read_only=True)
-    try:
-        messages = db.get_messages(session_id) or []
-        session = db.get_session(session_id) or {}
-    finally:
-        db.close()
+    with reader(home) as db:
+        messages = transcript(db, session_id) or []
+        session = session_row(db, session_id) or {}
     mid = int(message_id)
     rows = [m for m in messages if isinstance(m, dict) and int(m.get('id') or 0) <= mid]
     if not any(int(m.get('id') or 0) == mid for m in rows):

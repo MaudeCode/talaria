@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web keeps chat titles, usage, handoff summaries, deletes, Bot Chat and subagent goals in sync with the Agent's session store on Hermes Agent v0.23.3.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

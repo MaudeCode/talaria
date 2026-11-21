@@ -2387,9 +2387,23 @@
         ""
       ]
     },
+    "tests/test_agent_store_reads.py::test_a_replay_case_reads_its_recorded_conversation_and_prompt": {
+      "layer": "compatibility",
+      "reason": "The installed Agent's store must serve a skill replay case's recorded transcript and session prompt to the sidecar reader in the Agent interpreter; on v0.23.3 that is the storage interface, which a fake cannot establish (TAL-2591).",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_store_reads.py::test_a_multimodal_first_message_reads_as_its_goal": {
+      "layer": "compatibility",
+      "reason": "The installed Agent's stored multimodal message content must decode to a subagent's goal through the sidecar reader in the Agent interpreter; v0.23.3 moved the decoder out of SessionDB, which a fake cannot establish (TAL-2591).",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_state_db_shared_handle.py::test_sync_usage_reuses_one_handle_until_the_file_is_replaced": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: state_db writes reuse the Agent's shared SessionDB registry handle and reopen after a file replace. Counts the real release's SessionDB opens and write transactions, which a fake cannot establish.",
+      "reason": "Supported-Agent API compatibility: state_db writes reuse the Agent's shared store handle (the SessionDB registry, or the v0.23.3 storage interface's per-profile backend), take a replaced file's next write, keep each profile home on its own store and give every handle back at shutdown. Counts the real release's opens and write transactions, which a fake cannot establish (TAL-1191, TAL-2591).",
       "cases": [
         ""
       ]

@@ -2,13 +2,11 @@
 from contextlib import nullcontext
 import json
 from pathlib import Path
-import subprocess
 import sys
-import textwrap
 import threading
 from types import SimpleNamespace
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, isolated_env, requires_agent
+from conftest import SidecarProcess, assert_matches, requires_agent, run_store_script
 from talaria_sidecar.methods import Registry, chat
 
 
@@ -102,24 +100,20 @@ def test_resident_context_read_drops_compression_during_measurement(tmp_path, mo
 
 
 def _seed_stored_sessions(home) -> None:
-    script = textwrap.dedent(f"""
-        from pathlib import Path
-        from hermes_state import SessionDB
-        db = SessionDB(db_path=Path({str(home / 'state.db')!r}))
-        tool = {{'type': 'function', 'function': {{'name': 'synthetic_tool', 'description': 'synthetic tool', 'parameters': {{}}}}}}
+    run_store_script(home, """
+        tool = {'type': 'function', 'function': {'name': 'synthetic_tool', 'description': 'synthetic tool', 'parameters': {}}}
+        prompt = (store.sessions if store else db).update_system_prompt
         db.create_session(session_id='stored', source='webui')
-        db.update_system_prompt('stored', 'Synthetic stored prompt. ' * 40)
-        db.update_session_tool_names('stored', [tool])
+        prompt('stored', 'Synthetic stored prompt. ' * 40)
+        store.sessions.update_tool_pin('stored', [tool]) if store else db.update_session_tool_names('stored', [tool])
         db.append_message('stored', 'user', 'Synthetic question. ' * 40)
         db.create_session(session_id='no-prompt', source='webui')
         db.append_message('no-prompt', 'user', 'Synthetic question.')
         db.create_session(session_id='rotated', source='webui')
         db.end_session('rotated', 'compression')
         db.create_session(session_id='rotated-tip', source='webui', parent_session_id='rotated')
-        db.update_system_prompt('rotated-tip', 'Synthetic tip prompt. ' * 40)
-        db.close()
+        prompt('rotated-tip', 'Synthetic tip prompt. ' * 40)
     """)
-    subprocess.run([AGENT_PYTHON, '-c', script], env=isolated_env(home, PYTHONPATH=str(AGENT_DIR)), check=True, timeout=60)
 
 
 @requires_agent

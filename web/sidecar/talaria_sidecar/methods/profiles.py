@@ -18,6 +18,7 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
+from .. import agent_store
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param
 from ..rpc import CallContext
@@ -183,28 +184,18 @@ def canonical_bot_chat(home: Path) -> dict | None:
     if not db_path.is_file():
         return None
     try:
-        from hermes_state import SessionDB
-
-        title = getattr(SessionDB, "CANONICAL_BOT_CHAT_TITLE", None)
-        if not title:
-            return None
-        db = SessionDB(db_path=db_path, read_only=True)
-    except Exception:  # noqa: BLE001
-        return None
-    try:
-        row = db.get_session_by_title(title)
-        if not row or row.get("title") != title or row.get("archived") or str(row.get("source") or "").strip().lower() in _INTERNAL_SOURCES:
-            return None
-        session_id = str(row["id"])
-        return {"session_id": session_id, "tip_session_id": str(db.get_compression_tip(session_id) or session_id)}
+        with agent_store.reader(home) as db:
+            found = agent_store.canonical_bot_chat_row(db)
+            if found is None:
+                return None
+            title, row = found
+            if row.get("title") != title or row.get("archived") or str(row.get("source") or "").strip().lower() in _INTERNAL_SOURCES:
+                return None
+            session_id = str(row["id"])
+            return {"session_id": session_id, "tip_session_id": str(agent_store.compression_tip(db, session_id) or session_id)}
     except Exception:  # noqa: BLE001
         log.debug("canonical Bot Chat lookup failed for %s", db_path, exc_info=True)
         return None
-    finally:
-        try:
-            db.close()
-        except Exception:  # noqa: BLE001
-            pass
 
 
 GATEWAY_RUNNING_MODES = ("own", "served")

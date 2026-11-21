@@ -16,6 +16,7 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import textwrap
 import threading
 import time
 from collections import OrderedDict
@@ -58,6 +59,47 @@ def discover_python(agent_dir: pathlib.Path | None) -> str | None:
 AGENT_DIR = configured_agent_dir()
 AGENT_PYTHON = discover_python(AGENT_DIR)
 requires_agent = pytest.mark.skipif(AGENT_DIR is None or AGENT_PYTHON is None, reason="pinned Hermes Agent checkout with venv not found")
+# TAL-2591: Agent v0.23.3+ keeps sessions behind its storage interface and carries only a limited ``SessionDB`` stand-in.
+NATIVE_STORE = AGENT_DIR is not None and (AGENT_DIR / "persistence_assembly.py").is_file()
+
+# A seeding script's opening on the Agent's interpreter: ``db`` is the ``SessionDB`` of ``$HERMES_HOME/state.db`` (on
+# v0.23.3+ the stand-in, which carries the session and message verbs), ``store`` the storage interface handle on that
+# Agent and None before it, and the verbs below write the same rows on either.
+STORE_PRELUDE = """
+import os
+from pathlib import Path
+from hermes_state import SessionDB
+HOME = Path(os.environ["HERMES_HOME"])
+db = SessionDB(db_path=HOME / "state.db")
+try:
+    from persistence_assembly import open_persistence, profile_scope
+except ImportError:
+    store = None
+else:
+    store = open_persistence(profile_scope(home=HOME), eager=True)
+
+def lease(sid, holder):
+    return store.coordination.try_acquire_turn_lease(session_id=sid, holder=holder) if store else db.try_acquire_session_turn_lease(sid, holder)
+
+def lock(sid, holder):
+    return store.coordination.try_acquire_compression_lock(session_id=sid, holder=holder) if store else db.try_acquire_compression_lock(sid, holder)
+
+def unlock(sid, holder):
+    return store.coordination.release_compression_lock(session_id=sid, holder=holder) if store else db.release_compression_lock(sid, holder)
+
+def hide(sid):
+    return store.sessions.set_hidden(sid, True) if store else db.set_session_hidden(sid, True)
+
+def archive(sid):
+    return store.sessions.set_archived(sid, True) if store else db.set_session_archived(sid, True)
+"""
+
+
+def run_store_script(hermes_home: pathlib.Path, body: str, *, sidecar: bool = False, **extra: str) -> None:
+    """Run ``body`` after ``STORE_PRELUDE`` on the Agent's interpreter against ``hermes_home``, closing both handles."""
+    script = STORE_PRELUDE + textwrap.dedent(body) + "\ndb.close()\nif store:\n    store.close()\n"
+    path = f"{SIDECAR_ROOT}:{AGENT_DIR}" if sidecar else str(AGENT_DIR)
+    subprocess.run([AGENT_PYTHON, "-c", script], env=isolated_env(hermes_home, PYTHONPATH=path, **extra), check=True, timeout=60)
 
 
 def isolated_env(hermes_home: pathlib.Path, *, home: pathlib.Path | None = None, **extra: str) -> dict[str, str]:

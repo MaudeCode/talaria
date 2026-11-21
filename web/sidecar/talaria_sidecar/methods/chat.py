@@ -28,8 +28,8 @@ from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
-from types import SimpleNamespace
 
+from .. import agent_store
 from ..errors import InvalidParams, RpcError
 from ..home import _scope_stamp, profile_home_param, scoped_home, session_workspace
 from ..rpc import CallContext, WakeEvent
@@ -1181,8 +1181,6 @@ def _schedule_archive(work: _ArchiveCallback, home: Path) -> None:
 
 
 def _notify_archive(home: Path, session_id: str, lineage: list[str] | None) -> None:
-    import hermes_state_common
-
     # Upstream hook warnings can include arbitrary callback exceptions. Keep one payload-free diagnostic.
     thread_id, warned = threading.get_ident(), False
 
@@ -1197,11 +1195,10 @@ def _notify_archive(home: Path, session_id: str, lineage: list[str] | None) -> N
     for handler in handlers:
         handler.addFilter(bounded_diagnostic)
     try:
-        # The emitter only needs db_path for profile identity. Opening SessionDB would migrate an owner's store.
+        # The emitter opens no store: opening one would migrate an owner's store.
         # The server's lineage starts at the root, which is usually ``session_id``: one id each.
         ids = list(dict.fromkeys([session_id, *(lineage or [])]))
-        hermes_state_common.emit_session_deleted(SimpleNamespace(db_path=home / "state.db"), ids, reason="archive",
-                                                 primary=session_id, sessions_dir=home / "sessions")
+        agent_store.emit_session_deleted(home, ids, reason="archive", primary=session_id, sessions_dir=home / "sessions")
     finally:
         for handler in handlers:
             handler.removeFilter(bounded_diagnostic)
@@ -1393,6 +1390,8 @@ def _build_agent(AIAgent, kwargs: dict, home, session_id: str, state_db: bool = 
     session_db = _acquire_session_db(home) if state_db and _supported(AIAgent, "session_db") else None
     if session_db is not None:
         kwargs["session_db"] = session_db
+        if agent_store.native():
+            kwargs["persistence"] = session_db  # the storage interface handle is the agent's store as well
         kwargs["session_id"] = _execution_session_id(session_db, session_id)
     try:
         agent = AIAgent(**kwargs)
@@ -1694,13 +1693,11 @@ def _holding_home(target: str) -> bool:
 
 
 def _acquire_session_db(home):
-    """TAL-529: the profile's ``state.db`` from the Agent's shared-handle registry, one reference per agent (released with
-    it), so the turn's conversation reaches ``hermes sessions``, CLI resume, and ``session_search``. None when it cannot
-    open: the turn runs without it, like the predecessor's ``_build_session_db_for_stream``."""
+    """TAL-529: the profile's process-shared store handle, one reference per agent (released with it), so the turn's
+    conversation reaches ``hermes sessions``, CLI resume, and ``session_search``. None when it cannot open: the turn runs
+    without it, like the predecessor's ``_build_session_db_for_stream``."""
     try:
-        from hermes_state_registry import acquire
-
-        return acquire(Path(home) / "state.db")
+        return agent_store.acquire(Path(home))
     except Exception:  # noqa: BLE001
         log.warning("state.db unavailable under %s; this agent's turns will not reach it", home, exc_info=True)
         return None
@@ -1712,9 +1709,9 @@ def _execution_session_id(db, session_id: str) -> str:
     rather than the closed Web id. The tip qualifies as in the Agent's own adoption: a different, still-open row. Any
     doubt keeps the Web id."""
     try:
-        tip = db.get_compression_tip(session_id)
+        tip = agent_store.compression_tip(db, session_id)
         if tip and tip != session_id:
-            row = db.get_session(tip)
+            row = agent_store.session_row(db, tip)
             if row and row.get("ended_at") is None:
                 log.info("agent for %s runs on its live compression tip %s", session_id, tip)
                 return str(tip)
@@ -1739,20 +1736,16 @@ def _stored_context_detail(home: Path, session_id: str) -> dict:
         return unavailable("not_built")
     try:
         from agent.context_breakdown import stored_context_breakdown
-        from hermes_state import SessionDB
         from tools.mcp_tool_agent import pinned_tool_defs
 
         with scoped_home(home):
-            db = SessionDB(path, read_only=True)
-            try:
+            with agent_store.reader(home) as db:
                 tip = _execution_session_id(db, session_id)
-                row = db.get_session(tip) or {}
+                row = agent_store.session_row(db, tip) or {}
                 prompt = row.get("system_prompt")
                 if not prompt:
                     return unavailable("not_built")
-                history = [m for m in db.get_messages_as_conversation(tip, repair_alternation=True) if m.get("role") != "session_meta"]
-            finally:
-                db.close()
+                history = [m for m in agent_store.conversation(db, tip) if m.get("role") != "session_meta"]
             try:
                 pin = json.loads(row.get("tool_names") or "null")
             except (TypeError, ValueError):
@@ -2527,12 +2520,16 @@ def _retain_refused_turn(agent, session_id: str, result: dict) -> str | None:
         return None
     try:
         from agent.turn_failure_copy import CONTENT_REFUSED_NOTICE
-        from hermes_state_rewind import retain_refused_turn_for_display
     except ImportError:  # agent-shim: content-refused-retention
         return None
-    # Best-effort, like every owner's call: it logs and returns False when nothing was retained.
-    retain_refused_turn_for_display(getattr(agent, "_session_db", None), getattr(agent, "session_id", None) or session_id,
-                                    notice=CONTENT_REFUSED_NOTICE, boundary_row_id=result.get("refused_turn_boundary_row_id"))
+    try:
+        # Best-effort, like every owner's call: nothing retained leaves the turn as the Agent wrote it.
+        agent_store.retain_refused_turn(getattr(agent, "_session_db", None), getattr(agent, "session_id", None) or session_id,
+                                        notice=CONTENT_REFUSED_NOTICE, boundary_row_id=result.get("refused_turn_boundary_row_id"))
+    except ImportError:  # agent-shim: content-refused-retention
+        return None
+    except Exception:  # noqa: BLE001
+        log.warning("Failed to take the refused turn out of the model context", exc_info=True)
     return CONTENT_REFUSED_NOTICE
 
 
