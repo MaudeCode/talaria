@@ -135,9 +135,9 @@ extension SessionListMutationTests {
             let query = request.request.url?.query ?? ""
             switch (request.request.url?.path, query.contains("cron-1")) {
             case ("/api/session", true):
-                request.complete(withJSON: #"{"session":{"session_id":"cron-1","title":"Nightly","archived":false,"source_kind":"cron"}}"#)
+                request.complete(withJSON: #"{"session":{"session_id":"cron-1","title":"Nightly","archived":false,"sidebar_group":"scheduled"}}"#)
             case ("/api/session", false):
-                request.complete(withJSON: #"{"session":{"session_id":"hook-1","title":"Hook","archived":false,"source_kind":"webhook"}}"#)
+                request.complete(withJSON: #"{"session":{"session_id":"hook-1","title":"Hook","archived":false,"sidebar_group":"webhook"}}"#)
             default:
                 XCTFail("unexpected request \(request.request.url?.path ?? "nil")")
             }

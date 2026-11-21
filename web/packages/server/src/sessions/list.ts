@@ -612,6 +612,9 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   // TAL-2508: a CLI, Claude Code or messaging row's access can change once its detail load claims or imports it; a
   // subagent child stays view-only.
   r.access_provisional = !subagent && (kind === 'cli' || kind === 'claude_code' || kind === 'messaging')
+  // TAL-2518: a row outside the list (session detail, a created or duplicated chat) still files under its automated group;
+  // `GET /api/sessions` replaces this with the row's full group.
+  r.sidebar_group = automatedSidebarGroup(kind)
   // Pin and archive refuse only subagent children; duplicate also needs the WebUI sidecar it copies, so a sidecar-less
   // foreign row arrives with `can_duplicate: false`. Rename, move and delete follow `read_only` (the mutation gate).
   // A Claude Code import is a live view Web never stores (TAL-551), so it cannot be pinned or archived either.
@@ -1005,8 +1008,12 @@ const SIDEBAR_GROUP_TITLES: Record<SidebarGroupKind, string> = { pinned: 'Pinned
  * TAL-1639: a cron or webhook row, pinned or archived, is in its own group, as `scheduled_session_count` counts it.
  */
 function sidebarGroup(row: Row): SidebarGroupKind | null {
-  const kind = sourceKind(row)
-  return kind === 'cron' ? 'scheduled' : kind === 'webhook' ? 'webhook' : row.archived ? null : row.pinned ? 'pinned' : 'recent'
+  return automatedSidebarGroup(sourceKind(row)) ?? (row.archived ? null : row.pinned ? 'pinned' : 'recent')
+}
+
+/** TAL-1639: the group a cron or webhook row files under, pinned or archived; null for every other source. */
+function automatedSidebarGroup(kind: SourceKind): 'scheduled' | 'webhook' | null {
+  return kind === 'cron' ? 'scheduled' : kind === 'webhook' ? 'webhook' : null
 }
 
 export function sidebarSessionResponseItem(row: Row, redactEnabled: boolean, attention: Row | null, activeStreamIds: ReadonlySet<string>, workspaceName: (row: Row) => string | null): Row {

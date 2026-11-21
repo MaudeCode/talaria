@@ -627,7 +627,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         sortTs = detail.sortTs
         pinned = detail.pinned
         archived = detail.archived
-        sidebarGroup = nil
+        sidebarGroup = detail.sidebarGroup
         projectId = detail.projectId
         profile = detail.profile
         inputTokens = detail.inputTokens
@@ -746,7 +746,8 @@ extension SessionSummary {
             sortTs: sortTs ?? row.sortTs,
             pinned: pinned ?? row.pinned,
             archived: archived ?? row.archived,
-            // A detail carries no group; once its pin or archive state replaces the row's, the row's group is stale.
+            // A detail carries only an automated group; once its pin or archive state replaces the row's, the row's
+            // pinned or recent group is stale.
             sidebarGroup: sidebarGroup ?? (pinned == nil && archived == nil ? row.sidebarGroup : nil),
             projectId: projectId ?? row.projectId,
             profile: profile ?? row.profile,
@@ -794,14 +795,9 @@ extension SessionSummary {
     }
 
     /// The automated group (`scheduled` or `webhook`) the row files under: the server's `sidebar_group`
-    /// (TAL-1534). `/api/session` omits that field, so a row the list adds from session detail (a deep link, a
-    /// created or duplicated chat) files by its server `source_kind` until `GET /api/sessions` serves it. TAL-2518 ships
-    /// the field on session detail; this fallback goes with it.
+    /// (TAL-1534), which session detail also carries for a row the list adds before serving it (TAL-2518).
     public var automatedSidebarGroup: String? {
-        if let sidebarGroup {
-            return sidebarGroup == "scheduled" || sidebarGroup == "webhook" ? sidebarGroup : nil
-        }
-        return isCronSession ? "scheduled" : isWebhookSession ? "webhook" : nil
+        sidebarGroup == "scheduled" || sidebarGroup == "webhook" ? sidebarGroup : nil
     }
 
     public var isCronSession: Bool { sourceKind == .cron }
@@ -917,6 +913,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
     let sortTs: Double?
     let pinned: Bool?
     let archived: Bool?
+    /// The automated group (`scheduled` or `webhook`) the server files this session under (`sidebar_group`, TAL-2518).
+    let sidebarGroup: String?
     let projectId: String?
     public let profile: String?
     public let inputTokens: Int?
@@ -1012,6 +1010,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
         case sortTs
         case pinned
         case archived
+        case sidebarGroup
         case projectId
         case profile
         case inputTokens
@@ -1089,6 +1088,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
         sortTs = container.decodeLossyDoubleIfPresent(forKey: .sortTs)
         pinned = container.decodeLossyBoolIfPresent(forKey: .pinned)
         archived = container.decodeLossyBoolIfPresent(forKey: .archived)
+        sidebarGroup = container.decodeLossyStringIfPresent(forKey: .sidebarGroup)
         projectId = container.decodeLossyStringIfPresent(forKey: .projectId)
         profile = container.decodeLossyStringIfPresent(forKey: .profile)
         inputTokens = container.decodeLossyIntIfPresent(forKey: .inputTokens)

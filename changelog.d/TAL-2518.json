@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A scheduled or webhook chat you open from a link now files under its group because your server says where it belongs, instead of the App guessing from where the chat started.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

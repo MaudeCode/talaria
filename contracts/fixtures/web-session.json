@@ -2756,6 +2756,7 @@
     "can_delete": false,
     "can_duplicate": false,
     "can_share": true,
+    "sidebar_group": null,
     "transcript_seq": null
   },
   "context_usage_sessions": {
