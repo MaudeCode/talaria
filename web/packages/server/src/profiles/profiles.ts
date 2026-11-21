@@ -9,7 +9,7 @@ import type { DocumentBackend } from '../sessions/storage/backend.js'
 import { updateDocument } from '../sessions/storage/document.js'
 import { join, resolve } from 'node:path'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX, RPC_ERROR_CODES } from '@maudecode/talaria-web-contracts'
+import { PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX, PROFILE_ID_RE, RPC_ERROR_CODES } from '@maudecode/talaria-web-contracts'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
 import { dict, modelSection, parseProviderQualifiedModel, providerIdentity } from '../config/agent-config.js'
 import { writeProfileEnv } from '../providers/env-file.js'
@@ -18,7 +18,7 @@ import { str } from '../util.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { openAnchoredFd } from '../workspace/fs.js'
 
-export const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
+export { PROFILE_ID_RE }
 
 /**
  * Python `_resolve_named_profile_home`: `<base>/profiles/<name>`, or null when it resolves outside the resolved
