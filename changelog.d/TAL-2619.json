@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When the Agent compacts a chat mid-reply, an earlier message with an image and an empty bubble no longer reappear below the answer.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

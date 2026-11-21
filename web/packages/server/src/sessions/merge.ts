@@ -9,9 +9,10 @@ import { buildActiveTurnToken, completedToolIndex } from '../redact.js'
 import { selectAuthoritativeTerminalEvent, type JournalEvent } from './journal.js'
 import { str } from '../util.js'
 import { stateDbMessageBucket, stateDbMessageKey, stateDbKeyFingerprint, stateDbRowId, stateDbIdentityKeys, stateDbMessageRepresented } from './state-db-identity.js'
-import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './session.js'
+import type { Message } from './session.js'
+import { escapeWorkspacePrefixPath, stripWorkspacePrefix, userPromptText } from './prompt-text.js'
 
-export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
+export { escapeWorkspacePrefixPath, WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './prompt-text.js'
 import { toolResultMedia, toolScreenshotMedia, type MediaProjection } from '../workspace/media-refs.js'
 import { codeExcerpt, DATA_URL_RE, decidedEditDiff, decisionReviewRef, humanControlRows, outboundDraftRef, outcomeValue, pageExcerpt, proposalRef, readFileView, resultAnalysisView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolCallOutcome, toolEditDiff, toolName, toolPresentation, toolRowsView, toolTextRows } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
@@ -38,10 +39,6 @@ export function codexCommentary(message: Record<string, unknown>): string[] {
 export function withoutReasoningParts(reasoning: string, parts: string[]): string {
   for (const part of parts) if (part) reasoning = reasoning.replace(part, '')
   return reasoning.replace(/\n{3,}/g, '\n\n').trim()
-}
-
-export function escapeWorkspacePrefixPath(path: string): string {
-  return path.replace(/\\/g, '\\\\').replace(/]/g, '\\]')
 }
 
 
@@ -340,8 +337,6 @@ export function withMarkerKinds<T>(messages: T[], session: object): T[] {
   })
 }
 
-/** A user prompt as the user typed it: without the workspace prefix and the attached-files line the server adds. */
-const userPromptText = (text: string): string => stripWorkspacePrefix(stripAttachedFilesMarker(text), true)
 const normalizeUserText = (text: string): string => userPromptText(text).split(/\s+/).join(' ').trim()
 
 export function looksLikeCurrentUserTurn(msg: unknown, msgText: string): boolean {
