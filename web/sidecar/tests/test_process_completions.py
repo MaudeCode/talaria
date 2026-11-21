@@ -19,7 +19,8 @@ def test_startup_replay_matches_only_the_same_transcript_delivery(monkeypatch, t
 
     transcript = {'type': 'async_delegation', 'delegation_id': 'deleg-replayed',
                   'origin_ui_session_id': 'web-parent', 'status': 'completed', 'summary': 'Synthetic result'}
-    live = {**transcript, 'startup_replay': True, 'process_id': 'deleg-replayed', 'consumed': False}
+    # TAL-2256: a read-only foreign offer also carries its ledger home, which is transport, not payload.
+    live = {**transcript, 'startup_replay': True, 'process_id': 'deleg-replayed', 'consumed': False, 'ledger_profile_home': str(tmp_path)}
     if different_field:
         live[different_field] = 'different'
     monkeypatch.setattr(process, '_delivery_api', lambda: SimpleNamespace(claim_event_delivery=lambda event, consumer: None))
