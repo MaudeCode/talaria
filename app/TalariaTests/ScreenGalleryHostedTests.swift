@@ -304,8 +304,29 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }) { AuxiliaryModelsSettingsView(server: server) }
     }
 
-    func testAuxiliaryModelPicker() async throws {
-        try await page("settings-auxiliary-model-picker", title: "Model", prepare: { window in
+    func testAuxiliaryModelPickerOnPhoneLight() async throws {
+        try await assertAuxiliaryModelPicker(variantNamed: "phone-light")
+    }
+
+    func testAuxiliaryModelPickerOnPhoneDark() async throws {
+        try await assertAuxiliaryModelPicker(variantNamed: "phone-dark")
+    }
+
+    func testAuxiliaryModelPickerOnPhoneAX5() async throws {
+        try await assertAuxiliaryModelPicker(variantNamed: "phone-ax5")
+    }
+
+    func testAuxiliaryModelPickerOnDuoOuter() async throws {
+        try await assertAuxiliaryModelPicker(variantNamed: "duo-outer")
+    }
+
+    func testAuxiliaryModelPickerOnDuoInner() async throws {
+        try await assertAuxiliaryModelPicker(variantNamed: "duo-inner")
+    }
+
+    private func assertAuxiliaryModelPicker(variantNamed name: String) async throws {
+        let variant = try XCTUnwrap(HostedVariant.gallery.first { $0.name == name })
+        try await page("settings-auxiliary-model-picker", title: "Model", variants: [variant], prepare: { window in
             let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
             XCTAssertTrue(HostedAccessibility.activate(row))
             let model = try await self.requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-model" }
@@ -463,6 +484,7 @@ final class ScreenGalleryHostedTests: XCTestCase {
 
     private func page<Content: View>(
         _ name: String, title: String, wrapsNavigation: Bool = true,
+        variants: [HostedVariant] = HostedVariant.gallery,
         prepare: (UIWindow) async throws -> Void = { _ in },
         @ViewBuilder content: () -> Content
     ) async throws {
@@ -471,7 +493,7 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }
         var settingsReads = reads("/api/settings")
         var updateReads = reads("/api/updates/check")
-        try await renderHostedPage(name) {
+        try await renderHostedPage(name, variants: variants) {
             Group {
                 if wrapsNavigation { NavigationStack { content() } }
                 else { content() }
