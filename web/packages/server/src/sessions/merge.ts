@@ -1711,22 +1711,34 @@ function outsideInlineCode(line: string): string[] {
   return segments
 }
 
-/** A Markdown link's destination, kept whole (one level of parentheses, an optional title), or a bare URL in prose. */
-const WEB_URL = /\]\((https?:\/\/[^\s()]*(?:\([^\s()]*\)[^\s()]*)*)(?:\s+"[^"]*")?\)|https?:\/\/[^\s<>"`]+/gi
+/** A Markdown link's destination, kept whole (one level of parentheses, an optional title), or a bare URL in prose, which
+ * ends at a square bracket so `[https://a](https://b)` is not one URL. */
+const WEB_URL = /\]\((https?:\/\/[^\s()]*(?:\([^\s()]*\)[^\s()]*)*)(?:\s+"[^"]*")?\)|https?:\/\/[^\s<>"`[\]]+/gi
 
 /** The first http(s) URL: a link destination as written, or a bare URL without trailing punctuation or an unopened bracket. */
 function firstWebUrl(segment: string): string | undefined {
   for (const [match, destination] of segment.matchAll(WEB_URL)) {
-    let url = destination ?? match
-    while (!destination) {
-      const last = url.at(-1) ?? ''
-      const opener = last === ')' ? '(' : last === ']' ? '[' : null
-      if (!(/[.,;:!?'*_~]/.test(last) || (opener && url.split(opener).length < url.split(last).length))) break
-      url = url.slice(0, -1)
-    }
+    const url = destination ?? trimProseUrl(match)
     if (URL.canParse(url) && new URL(url).hostname) return url
   }
   return undefined
+}
+
+/** One pass from the end (TAL-2504: linear on any input): drops trailing punctuation and each unopened `)`. */
+function trimProseUrl(url: string): string {
+  let opens = 0
+  let closes = 0
+  for (const char of url) {
+    if (char === '(') opens += 1
+    else if (char === ')') closes += 1
+  }
+  let end = url.length
+  for (; end > 0; end -= 1) {
+    const last = url[end - 1]!
+    if (last === ')' && opens < closes) closes -= 1
+    else if (!/[.,;:!?'*_~]/.test(last)) break
+  }
+  return url.slice(0, end)
 }
 
 /**
