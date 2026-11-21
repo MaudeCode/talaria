@@ -905,7 +905,7 @@ public final class ChatViewModel {
         currentModelOptionID = session.modelOptionID
         currentProfile = session.profile
         isCLISession = session.isCliSession == true
-        if session.isExternalSourceSession {
+        if session.accessProvisional == true {
             accessPendingVerification = (session.isSessionReadOnly, session.canBranch == true)
             isSessionReadOnly = true
             canBranch = false

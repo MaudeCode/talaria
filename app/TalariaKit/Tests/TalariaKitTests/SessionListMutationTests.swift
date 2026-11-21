@@ -113,42 +113,6 @@ final class SessionListMutationTests: XCTestCase {
         )
     }
 
-    func testExternalSourceClassificationFollowsTheServerKind() {
-        XCTAssertTrue(SessionSummary(sessionId: "cli", isCliSession: true, sourceKind: .cli).isExternalSourceSession)
-        XCTAssertTrue(SessionSummary(sessionId: "claude", isCliSession: true, sourceKind: .claudeCode).isExternalSourceSession)
-        // A raw marker the server did not classify is not external.
-        XCTAssertFalse(SessionSummary(sessionId: "tui-marker-only", rawSource: "tui").isExternalSourceSession)
-        XCTAssertFalse(SessionSummary(sessionId: "signal-marker-only", rawSource: "signal").isExternalSourceSession)
-        // A WebUI-born session never is, whatever a stale is_cli_session says.
-        XCTAssertFalse(
-            SessionSummary(sessionId: "webui", isCliSession: true, sessionSource: "webui", sourceKind: .webui)
-                .isExternalSourceSession
-        )
-        XCTAssertFalse(SessionSummary(sessionId: "plain").isExternalSourceSession)
-    }
-
-    /// Signal and WhatsApp chats used to open without a detail load because the app's own
-    /// messaging list missed them (TAL-310). Every platform the server files as messaging loads it.
-    @MainActor
-    func testOpeningEveryServerMessagingPlatformLoadsItsDetailFirst() async throws {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        for platform in ["signal", "whatsapp", "weixin", "wecom_callback"] {
-            var requestedPaths: [String] = []
-            let viewModel = try makeViewModel { request in
-                requestedPaths.append(request.url?.path ?? "nil")
-                return apiTestJSONResponse(#"{"session": {"session_id": "chat-\#(platform)", "title": "Chat", "source_kind": "messaging"}}"#, for: request)
-            }
-            let row = try decoder.decode(SessionSummary.self, from: Data("""
-            {"session_id": "chat-\(platform)", "raw_source": "\(platform)", "is_cli_session": false, "source_kind": "messaging", "is_messaging_session": true}
-            """.utf8))
-
-            XCTAssertTrue(row.isMessagingSession, platform)
-            _ = await viewModel.sessionToOpen(for: row)
-            XCTAssertEqual(requestedPaths, ["/api/session"], platform)
-        }
-    }
-
     /// The server decides writability in `GET /api/session` and claims a CLI session on its first
     /// send (TAL-256), so the app opens external chats through that detail and keeps its flags.
     @MainActor
@@ -176,6 +140,7 @@ final class SessionListMutationTests: XCTestCase {
             isCliSession: true,
             userMessageCount: 7,
             readOnly: true,
+            accessProvisional: true,
             canDuplicate: false,
             matchType: "content",
             matchPreview: "why it matched"
@@ -204,7 +169,7 @@ final class SessionListMutationTests: XCTestCase {
             switch request.url?.path {
             case "/api/sessions":
                 return apiTestJSONResponse("""
-                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "archived": false, "source_kind": "cli"}]}
+                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "archived": false, "source_kind": "cli", "access_provisional": true}]}
                 """, for: request)
             default:
                 return apiTestJSONResponse("""
@@ -268,7 +233,7 @@ final class SessionListMutationTests: XCTestCase {
         let firstLoad = Task { await viewModel.load() }
         await fulfillment(of: [firstListArrived], timeout: 5)
         requests.request(at: 0).complete(withJSON: #"""
-        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "user_message_count": 1, "archived": false, "source_kind": "cli"}]}
+        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "user_message_count": 1, "archived": false, "source_kind": "cli", "access_provisional": true}]}
         """#)
         _ = await firstLoad.value
 
@@ -280,7 +245,7 @@ final class SessionListMutationTests: XCTestCase {
         let secondLoad = Task { await viewModel.load() }
         await fulfillment(of: [secondListArrived], timeout: 5)
         requests.request(at: 2).complete(withJSON: #"""
-        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "user_message_count": 9, "archived": false, "source_kind": "cli"}]}
+        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "user_message_count": 9, "archived": false, "source_kind": "cli", "access_provisional": true}]}
         """#)
         _ = await secondLoad.value
 
@@ -328,7 +293,7 @@ final class SessionListMutationTests: XCTestCase {
         let context = try makeContext()
 
         let writableRow = #"""
-        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false, "archived": false, "source_kind": "cli"}]}
+        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false, "archived": false, "source_kind": "cli", "access_provisional": true}]}
         """#
         let firstLoad = Task { await viewModel.load(modelContext: context) }
         await fulfillment(of: [firstListArrived], timeout: 5)
@@ -367,18 +332,6 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertTrue(cachedRow.isSessionReadOnly)
     }
 
-    @MainActor
-    func testOpeningWebUIRowSkipsTheDetailLoad() async throws {
-        let viewModel = try makeViewModel { _ in
-            XCTFail("WebUI sessions must open without a detail request.")
-            throw URLError(.badURL)
-        }
-        let row = SessionSummary(sessionId: "webui-1", isCliSession: true, sessionSource: "webui", sourceKind: .webui)
-
-        let opened = await viewModel.sessionToOpen(for: row)
-        XCTAssertEqual(opened?.sessionId, "webui-1")
-    }
-
     /// TAL-839: the opened chat shares this read and shows its failure with a retry, and forwards an expired login;
     /// the list adds no alert over it.
     @MainActor
@@ -390,7 +343,7 @@ final class SessionListMutationTests: XCTestCase {
                 return apiTestJSONResponse(#"{"error": "Session not found"}"#, statusCode: status, for: request)
             }
 
-            let opened = await viewModel.sessionToOpen(for: SessionSummary(sessionId: "cli-1", isCliSession: true))
+            let opened = await viewModel.sessionToOpen(for: SessionSummary(sessionId: "cli-1", isCliSession: true, accessProvisional: true))
 
             XCTAssertNil(opened)
             XCTAssertEqual(requestedPaths, ["/api/session"])
@@ -495,9 +448,9 @@ final class SessionListMutationTests: XCTestCase {
         let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
         let viewModel = SessionListViewModel(server: server, client: client)
 
-        let firstTap = Task { await viewModel.sessionToOpen(for: SessionSummary(sessionId: "older", isCliSession: true)) }
+        let firstTap = Task { await viewModel.sessionToOpen(for: SessionSummary(sessionId: "older", isCliSession: true, accessProvisional: true)) }
         await fulfillment(of: [firstRequestArrived], timeout: 5)
-        let secondTap = Task { await viewModel.sessionToOpen(for: SessionSummary(sessionId: "newer", isCliSession: true)) }
+        let secondTap = Task { await viewModel.sessionToOpen(for: SessionSummary(sessionId: "newer", isCliSession: true, accessProvisional: true)) }
         await fulfillment(of: [secondRequestArrived], timeout: 5)
 
         requests.request(at: 1).complete(withJSON: #"{"session": {"session_id": "newer"}}"#)

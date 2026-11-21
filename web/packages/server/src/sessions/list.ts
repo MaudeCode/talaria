@@ -609,6 +609,9 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   // The branch gate (`SessionService.branch`): never a subagent child, and a read-only source only when it is a cron run.
   const ownerReadOnly = r.read_only && Boolean(r.read_only_reason)
   r.can_branch = !ownerReadOnly && !subagent && (!r.read_only || str(r.source_tag || r.raw_source).trim().toLowerCase() === 'cron')
+  // TAL-2508: a CLI, Claude Code or messaging row's access can change once its detail load claims or imports it; a
+  // subagent child stays view-only.
+  r.access_provisional = !subagent && (kind === 'cli' || kind === 'claude_code' || kind === 'messaging')
   // Pin and archive refuse only subagent children; duplicate also needs the WebUI sidecar it copies, so a sidecar-less
   // foreign row arrives with `can_duplicate: false`. Rename, move and delete follow `read_only` (the mutation gate).
   // A Claude Code import is a live view Web never stores (TAL-551), so it cannot be pinned or archived either.

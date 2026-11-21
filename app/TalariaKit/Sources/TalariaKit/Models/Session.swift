@@ -404,6 +404,9 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     let readOnly: Bool?
     /// The server's branch gate (TAL-312): absent on older servers, which offered branching everywhere.
     public let canBranch: Bool?
+    /// TAL-2508: the server's `access_provisional`: `readOnly` and `canBranch` can change once the detail load claims
+    /// or imports the session, so the app reloads that detail before trusting them. Detail payloads leave it nil.
+    public let accessProvisional: Bool?
     /// The server's pin, archive and duplicate gates (TAL-312); absent on older servers.
     public let canPin: Bool?
     public let canArchive: Bool?
@@ -455,6 +458,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         relationshipType: String? = nil,
         readOnly: Bool? = nil,
         canBranch: Bool? = nil,
+        accessProvisional: Bool? = nil,
         canPin: Bool? = nil,
         canArchive: Bool? = nil,
         canDelete: Bool? = nil,
@@ -500,6 +504,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         self.relationshipType = relationshipType
         self.readOnly = readOnly
         self.canBranch = canBranch
+        self.accessProvisional = accessProvisional
         self.canPin = canPin
         self.canArchive = canArchive
         self.canDelete = canDelete
@@ -518,7 +523,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         case activeStreamId, isStreaming, isCliSession
         case userMessageCount, hasPendingUserMessage, pendingStartedAt, worktreePath
         case sourceTag, rawSource, sessionSource, sourceLabel, sourceKind
-        case parentSessionId, relationshipType, readOnly, canBranch, canPin, canArchive, canDelete, canDuplicate, matchType, matchPreview, attention
+        case parentSessionId, relationshipType, readOnly, canBranch, accessProvisional, canPin, canArchive, canDelete, canDuplicate, matchType, matchPreview, attention
     }
 
     /// Lossy field by field, like `SessionDetail` and `ProjectSummary` already
@@ -573,6 +578,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         relationshipType = container.decodeLossyStringIfPresent(forKey: .relationshipType)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
         canBranch = container.decodeLossyBoolIfPresent(forKey: .canBranch)
+        accessProvisional = container.decodeLossyBoolIfPresent(forKey: .accessProvisional)
         canPin = container.decodeLossyBoolIfPresent(forKey: .canPin)
         canArchive = container.decodeLossyBoolIfPresent(forKey: .canArchive)
         canDelete = container.decodeLossyBoolIfPresent(forKey: .canDelete)
@@ -647,6 +653,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         relationshipType = detail.relationshipType
         readOnly = detail.readOnly
         canBranch = detail.canBranch
+        accessProvisional = nil
         canPin = detail.canPin
         canArchive = detail.canArchive
         canDelete = detail.canDelete
@@ -698,6 +705,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
             relationshipType: relationshipType,
             readOnly: readOnly,
             canBranch: canBranch,
+            accessProvisional: accessProvisional,
             canPin: canPin,
             canArchive: canArchive,
             canDelete: canDelete,
@@ -714,17 +722,6 @@ extension SessionSummary {
     var isDelegatedSubagentSession: Bool { sourceKind == .subagent }
 
     var isClaudeCodeSession: Bool { sourceKind == .claudeCode }
-
-    /// A gateway chat (Telegram, Signal, WhatsApp, …).
-    var isMessagingSession: Bool { sourceKind == .messaging }
-
-    /// True when the row came from outside the WebUI — a CLI/TUI bridge or a
-    /// messaging channel — so the app reloads its detail before opening it, for the
-    /// server's current writability. A WebUI-born session never is, whatever a stale
-    /// `is_cli_session` says.
-    public var isExternalSourceSession: Bool {
-        sourceKind != .webui && (isCliSession == true || isMessagingSession)
-    }
 
     /// Overlays this server-authoritative row onto the list row it was opened
     /// from: every field the authoritative payload omits keeps the list value, so
@@ -772,6 +769,7 @@ extension SessionSummary {
             relationshipType: relationshipType ?? row.relationshipType,
             readOnly: readOnly ?? row.readOnly,
             canBranch: canBranch ?? row.canBranch,
+            accessProvisional: accessProvisional ?? row.accessProvisional,
             canPin: canPin ?? row.canPin,
             canArchive: canArchive ?? row.canArchive,
             canDelete: canDelete ?? row.canDelete,

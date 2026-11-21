@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The App now asks your server which chats from outside Talaria to recheck before you can type in them, instead of guessing from where each chat started.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

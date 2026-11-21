@@ -526,6 +526,7 @@ private extension SessionSummary {
         relationshipType = cachedSession.relationshipType
         readOnly = cachedSession.readOnly
         canBranch = cachedSession.canBranch
+        accessProvisional = cachedSession.accessProvisional
         canPin = cachedSession.canPin
         canArchive = cachedSession.canArchive
         canDelete = cachedSession.canDelete
