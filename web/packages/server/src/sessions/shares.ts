@@ -258,6 +258,18 @@ export function buildShareSnapshot(session: Session, messages: unknown[], opts: 
   return { title, messages: safe, message_count: safe.length }
 }
 
+/** TAL-2589: the snapshot a session's token names was published by a different conversation that still exists. */
+export class ShareOwnedElsewhere extends Error {
+  constructor() {
+    super('This share link belongs to another conversation, so nothing was changed.')
+    this.name = 'ShareOwnedElsewhere'
+  }
+}
+
+/** Whether a recorded snapshot owner is the acting conversation by the server's canonical identity. */
+export type SameConversation = (owner: string) => Promise<boolean>
+const distinct: SameConversation = () => Promise.resolve(false)
+
 export interface ShareMeta { share_token: string; share_title: string; share_message_count: number; share_created_at: number; share_updated_at: number }
 
 export class ShareStore {
@@ -269,7 +281,20 @@ export class ShareStore {
     return t
   }
 
-  async createOrRefresh(session: Session, snapshot: ShareSnapshot, persistOwner?: (meta: ShareMeta) => Promise<void>): Promise<ShareMeta> {
+  /**
+   * TAL-2589: refuses a mutation of a live snapshot whose recorded owner is a different, existing conversation. It runs
+   * on the revision the caller then writes, so the check and the write see one owner. Forks are their own
+   * conversations; a gone, missing or invalid owner keeps the earlier recovery.
+   */
+  private async refuseForeignOwner(stored: unknown, session: Session, sameConversation: SameConversation): Promise<void> {
+    if (!isDict(stored) || stored.revoked_at) return
+    const owner = stored.source_session_id
+    if (owner === session.session_id || !isSafeSessionId(owner)) return
+    if (!(await this.owners.exists(owner)) || (await sameConversation(owner))) return
+    throw new ShareOwnedElsewhere()
+  }
+
+  async createOrRefresh(session: Session, snapshot: ShareSnapshot, persistOwner?: (meta: ShareMeta) => Promise<void>, sameConversation = distinct): Promise<ShareMeta> {
     let token = (session.share_token ?? '').trim() || randomBytes(18).toString('base64url')
     const now = this.now()
     const payload: Record<string, unknown> = {
@@ -284,6 +309,7 @@ export class ShareStore {
       payload.token = token
       current = null
     }
+    await this.refuseForeignOwner(current?.value, session, sameConversation)
     if (isDict(current?.value)) payload.created_at = current.value.created_at || now
     const meta = { share_token: token, share_title: snapshot.title, share_message_count: snapshot.message_count, share_created_at: payload.created_at as number, share_updated_at: now }
     // Persist the owner before making bytes readable, so even a lost publication acknowledgement is revocable.
@@ -314,12 +340,13 @@ export class ShareStore {
     return pub
   }
 
-  async revoke(session: Session): Promise<boolean> {
+  async revoke(session: Session, sameConversation = distinct): Promise<boolean> {
     const token = (session.share_token ?? '').trim()
     if (!token) return false
     try { this.validate(token) } catch { return false }
     const current = await readDocument(this.documents, 'shares', token, { replaceInvalid: true })
     if (current) {
+      await this.refuseForeignOwner(current.value, session, sameConversation)
       const payload = isDict(current.value) ? current.value : {}
       payload.revoked_at = this.now()
       await this.documents.put('shares', token, payload, current.revision)
