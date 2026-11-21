@@ -108,8 +108,9 @@ describe('native custom providers in the catalog (TAL-1654)', () => {
     const rows = (await catalog.providers(home)).providers as unknown as Row[]
     const groups = (await catalog.models(home)).groups
     const ids = (models: ModelEntry[]) => models.map((m) => m.bare_id ?? m.id)
-    expect(ids(rows.find((r) => r.id === 'custom:omni')!.models)).toEqual(['omni-live-a', 'omni-1'])
-    expect(ids(groups.find((g) => g.provider_id === 'custom:omni')!.models)).toEqual(['omni-live-a', 'omni-1'])
+    // TAL-1130: a custom list is sorted whole, live and configured ids together.
+    expect(ids(rows.find((r) => r.id === 'custom:omni')!.models)).toEqual(['omni-1', 'omni-live-a'])
+    expect(ids(groups.find((g) => g.provider_id === 'custom:omni')!.models)).toEqual(['omni-1', 'omni-live-a'])
     // A curated `models` list pins both surfaces.
     expect(ids(rows.find((r) => r.id === 'custom:demo')!.models)).toEqual(['demo-model'])
     expect(ids(groups.find((g) => g.provider_id === 'custom:demo')!.models)).toEqual(['demo-model'])
