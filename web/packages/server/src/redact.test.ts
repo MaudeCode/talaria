@@ -802,6 +802,7 @@ describe('values a browser_exec call types into a page (TAL-2299)', () => {
     ['a .value in page script built by formatting', `pw = 'hunter2'\njs("el.value = '%s'" % pw)\nscript = "el.value = '{}'"\njs(script.format(pw))`, `pw = '***'\njs('***' % pw)\nscript = '***'\njs(script.format(pw))`],
     ['a .value assigned a concatenation', `js("el.value = 'hun' + 'ter2'")`, `js('***')`],
     ['a CDP insertion of a converted number', `cdp('Input.insertText', {'text': str(123456)})`, `cdp('Input.insertText', {'text': str(***)})`],
+    ['a CDP insertion computed from a dict key', `cdp('Input.insertText', {'text': next(iter({'hunter2': 1}))})`, `cdp('Input.insertText', {'text': next(iter({'***': ***}))})`],
     ['a CDP insertion by keyword', `cdp("Input.insertText", text="hunter2")`, `cdp("Input.insertText", text='***')`],
     ['a CDP insertion by params, through a variable', `pw = 'hunter2'\ncdp('Input.insertText', {'text': pw}, session_id=sid)`, `pw = '***'\ncdp('Input.insertText', {'text': pw}, session_id=sid)`],
     ['an insertion inside page script', `js("document.execCommand('insertText', false, 'hunter2')")`, `js('***')`],

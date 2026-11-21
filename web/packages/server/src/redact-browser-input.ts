@@ -265,7 +265,8 @@ function typedSpans(code: string, cut: boolean): Span[] {
     const key = /\s*:/y
     for (const other of literalsIn(open + 1, close)) {
       key.lastIndex = other.end
-      if (other !== literal && !key.test(skeleton)) maskLiteral(other)
+      // Only the payload's own `text` field name is kept: any other key may be the value (`next(iter({'pw': 1}))`).
+      if (other !== literal && !(key.test(skeleton) && /^['"]text['"]$/.test(code.slice(other.start, other.end)))) maskLiteral(other)
     }
     typed.push([open + 1, close])
     const region = skeleton.slice(open + 1, close)
