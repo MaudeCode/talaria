@@ -1,0 +1,1 @@
+{"entries":[{"category":"Changed","summary":"The chat list refreshes at most once every 5 seconds while chats are busy, and right away after your own changes.","highlight":false,"components":["web"],"announce":false}]}
