@@ -481,7 +481,7 @@ export const WRITE_APPROVAL_METHODS = {
   'write_approval.approve': { params: WriteApprovalParams, result: WriteApprovalResult },
   'write_approval.reject': { params: WriteApprovalParams, result: WriteApprovalResult },
 } as const
-export const ProcessEventSchema = z.object({ process_id: z.string(), consumed: z.boolean(), type: z.string().optional(), session_key: z.string().optional(), origin_ui_session_id: z.string().optional(), child_process: z.boolean().optional(), reconciliation_profile_home: z.string().optional() }).catchall(Json)
+export const ProcessEventSchema = z.object({ process_id: z.string(), consumed: z.boolean(), type: z.string().optional(), session_key: z.string().optional(), origin_ui_session_id: z.string().optional(), child_process: z.boolean().optional(), reconciliation_profile_home: z.string().optional(), ledger_profile_home: z.string().optional() }).catchall(Json)
 export const PROCESS_METHODS = {
   'process.drain': { params: ProfileHomeParams.extend({ max_events: z.number().int().positive().optional() }), result: z.object({ events: z.array(ProcessEventSchema) }) },
   /** TAL-533: re-adopt the base home's and every named profile's checkpointed background processes in a fresh sidecar. */

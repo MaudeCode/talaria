@@ -2011,7 +2011,7 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
     } finally { await s.close() }
   })
 
-  it('keeps a claimed result pending and never crosses profiles during reconciliation', async () => {
+  it('keeps a claimed result pending and never crosses profiles during reconciliation or read-only replay', async () => {
     const sidecar = new FakeSidecar()
     const s = await bootTestServer({ sidecar })
     let release!: () => void
@@ -2027,6 +2027,8 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       let claims = 0
       sidecar.respond('process.claim_delivery', () => { claims += 1; return { claim_id: null, retryable: true } })
       expect(await s.deps.completions.processOne({ ...event, reconciliation_profile_home: join(s.state, 'profiles', 'foreign') })).toBe(false)
+      // TAL-2256: a result offered read-only from another profile's ledger is claimed only in that ledger's own session.
+      expect(await s.deps.completions.processOne({ ...event, ledger_profile_home: join(s.state, 'profiles', 'foreign') })).toBe(false)
       expect(claims).toBe(0)
       await s.deps.completions.processOne(event)
       expect(claims).toBe(1)

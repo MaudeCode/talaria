@@ -1985,7 +1985,7 @@
     },
     "tests/test_process_completions.py::test_named_ledger_replays_once_even_when_the_launch_profile_is_the_only_drained_home": {
       "layer": "compatibility",
-      "reason": "The Agent's tools.async_delegation.restore_undelivered_completions replays a named profile's real ledger once from any drain scope, and a profile created later joins the replay.",
+      "reason": "A named profile's real ledger replays once from any drain scope: the Agent's restore_undelivered_completions when it is the drain's home, the read-only offer otherwise, sharing the Agent's offer set; a profile created later joins the replay.",
       "cases": [
         "[False]",
         "[True]"
@@ -1993,14 +1993,21 @@
     },
     "tests/test_process_completions.py::test_drain_sweeps_dead_owners_in_every_served_home_but_not_live_or_claimed_rows": {
       "layer": "compatibility",
-      "reason": "The Agent's maybe_sweep_orphaned_completions runs in every served home: rows whose real owner process died are offered, and live or claimed rows are held. Real producer processes give the owner liveness.",
+      "reason": "Rows whose real owner process died are offered from the launch home by the Agent's maybe_sweep_orphaned_completions and from a named home by the read-only offer, and live or claimed rows are held. Real producer processes give the Agent's owner liveness.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_completions.py::test_launch_drain_leaves_foreign_profile_ledgers_unchanged_and_offers_their_webui_results_once": {
+      "layer": "compatibility",
+      "reason": "The Agent's restore_undelivered_completions and sweep recover dead-owner running rows and drop pending rows past their replay cap; real exited producers and real ledgers prove a launch drain leaves another profile's rows unchanged, offers its WebUI result once, and claim_event_delivery admits one claim, while the launch ledger keeps the Agent's recovery and expiry.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_completions.py::test_failed_named_replay_retries_without_blocking_launch_or_live_events": {
       "layer": "compatibility",
-      "reason": "A named home whose real restore_undelivered_completions fails does not block the launch home or live events, and is retried on a later drain.",
+      "reason": "A named home whose real ledger cannot be read does not block the launch home's real restore_undelivered_completions or live events, and its read-only offer is retried on a later drain without a duplicate.",
       "cases": [
         ""
       ]
