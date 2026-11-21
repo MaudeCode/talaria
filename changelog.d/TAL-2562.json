@@ -1,0 +1,3 @@
+{
+  "skip": "Test tooling only: a CI rule and a test fixture change with no user-visible effect."
+}
