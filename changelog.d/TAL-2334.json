@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Quote selection button in Talaria Web now appears next to the text you selected and follows it as the chat scrolls.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
