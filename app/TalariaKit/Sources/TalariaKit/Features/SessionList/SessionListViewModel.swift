@@ -1521,22 +1521,13 @@ public final class SessionListViewModel {
         do {
             let workspaces = try await client.workspaces()
             let workspace = settings?.workspacePath ?? workspaces.last ?? workspaces.workspaces?.compactMap(\.path).first
-            let requestedProvider = Self.nonEmpty(provider)
-            let requestedModel: ModelCatalogOption?
-            if settings?.modelID == nil, let requestedProvider,
-               let models = try? await client.models() {
-                requestedModel = models.catalogGroups
-                    .first(where: { $0.providerID == requestedProvider })?
-                    .models.first
-            } else {
-                requestedModel = nil
-            }
             try Task.checkCancellation()
             didRequestCreation = true
+            // TAL-2505: a provider alone goes to the server, which starts the chat on that provider's first model.
             let response = try await client.createSession(
                 workspace: workspace,
-                model: settings?.modelID ?? requestedModel?.id,
-                modelProvider: settings?.modelProviderID ?? requestedModel?.providerID,
+                model: settings?.modelID,
+                modelProvider: settings?.modelProviderID ?? (settings?.modelID == nil ? Self.nonEmpty(provider) : nil),
                 profile: Self.nonEmpty(settings?.profileName) ?? Self.nonEmpty(profile),
                 projectID: Self.nonEmpty(projectID),
                 enabledToolsets: enabledToolsets,

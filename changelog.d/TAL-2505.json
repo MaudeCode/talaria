@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A new chat started for one provider opens on that provider's first model, never on the default model of another provider.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

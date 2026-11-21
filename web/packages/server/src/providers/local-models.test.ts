@@ -93,6 +93,14 @@ describe('the Agent\'s local llama.cpp models in the picker', () => {
     expect((await s.deps.sessionStore.get(sid))).toMatchObject({ model: STAGED, model_provider: 'llamacpp' })
   })
 
+  /** TAL-2505: the server, not the client, picks the model for a new chat that names only a provider. */
+  it('a new chat naming only a provider starts on its first catalog model; an unknown provider on the profile default', async () => {
+    await models()
+    const created = async (body: Json): Promise<Json> => (await json(await post(s, '/api/session/new', body))).session as Json
+    expect(await created({ model_provider: 'llamacpp' })).toMatchObject({ model: STAGED, model_provider: 'llamacpp' })
+    expect(await created({ model_provider: 'no-such-provider' })).toMatchObject({ model: 'claude-sonnet-4-6', model_provider: 'anthropic' })
+  })
+
   it('a turn while the local server is off says so instead of asking for a key', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     sidecar.respond('chat.start', () => { throw new SidecarError('The local model server is turned off.', { condition: 'local_runtime_unavailable' }) })

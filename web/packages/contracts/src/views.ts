@@ -1133,7 +1133,8 @@ export const SourceReferenceSearchSchema = z.object({
 })
 
 export const SessionNewRequestSchema = z.looseObject({
-  title: z.string().optional(), workspace: z.string().optional(), workspace_inherited_from_prev_session: z.boolean().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(),
+  title: z.string().optional(), workspace: z.string().optional(), workspace_inherited_from_prev_session: z.boolean().optional(), model: z.string().nullable().optional(),
+  model_provider: z.string().nullable().optional().describe("TAL-2505: sent without `model`, the chat starts on this provider's first catalog model; a provider the catalog does not list starts it on the profile default."),
   profile: z.string().nullable().optional(), prev_session_id: z.string().optional(), project_id: z.string().nullable().optional(), worktree: Json.optional(), enabled_toolsets: z.array(z.string()).nullable().optional(), parent_session_id: z.string().optional(),
   execution_mode: ExecutionModeSchema.optional().describe('TAL-1040: `ignore_config` and `safe` start the session through the Agent owner; omitted means normal.'),
   request_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional().describe('TAL-1040: stable creation identity for a diagnostic or referenced chat. Reuse it only to retry the same creation.'),

@@ -15075,7 +15075,8 @@
                       {
                         "type": "null"
                       }
-                    ]
+                    ],
+                    "description": "TAL-2505: sent without `model`, the chat starts on this provider's first catalog model; a provider the catalog does not list starts it on the profile default."
                   },
                   "profile": {
                     "anyOf": [
