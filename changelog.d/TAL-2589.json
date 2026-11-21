@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Sharing or stopping sharing in Talaria Web now refuses a share link that another conversation published, instead of overwriting or revoking it.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -89,12 +89,17 @@ async function fixture() {
   const writable = vi.spyOn(service, 'assertWritable').mockResolvedValue()
   vi.spyOn(service, 'isReadOnly').mockResolvedValue(false)
   vi.spyOn(service, 'claimOrSynthesizeCliSession').mockResolvedValue({ session: null, reason: 'no_foreign_state' })
-  const session = new Session({ session_id: 'session', profile: 'default', messages: [{ role: 'user', content: 'synthetic example' }] }, { workspace: '', model: null, modelProvider: null })
-  await store.save(session)
-  await store.touch(session)
+  const persist = async (sessionId: string, fields: Record<string, unknown> = {}) => {
+    const s = new Session({ session_id: sessionId, profile: 'default', messages: [{ role: 'user', content: 'synthetic example' }], ...fields }, { workspace: '', model: null, modelProvider: null })
+    await store.save(s)
+    await store.touch(s)
+    return s
+  }
+  const session = await persist('session')
   onTestFinished(() => { vi.restoreAllMocks() })
   const readable = async () => (await Promise.all([...records.keys()].map((key) => shares.load(key)))).filter(Boolean)
-  return { service, store, shares, writable, documents, backend, records, sessions, session, readable, tick: () => { now += 1 } }
+  const ownership = async (...ids: string[]) => Promise.all(ids.map(async (id) => (await backend.readDocument(id))?.doc.share_token))
+  return { service, store, shares, writable, documents, backend, records, sessions, session, persist, readable, ownership, tick: () => { now += 1 } }
 }
 
 /** Admit operation two while the first document read is held, with or without lifecycle locking. */
@@ -308,6 +313,41 @@ describe('share lifecycle', () => {
     vi.spyOn(f.backend, 'exists').mockRejectedValueOnce(new Error('storage unavailable'))
     await expect(f.service.loadShare(token)).rejects.toMatchObject({ status: 404 })
     expect(await f.shares.load(token)).toMatchObject({ messages: [{ content: 'synthetic example' }] })
+  })
+
+  it.each([['an unrelated', {}], ['a forked', { parent_session_id: 'session', session_source: 'fork' }]])('refuses %s conversation carrying another existing owner\'s token without changing either', async (_name, lineage) => {
+    const f = await fixture()
+    await f.service.createShare('session')
+    const token = f.session.share_token!
+    await f.persist('other', { share_token: token, ...lineage })
+    const snapshot = structuredClone(f.records.get(token))
+    const conflict = { status: 409, message: 'This share link belongs to another conversation, so nothing was changed.' }
+    f.tick()
+    await expect(f.service.createShare('other')).rejects.toMatchObject(conflict)
+    await expect(f.service.revokeShare('other')).rejects.toMatchObject(conflict)
+    expect(f.records.get(token)).toEqual(snapshot)
+    expect(await f.ownership('session', 'other')).toEqual([token, token])
+    await f.service.delete('other')
+    expect(f.records.get(token)).toEqual(snapshot)
+    await f.service.createShare('session')
+    expect(await f.shares.load(token)).toMatchObject({ updated_at: 101 })
+    await f.service.revokeShare('session')
+    expect(await f.readable()).toHaveLength(0)
+  })
+
+  it.each(['alias', 'gone'])('refreshes and revokes a snapshot whose recorded owner is a %s identity', async (owner) => {
+    const f = await fixture()
+    if (owner === 'alias') await f.persist('alias')
+    await f.service.createShare('session')
+    const token = f.session.share_token!
+    const record = () => f.records.get(token)!.value as Record<string, unknown>
+    record().source_session_id = owner
+    await f.service.createShare('session')
+    expect(record().source_session_id).toBe('session')
+    record().source_session_id = owner
+    await f.service.revokeShare('session')
+    expect(record().revoked_at).toBe(100)
+    expect(await f.ownership('session')).toEqual([null])
   })
 
   it('serves a snapshot whose existing owner lost and recovers its token, until explicit revoke', async () => {

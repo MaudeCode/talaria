@@ -42,7 +42,7 @@ import { settledActivityPhase, withBackgroundLinks, type Receipt } from './backg
 import { messagesForLimitedPayload, messageCountsAsRenderable, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactString, redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
-import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, shareAttachmentDir, shareEmbeddable, shareMediaPaths, type ShareStore } from './shares.js'
+import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, shareAttachmentDir, shareEmbeddable, shareMediaPaths, ShareOwnedElsewhere, type SameConversation, type ShareStore } from './shares.js'
 import { attachmentKey, attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
 import { mediaAccessFor, mediaAccessResolver, resolveMediaAccess, mediaRefTarget, type MediaAccessBase } from '../workspace/media.js'
 import { meshyDirectives, projectMediaRefs, type MediaProjection, type MeshyDirective } from '../workspace/media-refs.js'
@@ -3397,7 +3397,7 @@ export class SessionService {
           try {
             const session = (await this.store.get(id, { metadataOnly: true }))
             if (!Object.keys(retained).length) Object.assign(retained, worktreeRetainedPayload(session))
-            await this.deps.shares.revoke(session)
+            await this.revokeOwnedShare(session)
             await this.deps.clearRelayCompletions?.(id, session.profile)
           } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
           const finalize = id === sid && !(await this.store.wasDeleted(id))
@@ -3455,7 +3455,7 @@ export class SessionService {
         // A first turn in flight has no messages yet; a later cleanup decides once it settles.
         if (s.hasPendingPrompt || (await this.activeRunBlocking(s.session_id))) return
         // Keep the session (and its revoke route) if its share cannot be revoked.
-        try { (await this.deps.shares.revoke(s)) } catch { return }
+        try { (await this.revokeOwnedShare(s)) } catch { return }
         try { if (!await this.store.delete(s.session_id, { tombstone: false })) return }
         catch (error) { if (!(error instanceof DraftDeleteFailed)) throw error; draftDeleteFailed = true }
         cleaned += 1
@@ -3744,8 +3744,20 @@ export class SessionService {
     return this.store.withLock(sid, async () => {
       const session = await this.get404(sid)
       if (!this.visibleToRequest(session)) throw new HttpFailure(404, 'Session not found')
-      return fn(await this.store.ensureFull(sid, session))
+      try { return await fn(await this.store.ensureFull(sid, session)) }
+      catch (error) { throw error instanceof ShareOwnedElsewhere ? new HttpFailure(409, error.message) : error }
     })
+  }
+
+  /** TAL-2589: two ids are one conversation only when the server resolves both to the same physical target. */
+  private sameConversation(sid: string): SameConversation {
+    return async (owner) => (await this.resolveSessionId(owner)) === (await this.resolveSessionId(sid))
+  }
+
+  /** Revokes the session's snapshot before it is removed; one another conversation published stays with that owner. */
+  private async revokeOwnedShare(session: Session): Promise<void> {
+    try { await this.deps.shares.revoke(session, this.sameConversation(session.session_id)) }
+    catch (error) { if (!(error instanceof ShareOwnedElsewhere)) throw error }
   }
 
   private async saveShareOwnership(session: Session, token: string | null, createdAt: number | null): Promise<void> {
@@ -3781,7 +3793,7 @@ export class SessionService {
       } catch (error) {
         throw new HttpFailure(400, (error as Error).message)
       }
-      const meta = await this.deps.shares.createOrRefresh(s, snapshot, (owner) => this.saveShareOwnership(s, owner.share_token, owner.share_created_at))
+      const meta = await this.deps.shares.createOrRefresh(s, snapshot, (owner) => this.saveShareOwnership(s, owner.share_token, owner.share_created_at), this.sameConversation(s.session_id))
       this.publish('session_share_create', s.profile, s.session_id)
       return {
         ok: true,
@@ -3793,7 +3805,7 @@ export class SessionService {
 
   async revokeShare(sid: string): Promise<Record<string, unknown>> {
     return this.withShareLock(sid, async (s) => {
-      await this.deps.shares.revoke(s)
+      await this.deps.shares.revoke(s, this.sameConversation(s.session_id))
       await this.saveShareOwnership(s, null, null)
       this.publish('session_share_revoke', s.profile, s.session_id)
       return { ok: true, session: (await this.publicSession(s)) }
