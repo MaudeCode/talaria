@@ -6,21 +6,22 @@ import json
 import pathlib
 import subprocess
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env
+from conftest import AGENT_DIR, AGENT_PYTHON, STORE_PRELUDE, SidecarProcess, isolated_env
 
 
 def _agent(home: pathlib.Path, code: str, *args: str) -> str:
-    """Run ``code`` on the pinned Agent's interpreter with ``home`` as its Hermes home."""
+    """Run ``code`` on the pinned Agent's interpreter with ``home`` as its Hermes home, after ``STORE_PRELUDE``."""
     env = isolated_env(home, PATH="/usr/bin:/bin")
-    prelude = "import sys, json, time; sys.path.insert(0, sys.argv[1]); from tools import async_delegation as ad\n"
-    out = subprocess.run([AGENT_PYTHON, "-c", prelude + code, str(AGENT_DIR), *args], check=True, env=env, capture_output=True, text=True)
+    prelude = "import sys, json, time; sys.path.insert(0, sys.argv[1])\n" + STORE_PRELUDE + "from tools import async_delegation as ad\n"
+    script = prelude + code + "\ndb.close()\nif store:\n    store.close()\n"
+    out = subprocess.run([AGENT_PYTHON, "-c", script, str(AGENT_DIR), *args], check=True, env=env, capture_output=True, text=True)
     return out.stdout.strip()
 
 
 def _seed_completed(home: pathlib.Path, delegation_id: str) -> None:
     _agent(home, (
         "ad._persist_dispatch({'delegation_id': sys.argv[2], 'dispatched_at': time.time(), 'session_key': 'web', 'origin_ui_session_id': 'web'})\n"
-        "with ad._DB_LOCK, ad._transaction() as conn:\n"
+        "with ledger_db() as conn:\n"
         "    conn.execute(\"UPDATE async_delegations SET state='completed', completed_at=?, event_json=? WHERE delegation_id=?\","
         " (time.time(), json.dumps({'type': 'async_delegation', 'delegation_id': sys.argv[2]}), sys.argv[2]))\n"
     ), delegation_id)

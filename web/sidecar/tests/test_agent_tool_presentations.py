@@ -12,9 +12,7 @@ from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, isolated_env, requir
 FIXTURE = Path(__file__).resolve().parents[3] / 'contracts/fixtures/tool-presentations.json'
 
 # Tools only an older supported release registers, by release. They stay in the table while that release is supported.
-OLDER_RELEASE_TOOLS = {
-    'v0.23.0': {'yb_query_group_info', 'yb_query_group_members', 'yb_search_sticker', 'yb_send_dm', 'yb_send_sticker'},
-}
+OLDER_RELEASE_TOOLS: dict[str, set[str]] = {}
 
 PROBE = 'import json, model_tools\nfrom tools.registry import registry\nprint(json.dumps(sorted(registry.get_all_tool_names())))'
 
@@ -34,7 +32,7 @@ def coverage_errors(registered: set[str], listed: set[str], *, newest: bool) -> 
     return errors
 
 
-def test_a_new_or_dropped_agent_tool_fails_with_its_fix() -> None:
+def test_a_new_or_dropped_agent_tool_fails_with_its_fix(monkeypatch) -> None:
     listed = {'terminal', 'read_file'}
     assert coverage_errors({'terminal', 'read_file', 'image_edit'}, listed, newest=False) == [
         'Agent tool `image_edit` has no Talaria presentation: add it to TOOL_PRESENTATIONS (generic until its view ships) '
@@ -45,7 +43,8 @@ def test_a_new_or_dropped_agent_tool_fails_with_its_fix() -> None:
         'TOOL_PRESENTATIONS lists `read_file`, which the newest supported Agent does not register: remove it, or list it '
         'under the older supported release that still does in OLDER_RELEASE_TOOLS']
     # A tool an older supported release still registers stays listed.
-    assert coverage_errors({'terminal'}, {'terminal', 'yb_send_dm'}, newest=True) == []
+    monkeypatch.setitem(OLDER_RELEASE_TOOLS, 'v0.0.0', {'retired_tool'})
+    assert coverage_errors({'terminal'}, {'terminal', 'retired_tool'}, newest=True) == []
 
 
 def test_older_release_tools_leave_with_their_release() -> None:

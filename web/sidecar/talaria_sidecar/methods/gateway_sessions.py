@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager, closing, suppress
 from functools import lru_cache
-from importlib.util import find_spec
 import json
 from pathlib import Path
 import re
@@ -52,12 +51,6 @@ _WAKE = object()
 _RESTART_CHECK_S, _REACTION_POLL_S = 2, 10
 _SUPPORT_RECORD = Path(__file__).resolve().parents[2] / "agent_support.json"
 _CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
-
-
-def _opens_on_resume() -> bool:  # agent-shim: session-open-on-resume
-    """v0.23.1 owners fire ``on_session_open`` on a connection's first resume of a session, unless that connection read
-    the session's replay first (a reconnect). Only the watch is a viewer opening the chat (TAL-2054)."""
-    return find_spec("gateway.session_open") is not None
 
 
 def _restart_wait(home: Path) -> bool:
@@ -442,7 +435,9 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
 
         async def snapshot():
             nonlocal subscription, sid
-            if subscription is None and params["action"] != "watch" and _opens_on_resume():
+            if subscription is None and params["action"] != "watch":
+                # The owner fires on_session_open on a connection's first resume of a session, unless that connection
+                # read the replay first (a reconnect). Only the watch is a viewer opening the chat (TAL-2054).
                 # No epoch: the owner answers snapshot_required with no events and records a reconnect.
                 with suppress(GatewayRPCError):
                     await client.rpc("session.events.since", session_id=sid)

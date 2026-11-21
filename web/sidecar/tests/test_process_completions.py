@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conftest import SidecarProcess, requires_agent
+from conftest import LEDGER_PRELUDE, SidecarProcess, requires_agent
 from talaria_sidecar import SIDECAR_RPC_VERSION
 from test_process_delivery import _agent
 
@@ -128,8 +128,8 @@ writer = """
 import sys, time
 sys.path.insert(0, sys.argv[1])
 from tools import async_delegation as ad
-""" + SEED_CODE + """
-with ad._DB_LOCK, ad._transaction() as conn:
+""" + LEDGER_PRELUDE + SEED_CODE + """
+with ledger_db() as conn:
     conn.execute('UPDATE async_delegations SET updated_at=? WHERE delegation_id=?',
                  (time.time() - ad._ORPHAN_STALE_S - 10, sys.argv[2]))
 print('ready', flush=True)
@@ -167,7 +167,7 @@ finally:
 
 @requires_agent
 def test_drain_sweeps_dead_owners_in_every_served_home_but_not_live_or_claimed_rows(hermes_home):
-    result = json.loads(_agent(hermes_home, f"SEED_CODE = {SEED_CODE!r}\n" + ORPHAN_PROBE))
+    result = json.loads(_agent(hermes_home, f"SEED_CODE = {SEED_CODE!r}\nLEDGER_PRELUDE = {LEDGER_PRELUDE!r}\n" + ORPHAN_PROBE))
     assert sorted((e["process_id"], e["origin_ui_session_id"]) for e in result["events"]) == [
         ("dead-launch", "web-launch"), ("dead-named", "web-named"),
     ]
@@ -186,7 +186,7 @@ for did, kind in json.loads(sys.argv[2]):
     if kind != 'running':
         ad._persist_completion(event, {'summary': 'synthetic result'})
     if kind == 'expired':
-        with ad._DB_LOCK, ad._transaction() as conn:
+        with ledger_db() as conn:
             conn.execute('UPDATE async_delegations SET completed_at=?, dispatched_at=? WHERE delegation_id=?',
                          (now - ad._MAX_COMPLETION_REPLAY_AGE_S - 3600,) * 2 + (did,))
 """
@@ -282,8 +282,6 @@ print(json.dumps({'first': first, 'retry': retry, 'repeated': repeated}))
 def _seed_typed_delivery(hermes_home):
     # Reproduce the real transcript-only consumer, not a fabricated delivered flag.
     _agent(hermes_home, """
-from hermes_state import SessionDB
-db = SessionDB()
 db.create_session('agent-parent', source='api_server')
 ad._persist_dispatch({'delegation_id': 'deleg_unknown', 'dispatched_at': time.time(),
                       'session_key': 'web-parent', 'origin_ui_session_id': 'web-parent',
@@ -291,17 +289,13 @@ ad._persist_dispatch({'delegation_id': 'deleg_unknown', 'dispatched_at': time.ti
 """)
     _agent(hermes_home, """
 import asyncio
-from hermes_state import SessionDB
 from gateway.wake import persist_delegation_delivery
 ad.recover_abandoned_delegations()
-with ad._DB_LOCK, ad._transaction() as conn:
+with ledger_db() as conn:
     event = json.loads(conn.execute("SELECT event_json FROM async_delegations WHERE delegation_id='deleg_unknown'").fetchone()[0])
-class Adapter:
-    def _ensure_session_db(self):
-        return SessionDB()
 claim = ad.claim_event_delivery(event, 'synthetic-transcript-consumer')
 assert claim
-asyncio.run(persist_delegation_delivery(Adapter(), text='Recovered outcome unknown', session_id='agent-parent', evt=event))
+asyncio.run(persist_delegation_delivery(DeliveryAdapter(), text='Recovered outcome unknown', session_id='agent-parent', evt=event))
 ad.complete_event_delivery(event, claim)
 print(json.dumps(ad.get_durable_delegation('deleg_unknown')))
 """)
@@ -343,7 +337,7 @@ def test_delivered_unknown_notification_is_reconciled_without_reopening_the_agen
     "UPDATE async_delegations SET delivered_at=1",
 ])
 def test_reconciliation_requires_current_typed_final_delivery_in_the_exact_parent(hermes_home, typed_delivery, alteration):
-    _agent(hermes_home, "with ad._DB_LOCK, ad._transaction() as conn: conn.execute(sys.argv[2])", alteration)
+    _agent(hermes_home, "with ledger_db() as conn: conn.execute(sys.argv[2])", alteration)
     sidecar = _start(hermes_home)
     try:
         assert not [e for e in _drain(sidecar, hermes_home) if e.get('reconciliation_profile_home')]
@@ -387,8 +381,6 @@ def test_typed_deliveries_reconcile_in_each_owning_profile_after_sidecar_restart
 @requires_agent
 def test_reconciliation_advances_past_the_first_page_of_accepted_deliveries(hermes_home):
     _agent(hermes_home, """
-from hermes_state import SessionDB
-db = SessionDB()
 db.create_session('agent-parent', source='api_server')
 # All dispatches precede completion, so normal dispatch pruning cannot reduce the terminal batch.
 for i in range(201):
@@ -400,7 +392,7 @@ for i in range(201):
              'origin_ui_session_id': 'web-parent', 'session_key': 'web-parent',
              'parent_session_id': 'agent-parent', 'origin_session_id': 'agent-parent'}
     ad._persist_completion(event, {'status': 'unknown'})
-    db.append_delegation_delivery('agent-parent', 'Synthetic result', {'delegation_id': event['delegation_id']})
+    deliver('agent-parent', 'Synthetic result', {'delegation_id': event['delegation_id']})
     claim = ad.claim_event_delivery(event, 'synthetic-transcript-consumer')
     assert claim
     ad.complete_event_delivery(event, claim)

@@ -2514,20 +2514,15 @@ def _retain_refused_turn(agent, session_id: str, result: dict) -> str | None:
     """TAL-2057: the provider's safety filter judges the whole thread, so a refused turn left in the model context refuses
     every later message. As the Agent's own owners do (CLI, TUI, gateway, ACP), take the refused turn out of the session's
     model context in state.db while keeping the user's ask on screen with the Agent's notice, which this returns. Runs
-    after ``run_conversation`` released the turn lease, under the call's profile scope. None for any other result, and on
-    an Agent without the retention (before v0.23.1), which keeps today's behaviour."""
+    after ``run_conversation`` released the turn lease, under the call's profile scope. None for any other result."""
     if result.get("failure_reason") != "content_policy_blocked":
         return None
-    try:
-        from agent.turn_failure_copy import CONTENT_REFUSED_NOTICE
-    except ImportError:  # agent-shim: content-refused-retention
-        return None
+    from agent.turn_failure_copy import CONTENT_REFUSED_NOTICE
+
     try:
         # Best-effort, like every owner's call: nothing retained leaves the turn as the Agent wrote it.
         agent_store.retain_refused_turn(getattr(agent, "_session_db", None), getattr(agent, "session_id", None) or session_id,
                                         notice=CONTENT_REFUSED_NOTICE, boundary_row_id=result.get("refused_turn_boundary_row_id"))
-    except ImportError:  # agent-shim: content-refused-retention
-        return None
     except Exception:  # noqa: BLE001
         log.warning("Failed to take the refused turn out of the model context", exc_info=True)
     return CONTENT_REFUSED_NOTICE

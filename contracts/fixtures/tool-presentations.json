@@ -308,25 +308,5 @@
   "xai_video_extend": {
     "kind": "video",
     "presentation": "media"
-  },
-  "yb_query_group_info": {
-    "kind": "unknown",
-    "presentation": "generic"
-  },
-  "yb_query_group_members": {
-    "kind": "unknown",
-    "presentation": "generic"
-  },
-  "yb_search_sticker": {
-    "kind": "search",
-    "presentation": "generic"
-  },
-  "yb_send_dm": {
-    "kind": "unknown",
-    "presentation": "generic"
-  },
-  "yb_send_sticker": {
-    "kind": "unknown",
-    "presentation": "generic"
   }
 }

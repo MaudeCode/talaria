@@ -1130,7 +1130,7 @@ async def probe_secure(home):
     from types import SimpleNamespace
     from unittest.mock import patch
     from websockets.asyncio.server import serve
-    from talaria_sidecar.methods.gateway_sessions import _connect, _opens_on_resume, _run
+    from talaria_sidecar.methods.gateway_sessions import _connect, _run
     answered = asyncio.Event()
     async def requests(ws):
         for name in ("sudo", "secret"):
@@ -1177,8 +1177,8 @@ async def probe_secure(home):
                 "session.resume": {"session_id": "fixture", "subscription_id": "viewer", "messages": [], "info": {}},
                 "prompt.submit": receipt,
             }
-            # An owner firing on_session_open first gets Web's reconnect read (TAL-2054).
-            for method in ("runtime.describe", *("session.events.since",) * _opens_on_resume(), "session.resume", "prompt.submit"):
+            # The owner fires on_session_open, so Web reads the replay first as a reconnect (TAL-2054).
+            for method in ("runtime.describe", "session.events.since", "session.resume", "prompt.submit"):
                 frame = json.loads(await ws.recv())
                 assert frame["method"] == method, frame
                 await ws.send(json.dumps({"jsonrpc": "2.0", "id": frame["id"], "result": responses[method]}))

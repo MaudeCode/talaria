@@ -208,19 +208,15 @@ def test_watch_negotiates_display_without_breaking_older_owners(native_owner_stu
 
 
 @pytest.mark.parametrize("action,extra", [("snapshot", {}), ("submit", {"request_id": "turn", "text": "Hi"}), ("watch", {})])
-@pytest.mark.parametrize("opens", [True, False])
-def test_only_the_watch_resumes_as_an_open(native_owner_stub, monkeypatch, action, extra, opens):
-    """TAL-2054: an owner firing on_session_open counts a connection's first resume as an open unless that connection read
-    the replay first. Web's polls and controls read it first; the watch is the viewer opening the chat. Older owners keep
-    the plain resume."""
+def test_only_the_watch_resumes_as_an_open(native_owner_stub, action, extra):
+    """TAL-2054: the owner fires on_session_open on a connection's first resume unless that connection read the replay
+    first. Web's polls and controls read it first; the watch is the viewer opening the chat."""
     from types import SimpleNamespace
-    from talaria_sidecar.methods import gateway_sessions as adapter
-    monkeypatch.setattr(adapter, "_opens_on_resume", lambda: opens)  # agent-shim: session-open-on-resume
     ctx = SimpleNamespace(cancelled=False)
     ctx.emit = lambda kind, data: setattr(ctx, "cancelled", True)
     assert native_owner_stub.run(ctx, {"session_id": "native", "action": action, **extra})["state"] == "attached"
     reads = [call for call in native_owner_stub.calls if call[0] in {"session.events.since", "session.resume"}]
-    reconnect = opens and action != "watch"
+    reconnect = action != "watch"
     assert reads[:1 + reconnect] == [("session.events.since", {"session_id": "native"})] * reconnect + [("session.resume", {"session_id": "native"})]
     assert reads.count(("session.events.since", {"session_id": "native"})) == reconnect
 
@@ -309,7 +305,6 @@ def native_owner_stub(tmp_path, monkeypatch):
     # The Agent's redactor leaves these key-free launch lines as they are; test_connectors.py proves the real one masks a key.
     monkeypatch.setitem(sys.modules, "agent.redact", SimpleNamespace(redact_sensitive_text=lambda text, force: text))
     monkeypatch.setattr(adapter, "_connect", connect)
-    monkeypatch.setattr(adapter, "_opens_on_resume", lambda: False)  # a v0.23.0 owner; the open test sets both
     owner.control_refusal = adapter._control_refusal
     monkeypatch.setattr(adapter, "_control_refusal", lambda *args: None)
     endpoint = SimpleNamespace(code_sha=SUPPORTED_REVISIONS[-1], control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
@@ -826,7 +821,9 @@ def test_captured_command_uses_only_authorized_owner(native_owner_stub, failure)
         assert "shell" not in result
     else:
         assert result["shell"] == owner.shell
-    assert all(method in {"runtime.describe", "session.resume", "shell.exec", "session.detach"} for method, _ in owner.calls)
+    # A control reads the replay first, so its resume is a reconnect rather than an open (TAL-2054).
+    assert all(method in {"runtime.describe", "session.events.since", "session.resume", "shell.exec", "session.detach"}
+               for method, _ in owner.calls)
     assert sum(method == "shell.exec" for method, _ in owner.calls) == 1
 
 
