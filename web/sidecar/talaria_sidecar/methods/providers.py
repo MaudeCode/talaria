@@ -653,17 +653,24 @@ def capabilities(provider: str, model: str) -> dict | None:
 
 
 def selection_warnings(home: Path, params: dict) -> dict:
-    """Read-only guard decision using the same route resolver as a turn; never builds or evicts an Agent."""
+    """Read-only guard decision; never builds or evicts an Agent and never selects inference credentials.
+
+    The route is the server's (``base_url`` from the same inputs ``models.context_length`` reads) and the key is the
+    metadata-only ``context_probe_key``: ``resolve_runtime_provider`` would count or rotate a pool row, build a
+    ``key_cmd`` source and deliver a left-core plugin on every check (TAL-2616). The switch itself selects for real.
+    """
     from . import chat
     try:
+        from hermes_cli.config import load_config
         from hermes_cli.model_selection_guards import SelectionContext, selection_context_for_agent, selection_warnings as warnings
     except ImportError as exc:
         raise RpcError("Model selection warnings are unavailable in this Agent", condition="unsupported") from exc
 
     model = str(params["model"])
-    runtime = chat._resolve_runtime(params.get("provider"), model)
-    provider = str(runtime.get("provider") or params.get("provider") or "")
-    base_url = str(runtime.get("base_url") or "")
+    require_runtime_ownership(params.get("provider"))
+    configured = load_config().get("model")
+    provider = str(params.get("provider") or (configured.get("provider") if isinstance(configured, dict) else "") or "")
+    base_url = str(params.get("base_url") or "")
     tokens = params.get("context_tokens")
     if not tokens:
         with chat._AGENT_CACHE_LOCK:
@@ -683,7 +690,7 @@ def selection_warnings(home: Path, params: dict) -> dict:
     # A same-model pick on another provider still abandons the previous route's prompt cache.
     current = params.get("current_model") if params.get("current_provider") == params.get("provider") else None
     context = SelectionContext(context_tokens=tokens, current_model=current)
-    result = warnings(model, provider=provider, base_url=base_url, api_key=runtime.get("api_key"), selection_context=context)
+    result = warnings(model, provider=provider, base_url=base_url, api_key=context_probe_key(provider, base_url), selection_context=context)
     return {"warnings": [_plain(w) for w in result], "context_tokens": tokens or None, "provider": provider, "base_url": base_url}
 
 

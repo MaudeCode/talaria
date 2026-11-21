@@ -240,6 +240,8 @@ export interface SessionServiceDeps {
   warmModelOptions?: () => Promise<void>
   /** Authoritative lookup through the sidecar (`models.context_length`), cached; used where the caller can await. */
   resolveContextLength?: (model: string | null, provider: string | null, profile: string | null) => Promise<number | null>
+  /** TAL-2616: the route URL `models.context_length` probes, which the model-switch guards price without a runtime selection. */
+  modelRouteUrl?: (profileHome: string, model: string, provider: string | null) => Promise<string | undefined>
   /** `(model, provider)` normalisation from a request (checkpoint 7 wires provider-qualified ids). */
   modelStateFromRequest: (model: unknown, requestedProvider: unknown, currentProvider: string | null) => [string | null, string | null]
   /** TAL-2505: the pair a new chat naming only `provider` starts on, from the profile's catalog; null when the catalog has no such provider. */
@@ -2375,7 +2377,8 @@ export class SessionService {
     try {
       const sidecar = this.deps.sidecar?.()
       if (!sidecar) throw new Error('Agent sidecar is unavailable')
-      decision = await sidecar.call('models.selection_warnings', { profile_home: home, session_id: s.session_id, model, provider, current_model: s.model, current_provider: s.model_provider, context_tokens: context, messages })
+      const baseUrl = await this.deps.modelRouteUrl?.(home, model, provider)
+      decision = await sidecar.call('models.selection_warnings', { profile_home: home, session_id: s.session_id, model, provider, ...(baseUrl ? { base_url: baseUrl } : {}), current_model: s.model, current_provider: s.model_provider, context_tokens: context, messages })
     } catch (error) {
       throw new HttpFailure(503, `Cannot check model selection warnings: ${(error as Error).message}`)
     }

@@ -4535,12 +4535,14 @@ describe('runtime seams from review round 10', () => {
     }
   })
 
-  it('a model switch resolves the context length from the sidecar with the profile config inputs and the detail load reports it', async () => {
+  it('a model switch resolves the context length and its guard route from the sidecar with the profile config inputs and the detail load reports it', async () => {
     let seenInputs: Json | null = null
+    let seenGuard: Json | null = null
     sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'custom', base_url: 'https://llm.example/v1' }, providers: { custom: { api_key: 'sk-custom-1234', models: [{ id: 'big-model', context_length: 1_000_000 }] } } } }))
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
     s.deps.agentConfig.invalidate()
     sidecar.respond('models.context_length', (params) => { seenInputs = params; return { model: params.model, context_length: params.config_context_length ?? 200_000 } })
+    sidecar.respond('models.selection_warnings', (params) => { seenGuard = params; return { warnings: [], context_tokens: null, provider: params.provider ?? '', base_url: params.base_url ?? '' } })
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const updated = (await json(await post(s, '/api/session/update', { session_id: sid, model: 'big-model', model_provider: 'custom' }))).session as Json
     expect(updated.context_length).toBe(1_000_000)
@@ -4548,5 +4550,7 @@ describe('runtime seams from review round 10', () => {
     expect(detail.context_length).toBe(1_000_000)
     expect(s.deps.sessions.deps.contextLengthFor('big-model', 'custom')).toBe(1_000_000)
     expect(seenInputs).toMatchObject({ model: 'big-model', provider: 'custom', base_url: 'https://llm.example/v1', config_context_length: 1_000_000 })
+    // TAL-2616: the guard prices the same route the probe reads, so the sidecar never selects a runtime credential for it.
+    expect(seenGuard).toMatchObject({ model: 'big-model', provider: 'custom', base_url: 'https://llm.example/v1' })
   })
 })

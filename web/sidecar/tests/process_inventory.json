@@ -1735,6 +1735,13 @@
         ""
       ]
     },
+    "tests/test_model_selection.py::test_repeated_guard_checks_leave_inference_credentials_untouched": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent credential selection: the real config loader, credential pool store, key_cmd provider and selection guard registry must leave a round-robin pool, a key_cmd helper and plugin delivery untouched across repeated model-switch guard checks; only the guard entry point, plugin delivery and pricing lookups are replaced by recorders.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_model_selection.py::test_real_selection_guards_and_read_only_context": {
       "layer": "compatibility",
       "reason": "The installed Agent's model selection guards and usage anchor must produce data-policy, context-cache and cost warnings for synthetic routes, and a session's context tokens must come only from its own profile's state.db opened read-only. Agent interpreter, local pricing, no provider traffic.",
