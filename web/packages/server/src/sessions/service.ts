@@ -21,7 +21,7 @@ import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { allSessions, sessionSortTimestamp, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, type OwnerSources, mergeCliSidebarMetadata, sessionListResponse, withSidebarChildren, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
-import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetModelFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, WORKTREE_RETAINED_KEY, type Message } from './session.js'
+import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetModelFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, TERMINAL_CWD_KEY, titleFrom, WORKTREE_RETAINED_KEY, type Message } from './session.js'
 import { DraftDeleteFailed, SessionBusy, SessionNotFound, type SessionOwnership, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState, tsFloat } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
@@ -3081,6 +3081,8 @@ export class SessionService {
       s.pending_started_at = null
       s.pending_user_source = null
       s.clear_generation = hadMessages ? randomUUID().replace(/-/g, '') : null
+      // TAL-2303: the cleared conversation's terminal starts where it is configured.
+      Reflect.deleteProperty(s.extra, TERMINAL_CWD_KEY)
       resetSkillUses(s)
       applySessionTitleRename(s, 'Untitled')
       this.markStateDbSeen(s, read, { boundary: true })

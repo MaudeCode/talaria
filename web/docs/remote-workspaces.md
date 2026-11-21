@@ -66,6 +66,13 @@ the removal of host-local entries.
 Chat keeps working: the profile's remote terminal backend owns the target-side
 paths and runs the tools there.
 
+A local chat's terminal directory survives a sidecar restart: `chat.start`
+reports the Agent's per-session `cd` record, the server saves it with the
+workspace the turn ran in, and the next `chat.start` sends it back as
+`terminal_cwd`. A new chat, a cleared chat, a workspace change or a directory
+that no longer exists starts the terminal at `terminal.cwd`. A remote chat's
+directory is never saved, because the host cannot check a target-side path.
+
 ## Captured commands in native chats
 
 Opening the terminal in an attached native chat selects **Native owner · captured

@@ -77,6 +77,17 @@ const PLACED = new Set(['message_count', 'anchor_scene_index', 'messages', 'tool
 const KNOWN = new Set<string>([...METADATA_FIELDS, ...PLACED])
 /** TAL-1254: an `extra` key, present only once a sidecar start found the session's worktree gone from git. */
 export const WORKTREE_RETAINED_KEY = 'worktree_retained'
+/**
+ * TAL-2303: an `extra` key, `{ cwd, workspace }`: where the chat's local terminal was after its last turn (the Agent's
+ * per-session `cd` record, process-local in the sidecar), and the workspace that turn ran in. Cleared with the conversation.
+ */
+export const TERMINAL_CWD_KEY = 'terminal_cwd'
+
+/** TAL-2303: the chat's saved terminal directory for a turn in `workspace`; null after a workspace move or without one. */
+export function savedTerminalCwd(s: Session, workspace: string): string | null {
+  const saved = s.extra[TERMINAL_CWD_KEY]
+  return isDict(saved) && saved.workspace === workspace && typeof saved.cwd === 'string' ? saved.cwd : null
+}
 
 const SAFE_SID_RE = /^[0-9A-Za-z_-]+$/
 export function isSafeSessionId(sid: unknown): sid is string {
