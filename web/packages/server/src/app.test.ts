@@ -592,6 +592,24 @@ describe('trusted-header auth', () => {
     expect(await out.json()).toEqual({ ok: true, trusted_logout_url: 'https://sso.example/logout' })
   })
 
+  // TAL-2577: the page's first write uses the token from its bootstrap, even when that bootstrap replaced the session.
+  it('a bootstrap that mints a new trusted session returns that session\'s CSRF token', async () => {
+    const headers = { 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops' }
+    const stale = cookieHeader((await s.get('/api/auth/status', { headers })).headers.getSetCookie(), 'hermes_session')!
+    // A request the proxy did not sign ends the trusted session.
+    await s.get('/api/auth/status', { headers: { cookie: stale } })
+    const boot = await s.get('/api/bootstrap', { headers: { ...headers, cookie: stale } })
+    const cookie = cookieHeader(boot.headers.getSetCookie(), 'hermes_session')!
+    expect(cookie).not.toBe(stale)
+    const csrf = BootstrapSchema.parse(await boot.json()).csrf_token
+    const presence = await s.get('/api/talaria/presence', {
+      method: 'POST',
+      headers: { ...headers, cookie, origin: s.base, host: s.base.replace('http://', ''), 'content-type': 'application/json', 'X-Hermes-CSRF-Token': csrf },
+      body: JSON.stringify({ tab_id: '0'.repeat(32), active: true, seq: 1 }),
+    })
+    expect(await presence.json()).toEqual({ ok: true, lease_seconds: 90 })
+  })
+
   // TAL-2203: loopback is not implicitly a proxy for identity; a local process or relay could name itself any user.
   describe('proxy list', () => {
     const env = (): Record<string, string | undefined> => s.deps.config.env

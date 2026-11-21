@@ -37,8 +37,6 @@ test('a profile-bound session gets no terminal, provider setup or MCP edit contr
     await server.deps.sessionStore.save(new Session({ session_id: sid, title: 'Bound chat', profile: 'default', workspace, messages: [{ role: 'user', content: 'Hello', timestamp: now - 60 }, { role: 'assistant', content: 'Hi there.', timestamp: now - 50 }] }, { workspace, model: null }))
     await page.setExtraHTTPHeaders({ 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops' })
     await page.route((url) => url.pathname === '/api/providers', (route) => route.fulfill({ json: PROVIDERS }))
-    // Presence is not under test: a page's first lease can post before it holds the new CSRF token (TAL-2577).
-    await page.route('**/api/talaria/presence', (route) => route.fulfill({ json: { ok: true, lease_seconds: 90 } }))
 
     await page.goto(`${server.base}/session/${sid}`)
     await settle(page)
