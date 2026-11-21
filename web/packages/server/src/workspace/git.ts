@@ -71,7 +71,7 @@ function gitDeadline(timeoutMs: number): () => number {
 export interface GitContext { workspace: string; repoRoot: string; workspacePrefix: string }
 export type GitChangeKind = 'conflict' | 'untracked' | 'added' | 'deleted' | 'renamed' | 'modified'
 export interface GitFile {
-  path: string; old_path: string | null; workspace_path: string; status: string; change_kind: GitChangeKind; staged: boolean; unstaged: boolean; untracked: boolean
+  path: string; old_path: string | null; workspace_path: string; status: string; change_kind: GitChangeKind; diff_kind: 'staged' | 'unstaged'; staged: boolean; unstaged: boolean; untracked: boolean
   ignored: boolean; conflict: boolean; additions: number; deletions: number; binary: boolean
 }
 export interface GitTotals { changed: number; staged: number; unstaged: number; untracked: number; conflicts: number; additions: number; deletions: number }
@@ -1016,6 +1016,7 @@ export class GitRunner {
       const status = gitStatusCode(xy, untracked, renamed)
       const file: GitFile = {
         path: workspacePath, old_path: oldWorkspacePath, workspace_path: workspacePath, status, change_kind: gitChangeKind(status, conflict),
+        diff_kind: staged && !unstaged && !conflict ? 'staged' : 'unstaged',
         staged, unstaged, untracked, ignored: false, conflict, additions, deletions, binary,
       }
       files.set(workspacePath, file)

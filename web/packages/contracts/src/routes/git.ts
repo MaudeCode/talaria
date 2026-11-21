@@ -17,6 +17,7 @@ export const GitTotalsSchema = z.object({
 export const GitFileSchema = z.object({
   path: z.string(), old_path: z.string().nullable(), workspace_path: z.string(), status: z.string(),
   change_kind: z.enum(['conflict', 'untracked', 'added', 'deleted', 'renamed', 'modified']), staged: z.boolean(), unstaged: z.boolean(), untracked: z.boolean(),
+  diff_kind: z.enum(['staged', 'unstaged']).describe('The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files.'),
   ignored: z.boolean(), conflict: z.boolean(), additions: z.number().int(), deletions: z.number().int(), binary: z.boolean(),
 })
 export const GitStatusSchema = z.object({

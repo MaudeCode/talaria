@@ -84516,6 +84516,14 @@
                               "untracked": {
                                 "type": "boolean"
                               },
+                              "diff_kind": {
+                                "enum": [
+                                  "staged",
+                                  "unstaged"
+                                ],
+                                "type": "string",
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                              },
                               "ignored": {
                                 "type": "boolean"
                               },
@@ -84545,6 +84553,7 @@
                               "staged",
                               "unstaged",
                               "untracked",
+                              "diff_kind",
                               "ignored",
                               "conflict",
                               "additions",
@@ -85163,6 +85172,14 @@
                               "untracked": {
                                 "type": "boolean"
                               },
+                              "diff_kind": {
+                                "enum": [
+                                  "staged",
+                                  "unstaged"
+                                ],
+                                "type": "string",
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                              },
                               "ignored": {
                                 "type": "boolean"
                               },
@@ -85192,6 +85209,7 @@
                               "staged",
                               "unstaged",
                               "untracked",
+                              "diff_kind",
                               "ignored",
                               "conflict",
                               "additions",
@@ -85407,6 +85425,14 @@
                               "untracked": {
                                 "type": "boolean"
                               },
+                              "diff_kind": {
+                                "enum": [
+                                  "staged",
+                                  "unstaged"
+                                ],
+                                "type": "string",
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                              },
                               "ignored": {
                                 "type": "boolean"
                               },
@@ -85436,6 +85462,7 @@
                               "staged",
                               "unstaged",
                               "untracked",
+                              "diff_kind",
                               "ignored",
                               "conflict",
                               "additions",
@@ -85652,6 +85679,14 @@
                               "untracked": {
                                 "type": "boolean"
                               },
+                              "diff_kind": {
+                                "enum": [
+                                  "staged",
+                                  "unstaged"
+                                ],
+                                "type": "string",
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                              },
                               "ignored": {
                                 "type": "boolean"
                               },
@@ -85681,6 +85716,7 @@
                               "staged",
                               "unstaged",
                               "untracked",
+                              "diff_kind",
                               "ignored",
                               "conflict",
                               "additions",
@@ -85889,6 +85925,14 @@
                               "untracked": {
                                 "type": "boolean"
                               },
+                              "diff_kind": {
+                                "enum": [
+                                  "staged",
+                                  "unstaged"
+                                ],
+                                "type": "string",
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                              },
                               "ignored": {
                                 "type": "boolean"
                               },
@@ -85918,6 +85962,7 @@
                               "staged",
                               "unstaged",
                               "untracked",
+                              "diff_kind",
                               "ignored",
                               "conflict",
                               "additions",
@@ -86147,6 +86192,14 @@
                               "untracked": {
                                 "type": "boolean"
                               },
+                              "diff_kind": {
+                                "enum": [
+                                  "staged",
+                                  "unstaged"
+                                ],
+                                "type": "string",
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                              },
                               "ignored": {
                                 "type": "boolean"
                               },
@@ -86176,6 +86229,7 @@
                               "staged",
                               "unstaged",
                               "untracked",
+                              "diff_kind",
                               "ignored",
                               "conflict",
                               "additions",
@@ -86505,6 +86559,14 @@
                               "untracked": {
                                 "type": "boolean"
                               },
+                              "diff_kind": {
+                                "enum": [
+                                  "staged",
+                                  "unstaged"
+                                ],
+                                "type": "string",
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                              },
                               "ignored": {
                                 "type": "boolean"
                               },
@@ -86534,6 +86596,7 @@
                               "staged",
                               "unstaged",
                               "untracked",
+                              "diff_kind",
                               "ignored",
                               "conflict",
                               "additions",
@@ -86739,6 +86802,14 @@
                               "untracked": {
                                 "type": "boolean"
                               },
+                              "diff_kind": {
+                                "enum": [
+                                  "staged",
+                                  "unstaged"
+                                ],
+                                "type": "string",
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                              },
                               "ignored": {
                                 "type": "boolean"
                               },
@@ -86768,6 +86839,7 @@
                               "staged",
                               "unstaged",
                               "untracked",
+                              "diff_kind",
                               "ignored",
                               "conflict",
                               "additions",
@@ -86973,6 +87045,14 @@
                               "untracked": {
                                 "type": "boolean"
                               },
+                              "diff_kind": {
+                                "enum": [
+                                  "staged",
+                                  "unstaged"
+                                ],
+                                "type": "string",
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                              },
                               "ignored": {
                                 "type": "boolean"
                               },
@@ -87002,6 +87082,7 @@
                               "staged",
                               "unstaged",
                               "untracked",
+                              "diff_kind",
                               "ignored",
                               "conflict",
                               "additions",
@@ -87226,6 +87307,14 @@
                               "untracked": {
                                 "type": "boolean"
                               },
+                              "diff_kind": {
+                                "enum": [
+                                  "staged",
+                                  "unstaged"
+                                ],
+                                "type": "string",
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                              },
                               "ignored": {
                                 "type": "boolean"
                               },
@@ -87255,6 +87344,7 @@
                               "staged",
                               "unstaged",
                               "untracked",
+                              "diff_kind",
                               "ignored",
                               "conflict",
                               "additions",
@@ -87629,6 +87719,14 @@
                               "untracked": {
                                 "type": "boolean"
                               },
+                              "diff_kind": {
+                                "enum": [
+                                  "staged",
+                                  "unstaged"
+                                ],
+                                "type": "string",
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                              },
                               "ignored": {
                                 "type": "boolean"
                               },
@@ -87658,6 +87756,7 @@
                               "staged",
                               "unstaged",
                               "untracked",
+                              "diff_kind",
                               "ignored",
                               "conflict",
                               "additions",

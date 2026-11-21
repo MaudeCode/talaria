@@ -80,6 +80,7 @@ public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
     public let status: String?
     /// The server's `change_kind` (TAL-2499); `.unknown` when it is missing or unrecognized.
     public let changeKind: ChangeKind
+    public let diffKind: String
     public let staged: Bool?
     let unstaged: Bool?
     public let untracked: Bool?
@@ -94,6 +95,7 @@ public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
         case workspacePath
         case status
         case changeKind
+        case diffKind
         case staged
         case unstaged
         case untracked
@@ -114,6 +116,13 @@ public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
         unstaged = container.decodeLossyBoolIfPresent(forKey: .unstaged)
         untracked = container.decodeLossyBoolIfPresent(forKey: .untracked)
         conflict = container.decodeLossyBoolIfPresent(forKey: .conflict)
+        switch container.decodeLossyStringIfPresent(forKey: .diffKind) {
+        case "staged": diffKind = "staged"
+        case "unstaged": diffKind = "unstaged"
+        default:
+            // Compatibility with servers that predate diff_kind.
+            diffKind = (staged == true && unstaged != true) ? "staged" : "unstaged"
+        }
         additions = container.decodeLossyIntIfPresent(forKey: .additions)
         deletions = container.decodeLossyIntIfPresent(forKey: .deletions)
         binary = container.decodeLossyBoolIfPresent(forKey: .binary)
@@ -156,11 +165,6 @@ extension GitFile {
         let parts = displayPath.split(separator: "/").map(String.init)
         guard parts.count > 1 else { return nil }
         return parts.dropLast().joined(separator: "/")
-    }
-
-    /// The diff query uses staged content for staged-only changes, unstaged otherwise.
-    public var preferredDiffKind: String {
-        (staged == true && unstaged != true) ? "staged" : "unstaged"
     }
 
     public var displayPath: String {
