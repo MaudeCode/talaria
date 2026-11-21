@@ -604,7 +604,7 @@
   "SessionListHostedTests/testDuoOuterPortraitKeepsListRowsWithTheHingePartlyOpen": 1.9,
   "SessionListHostedTests/testDuoOuterSidebarFillsTheDisplayOnItsFirstOpenBeforeAnyFold": 0.3,
   "SessionListHostedTests/testExplicitNewChatWaitsForSendAndFilesCreatesOnDemand": 8.4,
-  "SessionListHostedTests/testFailedFirstSendPreservesNewTypingAndRepeatedRetryJoinsCreation": 6.1,
+  "SessionListHostedTests/testFailedFirstSendPreservesNewTypingAndRetriesCreation": 6.1,
   "SessionListHostedTests/testFiltersOpenArchivedChatsAtItsExistingRoot": 3.6,
   "SessionListHostedTests/testFirstSendConsumesDraftAndShowsOneRowWhileCreationIsHeld": 2.8,
   "SessionListHostedTests/testFirstSendKeepsImportedFilesDurableUntilTheServerAccepts": 4.3,

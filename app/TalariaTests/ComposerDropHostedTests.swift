@@ -214,13 +214,6 @@ final class ComposerDropHostedTests: XCTestCase {
         return operation
     }
 
-    /// Makes `change` and reports whether the keyboard then posted `notification`; a hardware keyboard posts none.
-    private func awaitKeyboard(_ notification: Notification.Name, after change: () async throws -> Void) async rethrows -> Bool {
-        let posted = XCTNSNotificationExpectation(name: notification)
-        try await change()
-        return await XCTWaiter().fulfillment(of: [posted], timeout: 5) == .completed
-    }
-
     private func composerCentre(in window: UIWindow) throws -> CGPoint {
         if let editor = window.firstView(ofType: ComposerTextView.PastingTextView.self) {
             return editor.convert(CGPoint(x: editor.bounds.midX, y: editor.bounds.midY), to: window)

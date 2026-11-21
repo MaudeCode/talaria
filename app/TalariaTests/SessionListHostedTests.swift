@@ -1555,7 +1555,7 @@ final class SessionListHostedTests: XCTestCase {
         }
     }
 
-    func testFailedFirstSendPreservesNewTypingAndRepeatedRetryJoinsCreation() async throws {
+    func testFailedFirstSendPreservesNewTypingAndRetriesCreation() async throws {
         try await assertFailedFirstSend(submittedDraft: "Submitted prompt", message: "Submitted prompt")
     }
 
@@ -1613,10 +1613,13 @@ final class SessionListHostedTests: XCTestCase {
         let send = try await requireElement(in: window, label: "Send")
         XCTAssertFalse(send.accessibilityTraits.contains(.notEnabled), "A retryable refusal leaves Send enabled")
         try await activateSend(in: window)
-        try await activateSend(in: window)
         let retried = await awaitCondition { creation != nil }
         XCTAssertTrue(retried)
-        XCTAssertEqual(creationCount, 2, "Repeated Send must join the one replacement creation")
+        let sendUnavailable = await awaitCondition {
+            HostedAccessibility.element(in: window, label: "Send")?.accessibilityTraits.contains(.notEnabled) != false
+        }
+        XCTAssertTrue(sendUnavailable, "Send becomes unavailable after consuming the restored draft")
+        XCTAssertEqual(creationCount, 2, "Retrying Send starts one replacement creation")
         creation?.resume(returning: .started(session))
         creation = nil
         let sent = await awaitCondition {

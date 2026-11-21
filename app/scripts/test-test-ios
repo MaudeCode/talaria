@@ -428,6 +428,35 @@ grep -q "stopping the run as a runner fault" "$state/LaunchFaultAlways.log"
 faulted_bundle=$(grep -m1 -- 'TalariaTests/LaunchFaultOnce|' "$state/runs" | cut -d'|' -f2)
 [[ -d "${faulted_bundle%.xcresult}-launch-1.xcresult" ]]
 
+# A result-stream drain can take most of the allowance before it encounters a new start.
+(
+    source "$repo/scripts/xctest-launch"
+    output_log="$state/drain.log"
+    stream="$state/drain.stream.json"
+    xcodebuild_pid=1234
+    xctest_watchdog_failed=0
+    clock=1000000
+    polls=0
+    printf '%s\n' '{"name":{"_value":"testStarted"},"structuredPayload":{"testIdentifier":{"identifier":{"_value":"Gallery/testInsights()"}}}}' > "$stream"
+    now_us() { printf '%s\n' "$clock"; }
+    read() {
+        builtin read "$@" || return
+        if [[ "${*: -1}" == line && "$line" == *testStarted* ]]; then
+            clock=66000000
+        fi
+    }
+    kill() { [[ "$1" != -0 || "$polls" -lt 2 ]]; }
+    sleep() {
+        polls=$((polls + 1))
+        clock=72000000
+    }
+    xctest_watch_run "$stream" 60 < "$stream"
+    (( ! xctest_watchdog_failed )) || {
+        echo "The hosted watchdog charged the newly started test for draining earlier events." >&2
+        exit 1
+    }
+)
+
 # The hosted launcher must name the still-running test and give xcodebuild a chance to flush results.
 echo 'build-produced fixture receipt' > "$state/hung.xctestrun"
 hung_status=0

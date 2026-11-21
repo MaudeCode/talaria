@@ -208,6 +208,23 @@ final class HostedTestBundle: NSObject, XCTestObservation {
                         }
                     }
                 }
+                // The auxiliary picker has a different SwiftUI body specialization from Default Model.
+                // Its first push can spend the hosted test's allowance rendering that body.
+                if let fixture = try? FixtureApp(for: warmer), let window = try? warmer.hostWindow(NavigationStack {
+                    AuxiliaryModelsSettingsView(server: UITestFixtureEnvironment.serverURL)
+                        .environment(fixture.environment.authManager)
+                }) {
+                    windows.append(window)
+                    if let vision = await warmer.awaitElement(in: window, where: { $0.accessibilityLabel?.hasPrefix("Vision") == true }),
+                       HostedAccessibility.activate(vision),
+                       let model = await warmer.awaitElement(in: window, where: {
+                           HostedAccessibility.identifier(of: $0) == "auxiliary-edit-model"
+                       }), HostedAccessibility.activate(model) {
+                        _ = await warmer.awaitElement(in: window, where: {
+                            HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model"
+                        })
+                    }
+                }
                 finished = true
             }
             let deadline = Date(timeIntervalSinceNow: 180)
@@ -440,6 +457,14 @@ extension XCTestCase {
         input.becomeFirstResponder()
         input.insertText(text)
         try? await Task.sleep(for: .milliseconds(100))
+    }
+
+    /// Makes `change` and reports whether the software keyboard then posted `notification`.
+    @MainActor
+    func awaitKeyboard(_ notification: Notification.Name, after change: () async throws -> Void) async rethrows -> Bool {
+        let posted = XCTNSNotificationExpectation(name: notification)
+        try await change()
+        return await XCTWaiter().fulfillment(of: [posted], timeout: 5) == .completed
     }
 
     /// Types `message` and activates Send.
