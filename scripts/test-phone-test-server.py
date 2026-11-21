@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/phone-test-server (TAL-2621, TAL-2622 scenarios).
+"""Tests for scripts/phone-test-server (TAL-2621, TAL-2622 scenarios, TAL-2623 add-server link).
 
 Run: python3 scripts/test-phone-test-server.py
 """
@@ -9,10 +9,12 @@ import importlib.util
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -86,6 +88,14 @@ class TailscaleTests(unittest.TestCase):
             with self.assertRaises(pts.Failure, msg=host):
                 pts.checked_host(host)
 
+    def test_the_preferred_port_is_used_when_free_and_skipped_while_held(self):
+        with socket.socket() as holder:
+            holder.bind(("127.0.0.1", 0))
+            holder.listen()
+            held = holder.getsockname()[1]
+            self.assertNotEqual(pts.server_port("127.0.0.1", preferred=held), held)
+        self.assertEqual(pts.server_port("127.0.0.1", preferred=held), held)
+
 
 def disposable_checkout(test):
     """A test-owned checkout with its own hostile web/.env: the script and server dist are copied, the rest of web/ is
@@ -119,6 +129,9 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(started.returncode, 0, started.stderr[-4000:])
         server = json.loads(started.stdout)
         try:
+            link = urllib.parse.urlsplit(server.get("addServerLink", ""))
+            self.assertEqual((link.scheme, link.netloc), ("talaria-branch", "add-server"))
+            self.assertEqual(urllib.parse.parse_qs(link.query), {"url": [server["url"]], "password": [server["password"]]})
             opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
             login = urllib.request.Request(
                 f"{server['url']}/api/auth/login",

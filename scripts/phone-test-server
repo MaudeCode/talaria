@@ -3,8 +3,9 @@
 
   scripts/phone-test-server start [--scenario FILE] [--no-build] [--host IP] [--tailscale CLI]
       Builds contracts and server from this checkout, boots the replay-sidecar server under `env -i` with a temp
-      HOME on the Mac's Tailscale IPv4, a free port and a random password, waits for /health and a password login,
-      and prints {url, password, pid, stateDir, log} as one JSON object on stdout.
+      HOME on the Mac's Tailscale IPv4, port 8790 when free (else any free port) and a random password, waits for
+      /health and a password login, and prints {url, password, addServerLink, pid, stateDir, log} as one JSON object
+      on stdout. addServerLink opens Talaria Dev's Add Server prefilled with the URL and password (TAL-2623).
       --scenario seeds the server from a JSON file (TAL-2622; scripts/phone-test-scenarios/example.json shows every
       field): its files go into the default workspace before boot, then its projects and chats are created through the
       HTTP API as the App would, each turn played by the replay sidecar, and the result is read back and compared. A
@@ -43,6 +44,9 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 READY_SECONDS = 60
 RESTATE_ERROR = "changing settings via 'tailscale up' requires mentioning all"
 SETTLE_SECONDS = 30
+# A fixed port keeps repeated servers at one URL, which Talaria Dev then signs in to again rather than adding (TAL-2623).
+PREFERRED_PORT = 8790
+DEV_URL_SCHEME = "talaria-branch"  # app/Config/Dev.xcconfig APP_URL_SCHEME_SUFFIX
 
 
 class Failure(Exception):
@@ -128,10 +132,20 @@ def interpreter(argv):
     return path
 
 
-def free_port(host):
-    with socket.socket() as probe:
-        probe.bind((host, 0))
-        return probe.getsockname()[1]
+def server_port(host, preferred=PREFERRED_PORT):
+    """PREFERRED when nothing holds it on HOST, else any free port."""
+    for port in (preferred, 0):
+        with socket.socket() as probe:
+            try:
+                probe.bind((host, port))
+            except OSError:
+                continue
+            return probe.getsockname()[1]
+
+
+def add_server_link(url, password):
+    """Talaria Dev's link that opens Add Server prefilled with URL and PASSWORD."""
+    return f"{DEV_URL_SCHEME}://add-server?" + urllib.parse.urlencode({"url": url, "password": password}, quote_via=urllib.parse.quote)
 
 
 def ready(url, password, server):
@@ -310,7 +324,7 @@ def start(args):
             target = state_dir / "workspace" / entry["path"]
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(entry["content"])
-    record = {"port": free_port(host), "host": host, "password": secrets.token_urlsafe(18)}
+    record = {"port": server_port(host), "host": host, "password": secrets.token_urlsafe(18)}
     (state_dir / "server.json").write_text(json.dumps(record))
     try:
         url = launch(state_dir)
@@ -327,7 +341,7 @@ def start(args):
         if mismatches:
             stop(state_dir)
             raise Failure("the seeded server does not match the scenario:\n" + "\n".join(f"  {m}" for m in mismatches))
-    print(json.dumps({"url": url, "password": record["password"], "pid": json.loads((state_dir / "server.json").read_text())["pid"],
+    print(json.dumps({"url": url, "password": record["password"], "addServerLink": add_server_link(url, record["password"]), "pid": json.loads((state_dir / "server.json").read_text())["pid"],
                       "stateDir": str(state_dir), "log": str(state_dir / "server.log")}))
     print(f"Stop it with: {Path(__file__).resolve()} stop {state_dir}", file=sys.stderr)
 

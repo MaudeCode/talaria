@@ -23,6 +23,9 @@ struct ContentView: View {
     @State private var pendingDestination: SessionListUtilityDestination?
     @State private var opensProviderQuotaWidgetSettings = false
     @State private var pendingNewChatRequest: NewChatRequest?
+    /// TAL-2623: the server an add-server link opens Add Server prefilled with.
+    @State private var pendingAddServer: TalariaDeepLink.AddServer?
+    private let acceptsAddServerLinks: Bool
     @State private var intentRouter: AppIntentRouter
     @Bindable private var whatsNew: WhatsNewPresenter
     private let appLock: AppLockModel
@@ -33,9 +36,11 @@ struct ContentView: View {
         whatsNew: WhatsNewPresenter? = nil,
         appLock: AppLockModel? = nil,
         intentRouter: AppIntentRouter? = nil,
-        sharedImports: SharedImportRouter? = nil
+        sharedImports: SharedImportRouter? = nil,
+        acceptsAddServerLinks: Bool = TalariaDeepLink.acceptsAddServerLinks
     ) {
         self.authManager = authManager
+        self.acceptsAddServerLinks = acceptsAddServerLinks
         self.draftStore = draftStore ?? .shared
         self.whatsNew = whatsNew ?? WhatsNewPresenter(pending: nil)
         self.appLock = appLock ?? .shared
@@ -55,13 +60,14 @@ struct ContentView: View {
             && authManager.pendingReauthentication == nil
             && sharedImports.pendingImport == nil && !sharedImports.hasWaitingImport
             && pendingDeepLinkedSessionID == nil && pendingDestination == nil
-            && !opensProviderQuotaWidgetSettings && pendingNewChatRequest == nil
+            && !opensProviderQuotaWidgetSettings && pendingNewChatRequest == nil && pendingAddServer == nil
             && intentRouter.pendingDeepLink == nil
             && !appLock.isLocked && appLock.queuedDeepLinks.isEmpty
     }
 
     var body: some View {
         content
+            .sheet(item: $pendingAddServer) { AddServerView(authManager: authManager, prefill: $0) }
             .whatsNewPresentation(whatsNew.presentation(in: window), defaults: whatsNew.defaults)
             .task(id: leavesRoomForWhatsNew) {
                 guard leavesRoomForWhatsNew else { return }
@@ -182,6 +188,12 @@ struct ContentView: View {
 
     private func route(_ url: URL) {
         if TalariaDeepLink.isOpenAppURL(url) {
+            return
+        }
+
+        // TAL-2623: Talaria Dev opens Add Server prefilled and adds nothing until it is submitted; other builds ignore it.
+        if let server = TalariaDeepLink.addServer(from: url) {
+            if acceptsAddServerLinks { pendingAddServer = server }
             return
         }
 

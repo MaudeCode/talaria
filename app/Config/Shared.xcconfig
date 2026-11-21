@@ -15,6 +15,8 @@ APP_GROUP_IDENTIFIER = group.dev.kil.talaria$(APP_IDENTIFIER_SUFFIX)
 ICLOUD_CONTAINER_IDENTIFIER = iCloud.dev.kil.talaria$(APP_IDENTIFIER_SUFFIX)
 // Primary Icon Composer icon; Config/Dev.xcconfig swaps in the DEV-banner icon.
 APP_ICON_NAME = Talaria
+// Add-server links carry a password, so only Talaria Dev opens them (TAL-2623); Config/Dev.xcconfig turns them on.
+APP_ACCEPTS_ADD_SERVER_LINKS = NO
 
 // Optional per-machine overrides. This include must stay last: later
 // assignments win, so Local.xcconfig values override the defaults above.

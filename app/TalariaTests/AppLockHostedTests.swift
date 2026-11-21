@@ -138,4 +138,71 @@ final class AppLockHostedTests: XCTestCase {
         XCTAssertTrue(routed, "Unlocking routes what the lock held")
         withExtendedLifetime(window) {}
     }
+
+    private static let addServerLink = URL(string:
+        "\(TalariaDeepLink.scheme)://add-server?url=http%3A%2F%2F100.64.9.9%3A8790&password=p%2Bw&name=Phone%20test")!
+
+    /// TAL-2623: the add-server link waits behind the lock like any link, then opens Add Server prefilled, adding nothing.
+    func testAnAddServerLinkWaitsForUnlockThenOpensAddServerPrefilledInDevBuilds() async throws {
+        let router = AppIntentRouter()
+        let model = model(results: [.cancelled])
+        model.sceneDidChange(.active, scene: "hosted")
+        await model.authentication?.value
+        let fixture = try FixtureApp(for: self)
+        let servers = fixture.environment.authManager.servers
+        let window = try hostWindow(
+            ContentView(authManager: fixture.environment.authManager, appLock: model, intentRouter: router,
+                        acceptsAddServerLinks: true)
+                .modelContainer(fixture.cache)
+        )
+
+        router.requestDeepLink(Self.addServerLink)
+        let queued = await awaitCondition { model.queuedDeepLinks == [Self.addServerLink] }
+        XCTAssertTrue(queued, "A locked app holds the link")
+
+        model.unlock()
+        await model.authentication?.value
+        let url = await awaitElement(in: window) { $0.accessibilityValue == "http://100.64.9.9:8790" }
+        XCTAssertNotNil(url, "Unlocking opens Add Server with the link's URL")
+        let name = await awaitElement(in: window) { $0.accessibilityValue == "Phone test" }
+        XCTAssertNotNil(name, "and its name")
+        let password = await awaitElement(in: window) { $0.accessibilityValue == String(repeating: "•", count: "p+w".count) }
+        XCTAssertNotNil(password, "and its password, masked")
+        attachHostedScreenshot(window, name: "add-server-link-prefilled")
+        XCTAssertEqual(fixture.environment.authManager.servers, servers, "Nothing is added until Add is tapped")
+        withExtendedLifetime(window) {}
+    }
+
+    /// TAL-2623: Add Server for a server already in the list shows that server's own identity, so Add keeps it.
+    func testAddServerForAListedServerShowsItsOwnIdentity() async throws {
+        let fixture = try FixtureApp(for: self)
+        let auth = fixture.environment.authManager
+        let account = try XCTUnwrap(auth.servers.first)
+        auth.updateServerIdentity(account, displayName: "Home Lab", initials: "HL", headerLogoColorHex: account.headerLogoColorHex)
+        auth.flushServerIdentityEdits()
+        let window = try hostWindow(AddServerView(
+            authManager: auth,
+            prefill: TalariaDeepLink.AddServer(url: account.urlString, password: "p", name: "Phone test")
+        ))
+
+        let name = await awaitElement(in: window) { $0.accessibilityValue == "Home Lab" }
+        XCTAssertNotNil(name, "The listed server's name replaces the link's")
+    }
+
+    /// TAL-2623: App Store and TestFlight builds never open a link that carries a password.
+    func testOtherBuildsIgnoreAnAddServerLink() async throws {
+        let router = AppIntentRouter()
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(
+            ContentView(authManager: fixture.environment.authManager, appLock: model(enabled: false), intentRouter: router,
+                        acceptsAddServerLinks: false)
+                .modelContainer(fixture.cache)
+        )
+
+        router.requestDeepLink(Self.addServerLink)
+        let routed = await awaitCondition { router.pendingDeepLink == nil }
+        XCTAssertTrue(routed)
+        attachHostedScreenshot(window, name: "add-server-link-ignored")
+        XCTAssertNil(window.rootViewController?.presentedViewController, "No sheet opens")
+    }
 }

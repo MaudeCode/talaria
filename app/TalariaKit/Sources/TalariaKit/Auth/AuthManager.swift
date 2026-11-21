@@ -534,9 +534,10 @@ public final class AuthManager {
     /// `probeClientFactory`), not the shared `CustomHeaderStore`. So a typo or an
     /// unreachable server can't bounce the user out of a working session, and the
     /// active server's concurrent requests (polling / SSE reconnect) never pick up
-    /// the new server's headers during the async probe window. Rejects a URL that's
-    /// already configured (no duplicate normalized URLs). On success the new server
-    /// becomes active and its headers are persisted under its own scoped key (#16).
+    /// the new server's headers during the async probe window. A URL that's already
+    /// configured signs that entry in again rather than adding a duplicate (TAL-2623).
+    /// On success the server becomes active and its headers are persisted under its
+    /// own scoped key (#16).
     @discardableResult
     public func addServer(
         serverURLString: String,
@@ -553,12 +554,11 @@ public final class AuthManager {
             return .failed
         }
 
-        guard !serverRegistry.servers.contains(where: { $0.id == serverURL.absoluteString }) else {
-            lastErrorMessage = String(localized: "This server is already configured.")
-            return .failed
-        }
-
-        let newHeaders = customHeaders.sanitizedForStorage()
+        // TAL-2623: a URL already registered signs that entry in again, keeping its headers when the form gives none.
+        let existing = serverRegistry.servers.first(where: { $0.id == serverURL.absoluteString })
+        let newHeaders = customHeaders.isEmpty
+            ? existing.map { self.customHeaders(for: $0) } ?? []
+            : customHeaders.sanitizedForStorage()
         // Probe with a client scoped to the NEW server's headers, leaving the live
         // header store (and the active server's in-flight/SSE requests) untouched.
         let probeCookies = ServerCookieStore.makeIsolatedStorage()
@@ -601,6 +601,8 @@ public final class AuthManager {
                 password: retainedPassword
             )
             probeCookies.cookies?.forEach(probeCookies.deleteCookie)
+            // Views of an entry signed in again reload as after any sign-in; a new server rebuilds them instead.
+            if existing != nil { NotificationCenter.default.post(name: .talariaReauthenticated, object: serverURL) }
             return .added(serverURL)
         } catch {
             probeCookies.cookies?.forEach(probeCookies.deleteCookie)

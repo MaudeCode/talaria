@@ -226,6 +226,37 @@ public enum TalariaDeepLink {
         return (id, board?.isEmpty == false ? board : nil)
     }
 
+    static let addServerHost = "add-server"
+
+    /// TAL-2623: the server an add-server link names and the sign-in Add Server opens prefilled with.
+    public struct AddServer: Equatable, Identifiable, Sendable {
+        public let url: String
+        public let password: String
+        public let name: String?
+        public var id: String { url }
+    }
+
+    /// TAL-2623: `<scheme>://add-server?url=<http(s) URL>&password=<password>&name=<display name>`, which a phone test
+    /// server prints; nil without an http(s) `url`.
+    public static func addServer(from url: URL) -> AddServer? {
+        guard url.scheme?.lowercased() == scheme, url.host?.lowercased() == addServerHost else { return nil }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let value = { (name: String) in items.first { $0.name == name }?.value }
+        guard let server = value("url")?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let components = URLComponents(string: server),
+              ["http", "https"].contains(components.scheme?.lowercased()),
+              components.host?.isEmpty == false
+        else { return nil }
+        let name = value("name")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return AddServer(url: server, password: value("password") ?? "", name: name.isEmpty ? nil : name)
+    }
+
+    /// TAL-2623: whether this build opens add-server links; only Talaria Dev sets `APP_ACCEPTS_ADD_SERVER_LINKS`, so a
+    /// password in a link never reaches App Store builds.
+    public static var acceptsAddServerLinks: Bool {
+        Bundle.main.object(forInfoDictionaryKey: "TalariaAcceptsAddServerLinks") as? String == "YES"
+    }
+
     /// Whether a link is one of this build's own app links, which the app routes itself rather than the system.
     public static func isAppURL(_ url: URL) -> Bool {
         url.scheme?.lowercased() == scheme
