@@ -245,10 +245,14 @@ function typedSpans(code: string, cut: boolean): Span[] {
     // A helper named without a call (an alias, an argument) types through a name this scan cannot follow.
     else if (!IMPORT_RE.test(skeleton.slice(...stmtRange(stmtOf(match.index))))) throw new Withheld()
   }
-  // A helper called inside a string (code handed to `eval`) types a value this scan cannot reach.
-  for (const match of code.matchAll(/\b(?:fill_input|type_text)\s*\(/g)) {
+  // A helper called inside a string (code handed to `exec`) types a value this scan cannot reach; one only named there
+  // (`locals()['type_text']`) is looked up into a name it cannot follow.
+  for (const match of code.matchAll(/\b(?:fill_input|type_text)\b(\s*\()?/g)) {
     const literal = literalAt(match.index)
-    if (literal) { followLiteral(literal); maskStatement(literal.stmt) }
+    if (!literal) continue
+    if (!match[1]) throw new Withheld()
+    followLiteral(literal)
+    maskStatement(literal.stmt)
   }
   for (const match of code.matchAll(/insertText/g)) {
     const literal = literalAt(match.index)
