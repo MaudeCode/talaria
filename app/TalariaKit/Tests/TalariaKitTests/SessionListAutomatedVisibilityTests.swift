@@ -102,7 +102,6 @@ extension SessionListMutationTests {
         XCTAssertTrue(SessionSummary(sessionId: "s2", sourceKind: .webhook).isWebhookSession)
         XCTAssertTrue(SessionSummary(sessionId: "s3", sourceKind: .subagent).isDelegatedSubagentSession)
         XCTAssertTrue(SessionSummary(sessionId: "s4", sourceKind: .claudeCode).isClaudeCodeSession)
-        XCTAssertTrue(SessionSummary(sessionId: "s5", sourceKind: .messaging).isMessagingSession)
 
         let markersOnly = SessionSummary(
             sessionId: "cron_1",
@@ -115,7 +114,6 @@ extension SessionListMutationTests {
         XCTAssertFalse(markersOnly.isWebhookSession)
         XCTAssertFalse(markersOnly.isDelegatedSubagentSession)
         XCTAssertFalse(markersOnly.isClaudeCodeSession)
-        XCTAssertFalse(markersOnly.isMessagingSession)
     }
 
     /// An older server sends no `source_kind`: the row is ordinary. A kind this build

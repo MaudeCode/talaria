@@ -830,12 +830,12 @@ public final class SessionListViewModel {
 
     /// Verifies the session an opened row shows.
     ///
-    /// External rows (CLI/TUI bridges and messaging channels) open at once and reload
+    /// Rows the server flags `access_provisional` (TAL-2508: CLI, Claude Code and messaging) open at once and reload
     /// their detail alongside: `GET /api/session` is the server's authority on the
     /// session's canonical identity and whether it is writable, and the server claims a
     /// CLI session on its first send. The read is the opened chat's first transcript
     /// request (`takeOpenVerification`), and the chat shows a failure with its retry.
-    /// WebUI rows and cached (offline) browsing skip the request.
+    /// Other rows and cached (offline) browsing skip the request.
     ///
     /// Returns nil when the load failed or a later tap superseded this one.
     public func sessionToOpen(
@@ -846,7 +846,7 @@ public final class SessionListViewModel {
         let generation = openGeneration
 
         guard !isViewingCachedData,
-              session.isExternalSourceSession,
+              session.accessProvisional == true,
               let sessionId = Self.nonEmpty(session.sessionId)
         else {
             openVerification = nil

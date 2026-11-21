@@ -236,6 +236,7 @@ final class CacheStoreTests: XCTestCase {
               "source_label": "Telegram",
               "source_kind": "messaging",
               "read_only": "true",
+              "access_provisional": true,
               "archived": false
             },
             {
@@ -244,6 +245,7 @@ final class CacheStoreTests: XCTestCase {
               "is_cli_session": true,
               "session_source": "webui",
               "source_kind": "webui",
+              "access_provisional": false,
               "archived": false
             }
           ]
@@ -263,10 +265,10 @@ final class CacheStoreTests: XCTestCase {
 
         XCTAssertEqual(messaging.sessionSource, "messaging")
         XCTAssertEqual(messaging.sourceLabel, "Telegram")
-        XCTAssertTrue(messaging.isExternalSourceSession)
+        // TAL-2508: a cached row keeps the server's provisional-access flag, so an offline open stays locked.
+        XCTAssertEqual(messaging.accessProvisional, true)
         XCTAssertTrue(messaging.isSessionReadOnly)
-        // An explicit WebUI source still wins over the stale CLI flag after caching.
-        XCTAssertFalse(webUI.isExternalSourceSession)
+        XCTAssertEqual(webUI.accessProvisional, false)
     }
 
     func testCachedSessionsPreserveClaudeCodeClassificationAndVisibility() throws {

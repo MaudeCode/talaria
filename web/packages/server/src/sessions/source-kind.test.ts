@@ -47,6 +47,8 @@ describe('withSessionWireFlags source fields (TAL-310)', () => {
 
   it('locks a row read-only whenever it is filed as a subagent', () => {
     expect(wire({ source_tag: 'cli', raw_source: 'subagent' })).toMatchObject({ source_kind: 'subagent', read_only: true, can_pin: false, is_cli_session: false })
+    // TAL-2508: a CLI-marked subagent child stays view-only, so its access is final.
+    expect(wire({ source: 'subagent', is_cli_session: true })).toMatchObject({ source_kind: 'cli', read_only: true, is_cli_session: false, access_provisional: false })
   })
 
   it('files a scheduled run that delivers to a messaging channel as cron', () => {

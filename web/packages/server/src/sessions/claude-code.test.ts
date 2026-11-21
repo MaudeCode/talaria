@@ -50,7 +50,7 @@ describe('Claude Code sessions (TAL-551)', () => {
     expect(rows[1]).toMatchObject({
       session_id: expect.stringMatching(/^claude_code_[0-9a-f]{24}$/) as unknown, source_kind: 'claude_code', source_label: 'Claude Code', model: 'claude-code',
       message_count: 2, created_at: Date.parse('2026-10-01T10:00:00Z') / 1000, last_message_at: Date.parse('2026-10-01T10:01:00Z') / 1000,
-      is_cli_session: true, read_only: true, can_delete: false, can_pin: false, can_archive: false,
+      is_cli_session: true, read_only: true, can_delete: false, can_pin: false, can_archive: false, access_provisional: true,
     })
     await s.deps.settings.save({ show_claude_code_sessions: false })
     expect(await listed()).toEqual([])

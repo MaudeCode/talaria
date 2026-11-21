@@ -4692,6 +4692,7 @@
     ],
     "sessions": [
       {
+        "access_provisional": false,
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
@@ -4721,6 +4722,7 @@
         "sidebar_children": []
       },
       {
+        "access_provisional": false,
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
@@ -4749,6 +4751,7 @@
         "sidebar_children": []
       },
       {
+        "access_provisional": false,
         "active_stream_id": "tal306-run",
         "attention": null,
         "can_archive": true,
@@ -4777,6 +4780,7 @@
         "sidebar_children": []
       },
       {
+        "access_provisional": false,
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
@@ -4805,6 +4809,7 @@
         "sidebar_children": []
       },
       {
+        "access_provisional": false,
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
@@ -4830,6 +4835,7 @@
         "sidebar_children": []
       },
       {
+        "access_provisional": false,
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
@@ -4858,6 +4864,7 @@
         "sidebar_children": []
       },
       {
+        "access_provisional": false,
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
@@ -4886,6 +4893,7 @@
         "sidebar_children": []
       },
       {
+        "access_provisional": false,
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
@@ -7068,6 +7076,7 @@
     ],
     "sessions": [
       {
+        "access_provisional": false,
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
@@ -7102,6 +7111,7 @@
         "workspace_name": null
       },
       {
+        "access_provisional": false,
         "active_stream_id": null,
         "attention": null,
         "can_archive": false,
@@ -7138,6 +7148,7 @@
         "workspace_name": null
       },
       {
+        "access_provisional": false,
         "active_stream_id": null,
         "attention": null,
         "can_archive": false,

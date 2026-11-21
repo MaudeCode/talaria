@@ -124,21 +124,28 @@ extension ChatViewModelSendTests {
         XCTAssertNil(verified, "A verification from the previous profile must not refresh or redirect")
     }
 
-    func testWebUIChatOpensUnlockedAndSendsItsOwnRead() async throws {
+    /// TAL-2508: the server's `access_provisional` decides the verification, not the row's source, so a CLI row whose
+    /// access the server calls final opens unlocked like a Talaria chat.
+    func testChatWhoseServerAccessIsFinalOpensUnlockedAndSendsItsOwnRead() async throws {
         let trips = HeldRoundTrips()
         let (host, client) = try heldClient(trips)
         let list = SessionListViewModel(server: try XCTUnwrap(URL(string: "https://\(host)")), client: client)
-        let row = SessionSummary(sessionId: "webui-1", isCliSession: true, sessionSource: "webui", sourceKind: .webui)
-        let verified = await list.sessionToOpen(for: row)
-        XCTAssertEqual(verified, row)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let row = try decoder.decode(SessionSummary.self, from: Data(#"""
+        {"session_id": "webui-1", "is_cli_session": true, "source_kind": "cli", "access_provisional": false}
+        """#.utf8))
+        let open = Task { await list.sessionToOpen(for: row) }
 
         let chat = try makeHeldChat(host: host, row: row, list: list)
         XCTAssertFalse(chat.isVerifyingSessionAccess)
         XCTAssertFalse(chat.isComposerReadOnly)
         chat.prefetchInitialMessages()
-        let prefetch = await trips.nextRoundTrip()
-        XCTAssertEqual(prefetch.map(\.path), ["/api/session"], "Only the chat's own read is sent")
-        prefetch.forEach { $0.complete(withJSON: #"{"session": {"session_id": "webui-1", "messages": []}}"#) }
+        let reads = await trips.nextRoundTrip()
+        reads.forEach { $0.complete(withJSON: #"{"session": {"session_id": "webui-1", "messages": []}}"#) }
+        XCTAssertEqual(reads.map(\.path), ["/api/session"], "Only the chat's own read is sent")
+        let verified = await open.value
+        XCTAssertEqual(verified, row, "The list opens the row without a verification read")
     }
 
     private struct ExternalOpen {
@@ -155,7 +162,8 @@ extension ChatViewModelSendTests {
         let trips = HeldRoundTrips()
         let (host, client) = try heldClient(trips)
         let list = SessionListViewModel(server: try XCTUnwrap(URL(string: "https://\(host)")), client: client)
-        let row = SessionSummary(sessionId: "cli-1", title: "CLI chat", isCliSession: true, readOnly: rowReadOnly, canBranch: true)
+        let row = SessionSummary(sessionId: "cli-1", title: "CLI chat", isCliSession: true, readOnly: rowReadOnly, canBranch: true,
+                                 accessProvisional: true)
         let verify = Task { await list.sessionToOpen(for: row) }
         let first = await trips.nextRoundTrip()
         XCTAssertEqual(first.map(\.path), ["/api/session"])

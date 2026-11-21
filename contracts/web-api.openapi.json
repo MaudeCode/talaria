@@ -3479,6 +3479,10 @@
                             ],
                             "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                           },
+                          "access_provisional": {
+                            "type": "boolean",
+                            "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
+                          },
                           "sidebar_source": {
                             "enum": [
                               "webui",
@@ -4685,6 +4689,10 @@
                             ],
                             "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                           },
+                          "access_provisional": {
+                            "type": "boolean",
+                            "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
+                          },
                           "sidebar_source": {
                             "enum": [
                               "webui",
@@ -5719,6 +5727,10 @@
                               }
                             ],
                             "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                          },
+                          "access_provisional": {
+                            "type": "boolean",
+                            "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
                           },
                           "sidebar_source": {
                             "enum": [
@@ -7061,6 +7073,10 @@
                               }
                             ],
                             "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                          },
+                          "access_provisional": {
+                            "type": "boolean",
+                            "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
                           },
                           "sidebar_source": {
                             "enum": [
@@ -28974,6 +28990,10 @@
                           ],
                           "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                         },
+                        "access_provisional": {
+                          "type": "boolean",
+                          "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
+                        },
                         "sidebar_source": {
                           "enum": [
                             "webui",
@@ -30056,6 +30076,10 @@
                             }
                           ],
                           "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
+                        "access_provisional": {
+                          "type": "boolean",
+                          "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
                         },
                         "sidebar_source": {
                           "enum": [
@@ -31146,6 +31170,10 @@
                             }
                           ],
                           "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
+                        "access_provisional": {
+                          "type": "boolean",
+                          "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
                         },
                         "sidebar_source": {
                           "enum": [
@@ -38651,6 +38679,10 @@
                               ],
                               "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                             },
+                            "access_provisional": {
+                              "type": "boolean",
+                              "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
+                            },
                             "sidebar_source": {
                               "enum": [
                                 "webui",
@@ -39814,6 +39846,10 @@
                             }
                           ],
                           "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
+                        "access_provisional": {
+                          "type": "boolean",
+                          "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
                         },
                         "sidebar_source": {
                           "enum": [
@@ -47834,6 +47870,10 @@
                           ],
                           "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                         },
+                        "access_provisional": {
+                          "type": "boolean",
+                          "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
+                        },
                         "sidebar_source": {
                           "enum": [
                             "webui",
@@ -48914,6 +48954,10 @@
                             }
                           ],
                           "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
+                        "access_provisional": {
+                          "type": "boolean",
+                          "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
                         },
                         "sidebar_source": {
                           "enum": [
@@ -80138,6 +80182,10 @@
                           ],
                           "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
                         },
+                        "access_provisional": {
+                          "type": "boolean",
+                          "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
+                        },
                         "sidebar_source": {
                           "enum": [
                             "webui",
@@ -81217,6 +81265,10 @@
                             }
                           ],
                           "description": "TAL-2159: the Settings › Navigation switch that lists this row (its source, or for a subagent its parent's); null for a Talaria chat, which no switch hides. Clients hide the row at once while the user turns that switch off, and converge on the next list. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
+                        "access_provisional": {
+                          "type": "boolean",
+                          "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final."
                         },
                         "sidebar_source": {
                           "enum": [

@@ -475,6 +475,7 @@ describe('server-classified session sources (TAL-310)', () => {
     s = await bootTestServer()
     const db = createStateDb(join(s.state, 'state.db'))
     platforms.forEach((source, i) => { insertSession(db, { id: `chat-${source}`, source, started_at: 1_000 + i, messages: [['user', 1_000 + i], ['assistant', 1_001 + i]] }) })
+    insertSession(db, { id: 'chat-cli', source: 'cli', started_at: 900, messages: [['user', 900], ['assistant', 901]] })
     db.close()
     await s.deps.settings.save({ show_cli_sessions: true })
     s.deps.cliSessions.invalidate()
@@ -485,10 +486,14 @@ describe('server-classified session sources (TAL-310)', () => {
     const rows = await rowsOf('/api/sessions')
     for (const source of platforms) {
       const row = rows.find((r) => r.session_id === `chat-${source}`)
-      expect(row, `${source} in ${JSON.stringify(rows.map((r) => r.session_id))}`).toMatchObject({ source_kind: 'messaging', is_messaging_session: true, session_source: 'messaging' })
+      expect(row, `${source} in ${JSON.stringify(rows.map((r) => r.session_id))}`).toMatchObject({ source_kind: 'messaging', is_messaging_session: true, session_source: 'messaging', access_provisional: true })
       const detail = (await json(await s.get(`/api/session?session_id=chat-${source}`))).session as Json
       expect(detail, source).toMatchObject({ source_kind: 'messaging', is_messaging_session: true })
     }
+  })
+
+  it('flags a CLI row access provisional until its detail claims it (TAL-2508)', async () => {
+    expect((await rowsOf('/api/sessions')).find((r) => r.session_id === 'chat-cli')).toMatchObject({ source_kind: 'cli', access_provisional: true })
   })
 
   it('files a messaging sidecar from the session index as messaging in the list, detail and search', async () => {
@@ -504,5 +509,6 @@ describe('server-classified session sources (TAL-310)', () => {
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const row = (await rowsOf('/api/sessions')).find((r) => r.session_id === sid)
     for (const payload of [detail, row]) expect(payload).toMatchObject({ source_kind: 'webui', is_messaging_session: false, is_cli_session: false })
+    expect(row).toMatchObject({ access_provisional: false })
   })
 })
