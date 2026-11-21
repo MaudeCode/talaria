@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Pointing a delegation route at a different provider or host now drops its saved request headers and overrides instead of sending them to the new host.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
