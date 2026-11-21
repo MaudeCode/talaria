@@ -1310,7 +1310,8 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                     },
                     "supports_reasoning_effort": {
                       "type": "boolean"

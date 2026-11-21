@@ -363,10 +363,8 @@ final class ReasoningEffortGatingTests: XCTestCase {
         XCTAssertEqual(options.map(\.title), ["High", "Extra High", "Low"])
     }
 
-    func testOptionsNormalizeAndKeepUnknownServerEfforts() {
-        let options = ReasoningEffortOption.options(forSupportedEfforts: [" Low ", "low", "", "turbo"])
-        XCTAssertEqual(options.map(\.id), ["low", "turbo"])
-        XCTAssertEqual(options.map(\.title), ["Low", "Turbo"])
+    func testOptionsKeepATitleForAnUnknownServerEffort() {
+        XCTAssertEqual(ReasoningEffortOption.options(forSupportedEfforts: ["turbo"]).map(\.title), ["Turbo"])
     }
 
     func testShowsEffortControlFollowsServerFlag() {

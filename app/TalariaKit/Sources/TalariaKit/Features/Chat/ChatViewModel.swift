@@ -1512,7 +1512,7 @@ extension ChatViewModel {
 
         guard token == reasoningGatingFetchToken else { return }
 
-        supportedReasoningEfforts = response.normalizedSupportedEfforts
+        supportedReasoningEfforts = response.supportedEfforts
         supportsReasoningEffort = response.supportsReasoningEffort
 
         if let pending = pendingReasoningSelection, pending.needsReadback, requestedReasoningEffort != nil,
@@ -1877,7 +1877,7 @@ extension ChatViewModel {
               pending.sessionID == sessionID, pendingReasoningSelection?.effort == pending.effort,
               !Task.isCancelled else { return nil }
         selectedReasoningEffort = serverEffort
-        supportedReasoningEfforts = status.normalizedSupportedEfforts
+        supportedReasoningEfforts = status.supportedEfforts
         supportsReasoningEffort = status.supportsReasoningEffort
         let applied = serverEffort == pending.effort
         if applied { composerConfigurationErrorMessage = nil }

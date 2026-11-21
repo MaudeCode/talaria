@@ -5,7 +5,8 @@ public struct ReasoningStatusResponse: Decodable, Equatable, Sendable {
     let showReasoning: Bool?
     let reasoningEffort: String?
     let effort: String?
-    /// Model-aware effort vocabulary from `GET /api/reasoning` (`supported_efforts`).
+    /// Model-aware effort vocabulary from `GET /api/reasoning` (`supported_efforts`),
+    /// already trimmed, lowercased and unique on the server (TAL-2506).
     /// `nil` on older servers that don't send the field — callers must fall back
     /// to the static effort list (issue #18).
     let supportedEfforts: [String]?
@@ -20,16 +21,6 @@ public struct ReasoningStatusResponse: Decodable, Equatable, Sendable {
 
     public var effectiveEffort: String? {
         reasoningEffort ?? effort
-    }
-
-    /// `supported_efforts` trimmed, lowercased, de-duplicated, order preserved.
-    /// Stays `nil` when the server omitted the field (legacy fallback signal).
-    public var normalizedSupportedEfforts: [String]? {
-        guard let supportedEfforts else { return nil }
-        var seen = Set<String>()
-        return supportedEfforts
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-            .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 }
 
