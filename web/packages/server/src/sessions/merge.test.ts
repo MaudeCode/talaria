@@ -338,7 +338,7 @@ describe('link preview URL (TAL-2504)', () => {
     ['a Markdown link destination as written', 'Get [download](https://example.com/file?token=abc_).', 'https://example.com/file?token=abc_'],
     ['a titled Markdown link', 'See [docs](https://docs.example/a_(b) "Docs").', 'https://docs.example/a_(b)'],
     ['adjacent Markdown links', 'See [one](https://first.example/a),[two](https://second.example/b).', 'https://first.example/a'],
-    ['balanced parentheses','See https://en.example/wiki/Foo_(bar) now', 'https://en.example/wiki/Foo_(bar)'],
+    ['balanced parentheses', 'See https://en.example/wiki/Foo_(bar) now', 'https://en.example/wiki/Foo_(bar)'],
     ['inline code', 'Do not preview `https://internal.example/token`; use https://public.example instead.', 'https://public.example'],
     ['a double-backtick span', 'Skip ``a ` https://internal.example`` then https://public.example', 'https://public.example'],
     ['an unclosed backtick', 'A stray ` then https://public.example', 'https://public.example'],
