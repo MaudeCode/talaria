@@ -706,6 +706,9 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
     // a step may move as far as 4 times the travel's average pace allows over the animation time between its frames
     // (TRAVEL_EASE peaks at 3.5), and at least 60% of the total; a snap moves everything in one ordinary frame.
     const settle = samples.slice(Math.max(0, samples.findIndex((f) => f.phase === 'settle') - 1))
+    // TAL-2279: the settled row starts at the live turn's height even when its opened "Worked" row is taller, so no
+    // settle frame lifts older history first.
+    expect(Math.min(...settle.slice(1).map((f, i) => f.old - settle[i]!.old))).toBeGreaterThanOrEqual(-2)
     const down = settle.slice(1).map((f, i) => ({ d: f.old - settle[i]!.old, ms: f.t - settle[i]!.t })).filter((step) => step.d > 0.5)
     const total = down.reduce((a, step) => a + step.d, 0)
     if (total > 4) {
