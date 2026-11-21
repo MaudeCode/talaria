@@ -262,14 +262,27 @@ const FAILED_TURN_NOTICES = new Set([
 ])
 
 /**
+ * TAL-2620: the closing row the Agent writes when a stop lands after a tool result (`agent/message_sanitization.py`):
+ * every line is one of its interrupt notices (`agent/conversation_loop.py`, `turn_api_error.py`, `turn_empty_response.py`,
+ * `turn_response_check.py`, `turn_recovery_autorecover.py`), including a compaction copy with the bare placeholder
+ * prepended. A partial reply the Agent also marks `display_metadata.interrupted` carries model text, so it is not one.
+ */
+const INTERRUPT_NOTICE = /^Operation interrupted(?:\.|(?:: (?:waiting for model response|handling API error|retrying API call after error|retrying empty response from model|waiting for the provider to recover)| during retry) \(.*\)\.)$/
+const isInterruptNotice = (msg: Record<string, unknown>): boolean => {
+  if (msg.role !== 'assistant' || typeof msg.content !== 'string' || (Array.isArray(msg.tool_calls) && msg.tool_calls.length)) return false
+  const lines = msg.content.split('\n').map((line) => line.trim()).filter(Boolean)
+  return lines.length > 0 && lines.every((line) => INTERRUPT_NOTICE.test(line))
+}
+
+/**
  * TAL-815: rows the Agent writes outside the conversation, by its `display_kind` and its own read-side rules.
  * `failed_turn`: the assistant boundary closing a turn that failed, never the model's reply. `hidden`: a row the Agent
  * never renders, such as the empty interrupt placeholder or an untyped `[System:` scaffold notice in a user row, or the
- * late language-server `[System note:` (TAL-1261, `agent/turn_stop_gates.py`).
+ * late language-server `[System note:` (TAL-1261, `agent/turn_stop_gates.py`), or its interrupt notice (TAL-2620).
  */
 export function agentRowKind(msg: unknown): 'failed_turn' | 'hidden' | null {
   if (!isDict(msg)) return null
-  if (msg.display_kind === 'hidden') return 'hidden'
+  if (msg.display_kind === 'hidden' || isInterruptNotice(msg)) return 'hidden'
   if (msg.role === 'assistant' && (msg.display_kind === 'failed_turn' || (!msg.display_kind && typeof msg.content === 'string' && FAILED_TURN_NOTICES.has(msg.content.trim())))) return 'failed_turn'
   return msg.role === 'user' && !msg.display_kind && typeof msg.content === 'string' && /^\[System( note)?:/.test(msg.content.trimStart()) ? 'hidden' : null
 }

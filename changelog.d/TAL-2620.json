@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Stopping a reply while it waits on the model no longer adds an \"Operation interrupted\" message to the chat.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
