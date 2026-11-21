@@ -235,6 +235,19 @@ final class InsightsHostedTests: XCTestCase {
         XCTAssertEqual(points[1].label, "2,000 input, 200 output, 20 cache read, 2 sessions, $0.5000")
     }
 
+    /// A descriptor VoiceOver already holds follows the chart when its metric or data changes.
+    func testChartDescriptorFollowsTheChartItDescribes() throws {
+        let days = try Self.dailySeries(try Self.consecutiveDays(3))
+        let held = InsightsDailyChart.chartDescriptor(days: days, metric: .tokens, monthly: false, locale: Self.enUS)
+        let current = InsightsDailyChart.chartDescriptor(days: Array(days.prefix(2)), metric: .cost, monthly: false, locale: Self.enUS)
+
+        InsightsChartAccessibility { current }.updateChartDescriptor(held)
+
+        XCTAssertEqual(held.title, current.title)
+        XCTAssertEqual(held.series.first?.name, "Cost")
+        XCTAssertEqual(held.series.first?.dataPoints.map { $0.yValue?.__number }, [0.25, 0.5])
+    }
+
     /// Pressing anywhere on a bar reads that bar's row, never the neighbour whose start is nearer the touch.
     func testSelectingABarReadsTheRowItLandsOn() throws {
         let days = try Self.dailySeries(["2030-01-01", "2030-01-02", "2030-01-03"])

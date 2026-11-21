@@ -221,9 +221,19 @@ struct InsightsDailyChart: View {
 }
 
 /// Hands VoiceOver an Insights chart's descriptor, its Audio Graph and each bar as a data point, built only when
-/// VoiceOver asks for it.
+/// VoiceOver asks for it and rebuilt into the one it holds when the metric or data changes.
 struct InsightsChartAccessibility: AXChartDescriptorRepresentable {
     let make: () -> AXChartDescriptor
 
     func makeChartDescriptor() -> AXChartDescriptor { make() }
+
+    func updateChartDescriptor(_ descriptor: AXChartDescriptor) {
+        let current = make()
+        descriptor.title = current.title
+        descriptor.summary = current.summary
+        descriptor.xAxis = current.xAxis
+        descriptor.yAxis = current.yAxis
+        descriptor.additionalAxes = current.additionalAxes
+        descriptor.series = current.series
+    }
 }
