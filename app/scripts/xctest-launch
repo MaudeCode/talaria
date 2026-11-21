@@ -97,13 +97,15 @@ xctest_watch_run() {
                 [[ -n "$identifier" ]] || continue
                 if [[ "$event" == testStarted ]]; then
                     active=$identifier
-                    active_since=$now
+                    # Draining other events can take time before we observe this start.
+                    active_since=$(now_us)
                 elif [[ "$event" == testFinished && "$identifier" == "$active" ]]; then
                     active=""
                 fi
             done
             # A read at EOF may consume a line that xcodebuild is still writing.
             partial+=$line
+            now=$(now_us)
             if [[ -n "$active" ]] && (( now - active_since >= (allowance + 10) * 1000000 )); then
                 echo "Hosted test $active exceeded its ${allowance}s allowance plus 10s; interrupting xcodebuild." | tee -a "$output_log"
                 # The existing failure reporter and CI log parser recognize XCTest's failure line.
