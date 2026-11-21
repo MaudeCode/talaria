@@ -15,8 +15,10 @@
  */
 const WITHHELD = '***'
 const MASK = "'***'"
+/** A property assignment to `value`, in either spelling (`. value =`, `['value'] =`). */
+const VALUE_ASSIGN = String.raw`(?:\.\s*value|\[\s*['"\`]value['"\`]\s*\])\s*=(?!=)`
 /** Any way a snippet types into a page. */
-const TYPING_RE = /\b(?:fill_input|type_text)\b|insertText|\.value\s*=(?!=)/
+const TYPING_RE = new RegExp(String.raw`\b(?:fill_input|type_text)\b|insertText|${VALUE_ASSIGN}`)
 const NAME_RE = /[\p{L}_][\p{L}\p{N}_]*/gu
 const NUMBER_RE = /(?<![\p{L}\p{N}_.])\d[\p{L}\p{N}_.]*/gu
 const TYPING_CALL_RE = /(?<![\p{L}\p{N}_])(fill_input|type_text)(?![\p{L}\p{N}_])(\s*\()?/gu
@@ -267,22 +269,13 @@ function typedSpans(code: string, cut: boolean): Span[] {
     }
     // A longer string carrying the word holds the typing expression itself (JavaScript's `execCommand('insertText', ...)`).
     if (!/insertText['"]{1,3}$/.test(code.slice(literal.start, literal.end))) { followLiteral(literal); maskStatement(literal.stmt); continue }
-    let open = enclosing[literal.start]!
-    if (open < 0 || code[open] !== '(') throw new Withheld()
-    // The insertion call is some bracket around the method name (`cdp(('Input.insertText'), ...)`): take the outermost.
-    while (enclosing[open]! >= 0) open = enclosing[open]!
+    // The insertion call is told from anything else that carries the name only when the name is a call's own first
+    // argument with a payload after it. A wrapped, picked, assigned or returned name reaches its call some other way.
+    const open = enclosing[literal.start]!
+    const direct = open >= 0 && code[open] === '(' && /[\p{L}\p{N}_]\s*$/u.test(skeleton.slice(Math.max(0, open - 200), open)) && !skeleton.slice(open + 1, literal.start).trim() && /^\s*,/.test(skeleton.slice(literal.end, literal.end + 200))
+    if (!direct || /^\s*(?:return|yield)\b|\blambda\b/.test(skeleton.slice(...stmtRange(literal.stmt)))) throw new Withheld()
     const close = closes.get(open)!
     spend(close - open)
-    // A call with nothing beside the method name (`method = str('Input.insertText')`) holds no payload: the insertion is elsewhere.
-    let depth = 0
-    let payload = false
-    for (let i = open + 1; i < close && !payload; i++) {
-      const c = skeleton[i]!
-      if (OPEN.includes(c)) depth++
-      else if (CLOSE.includes(c)) depth--
-      else payload = c === ',' && !depth
-    }
-    if (!payload) throw new Withheld()
     const key = /\s*:/y
     for (const other of literalsIn(open + 1, close)) {
       key.lastIndex = other.end
@@ -294,12 +287,13 @@ function typedSpans(code: string, cut: boolean): Span[] {
     // A number the payload types (`str(123456)`) is masked like a string.
     for (const number of region.matchAll(NUMBER_RE)) spans.push([open + 1 + number.index, open + 1 + number.index + number[0].length, WITHHELD])
     followIn(open + 1, close)
-    // The bracket may only build the method name (`method = ('Input.insertText', 1)[0]`): what its statement assigns carries it to the insertion.
+    // The call may only build the method name (`method = pick('Input.insertText', 1)`): what its statement assigns carries it on.
     followIn(...stmtRange(literal.stmt))
   }
-  for (const match of code.matchAll(/\.value\s*=(?!=)\s*/g)) {
+  for (const match of code.matchAll(new RegExp(String.raw`${VALUE_ASSIGN}\s*`, 'g'))) {
     const literal = literalAt(match.index)
-    if (!literal && skeleton[match.index] !== '.') continue
+    // Not in a comment.
+    if (!literal && skeleton[match.index] !== code[match.index]) continue
     const value = innerLiteral(code, match.index + match[0].length)
     // The assigned expression is one literal only when its statement ends there: at a `;`, a line end, or the string's own close.
     // Page script is fixed text only as a plain string passed straight to a call: an f-string, `%`, `.format`, a
