@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web now masks a whole password or cookie value that contains a stray quote, instead of leaving the part after the quote visible.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

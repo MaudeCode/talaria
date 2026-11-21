@@ -1435,6 +1435,8 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['Set-Cookie: opaqueSessionValue1234567890', 'Set-Cookie: ***'],
     ['export SESSION_COOKIE="a=1; sid=opaqueSessionValue1234567890"', 'export SESSION_COOKIE="***"'],
     ['INFO upstream Cookie: sid="opaqueSessionValue1234567890"', 'INFO upstream Cookie: ***'],
+    // An apostrophe that closes no quote is part of the value.
+    ["INFO upstream Cookie: sid=pre'opaqueSessionValue1234567890", 'INFO upstream Cookie: ***'],
   ],
 }
 
@@ -1477,6 +1479,18 @@ describe('Agent redactor parity', () => {
     expect(redactText('DB_PW="unterminated pass phrase', true)).toBe('DB_PW=***')
     expect(redactText('ghp_abcdef\n1234567890ABCDEF1234567890abcdef\nSECOND=ok', true)).toBe('ghp_ab...cdef\nSECOND=ok')
     expect(redactText('ghp_abcdef\n1234567890ABCDEF1234567890abcdef\nSECOND = ok', true)).toBe('ghp_ab...cdef\nSECOND = ok')
+  })
+
+  // A quote that closes no quote mid-value is part of the value; balanced quotes and prose apostrophes keep their reading.
+  it.each([
+    ["password=pre'opaqueSessionValue1234567890", 'password=***'],
+    ["password=pre'opaqueSessionValue1234567890 next", 'password=*** next'],
+    ['password=pre"opaqueSessionValue1234567890 next', 'password=*** next'],
+    ["Cookie: a=pre'; sid=opaqueSessionValue1234567890", 'Cookie: ***'],
+    ["password='two words' next", "password='***' next"],
+    ["don't log it's fine", "don't log it's fine"],
+  ])('masks a value past a quote that closes no quote: %j', (input, expected) => {
+    expect(redactText(input, true)).toBe(expected)
   })
 
   it('masks a whole escaped or ANSI-C env value, and a punctuation-only password', () => {
