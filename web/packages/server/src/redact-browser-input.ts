@@ -267,8 +267,10 @@ function typedSpans(code: string, cut: boolean): Span[] {
     }
     // A longer string carrying the word holds the typing expression itself (JavaScript's `execCommand('insertText', ...)`).
     if (!/insertText['"]{1,3}$/.test(code.slice(literal.start, literal.end))) { followLiteral(literal); maskStatement(literal.stmt); continue }
-    const open = enclosing[literal.start]!
+    let open = enclosing[literal.start]!
     if (open < 0 || code[open] !== '(') throw new Withheld()
+    // The insertion call is some bracket around the method name (`cdp(('Input.insertText'), ...)`): take the outermost.
+    while (enclosing[open]! >= 0) open = enclosing[open]!
     const close = closes.get(open)!
     spend(close - open)
     const key = /\s*:/y
