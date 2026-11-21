@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Checkpoints in Talaria Web list, review, restore and name the files an undo changed again with Hermes Agent v0.23.3.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

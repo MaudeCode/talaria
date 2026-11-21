@@ -4,13 +4,14 @@ takes them when the profile's ``checkpoints.enabled`` is set. Real sidecar, pinn
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import textwrap
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, OneToolCallModel, SidecarProcess, isolated_env, requires_agent, serve_model
+from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, OneToolCallModel, SidecarProcess, isolated_env, requires_agent, serve_model
 
 pytestmark = requires_agent
 
@@ -21,15 +22,21 @@ def _git(*args: str, cwd: pathlib.Path) -> None:
     subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True)
 
 
+def _agent_env(home: pathlib.Path) -> dict[str, str]:
+    """The Agent's interpreter with its checkout and the sidecar importable, so a helper finds the checkpoint module the
+    way the sidecar does."""
+    return isolated_env(home, PYTHONPATH=f"{AGENT_DIR}{os.pathsep}{SIDECAR_ROOT}")
+
+
 def _take_checkpoint(home: pathlib.Path, workspace: pathlib.Path, reason: str) -> None:
     """The Agent's ``CheckpointManager`` snapshots ``workspace`` into ``home``'s store, as a CLI turn would."""
     script = textwrap.dedent(
         f"""
-        from tools.checkpoint_manager import CheckpointManager
-        assert CheckpointManager(enabled=True).ensure_checkpoint({str(workspace)!r}, {reason!r})
+        from talaria_sidecar.methods.checkpoints import agent_checkpoints
+        assert agent_checkpoints("manager").CheckpointManager(enabled=True).ensure_checkpoint({str(workspace)!r}, {reason!r})
         """
     )
-    subprocess.run([AGENT_PYTHON, "-c", script], env=isolated_env(home, PYTHONPATH=str(AGENT_DIR)), check=True, timeout=60)
+    subprocess.run([AGENT_PYTHON, "-c", script], env=_agent_env(home), check=True, timeout=60)
 
 
 def _agent_writes(home: pathlib.Path, workspace: pathlib.Path, files: dict[str, str]) -> None:
@@ -37,15 +44,15 @@ def _agent_writes(home: pathlib.Path, workspace: pathlib.Path, files: dict[str, 
     script = textwrap.dedent(
         f"""
         import pathlib
-        from tools.checkpoint_manager import CheckpointManager
-        manager = CheckpointManager(enabled=True)
+        from talaria_sidecar.methods.checkpoints import agent_checkpoints
+        manager = agent_checkpoints("manager").CheckpointManager(enabled=True)
         for name, text in {files!r}.items():
             path = pathlib.Path({str(workspace)!r}) / name
             path.write_text(text)
             manager.record_agent_write(str(path))
         """
     )
-    subprocess.run([AGENT_PYTHON, "-c", script], env=isolated_env(home, PYTHONPATH=str(AGENT_DIR)), check=True, timeout=60)
+    subprocess.run([AGENT_PYTHON, "-c", script], env=_agent_env(home), check=True, timeout=60)
 
 
 @pytest.fixture
@@ -164,7 +171,7 @@ def test_undo_names_the_files_the_undone_span_changed(handshaken: SidecarProcess
     # A span from the epoch holds the snapshot; one starting in 2100 holds none.
     named = handshaken.result("checkpoints.undo_changed_files", {**params, "since": 1})["files"]
     after = handshaken.result("checkpoints.undo_changed_files", {**params, "since": 4102444800})["files"]
-    if (AGENT_DIR / "tools" / "checkpoint_undo_hint.py").exists():  # agent-shim: undo-changed-files
+    if (AGENT_DIR / "agent" / "checkpoints" / "undo_hint.py").exists() or (AGENT_DIR / "tools" / "checkpoint_undo_hint.py").exists():  # agent-shim: undo-changed-files
         assert named == ["notes.txt", *(f"z{n}.txt" for n in range(7))]
         assert after == []
     else:
