@@ -294,6 +294,8 @@ function typedSpans(code: string, cut: boolean): Span[] {
     // A number the payload types (`str(123456)`) is masked like a string.
     for (const number of region.matchAll(NUMBER_RE)) spans.push([open + 1 + number.index, open + 1 + number.index + number[0].length, WITHHELD])
     followIn(open + 1, close)
+    // The bracket may only build the method name (`method = ('Input.insertText', 1)[0]`): what its statement assigns carries it to the insertion.
+    followIn(...stmtRange(literal.stmt))
   }
   for (const match of code.matchAll(/\.value\s*=(?!=)\s*/g)) {
     const literal = literalAt(match.index)
