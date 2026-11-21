@@ -2035,5 +2035,6 @@
 	"ws_no_results": "Nenhum espaço de trabalho encontrado",
 	"ws_panel_download_file": "Baixar {name}",
 	"ws_search_placeholder": "Buscar espaços de trabalho…",
+	"yolo_unknown": "Não foi possível confirmar o modo YOLO deste chat",
 	"you": "Você"
 }

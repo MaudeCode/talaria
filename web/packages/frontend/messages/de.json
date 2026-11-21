@@ -2169,5 +2169,6 @@
 	"yolo_disabled": "YOLO-Modus AUS",
 	"yolo_enabled": "⚡ YOLO-Modus AN — Genehmigungen übersprungen",
 	"yolo_no_session": "Keine aktive Sitzung",
+	"yolo_unknown": "YOLO-Modus für diesen Chat konnte nicht bestätigt werden",
 	"you": "Du"
 }

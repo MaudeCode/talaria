@@ -150,8 +150,10 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
   // Read again on every visit: YOLO can change from the CLI or another tab.
   const yoloQuery = useQuery({ queryKey: keys.yolo(yoloSessionId ?? ''), queryFn: () => api.fetchSessionYolo(yoloSessionId ?? ''), enabled: !!yoloSessionId, retry: false, staleTime: 0 })
   const yoloEffect = useResourceEffects<boolean>()[`yolo:${sessionId}`]
-  const yoloShown = typeof yoloEffect?.value === 'boolean' ? yoloEffect.value : yoloQuery.data?.yolo_enabled ?? false
-  const yoloOn = yoloSessionId ? yoloShown : false
+  // TAL-2551: only this session's own write or a boolean the server read under its key is known; anything else is null.
+  const yoloRead: unknown = yoloSessionId ? yoloQuery.data?.yolo_enabled : undefined
+  const yoloKnown = typeof yoloEffect?.value === 'boolean' ? yoloEffect.value : typeof yoloRead === 'boolean' ? yoloRead : null
+  const yoloOn = yoloSessionId ? yoloKnown === true : false
 
   // Queue drain: when the live turn settles, send the next queued message. A queue a reload restored onto a session
   // whose run ended meanwhile has no turn to settle; the server reporting no active stream starts it instead.
@@ -280,7 +282,8 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
     onError: (e) => showErrorToast(e),
   })
   const sendYolo = yoloWrite.mutate
-  const onToggleYolo = () => { if (!sessionId) return; sendYolo({ sid: sessionId, on: !yoloShown }) }
+  // An unknown mode is never inverted into a write: a failed or unfinished read could otherwise enable auto-approval.
+  const onToggleYolo = () => { if (!sessionId) return; if (yoloKnown === null) { showErrorToast(new Error(m.yolo_unknown())); return } sendYolo({ sid: sessionId, on: !yoloKnown }) }
 
   // Regenerate, `/retry`, and the error notice's Retry: the server drops the last exchange, then its prompt and files are resent.
   // One at a time: a second retry while the first is pending would drop the exchange before it too.

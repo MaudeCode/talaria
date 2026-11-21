@@ -2034,5 +2034,6 @@
 	"yolo_disabled": "YOLO モード OFF",
 	"yolo_enabled": "⚡ YOLO モード ON — このセッションは承認をスキップ",
 	"yolo_no_session": "アクティブなセッションがありません",
+	"yolo_unknown": "このチャットの YOLO モードを確認できませんでした",
 	"you": "あなた"
 }

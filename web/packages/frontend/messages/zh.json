@@ -1978,5 +1978,6 @@
 	"yolo_disabled": "YOLO 模式已关闭",
 	"yolo_enabled": "⚡ YOLO 模式已开启 — 将跳过所有审批",
 	"yolo_no_session": "无活动会话",
+	"yolo_unknown": "无法确认此聊天的 YOLO 模式",
 	"you": "你"
 }

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "/yolo in Talaria Web no longer turns YOLO mode on when the chat's current mode hasn't loaded or couldn't be read; it shows an error instead.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

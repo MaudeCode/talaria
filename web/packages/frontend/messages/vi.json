@@ -2032,5 +2032,6 @@
 	"yolo_disabled": "Chế độ YOLO TẮT",
 	"yolo_enabled": "⚡ Chế độ YOLO BẬT — phê duyệt sẽ bị bỏ qua trong phiên này",
 	"yolo_no_session": "Không có phiên hoạt động",
+	"yolo_unknown": "Không thể xác nhận chế độ YOLO cho cuộc trò chuyện này",
 	"you": "Bạn"
 }

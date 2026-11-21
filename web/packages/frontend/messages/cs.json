@@ -2275,5 +2275,6 @@
 	"yolo_disabled": "YOLO režim VYPNUT",
 	"yolo_enabled": "⚡ YOLO režim ZAPNUT — schválení přeskočena pro tuto relaci",
 	"yolo_no_session": "Žádná aktivní relace",
+	"yolo_unknown": "Režim YOLO pro tento chat se nepodařilo ověřit",
 	"you": "Vy"
 }
