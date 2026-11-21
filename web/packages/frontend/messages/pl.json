@@ -2285,5 +2285,6 @@
 	"yolo_disabled": "Tryb YOLO WYŁĄCZONY",
 	"yolo_enabled": "⚡ Tryb YOLO WŁĄCZONY — pomijanie aprobat w tej sesji",
 	"yolo_no_session": "Brak aktywnej sesji",
+	"yolo_unknown": "Nie udało się potwierdzić trybu YOLO dla tego czatu",
 	"you": "Ty"
 }

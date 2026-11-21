@@ -2233,5 +2233,6 @@
 	"yolo_disabled": "Modalità YOLO OFF",
 	"yolo_enabled": "⚡ Modalità YOLO ON — approvazioni saltate questa sessione",
 	"yolo_no_session": "Nessuna sessione attiva",
+	"yolo_unknown": "Impossibile confermare la modalità YOLO di questa chat",
 	"you": "Tu"
 }

@@ -2032,5 +2032,6 @@
 	"yolo_disabled": "YOLO 模式已關閉",
 	"yolo_enabled": "⚡ YOLO 模式已開啟，將略過所有核准",
 	"yolo_no_session": "無活動工作階段",
+	"yolo_unknown": "無法確認此聊天的 YOLO 模式",
 	"you": "你"
 }

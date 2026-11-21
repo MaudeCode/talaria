@@ -438,6 +438,48 @@ it('rereads YOLO after an unknown outcome and shows what the server kept, withou
   vi.mocked(api.fetchSessionYolo).mockResolvedValue({ yolo_enabled: false })
 })
 
+const yoloUnknown = "Couldn't confirm YOLO mode for this chat"
+
+it.each([
+  ['failed', () => Promise.reject(new ApiError({ kind: 'network', path: '/x', message: 'Network down' }))],
+  ['missing its value', () => Promise.resolve({})],
+  ['not a boolean', () => Promise.resolve({ yolo_enabled: 'yes' })],
+] as const)('/yolo sends nothing when the YOLO read %s (TAL-2551)', async (_, read) => {
+  vi.mocked(api.fetchSessionYolo).mockImplementation(read as never)
+  const { qc } = chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(qc.getQueryState(keys.yolo('memo-chat'))?.status).not.toBe('pending'))
+  await expect(lastComposer().onLocalCommand('yolo', '')).resolves.toBe(true)
+  expect(api.setSessionYolo).not.toHaveBeenCalled()
+  expect(showToast).toHaveBeenCalledWith(yoloUnknown, 4000, 'error')
+})
+
+it('/yolo turns off a session the server reads as on (TAL-2551)', async () => {
+  vi.mocked(api.fetchSessionYolo).mockResolvedValue({ yolo_enabled: true })
+  vi.mocked(api.setSessionYolo).mockResolvedValue({ ok: true, yolo_enabled: false })
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().yolo).toBe(true))
+  await expect(lastComposer().onLocalCommand('yolo', '')).resolves.toBe(true)
+  expect(api.setSessionYolo).toHaveBeenCalledWith('memo-chat', false)
+})
+
+it('a late YOLO read of the previous session cannot toggle the next one (TAL-2551)', async () => {
+  let answer!: (value: { yolo_enabled: boolean }) => void
+  vi.mocked(api.fetchSessionYolo).mockImplementation((sid) => new Promise((done) => { if (sid === 'memo-chat') answer = done }))
+  const { qc, rerender } = chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(api.fetchSessionYolo).toHaveBeenCalledWith('memo-chat'))
+  qc.setQueryData(keys.sessions.detail('next-chat'), { session: sessionFixture({ session_id: 'next-chat', messages: [] }) })
+  rerender(<QueryClientProvider client={qc}><ChatView sessionId="next-chat" /></QueryClientProvider>)
+  await waitFor(() => expect(api.fetchSessionYolo).toHaveBeenCalledWith('next-chat'))
+  act(() => { answer({ yolo_enabled: false }) })
+  await waitFor(() => expect(qc.getQueryData(keys.yolo('memo-chat'))).toEqual({ yolo_enabled: false }))
+  await expect(lastComposer().onLocalCommand('yolo', '')).resolves.toBe(true)
+  expect(api.setSessionYolo).not.toHaveBeenCalled()
+  expect(showToast).toHaveBeenCalledWith(yoloUnknown, 4000, 'error')
+})
+
 it('brings a refused owner-input discard back with the error, its count with it (TAL-1384, TAL-1531)', async () => {
   // The server's count differs from the rows it sent, so the composer can only show it by trusting the field.
   const owner = { state: 'attached' as const, reason: null, restarting: false, can_submit: true, can_interrupt: true, can_attach: false, revision: 1, execution_generation: 1,

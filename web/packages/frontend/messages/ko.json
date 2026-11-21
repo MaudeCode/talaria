@@ -2099,5 +2099,6 @@
 	"yolo_disabled": "YOLO 모드 꺼짐",
 	"yolo_enabled": "⚡ YOLO 모드 켜짐 — 이 세션에서 승인 건너뜀",
 	"yolo_no_session": "활성 세션 없음",
+	"yolo_unknown": "이 채팅의 YOLO 모드를 확인할 수 없습니다",
 	"you": "나"
 }

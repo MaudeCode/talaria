@@ -2251,5 +2251,6 @@
 	"yolo_disabled": "Mode YOLO désactivé",
 	"yolo_enabled": "⚡ Mode YOLO ACTIVÉ — approbations ignorées cette session",
 	"yolo_no_session": "Aucune session active",
+	"yolo_unknown": "Impossible de confirmer le mode YOLO de ce chat",
 	"you": "Vous"
 }

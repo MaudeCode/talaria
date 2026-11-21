@@ -3756,5 +3756,6 @@
 	"yolo_no_session": "No active session",
 	"yolo_tab_active": "YOLO: approvals off",
 	"yolo_turn_off": "Turn off",
+	"yolo_unknown": "Couldn't confirm YOLO mode for this chat",
 	"you": "You"
 }

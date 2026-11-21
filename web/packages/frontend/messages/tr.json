@@ -2099,5 +2099,6 @@
 	"yolo_disabled": "YOLO modu KAPALI",
 	"yolo_enabled": "⚡ YOLO modu AÇIK — onaylar bu oturumu atladı",
 	"yolo_no_session": "Aktif oturum yok",
+	"yolo_unknown": "Bu sohbetin YOLO modu doğrulanamadı",
 	"you": "Sen"
 }
