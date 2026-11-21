@@ -44,6 +44,8 @@ test('a plugin command the server marks exec runs on the server; its Markdown ou
   await page.route('**/api/commands', (route) => route.fulfill({ json: { commands: [
     { name: 'standup', description: 'Post the standup', aliases: [], category: 'Plugin', handler: 'agent', clients: ['web', 'ios'], exec: true },
   ] } }))
+  // TAL-1927: the server decides what sent text does; this plugin exists only in the stubbed catalog, so its decision is stubbed too.
+  await page.route('**/api/commands/classify', (route) => route.fulfill({ json: { kind: 'exec', name: 'standup', args: 'today' } }))
   const executed: unknown[] = []
   await page.route('**/api/commands/exec', (route) => { executed.push(route.request().postDataJSON()); return route.fulfill({ json: { output: '**Standup posted**\nChannel: #team' } }) })
   const sent: string[] = []

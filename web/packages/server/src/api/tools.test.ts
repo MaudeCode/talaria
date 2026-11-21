@@ -589,6 +589,32 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  it('classifies submitted text from the shared fixture without running anything, and fails closed without the registry (TAL-1927)', async () => {
+    const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/command-decisions.json'), 'utf8')) as { registry: Json[]; cases: { text: string; decision: Json }[] }
+    sidecar.respond('commands.registry', () => ({ commands: fixture.registry }) as never)
+    const classify = (text: string) => post(s, '/api/commands/classify', { text })
+    const effects = () => sidecar.calls.filter((c) => c.method !== 'commands.registry' && /^(commands|chat)\./.test(c.method)).length
+    try {
+      const before = effects()
+      for (const { text, decision } of fixture.cases) {
+        const res = await classify(text)
+        expect(res.status, text).toBe(200)
+        expect(await json(res), text).toEqual(decision)
+      }
+      expect(effects()).toBe(before)
+      // Without the registry, plain text and the client table still decide; any other command token is refused.
+      sidecar.respond('commands.registry', () => { throw new SidecarError('boom', { condition: 'sidecar_unavailable' }) })
+      expect(await json(await classify('/FORK Copy'))).toEqual({ kind: 'client', name: 'branch', args: 'Copy' })
+      expect(await json(await classify('/tmp/example.js explain'))).toEqual({ kind: 'text' })
+      const unavailable = await classify('/unknownword')
+      expect(unavailable.status).toBe(503)
+      expect((await json(unavailable)).error).toBe('Slash commands are unavailable because the Agent command registry could not be loaded.')
+    } finally {
+      const recorded = loadSidecarFixtures().get('commands.registry')?.[0]?.result
+      sidecar.respond('commands.registry', () => recorded as never)
+    }
+  })
+
   it('commands mark arguments accepted without a value as optional (TAL-1759)', async () => {
     const commands = (await json(await s.get('/api/commands'))).commands as Json[]
     for (const [name, args_hint] of [['reasoning', '[show|hide|<level>]'], ['personality', '[name]'], ['goal', '[text]']]) {

@@ -191,6 +191,9 @@ export function useStagedFiles(id: string, sessionId: string | null) {
   return [files, setFiles] as const
 }
 
+/** A tray's files as they stand now, for a check after an await (TAL-1927). */
+export const stagedFiles = (id: string): PendingFile[] => trays.get(id)?.files ?? NO_FILES
+
 /** Starts a chip's upload attempt on its identity's tray. */
 export function beginUpload(id: string, fileKey: string): object {
   const attempt = {}

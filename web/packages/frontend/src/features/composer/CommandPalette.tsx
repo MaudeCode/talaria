@@ -28,7 +28,7 @@ export function useCommandPalette(text: string) {
     if (e.key === 'Escape') { e.preventDefault(); return true }
     return false
   }
-  return { open, items, active, setActive, listId, activeId, handleKey, catalog }
+  return { open, items, active, setActive, listId, activeId, handleKey }
 }
 
 export function CommandPaletteList({ items, active, listId, onPick, onHover }: { items: CommandSuggestion[]; active: number; listId: string; onPick: (s: CommandSuggestion) => void; onHover: (i: number) => void }) {

@@ -1,23 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Command } from '../../contracts'
-import * as commands from './commands'
-
-const { parseCommand, suggestCommands } = commands
-
-describe('parseCommand', () => {
-  it('parses name and args', () => {
-    expect(parseCommand('/model gpt-5')).toEqual({ name: 'model', args: 'gpt-5', raw: '/model gpt-5' })
-    expect(parseCommand('  /STOP')).toMatchObject({ name: 'stop', args: '' })
-    expect(parseCommand('/queue one\ntwo')).toMatchObject({ name: 'queue', args: 'one\ntwo' })
-  })
-  it('returns null for plain text, paths, or a lone slash', () => {
-    expect(parseCommand('hello /x')).toBeNull()
-    expect(parseCommand('/')).toBeNull()
-    expect(parseCommand('/9')).toBeNull()
-    expect(parseCommand('/agents/notes.md summarize')).toBeNull()
-    expect(parseCommand('/tmp/example.js explain')).toBeNull()
-  })
-})
+import { suggestCommands } from './commands'
 
 // A synthetic `/api/commands` catalog in server display order (TAL-314).
 const row = (name: string, extra: Partial<Command> = {}): Command => ({ name, description: name, aliases: [], handler: 'client', clients: ['web', 'ios'], exec: false, ...extra })
@@ -45,15 +28,5 @@ describe('suggestCommands', () => {
     expect(suggestCommands('COMPA', catalog).map((c) => c.name)).toEqual(['compress'])
     expect(suggestCommands('fo', catalog).map((c) => c.name)).toEqual(['branch'])
     expect(suggestCommands('b', catalog).map((c) => c.name)).toEqual(['branch', 'background'])
-  })
-})
-
-describe('resolveCommand', () => {
-  it('resolves a typed alias to its catalog entry', () => {
-    expect(commands.resolveCommand('compact', catalog)?.name).toBe('compress')
-    expect(commands.resolveCommand('FORK', catalog)?.name).toBe('branch')
-    expect(commands.resolveCommand('bg', catalog)?.name).toBe('background')
-    expect(commands.resolveCommand('terminal', catalog)?.clients).toEqual(['web'])
-    expect(commands.resolveCommand('nope', catalog)).toBeUndefined()
   })
 })

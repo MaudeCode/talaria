@@ -22,7 +22,7 @@ import { rememberConnectorLogos } from '../sessions/tool-display.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
 import { skillListing } from '../tools/skills.js'
-import { canonicalExecCommand, commandCatalog, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
+import { canonicalExecCommand, classifyCommand, COMMAND_REGISTRY_UNAVAILABLE, commandCatalog, commandToken, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
 import { spokenText } from './tools-raw.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, forgetGatewayProbes, gatewayStatus, logCatalog, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { EXTERNALLY_MANAGED } from '../tools/gateway-lifecycle.js'
@@ -89,13 +89,13 @@ function runningSidecar(ctx: RequestContext): NonNullable<ReturnType<RequestCont
   return sidecar
 }
 
-/** The Agent registry rows the command catalog lists; [] without the Agent, so the client commands still list. */
-async function agentCommands(ctx: RequestContext): Promise<Parameters<typeof commandCatalog>[0]> {
+/** The Agent registry rows the command catalog lists; null without the Agent, where the client commands still list. */
+async function agentCommands(ctx: RequestContext): Promise<Parameters<typeof commandCatalog>[0] | null> {
   const sidecar = ctx.deps.sidecar()
   try {
-    return sidecar ? (await sidecar.call('commands.registry', { profile_home: home(ctx) })).commands : []
+    return sidecar ? (await sidecar.call('commands.registry', { profile_home: home(ctx) })).commands : null
   } catch {
-    return []
+    return null
   }
 }
 
@@ -621,13 +621,21 @@ export const toolsRouter = os.router({
   },
   commands: {
     list: os.commands.list.handler(({ context: { ctx } }) => run(async () => {
-      return { commands: commandCatalog(await agentCommands(ctx), await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))) }
+      return { commands: commandCatalog((await agentCommands(ctx)) ?? [], await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))) }
+    })),
+    // TAL-1927: plain text needs neither the registry nor the owner check; the request guard already checked `session_id`.
+    classify: os.commands.classify.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!commandToken(input.text)) return { kind: 'text' as const }
+      const owner = await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))
+      const decision = classifyCommand(input.text, await agentCommands(ctx), { owner, client: 'web' })
+      if (!decision) throw new HttpError(503, COMMAND_REGISTRY_UNAVAILABLE)
+      return decision
     })),
     exec: os.commands.exec.handler(({ input, signal, context: { ctx } }) => run(async () => {
       const typed = str(input.command).trim()
       if (!typed) throw new HttpError(400, 'command is required')
       // TAL-1577: a catalog's generated `_`/`-` alias runs as the command it names; only a name with a separator can be one.
-      const command = /^\/?[^\s_-]*[_-]/.test(typed) ? canonicalExecCommand(typed, await agentCommands(ctx)) : typed
+      const command = /^\/?[^\s_-]*[_-]/.test(typed) ? canonicalExecCommand(typed, (await agentCommands(ctx)) ?? []) : typed
       const [, name = '', args = ''] = /^\/?(\S*)\s*([\s\S]*)$/.exec(command) ?? []
       const sessionId = str(input.session_id).trim()
       if (sessionId) (await ctx.deps.sessions.assertWritable(sessionId))

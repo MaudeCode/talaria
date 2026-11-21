@@ -1,0 +1,182 @@
+{
+  "registry": [
+    {
+      "name": "agents",
+      "description": "agent agents",
+      "category": "Session",
+      "aliases": [
+        "agent-list"
+      ],
+      "args_hint": "",
+      "subcommands": [],
+      "cli_only": false,
+      "gateway_only": false,
+      "exec": false,
+      "prompt": null
+    },
+    {
+      "name": "reload-skills",
+      "description": "agent reload-skills",
+      "category": "Tools & Skills",
+      "aliases": [
+        "reload_skills"
+      ],
+      "args_hint": "",
+      "subcommands": [],
+      "cli_only": false,
+      "gateway_only": false,
+      "exec": true,
+      "prompt": null
+    },
+    {
+      "name": "knowledge-loop",
+      "description": "agent knowledge-loop",
+      "category": "Plugin",
+      "aliases": [],
+      "args_hint": "",
+      "subcommands": [],
+      "cli_only": false,
+      "gateway_only": false,
+      "exec": true,
+      "prompt": null
+    },
+    {
+      "name": "initiate-setup",
+      "description": "agent initiate-setup",
+      "category": "Session",
+      "aliases": [
+        "initiate_setup"
+      ],
+      "args_hint": "",
+      "subcommands": [],
+      "cli_only": false,
+      "gateway_only": false,
+      "exec": false,
+      "prompt": "expand"
+    }
+  ],
+  "cases": [
+    {
+      "text": "ordinary text",
+      "decision": {
+        "kind": "text"
+      }
+    },
+    {
+      "text": "/unknownword",
+      "decision": {
+        "kind": "text"
+      }
+    },
+    {
+      "text": "/agents/notes.md summarize",
+      "decision": {
+        "kind": "text"
+      }
+    },
+    {
+      "text": "/tmp/example.js explain",
+      "decision": {
+        "kind": "text"
+      }
+    },
+    {
+      "text": "hello /btw",
+      "decision": {
+        "kind": "text"
+      }
+    },
+    {
+      "text": "/",
+      "decision": {
+        "kind": "text"
+      }
+    },
+    {
+      "text": "/9",
+      "decision": {
+        "kind": "text"
+      }
+    },
+    {
+      "text": "/agents",
+      "decision": {
+        "kind": "unsupported",
+        "name": "agents",
+        "message": "/agents runs only in the Hermes CLI."
+      }
+    },
+    {
+      "text": "/agents foo",
+      "decision": {
+        "kind": "unsupported",
+        "name": "agents",
+        "message": "/agents runs only in the Hermes CLI."
+      }
+    },
+    {
+      "text": "/AGENT-LIST",
+      "decision": {
+        "kind": "unsupported",
+        "name": "agents",
+        "message": "/agents runs only in the Hermes CLI."
+      }
+    },
+    {
+      "text": "  /FORK Copy",
+      "decision": {
+        "kind": "client",
+        "name": "branch",
+        "args": "Copy"
+      }
+    },
+    {
+      "text": "/bg summarize repo",
+      "decision": {
+        "kind": "client",
+        "name": "background",
+        "args": "summarize repo"
+      }
+    },
+    {
+      "text": "/btw how big is it?",
+      "decision": {
+        "kind": "client",
+        "name": "btw",
+        "args": "how big is it?"
+      }
+    },
+    {
+      "text": "/queue one\ntwo",
+      "decision": {
+        "kind": "client",
+        "name": "queue",
+        "args": "one\ntwo"
+      }
+    },
+    {
+      "text": "/reload_skills ",
+      "decision": {
+        "kind": "exec",
+        "name": "reload-skills",
+        "args": ""
+      }
+    },
+    {
+      "text": "/knowledge_loop go",
+      "decision": {
+        "kind": "exec",
+        "name": "knowledge-loop",
+        "args": "go"
+      }
+    },
+    {
+      "text": "/initiate_setup now",
+      "decision": {
+        "kind": "prompt",
+        "name": "initiate-setup",
+        "args": "now"
+      }
+    }
+  ]
+}

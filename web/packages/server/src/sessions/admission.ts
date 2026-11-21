@@ -10,7 +10,7 @@ import { compressionRecoveryPayload } from './session.js'
 import { isGenericContinuationIntent, type StartTurnOptions, type TurnRunner } from './turn.js'
 import { str } from '../util.js'
 import { SidecarError } from '../sidecar/client.js'
-import { commandCatalog, unsupportedPromptMessage } from '../tools/commands.js'
+import { classifyCommand, COMMAND_REGISTRY_UNAVAILABLE, commandToken, unsupportedPromptMessage } from '../tools/commands.js'
 import type { TalariaActivity } from '@maudecode/talaria-web-contracts'
 import { talariaActivity } from './talaria-activities.js'
 const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
@@ -79,18 +79,17 @@ async function refuseChatBeforeLoad(deps: AppDeps, sid: string, requestedProfile
 
 /** Check the server catalog even when a client's catalog is missing or stale, before either backend receives text. */
 async function requireSupportedChatCommand(deps: AppDeps, msg: string): Promise<void> {
-  const name = /^\/([a-zA-Z][\w-]*)(?=\s|$)/.exec(msg)?.[1]?.toLowerCase()
-  if (!name) return
+  if (!commandToken(msg)) return
   const sidecar = deps.sidecar()
-  if (!sidecar) throw new HttpFailure(503, 'Slash commands are unavailable because the Agent command registry could not be loaded.')
+  if (!sidecar) throw new HttpFailure(503, COMMAND_REGISTRY_UNAVAILABLE)
   let registry: SidecarResult<'commands.registry'>
   try {
     registry = await sidecar.call('commands.registry', { profile_home: deps.profileHome(deps.activeProfile()) })
   } catch {
-    throw new HttpFailure(503, 'Slash commands are unavailable because the Agent command registry could not be loaded.')
+    throw new HttpFailure(503, COMMAND_REGISTRY_UNAVAILABLE)
   }
-  const command = commandCatalog(registry.commands).find((c) => c.name.toLowerCase() === name || c.aliases.some((alias) => alias.toLowerCase() === name))
-  if (command?.clients.length === 0) throw new HttpFailure(400, command.unsupported_message!)
+  const decision = classifyCommand(msg, registry.commands)
+  if (decision?.kind === 'unsupported') throw new HttpFailure(400, decision.message)
 }
 
 /**

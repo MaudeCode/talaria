@@ -107,6 +107,10 @@ describe('owner-only routes (TAL-2201)', () => {
     const terminal = async (headers: Record<string, string>) => ((await (await server.get('/api/commands', { headers })).json()) as { commands: { name: string; clients: string[]; unsupported_message?: string }[] }).commands.find((c) => c.name === 'terminal')
     expect(await terminal(sessions.owner)).toMatchObject({ clients: ['web'] })
     for (const who of ['bound', 'person'] as const) expect(await terminal(sessions[who]), who).toMatchObject({ clients: [], unsupported_message: 'Only the server owner can open the terminal.' })
+    // TAL-1927: the submitted command follows the same catalog.
+    const decide = async (headers: Record<string, string>) => (await server.get('/api/commands/classify', { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ text: '/terminal' }) })).json()
+    expect(await decide(sessions.owner)).toEqual({ kind: 'client', name: 'terminal', args: '' })
+    for (const who of ['bound', 'person'] as const) expect(await decide(sessions[who]), who).toEqual({ kind: 'unsupported', name: 'terminal', message: 'Only the server owner can open the terminal.' })
   })
 
   it('refuses a model route\'s connection fields to a session without owner authority, and keeps its model picks', async () => {
