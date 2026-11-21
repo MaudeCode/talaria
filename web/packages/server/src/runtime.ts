@@ -522,6 +522,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       if (requestedProvider === undefined && !provider) provider = currentProvider
       return [raw, provider]
     },
+    providerFirstModel: (profile, provider) => catalog.firstModelFor(profileHome(profile ?? activeProfile()), provider),
     profileLaunchRoute: (profile, provider) => {
       const config = agentConfig.peek(profileHome(profile))
       const baseUrl = config ? modelBaseUrl(config, provider) : ''

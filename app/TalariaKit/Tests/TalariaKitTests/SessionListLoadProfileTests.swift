@@ -820,8 +820,9 @@ extension SessionListMutationTests {
         XCTAssertNil(viewModel.lastError)
     }
 
+    /// TAL-2505: a new chat naming only a provider sends that provider alone; the server picks its model.
     @MainActor
-    func testCreateSessionWithProviderUsesThatProvidersFirstCatalogModel() async throws {
+    func testCreateSessionWithProviderSendsOnlyTheProvider() async throws {
         var requestedPaths: [String] = []
         let viewModel = try makeViewModel { request in
             let path = request.url?.path
@@ -829,33 +830,12 @@ extension SessionListMutationTests {
 
             switch path {
             case "/api/workspaces":
-                return apiTestJSONResponse(
-                    #"{"workspaces":[{"path":"/tmp/workspace"}],"last":"/tmp/workspace"}"#,
-                    for: request
-                )
-            case "/api/models":
-                return apiTestJSONResponse("""
-                {
-                  "groups": [
-                    {
-                      "provider_id": "openai-codex",
-                      "models": [{"id": "gpt-5.6-sol", "name": "GPT 5.6 SOL"}]
-                    },
-                    {
-                      "provider_id": "opencode-go",
-                      "models": [{"id": "@opencode-go:kimi-k2.7-code", "name": "Kimi K2.7 Code"}]
-                    }
-                  ]
-                }
-                """, for: request)
+                return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
             case "/api/session/new":
                 let body = try XCTUnwrap(apiTestJSONBody(from: request))
-                XCTAssertEqual(body["model"] as? String, "@opencode-go:kimi-k2.7-code")
+                XCTAssertNil(body["model"])
                 XCTAssertEqual(body["model_provider"] as? String, "opencode-go")
-                return apiTestJSONResponse(
-                    #"{"session":{"session_id":"provider-session","model":"@opencode-go:kimi-k2.7-code","model_provider":"opencode-go"}}"#,
-                    for: request
-                )
+                return apiTestJSONResponse(#"{"session":{"session_id":"provider-session"}}"#, for: request)
             default:
                 XCTFail("Unexpected request path: \(path ?? "nil")")
                 throw URLError(.badURL)
@@ -865,46 +845,7 @@ extension SessionListMutationTests {
         let created = await viewModel.createSession(provider: "opencode-go")
 
         XCTAssertEqual(created?.sessionId, "provider-session")
-        XCTAssertEqual(requestedPaths, ["/api/workspaces", "/api/models", "/api/session/new"])
-    }
-
-    @MainActor
-    func testCreateSessionWithUnknownProviderFallsBackToServerDefault() async throws {
-        var requestedPaths: [String] = []
-        let viewModel = try makeViewModel { request in
-            let path = request.url?.path
-            requestedPaths.append(path ?? "nil")
-
-            switch path {
-            case "/api/workspaces":
-                return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
-            case "/api/models":
-                return apiTestJSONResponse("""
-                {
-                  "groups": [{
-                    "provider_id": "openai-codex",
-                    "models": [{"id": "gpt-5.6-sol"}]
-                  }]
-                }
-                """, for: request)
-            case "/api/session/new":
-                let body = try XCTUnwrap(apiTestJSONBody(from: request))
-                XCTAssertNil(body["model"])
-                XCTAssertNil(body["model_provider"])
-                return apiTestJSONResponse(
-                    #"{"session":{"session_id":"default-session","model":"gpt-5.6-sol","model_provider":"openai-codex"}}"#,
-                    for: request
-                )
-            default:
-                XCTFail("Unexpected request path: \(path ?? "nil")")
-                throw URLError(.badURL)
-            }
-        }
-
-        let created = await viewModel.createSession(provider: "missing-provider")
-
-        XCTAssertEqual(created?.sessionId, "default-session")
-        XCTAssertEqual(requestedPaths, ["/api/workspaces", "/api/models", "/api/session/new"])
+        XCTAssertEqual(requestedPaths, ["/api/workspaces", "/api/session/new"])
     }
 
     /// TAL-455: New Chat under a project filter creates the chat in that project, and the row

@@ -242,6 +242,8 @@ export interface SessionServiceDeps {
   resolveContextLength?: (model: string | null, provider: string | null, profile: string | null) => Promise<number | null>
   /** `(model, provider)` normalisation from a request (checkpoint 7 wires provider-qualified ids). */
   modelStateFromRequest: (model: unknown, requestedProvider: unknown, currentProvider: string | null) => [string | null, string | null]
+  /** TAL-2505: the pair a new chat naming only `provider` starts on, from the profile's catalog; null when the catalog has no such provider. */
+  providerFirstModel?: (profile: string | null, provider: string) => Promise<[string, string] | null>
   /** TAL-1814: the profile's default model, re-read from its config.yaml: a cold or edited config never reads as no default. */
   freshModelDefaults: (profile: string | null) => Promise<{ model: string | null; modelProvider?: string | null }>
   /** TAL-1040: the explicit launch route for `provider`: its configured endpoint (model, providers or custom_providers), else null. */
@@ -2085,6 +2087,16 @@ export class SessionService {
     return workspace
   }
 
+  /**
+   * TAL-2505: a new chat's requested `(model, provider)`. A provider named without a model starts on that provider's first
+   * catalog model; a provider the catalog does not list leaves both null, so the chat starts on the profile default.
+   */
+  private async requestedModel(body: Record<string, unknown>, profile: string | null): Promise<[string | null, string | null]> {
+    const [model, provider] = this.deps.modelStateFromRequest(body.model, body.model_provider, null)
+    if (model || !provider) return [model, provider]
+    return (await this.deps.providerFirstModel?.(profile, provider)) ?? [null, null]
+  }
+
   /** The server owns the names' normalization (TAL-631): trimmed, blanks dropped, and nothing left is the profile's defaults. */
   validateToolsetsShape(toolsets: unknown): string[] | null {
     if (toolsets === null || toolsets === undefined) return null
@@ -2107,7 +2119,7 @@ export class SessionService {
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }
-    const [model, provider] = this.deps.modelStateFromRequest(body.model, body.model_provider, null)
+    const [model, provider] = await this.requestedModel(body, profile)
     const toolsets = this.validateToolsetsShape(body.enabled_toolsets)
     await opts.validateSources?.()
     const s = (await this.store.newSession({ ...(opts.sessionId ? { sessionId: opts.sessionId } : {}), workspace, model, modelProvider: provider, profile, projectId: typeof body.project_id === 'string' && body.project_id ? body.project_id : null, worktree: opts.worktree ?? null, enabledToolsets: toolsets }))
@@ -2132,7 +2144,7 @@ export class SessionService {
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }
-    const [requested, requestedProvider] = this.deps.modelStateFromRequest(body.model, body.model_provider, null)
+    const [requested, requestedProvider] = await this.requestedModel(body, profile)
     const model = requested ?? defaults.model
     const provider = requested ? requestedProvider : requestedProvider ?? defaults.modelProvider ?? null
     if (!model) throw new HttpFailure(400, 'Choose a model before starting a diagnostic chat')

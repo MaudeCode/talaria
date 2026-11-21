@@ -743,6 +743,17 @@ export class ProviderCatalog {
     return catalogOptionId(catalog, model, provider)
   }
 
+  /** TAL-2505: the `(model, provider)` pair a new chat naming only `provider` starts on: its group's first model; null when the catalog has no such group. */
+  async firstModelFor(profileHome: string, provider: string): Promise<[string, string] | null> {
+    let groups: ModelGroup[]
+    try { groups = (await this.models(profileHome)).groups } catch { return null }
+    // The exact catalog id first: alias normalisation rewrites `_` to `-`, which a custom provider's slug keeps.
+    const pid = canonicaliseProviderId(provider)
+    const group = groups.find((g) => g.provider_id === provider.trim()) ?? groups.find((g) => g.provider_id === pid)
+    const entry = group?.models[0]
+    return group && entry ? [entry.bare_id ?? entry.id, entry.provider_id ?? group.provider_id] : null
+  }
+
   /** TAL-821: `providerLabel` against the last catalog built for this home; a cold home starts building one. */
   providerLabel(profileHome: string, provider: string): string {
     const catalog = this.lastModels.get(profileHome)
