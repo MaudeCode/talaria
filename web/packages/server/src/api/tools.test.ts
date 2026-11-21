@@ -148,6 +148,8 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(await list('?q=%20PDF%20')).toEqual({ names: ['alpha', 'beta', 'pdf-gamma'], total: 5, groups })
       expect(await list('?q=pdf&category=Tools')).toEqual({ names: ['beta', 'pdf-gamma'], total: 5, groups })
       expect(await list('?category=docs')).toEqual({ names: ['alpha'], total: 5, groups })
+      // TAL-2528: `q` also matches the category text, so the App's search loses no match it made on its own.
+      expect(await list('?q=TOOL')).toEqual({ names: ['beta', 'pdf-gamma', ' zed'], total: 5, groups })
     })
 
     it('reads usage counters, coercing counts and skipping a malformed row', async () => {

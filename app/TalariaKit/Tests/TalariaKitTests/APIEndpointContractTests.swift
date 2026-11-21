@@ -379,7 +379,8 @@ final class ContractReadinessTests: APIClientTestCase {
             .init(name: "feedback submit", endpoint: .feedbackSubmit, path: "/api/feedback/submit"),
             .init(name: "feedback options", endpoint: .feedbackOptions, path: "/api/feedback/options"),
             .init(name: "feedback attachments", endpoint: .feedbackAttachments, path: "/api/feedback/attachments"),
-            .init(name: "skills", endpoint: .skills, path: "/api/skills"),
+            .init(name: "skills", endpoint: .skills(query: nil), path: "/api/skills"),
+            .init(name: "skills search", endpoint: .skills(query: "pdf"), path: "/api/skills", query: ["q": "pdf"]),
             .init(
                 name: "skill content",
                 endpoint: .skillContent(name: "swiftui-ui-patterns", file: nil),

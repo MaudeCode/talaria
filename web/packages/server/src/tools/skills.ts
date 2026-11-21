@@ -31,7 +31,7 @@ export function skillListing<T extends { name: string; description: string; cate
     group.sort((a, b) => collator.compare(a.name.trim(), b.name.trim()))
     for (const row of group) {
       if (category && key !== category && row.category !== category) continue
-      if (!needle || [row.name, row.description].some((value) => value.toLowerCase().includes(needle))) skills.push(row)
+      if (!needle || [row.name, row.description, row.category ?? ''].some((value) => value.toLowerCase().includes(needle))) skills.push(row)
     }
     return { category: key, names: group.map((row) => row.name) }
   })
