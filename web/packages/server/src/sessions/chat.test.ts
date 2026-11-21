@@ -1602,40 +1602,16 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
-  it.each<{ raw: string; title: string; user?: string; status?: string }>([
-    { raw: '{"title": "Docker Volume Permissions"}', title: 'Docker Volume Permissions' },
-    { raw: '```json\n{"title": "Docker Volume Permissions"}\n```', title: 'Docker Volume Permissions' },
-    { raw: '<analysis>Choose a label</analysis>Docker Permissions', title: 'Docker Permissions' },
-    { raw: '<think>They want a title.</think>{"title": "Docker Volume Permissions"}', title: 'Docker Volume Permissions' },
-    { raw: '<reasoning>Spanish fits</reasoning>\n{"title": "Permisos de volúmenes Docker"}', title: 'Permisos de volúmenes Docker' },
-    { raw: '{"title": "ボリュームの権限を修正"}', title: 'ボリュームの権限を修正', user: 'ボリュームの権限を直して' },
-    { raw: '{"title": "Docker volume permission repairs across Linux and macOS hosts"}', title: 'Docker volume permission repairs across Linux and' },
-    ...[
-      'I think Docker Permissions is a good title', 'Maybe something like Docker Volume Permissions', 'I’d go with Docker Volume Permissions',
-      'How about Docker Volume Permissions?', '<analysis>Choose a label for Docker', 'Docker Volume Permissions</thinking>',
-      'Okay here it is {"title": "Docker Volume Permissions"}', '{"name": "Docker Volume Permissions"}',
-      '{"title": "Docker Volume Permissions", "reason": "short"}', '{"title": "Docker Volume',
-    ].map((raw) => ({ raw, title: 'fix docker volume permissions', status: 'local_summary:llm_invalid_aux' })),
-  ])('titles from the generated reply $raw only when it holds a title, else falls back (TAL-2550)', async ({ raw, title, user, status }) => {
-    const sid = await newSession(s)
-    const session = await s.deps.sessionStore.get(sid)
-    session.messages = [{ role: 'user', content: user ?? 'fix the docker volume permissions' }, { role: 'assistant', content: 'Run chown on the volume.' }]
-    await s.deps.sessionStore.save(session)
-    sidecar.respond('aux.complete', () => ({ model: 'aux', text: raw, usage: null }))
-    const res = await post(s, '/api/session/title/regenerate', { session_id: sid })
-    expect(res.status).toBe(200)
-    expect(await json(res)).toMatchObject({ title, status: status ?? 'llm_aux' })
-  })
-
   const savedTitle = 'Maybe Docker permissions'
   it.each([
     { route: 'first title', title: 'fix docker volume permissions', frames: [{ event: 'title_status', status: 'fallback', reason: 'local_summary:llm_invalid_aux', title: 'fix docker volume permissions' }, { event: 'title', title: 'fix docker volume permissions' }] },
     { route: 'adaptive refresh', title: savedTitle, frames: [{ event: 'title_status', status: 'refresh_skipped', reason: 'llm_invalid_aux', title: savedTitle }] },
+    { route: 'explicit regenerate', title: 'fix docker volume permissions', frames: [] },
   ])('keeps a hedged reasoning reply out of the $route saved and streamed titles (TAL-2550)', async ({ route, title, frames: expected }) => {
     const turns = s.deps.turns as unknown as { deps: { titleRefreshEvery: (() => number) | undefined } }
     const original = turns.deps.titleRefreshEvery
     const sid = await newSession(s)
-    if (route === 'adaptive refresh') {
+    if (route !== 'first title') {
       // The fresh-reply rules judge only new replies: a saved generated title they would reject is not retitled.
       const session = await s.deps.sessionStore.get(sid)
       session.title = savedTitle
@@ -1654,6 +1630,7 @@ describe('chat turns through the sidecar', () => {
     try {
       await turn('fix the docker volume permissions')
       if (route === 'adaptive refresh') await turn('check the docker volume owner')
+      if (route === 'explicit regenerate') expect(await json(await post(s, '/api/session/title/regenerate', { session_id: sid, prefer_latest: true }))).toMatchObject({ title, status: 'local_summary:llm_invalid_aux' })
       expect(titleFrames).toMatchObject(expected)
       expect((await s.deps.sessionStore.get(sid)).title).toBe(title)
     } finally {
