@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""Start or stop a disposable Talaria Web server the phone reaches over Tailscale (TAL-2621).
+
+  scripts/phone-test-server start [--no-build] [--host IP] [--tailscale CLI]
+      Builds contracts and server from this checkout, boots the replay-sidecar server under `env -i` with a temp
+      HOME on the Mac's Tailscale IPv4, a free port and a random password, waits for /health and a password login,
+      and prints {url, password, pid, stateDir, log} as one JSON object on stdout.
+  scripts/phone-test-server stop STATE_DIR
+      Signals only the PID recorded in STATE_DIR/server.json, waits for it to exit and deletes STATE_DIR.
+
+Talaria Dev allows plain HTTP only to 100.64.0.0/10, so the server binds the Tailscale address, never 0.0.0.0 or a
+LAN address. `--host` takes a loopback address for this script's own test.
+"""
+
+import argparse
+import ipaddress
+import json
+import os
+import re
+import secrets
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+WEB = ROOT / "web"
+STATE_PREFIX = "talaria-phone-server-"
+TAILNET = ipaddress.ip_network("100.64.0.0/10")
+READY_SECONDS = 60
+RESTATE_ERROR = "changing settings via 'tailscale up' requires mentioning all"
+
+
+class Failure(Exception):
+    pass
+
+
+def run(argv, timeout=60):
+    """Runs a CLI and returns (exit code, combined output); a timeout counts as a failure with its partial output."""
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        return done.returncode, done.stdout + done.stderr
+    except subprocess.TimeoutExpired as expired:
+        # A timeout's captured output is bytes even with text=True.
+        return 124, ((expired.stdout or b"") + (expired.stderr or b"")).decode(errors="replace")
+
+
+def backend_state(cli):
+    _, output = run([cli, "status", "--json"])
+    try:
+        status = json.loads(output[output.index("{"):])
+    except ValueError:
+        return "", ""
+    return status.get("BackendState", ""), status.get("AuthURL", "")
+
+
+def tailscale_ipv4(cli):
+    """Brings Tailscale up without a human and returns its IPv4. Raises Failure with the login URL when a login is due."""
+    state, _ = backend_state(cli)
+    outputs = []
+    if state != "Running":
+        code, output = run([cli, "up", "--timeout=20s"])
+        outputs.append(output)
+        if code != 0 and RESTATE_ERROR in output:
+            # The CLI prints the `tailscale up ...` command that restates the current settings; run exactly that.
+            suggested = next((line.strip() for line in output.splitlines() if line.strip().startswith("tailscale up")), None)
+            if suggested is None:
+                raise Failure(f"tailscale up refused without suggesting a command:\n{output}")
+            argv = shlex.split(suggested)
+            if any(arg.split("=")[0] == "--reset" for arg in argv):
+                raise Failure(f"refusing the suggested command because it resets settings: {suggested}")
+            outputs.append(run([cli, *argv[1:]])[1])
+        state, auth_url = backend_state(cli)
+        if state != "Running":
+            url = auth_url or next(iter(re.findall(r"https://\S+", "\n".join(outputs))), "")
+            if url:
+                raise Failure(f"Tailscale needs an interactive login: {url}")
+            raise Failure(f"Tailscale is {state or 'unavailable'} after tailscale up:\n" + "\n".join(outputs))
+    _, output = run([cli, "ip", "-4"])
+    address = output.strip().splitlines()[0] if output.strip() else ""
+    try:
+        if ipaddress.ip_address(address) in TAILNET:
+            return address
+    except ValueError:
+        pass
+    raise Failure(f"tailscale ip -4 returned no 100.64.0.0/10 address: {output.strip()!r}")
+
+
+def checked_host(host):
+    """Accepts loopback (the script's own test) or a tailnet address; never 0.0.0.0 or a LAN address."""
+    address = ipaddress.ip_address(host)
+    if address.version != 4 or not (address.is_loopback or address in TAILNET):
+        raise Failure(f"--host must be IPv4 loopback or 100.64.0.0/10, not {host}")
+    return host
+
+
+def build():
+    def npm(*args):
+        # Build output goes to stderr so stdout stays one JSON object.
+        subprocess.run(["npm", *args], cwd=WEB, check=True, stdout=sys.stderr)
+
+    if not (WEB / "node_modules").is_dir():
+        npm("ci", "--no-audit", "--no-fund")
+    # A stale dist speaks an older sidecar RPC version, so both always build from this checkout.
+    npm("run", "build", "-w", "packages/contracts")
+    npm("run", "build", "-w", "packages/server")
+
+
+def interpreter(argv):
+    # Ask each interpreter for its own path: mise shims fail under a temp HOME ("config not trusted").
+    path = subprocess.run(argv, capture_output=True, text=True, check=True).stdout.strip()
+    if "/shims/" in path:
+        raise Failure(f"{argv[0]} resolved to a version-manager shim: {path}")
+    return path
+
+
+def free_port(host):
+    with socket.socket() as probe:
+        probe.bind((host, 0))
+        return probe.getsockname()[1]
+
+
+def ready(url, password, server):
+    """Waits for /health, then a successful password login, within READY_SECONDS."""
+    deadline = time.monotonic() + READY_SECONDS
+    while time.monotonic() < deadline:
+        if server.poll() is not None:
+            return False
+        try:
+            urllib.request.urlopen(f"{url}/health", timeout=2).close()
+            login = urllib.request.Request(
+                f"{url}/api/auth/login",
+                data=json.dumps({"password": password}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(login, timeout=5) as response:
+                return json.load(response).get("ok") is True
+        except (OSError, ValueError):
+            time.sleep(0.25)
+    return False
+
+
+def start(args):
+    host = checked_host(args.host) if args.host else tailscale_ipv4(args.tailscale)
+    if not args.no_build:
+        build()
+    node = interpreter(["node", "-p", "process.execPath"])
+    python = interpreter([sys.executable, "-c", "import sys; print(sys.executable)"])
+    dist = WEB / "packages/server/dist/bin/talaria-web.js"
+    if not dist.is_file():
+        raise Failure(f"{dist} is missing; run without --no-build")
+
+    state_dir = Path(tempfile.mkdtemp(prefix=STATE_PREFIX)).resolve()
+    for name in ("home", "state", "workspace"):
+        (state_dir / name).mkdir()
+    log = state_dir / "server.log"
+    port = free_port(host)
+    password = secrets.token_urlsafe(18)
+    url = f"http://{host}:{port}"
+    env = {
+        "PATH": f"{Path(node).parent}:{Path(python).parent}:/usr/bin:/bin",
+        "HOME": str(state_dir / "home"),
+        "HERMES_HOME": str(state_dir / "state"),
+        "TALARIA_WEB_STATE_DIR": str(state_dir / "state"),
+        "TALARIA_WEB_DEFAULT_WORKSPACE": str(state_dir / "workspace"),
+        "TALARIA_WEB_HOST": host,
+        "TALARIA_WEB_PORT": str(port),
+        "TALARIA_WEB_PASSWORD": password,
+        "TALARIA_WEB_SKIP_ONBOARDING": "1",
+        "TALARIA_WEB_TEST_NETWORK_BLOCK": "1",
+        "TALARIA_WEB_SIDECAR_COMMAND": json.dumps([python, str(WEB / "sidecar/scripts/replay_sidecar.py")]),
+        # `serve` in worker mode: the launcher form clones and installs hermes-agent into the temp state.
+        "TALARIA_WEB_WORKER": "1",
+    }
+    with log.open("w") as output:
+        server = subprocess.Popen(
+            [node, str(dist), "serve"], cwd=WEB, env=env, stdin=subprocess.DEVNULL, stdout=output,
+            stderr=subprocess.STDOUT, start_new_session=True,
+        )
+    (state_dir / "server.json").write_text(json.dumps({"pid": server.pid, "port": port, "host": host, "password": password}))
+    if not ready(url, password, server):
+        tail = log.read_text(errors="replace").splitlines()[-80:]
+        stop(state_dir)
+        raise Failure("the server did not become ready; last 80 log lines:\n" + "\n".join(tail))
+    print(json.dumps({"url": url, "password": password, "pid": server.pid, "stateDir": str(state_dir), "log": str(log)}))
+    print(f"Stop it with: {Path(__file__).resolve()} stop {state_dir}", file=sys.stderr)
+
+
+def stop(state_dir):
+    state_dir = Path(state_dir).resolve()
+    record = state_dir / "server.json"
+    if not state_dir.name.startswith(STATE_PREFIX) or not record.is_file():
+        raise Failure(f"{state_dir} is not a phone test server state directory")
+    pid = json.loads(record.read_text())["pid"]
+    for sig, seconds in ((signal.SIGTERM, 15), (signal.SIGKILL, 5)):
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            break
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline and alive(pid):
+            time.sleep(0.1)
+        if not alive(pid):
+            break
+    else:
+        raise Failure(f"server {pid} survived SIGKILL; {state_dir} kept")
+    shutil.rmtree(state_dir)
+
+
+def alive(pid):
+    try:
+        # A child of this process (a failed boot) must be reaped, or it lingers as a zombie that kill(0) still finds.
+        if os.waitpid(pid, os.WNOHANG)[0] == pid:
+            return False
+    except ChildProcessError:
+        pass
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest="command", required=True)
+    start_parser = commands.add_parser("start")
+    start_parser.add_argument("--no-build", action="store_true", help="skip npm ci and the builds (caller just built)")
+    start_parser.add_argument("--host", help="bind this address instead of the Tailscale IPv4 (loopback for tests)")
+    start_parser.add_argument("--tailscale", default=shutil.which("tailscale") or "tailscale", help="tailscale CLI path")
+    stop_parser = commands.add_parser("stop")
+    stop_parser.add_argument("state_dir")
+    args = parser.parse_args()
+    try:
+        start(args) if args.command == "start" else stop(args.state_dir)
+    except (Failure, subprocess.CalledProcessError, OSError, ValueError) as error:
+        print(f"phone-test-server: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
