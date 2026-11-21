@@ -1,1 +1,13 @@
-{"skip": "Removes contract, server, Web and App handling of sidecar outcomes no supported Agent produces; no user-visible behavior changes."}
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "On a server still running a Hermes Agent older than v0.23.0, a chat the App cannot reattach now says its Agent is unavailable instead of pointing you to the Agent's command line.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}
