@@ -112,10 +112,13 @@ def clean_routes(backend: str, block: dict, current: dict) -> dict:
                 raise InvalidParams("Unknown service tier") from None
             if parsed is None or parsed and parsed not in STATIC_TIERS:
                 raise InvalidParams("Unknown service tier")
+        # TAL-2207, TAL-2580: a stored key or hidden request override (header credentials) goes only to the
+        # provider and endpoint it was saved for.
+        same_endpoint = all(str(row.get(key) or "").strip() == str(source.get(key) or "").strip() for key in ("provider", "base_url"))
+        if not same_endpoint and "request_overrides" not in entry:
+            row.pop("request_overrides", None)
         if entry.get("api_key_clear") or not entry.get("api_key"):
             row.pop("api_key", None)
-            # TAL-2207: a stored key goes only to the provider and endpoint it was saved for.
-            same_endpoint = all(str(row.get(key) or "").strip() == str(source.get(key) or "").strip() for key in ("provider", "base_url"))
             if not entry.get("api_key_clear") and same_endpoint and source.get("api_key"):
                 row["api_key"] = source["api_key"]
         if "fallback_providers" in row and not isinstance(row["fallback_providers"], list):

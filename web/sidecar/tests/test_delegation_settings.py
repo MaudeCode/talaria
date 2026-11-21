@@ -65,9 +65,15 @@ with patch.object(socket.socket, 'connect', side_effect=AssertionError('No netwo
     # TAL-2207: a stored key goes only to the endpoint it was saved for; a new provider or base URL gets only a key it is sent.
     edit = {key: value for key, value in row.items() if key != 'api_key'}
     assert delegation.clean_routes('model_map', {'options': [edit]}, block)['options'][0]['api_key'] == 'private-synthetic'
+    form = {key: value for key, value in edit.items() if key != 'request_overrides'}
+    assert delegation.clean_routes('model_map', {'options': [form]}, block)['options'][0]['request_overrides'] == stored['options'][0]['request_overrides']
     for change in ({'base_url': 'https://other.invalid/v1'}, {'provider': 'anthropic'}):
         assert 'api_key' not in delegation.clean_routes('model_map', {'options': [{**edit, **change}]}, block)['options'][0], change
         assert delegation.clean_routes('model_map', {'options': [{**edit, **change, 'api_key': 'new-synthetic'}]}, block)['options'][0]['api_key'] == 'new-synthetic'
+        # TAL-2580: hidden request overrides (header credentials) stay with the old endpoint; sent ones are kept.
+        assert 'request_overrides' not in delegation.clean_routes('model_map', {'options': [{**form, **change}]}, block)['options'][0], change
+        sent = {'headers': {'X-Api-Key': 'new-header'}}
+        assert delegation.clean_routes('model_map', {'options': [{**form, **change, 'request_overrides': sent}]}, block)['options'][0]['request_overrides'] == sent
     # TAL-2059: a stored backend opt-in and a hand-written key survive a rename and a model edit; a key that is
     # neither core nor declared by the backend is refused.
     declares = hasattr(DelegationProvider, 'route_keys')
