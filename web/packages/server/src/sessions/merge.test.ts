@@ -578,6 +578,19 @@ describe('compaction markers (TAL-305)', () => {
     for (const i of [0, 1, 3, 6, 7]) expect(out[i]).toBe(rows[i])
   })
 
+  it('hides the Agent\'s interrupt notice and its compaction copy, never an interrupted reply (TAL-2620)', () => {
+    const waiting = 'Operation interrupted: waiting for model response (14.7s elapsed).'
+    const cases: [Record<string, unknown>, boolean][] = [
+      [{ role: 'assistant', content: waiting, display_metadata: { interrupted: true } }, true],
+      [{ role: 'assistant', content: `Operation interrupted.\n${waiting}` }, true],
+      [{ role: 'assistant', content: 'Partial answer the model streamed before the stop.', display_metadata: { interrupted: true } }, false],
+      [{ role: 'assistant', content: 'The log said Operation interrupted: waiting for model response.' }, false],
+      [{ role: 'assistant', content: `${waiting}\nThen the real reply.` }, false],
+    ]
+    const out = withMarkerKinds(cases.map(([row]) => row), {})
+    cases.forEach(([row, hidden], i) => { expect(out[i], String(row.content)).toEqual(hidden ? { ...row, display_kind: 'hidden' } : row) })
+  })
+
   it('never counts the Agent\'s failed-turn boundary as the turn\'s answer (TAL-815)', () => {
     const boundary = { role: 'assistant', content: 'Your request was not processed. Send it again if you still want me to carry it out.', display_kind: 'failed_turn' }
     expect(assistantReplyAddedAfterCurrentTurn([{ role: 'user', content: 'go' }, boundary], [], 'go')).toBe(false)
