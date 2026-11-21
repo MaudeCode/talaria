@@ -36,3 +36,24 @@ def test_a_manual_rename_replaces_a_generated_title(hermes_home) -> None:
         assert _title(hermes_home, "webui-1") == ("Regenerated", "user")
     finally:
         proc.close()
+
+
+def test_a_local_summary_title_is_derived_so_a_later_model_title_replaces_it(hermes_home) -> None:
+    """TAL-2588: the server's local fallback summary syncs with ``derived`` provenance, below the ``llm`` rank, so the
+    model title a later refresh produces still lands. The collision retry keeps the same provenance."""
+    _seed(hermes_home, "webui-1")
+    _seed(hermes_home, "webui-2")
+    proc = SidecarProcess(hermes_home)
+    try:
+        assert proc.result("state_db.sync_title", {"profile_home": str(hermes_home), "session_id": "webui-2", "title": "Fix the build"}) == {"ok": True}
+        params = {"profile_home": str(hermes_home), "session_id": "webui-1"}
+        result = proc.result("state_db.sync_title", {**params, "title": "Fix the build", "title_source": "derived"})
+        assert_matches("state_db.sync_title", result)
+        assert _title(hermes_home, "webui-1") == ("Fix the build #2", "derived")
+        assert proc.result("state_db.sync_title", {**params, "title": "Repair the CI pipeline", "title_source": "llm"}) == {"ok": True}
+        assert _title(hermes_home, "webui-1") == ("Repair the CI pipeline", "llm")
+        # A summary never takes back a model title.
+        assert proc.result("state_db.sync_title", {**params, "title": "Fix the build again", "title_source": "derived"}) == {"ok": True}
+        assert _title(hermes_home, "webui-1") == ("Repair the CI pipeline", "llm")
+    finally:
+        proc.close()

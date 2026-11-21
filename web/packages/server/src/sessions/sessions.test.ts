@@ -4499,6 +4499,24 @@ describe('runtime seams from review round 10', () => {
     }
   })
 
+  it('a generated title syncs to state.db as a model title, and a local summary as derived (TAL-2588)', async () => {
+    sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Run chown on the volume.' }], final_response: 'Run chown on the volume.', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+    const titled = async (aux: () => { model: string; text: string; usage: null }): Promise<Json | undefined> => {
+      sidecar.respond('aux.complete', aux)
+      const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+      const started = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'fix the docker volume permissions' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+      return synced.findLast((params) => params.session_id === sid)
+    }
+    await s.deps.settings.save({ sync_to_insights: true })
+    try {
+      expect(await titled(() => { throw new Error('no aux model') })).toMatchObject({ title: 'fix docker volume permissions', manual: false, title_source: 'derived' })
+      expect(await titled(() => ({ model: 'aux', text: 'Docker volume permissions', usage: null }))).toMatchObject({ title: 'Docker volume permissions', manual: false, title_source: 'llm' })
+    } finally {
+      await s.deps.settings.save({ sync_to_insights: false })
+    }
+  })
+
   it('a settled turn syncs the session usage to state.db only when sync_to_insights is on', async () => {
     const usageSynced: Json[] = []
     sidecar.respond('state_db.sync_usage', (params) => { usageSynced.push(params); return { ok: true as const } })

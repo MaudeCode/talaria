@@ -122,21 +122,22 @@ def set_message_count(db, session_id: str, count: int) -> None:
     db._execute_write(lambda conn: conn.execute("UPDATE sessions SET message_count = ? WHERE id = ?", (count, session_id)))
 
 
-def set_title(db, session_id: str, title: str, *, manual: bool) -> None:
-    """A manual title lands with ``user`` provenance; an automatic one is ``llm`` and never replaces a user's. A title
-    another session holds raises ``ValueError``."""
+def set_title(db, session_id: str, title: str, *, manual: bool, derived: bool = False) -> None:
+    """A manual title lands with ``user`` provenance. An automatic one is ``llm``, or ``derived`` for a local summary,
+    which ranks below ``llm`` so a later model title replaces it; neither replaces a user's. A title another session
+    holds raises ``ValueError``."""
     if native():
         from persistence.conversation.sessions import TitleSource
 
         if manual:
             db.sessions.set_title(session_id, title)
         else:
-            db.sessions.set_auto_title(session_id, title, source=TitleSource.LLM)
+            db.sessions.set_auto_title(session_id, title, source=TitleSource.DERIVED if derived else TitleSource.LLM)
         return
     if manual:
         db.set_session_title(session_id, title)
     else:
-        db.set_auto_title(session_id, title, source=getattr(db, "TITLE_SOURCE_LLM", "llm"))
+        db.set_auto_title(session_id, title, source=getattr(db, "TITLE_SOURCE_DERIVED", "derived") if derived else getattr(db, "TITLE_SOURCE_LLM", "llm"))
 
 
 def next_title_in_lineage(db, title: str) -> str:

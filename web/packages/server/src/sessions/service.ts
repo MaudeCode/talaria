@@ -155,6 +155,9 @@ interface SessionGateReads {
   existing: () => Promise<Set<string>>
 }
 
+/** The Agent's title provenance, lowest to highest authority: `derived` < `llm` < `user`. */
+export type TitleProvenance = 'derived' | 'llm' | 'user'
+
 export interface SessionServiceDeps {
   /** TAL-259: epoch seconds of the state directory's `recovery_stamping_since` marker. */
   recoveryStampingSince: () => Promise<number>
@@ -228,8 +231,11 @@ export interface SessionServiceDeps {
   journal?: RunJournal
   hermesHome: string
   home: string
-  /** Sync title-only metadata to state.db when `sync_to_insights` is on; `manual` marks a user-requested title (rename or regenerate). */
-  syncTitle: (session: Session, manual?: boolean) => Promise<void>
+  /**
+   * Sync title-only metadata to state.db when `sync_to_insights` is on. `user` marks a user-requested title (rename or
+   * regenerate); an automatic one is `llm` (the default) or `derived` for a local summary, which a model title replaces.
+   */
+  syncTitle: (session: Session, provenance?: TitleProvenance) => Promise<void>
   /** TAL-591: the background title job for a CLI session a mutation just claimed (Python `import_cli` queued one). */
   titleClaimed?: (session: Session) => void
   /** Context length lookup for a model (checkpoint 7 wires the catalog). */
@@ -2179,7 +2185,7 @@ export class SessionService {
       await this.store.save(current, { touchUpdatedAt: false })
     })
     // An explicit regenerate is user-requested, so state.db takes it over a manual name.
-    await this.deps.syncTitle(current, true)
+    await this.deps.syncTitle(current, 'user')
     this.publish(eventReason, current.profile, current.session_id)
     return current
   }
@@ -2191,7 +2197,7 @@ export class SessionService {
       applySessionTitleRename(s, rawTitle)
       await this.store.save(s)
     })
-    await this.deps.syncTitle(s, true)
+    await this.deps.syncTitle(s, 'user')
     this.publish('session_rename', s.profile, s.session_id)
     return { session: (await this.wireRow(s)) }
   }

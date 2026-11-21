@@ -15,7 +15,7 @@ import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { runtimeFailureDetails, SidecarError } from '../sidecar/client.js'
 import type { SessionStore } from './store.js'
-import type { SessionService } from './service.js'
+import type { SessionService, TitleProvenance } from './service.js'
 import type { StateDbRead, StateDbSettlementRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated, UNSAVED_REPLY } from './service.js'
 import type { SessionEventBus } from './events.js'
@@ -122,7 +122,7 @@ export interface TurnRunnerDeps {
   /** Terminal relay phase per stream (`completed`/`cancelled`/`failed`); Python `note_talaria_terminal`. */
   onTerminal?: (streamId: string, phase: string) => void
   /** Insights title sync (Python `sync_session_title`), gated on `sync_to_insights` by the runtime. */
-  syncTitle?: (session: Session) => Promise<void>
+  syncTitle?: (session: Session, provenance?: TitleProvenance) => Promise<void>
   /** Insights usage sync (Python `sync_session_usage`) after a settled turn, gated on `sync_to_insights` by the runtime. */
   syncUsage?: (session: Session, model: string | null) => Promise<void>
   /** Whether the profile's deletion RPC is in flight (its home must not be entered by a new turn). */
@@ -2244,8 +2244,9 @@ export class TurnRunner {
         current.title = next
         markSessionTitleGenerated(current)
         await this.deps.store.save(current, { touchUpdatedAt: false })
-        // Python `sync_session_title` after generation: the state.db row follows when `sync_to_insights` is on.
-        await this.deps.syncTitle?.(current)
+        // Python `sync_session_title` after generation: the state.db row follows when `sync_to_insights` is on. A local
+        // summary is `derived`, so a later model title still replaces it there (TAL-2588).
+        await this.deps.syncTitle?.(current, source === 'fallback' ? 'derived' : 'llm')
         this.deps.events.publish('title', { profile: current.profile, sessionId })
         effective = next
         wrote = true
