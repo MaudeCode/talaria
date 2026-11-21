@@ -25,7 +25,8 @@ const TYPING_CALL_RE = /(?<![\p{L}\p{N}_])(fill_input|type_text)(?![\p{L}\p{N}_]
 const STRING_PREFIX_RE = /[fFrRbBuU]{1,2}(?=['"])/y
 /** A keyword argument's `=`, right after its name. */
 const KEYWORD_RE = /\s*=(?!=)/y
-const DEF_RE = /^\s*(?:async\s+)?def\s+([\p{L}_][\p{L}\p{N}_]*)\s*\(/u
+/** A function or class the snippet defines: its name, up to its parameters (or a class's bases or colon). */
+const DEF_RE = /^\s*(?:async\s+)?(?:def|class)\s+([\p{L}_][\p{L}\p{N}_]*)\s*[(:]/u
 const IMPORT_RE = /^\s*(?:from|import)(?![\p{L}\p{N}_])/u
 /** Words a typed expression uses that bind nothing. */
 const KEYWORDS = new Set(['if', 'else', 'and', 'or', 'not', 'in', 'is', 'for', 'await', 'None', 'True', 'False'])
@@ -368,7 +369,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
     // `add = pw.append`, a `def`) may carry the value through each call too.
     const bound = uses.some((use) => use.defines || !use.called)
     for (const { at, k, def, defines, params, called } of uses) {
-      // A function the snippet defines under the name produces the value.
+      // A function or class the snippet defines under the name produces the value, a class through any of its methods.
       if (defines) { maskFunction(k); continue }
       if (def && enclosing[at] === params && !defs.has(def[1]!)) {
         // A parameter of a function the snippet defines is bound by every call of it.

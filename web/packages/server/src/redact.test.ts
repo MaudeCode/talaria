@@ -796,6 +796,7 @@ describe('values a browser_exec call types into a page (TAL-2299)', () => {
     ['a .value assignment inside a string that reads a variable', `pw = 'hunter2'\nexec('el.value = pw')`, `pw = '***'\nexec('***')`],
     ['a helper called inside a string', `exec("fill_input('#pass', 'hunter2')")`, `exec('***')`],
     ['a function the snippet defines to produce the value', `def password():\n    return 'hunter2'\n\ntype_text(password())\ngoto('https://example.com')`, `def password():\n    return '***'\n\ntype_text('***')\ngoto('https://example.com')`],
+    ['a class the snippet defines to produce the value', `class Field:\n    def __str__(self):\n        return 'hunter2'\ntype_text(str(Field()))`, `class Field:\n    def __str__(self):\n        return '***'\ntype_text('***')`],
     ['a container the snippet fills', `pw = []\npw.append('hunter2')\ntype_text(''.join(pw))`, `pw = []\npw.append('***')\ntype_text('***')`],
     ['a container filled through an alias', `pw = []\nadd = pw.append\nadd('hunter2')\ntype_text(''.join(pw))`, `pw = []\nadd = pw.append\nadd('***')\ntype_text('***')`],
     ['a splatted list', `args = ['#pass', 'hunter2']\nfill_input(*args)`, `args = ['***', '***']\nfill_input(*'***')`],
