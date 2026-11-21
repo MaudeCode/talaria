@@ -336,8 +336,10 @@ struct ProviderQuotaWindowsView: View {
 
     // MARK: Credits (OpenRouter)
 
+    /// The server's percent and meter of a capped account, then its remaining amount and usage/cap, one line each.
     @ViewBuilder
     private func credits(_ quota: ProviderQuotaAmount, state: ProviderQuotaPresentationState) -> some View {
+        let amounts = [quota.remainingLabel, quota.usageLabel].compactMap(\.self)
         if let percent = state.percent {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
@@ -351,16 +353,21 @@ struct ProviderQuotaWindowsView: View {
                         .foregroundStyle(.secondary)
                 }
                 ProgressRailView(percent: percent, tint: tint(for: state), height: 8)
-                if let remaining = quota.limitRemaining {
-                    Text("\(remaining.formatted()) credits remaining")
-                        .font(.caption)
+                ForEach(amounts, id: \.self) { line in
+                    Text(line)
+                        .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             }
             .accessibilityElement(children: .combine)
-        } else if let remaining = quota.limitRemaining {
-            Text("\(remaining.formatted()) credits remaining")
-                .font(.subheadline)
+        } else if !amounts.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(amounts, id: \.self) { line in
+                    Text(line)
+                        .font(.subheadline.monospacedDigit())
+                }
+            }
+            .accessibilityElement(children: .combine)
         } else if source.status == "available" {
             statusLine
         }

@@ -127,13 +127,55 @@
       },
       "is_stale": false,
       "stale_since": "2026-09-28T08:14:30Z"
+    },
+    {
+      "computed_at": "2026-09-28T08:00:00Z",
+      "source_id": "qsrc_98e0a65b9b4e4c9d95f0b99829883260",
+      "provider_id": "openrouter",
+      "provider_label": "OpenRouter",
+      "account_label": "OpenRouter",
+      "status": "available",
+      "supported": true,
+      "message": "OpenRouter quota status loaded.",
+      "is_active_provider": false,
+      "quota": {
+        "limit_remaining": 12.5,
+        "usage": 7.5,
+        "limit": 20,
+        "currency": "USD",
+        "is_capped": true,
+        "percent_used": 37.5,
+        "percent_remaining": 62.5,
+        "over_limit": false
+      },
+      "windows": [],
+      "balances": [],
+      "plan": null,
+      "details": [],
+      "unavailable_reason": null,
+      "retry_after": null,
+      "fetched_at": null,
+      "pace_window_index": null,
+      "headline_window_index": null,
+      "provider_headline": true,
+      "display_name": "OpenRouter",
+      "status_message": "OpenRouter quota status loaded.",
+      "display_level": "healthy",
+      "session_window_index": null,
+      "weekly_window_index": null,
+      "urgency": {
+        "remaining": "healthy",
+        "pace": "healthy"
+      },
+      "is_stale": false,
+      "stale_since": "2026-09-28T08:15:00Z"
     }
   ],
   "retained_display_level": null,
   "sidebar_source_ids": [],
   "sidebar_can_pin": true,
   "summary": {
-    "connected": 1,
+    "connected": 2,
     "lowest": {
       "source_id": "qsrc_69e3029fba20a8b0ea82fff362e093f5",
       "percent_remaining": 68,

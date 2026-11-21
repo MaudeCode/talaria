@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "OpenRouter credits show your remaining balance and what you have used of your credit limit in dollars, beside the percentage.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

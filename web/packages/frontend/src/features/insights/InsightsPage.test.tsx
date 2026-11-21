@@ -45,7 +45,7 @@ const quotas = ProviderQuotasSchema.parse({
       ],
     },
     { source_id: 'qsrc_plain', provider_id: 'openai-codex', provider_label: 'OpenAI Codex', status: 'available', windows: [{ label: 'Session', used_percent: 40, remaining_percent: 60, reset_at: null, detail: null, window_seconds: null, pace: null, forecast: null }] },
-    { source_id: 'qsrc_credits', provider_id: 'openrouter', provider_label: 'OpenRouter', status: 'available', quota: { limit_remaining: 12.5, usage: 7.5, limit: 20 } },
+    { source_id: 'qsrc_credits', provider_id: 'openrouter', provider_label: 'OpenRouter', status: 'available', quota: { limit_remaining: 12.5, usage: 7.5, limit: 20, currency: 'USD', is_capped: true, percent_used: 37.5, percent_remaining: 62.5, over_limit: false } },
     { source_id: 'qsrc_down', provider_id: 'nous', provider_label: 'Nous', status: 'stale', status_message: 'Provider data is temporarily unavailable.', urgency: { remaining: 'stale', pace: 'stale' },
       windows: [{ label: 'Session', used_percent: 10, remaining_percent: 90, reset_at: null, detail: null, window_seconds: null, pace: null, forecast: null, urgency: { remaining: 'healthy', pace: 'healthy' }, display_level: 'stale' }] },
     { source_id: 'qsrc_none', provider_id: 'google', provider_label: 'Google', status: 'unsupported', status_message: 'No verified server-side quota or balance endpoint is available for Google.', windows: [] },

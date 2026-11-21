@@ -145,6 +145,40 @@ final class InsightsHostedTests: XCTestCase {
         XCTAssertTrue(labels.contains("Updated 3 hr. ago"), labels)
     }
 
+    /// TAL-45: a capped credit account reads the server percent with its remaining amount and usage of the cap; an
+    /// uncapped one reads only the amount it has, with no meter.
+    func testCreditsShowTheServerPercentWithRemainingUsageAndCap() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        var body = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: root.appendingPathComponent("contracts/fixtures/provider-quotas.json"))
+        ) as? [String: Any])
+        body["sources"] = (body["sources"] as? [[String: Any]])?.filter { $0["provider_id"] as? String == "openrouter" }
+        let capped = try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: body), encoding: .utf8))
+        func uncapped(_ quota: String) -> String {
+            """
+            {"version": 1, "scope_id": "qscope_test", "profile_id": "default", "sources": [{
+              "source_id": "qsrc_credits", "provider_id": "openrouter", "provider_label": "OpenRouter", "supported": true,
+              "status": "available", "windows": [], "quota": \(quota)}]}
+            """
+        }
+        let fixtureTime = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-28T08:05:00Z"))
+        let cases = [
+            ("capped", capped, "Credits, 62.5%, remaining, $12.50 remaining, $7.50 used of $20.00"),
+            ("remaining-only", uncapped(#"{"limit_remaining": 12.5, "usage": null, "limit": null, "currency": "USD", "is_capped": false, "percent_used": null, "percent_remaining": null, "over_limit": false}"#), "$12.50 remaining"),
+            ("usage-only", uncapped(#"{"limit_remaining": null, "usage": 7.5, "limit": null, "currency": "USD", "is_capped": false, "percent_used": null, "percent_remaining": null, "over_limit": false}"#), "$7.50 used"),
+        ]
+        for (name, json, expected) in cases {
+            let windows = try Self.quotaWindowsView(json, referenceDate: fixtureTime)
+            let window = try hostWindow(List { windows })
+            let labels = HostedAccessibility.labels(in: window)
+            XCTAssertTrue(labels.contains(expected), "\(name): missing \(expected) in:\n\(labels.joined(separator: "\n"))")
+            if name != "capped" {
+                XCTAssertFalse(labels.contains { $0.contains("%") }, "\(name): a percent without a cap:\n\(labels.joined(separator: "\n"))")
+            }
+            attachHostedScreenshot(window, name: "quota-credits-\(name)")
+        }
+    }
+
     func testDetailPinActionReflectsTheSlots() throws {
         let pinned = try hostWindow(try Self.detail(Self.plainSource, isPinned: true))
         XCTAssertTrue(HostedAccessibility.labels(in: pinned).contains("Unpin from Sidebar"))

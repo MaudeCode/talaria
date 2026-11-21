@@ -1384,11 +1384,24 @@ export const QuotaWindowSchema = z.looseObject({
   pace_needs_refresh: z.boolean().optional().describe('TAL-1533, `/api/provider/quotas` only: `pace` describes a window that reset by this read; hide it until a refresh brings the new window\'s pace.'),
 })
 const QuotaWindowIndex = z.number().int().nullable().optional()
+/**
+ * TAL-45: OpenRouter's credit block. The amounts are the provider's own (null when missing or nonfinite; past the cap as
+ * reported), in `currency`. The percents of the cap are clamped to 0–100: remaining from `limit_remaining`, else the cap
+ * less `usage`; null when uncapped or neither amount is known.
+ */
+export const QuotaCreditsSchema = z.looseObject({
+  limit_remaining: NullableNumber, usage: NullableNumber, limit: NullableNumber,
+  currency: NullableString.describe('ISO 4217 code of the amounts (`USD` for OpenRouter); null when the unit is unknown.'),
+  is_capped: z.boolean().describe('`limit` is a positive cap.'),
+  percent_used: NullableNumber, percent_remaining: NullableNumber,
+  over_limit: z.boolean().describe('A capped account used past its cap.'),
+})
+export type QuotaCredits = z.infer<typeof QuotaCreditsSchema>
 export const QuotaSourceSchema = z.looseObject({
   plan_usage: PlanUsageSchema.nullable().optional(), plan_stale: z.boolean().optional(),
   computed_at: z.string().optional().describe('Original reference time of this source, retained with stale windows.'),
   source_id: z.string(), provider_id: z.string().optional(), provider_label: z.string().optional(), account_label: z.string().optional(), status: z.string().optional(), supported: z.boolean().optional(), message: z.string().nullable().optional(),
-  is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
+  is_active_provider: z.boolean().optional(), quota: QuotaCreditsSchema.nullable().optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
   pace_window_index: QuotaWindowIndex.describe('The window a pace-coloured widget shows: the weekly one, else the first 5h/session window.'),
   headline_window_index: QuotaWindowIndex.describe('TAL-1870: the window a one-figure row shows: the pace window, else the first; null without windows.'),
   provider_headline: z.boolean().optional().describe('TAL-2135: the source a provider\'s one-figure row shows among its accounts in this read: the one whose headline window has the least remaining, else its first.'),
@@ -1411,7 +1424,7 @@ export const QuotaAccountLimitsSchema = z.looseObject({
 export const ProviderQuotaSchema = z.looseObject({
   computed_at: z.string().describe('ISO-8601 UTC reference time of every window `pace`.'),
   ok: z.boolean(), provider: NullableString, display_name: NullableString, supported: z.boolean(), status: z.string(), label: z.string().optional(), message: z.string(),
-  quota: Json.describe('OpenRouter credits (`limit_remaining`, `usage`, `limit`), else null.'),
+  quota: QuotaCreditsSchema.nullable().describe('OpenRouter credits, else null.'),
   account_limits: QuotaAccountLimitsSchema.nullable().optional(),
 })
 /** Python `get_provider_quotas`: the stable identity envelope the iOS quota widget persists (`scope_id`/`profile_id`). */

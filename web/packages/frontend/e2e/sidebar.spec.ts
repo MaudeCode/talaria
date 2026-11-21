@@ -390,7 +390,7 @@ const quotas = {
     { source_id: 'qsrc_weekly', provider_id: 'anthropic', provider_label: 'Claude', display_name: 'Claude', status: 'available', display_level: 'warning', pace_window_index: 1, headline_window_index: 1, windows: [quotaWindow('Session', 25, 'healthy', 40), quotaWindow('Weekly', 70, 'warning', 64)] },
     { source_id: 'qsrc_stale', provider_id: 'openai-codex', provider_label: 'Codex', account_label: 'Work', display_name: 'Codex · Work', status: 'stale', status_message: 'Last known usage', display_level: 'stale', pace_window_index: 0, headline_window_index: 0, windows: [quotaWindow('Weekly', 40, 'stale', null)] },
     { source_id: 'qsrc_down', provider_id: 'zai', provider_label: 'Z.ai', display_name: 'Z.ai', status: 'unavailable', status_message: 'Sign in again', display_level: 'unavailable', pace_window_index: 0, headline_window_index: 0, windows: [quotaWindow('Weekly', 90, 'unavailable', null)] },
-    { source_id: 'qsrc_credits', provider_id: 'openrouter', provider_label: 'OpenRouter', display_name: 'OpenRouter', status: 'available', quota: { limit_remaining: 12.5 }, display_level: 'healthy', pace_window_index: null, headline_window_index: null, windows: [] },
+    { source_id: 'qsrc_credits', provider_id: 'openrouter', provider_label: 'OpenRouter', display_name: 'OpenRouter', status: 'available', quota: { limit_remaining: 12.5, usage: null, limit: null, currency: 'USD', is_capped: false, percent_used: null, percent_remaining: null, over_limit: false }, display_level: 'healthy', pace_window_index: null, headline_window_index: null, windows: [] },
   ],
 }
 const pin = (page: Page, sources: string[]) => page.request.post('/api/settings', { data: { sidebar_quota_sources: sources } })

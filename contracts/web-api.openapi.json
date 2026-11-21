@@ -127153,7 +127153,97 @@
                       "type": "string"
                     },
                     "quota": {
-                      "description": "OpenRouter credits (`limit_remaining`, `usage`, `limit`), else null."
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "limit_remaining": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "usage": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "limit": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "currency": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "ISO 4217 code of the amounts (`USD` for OpenRouter); null when the unit is unknown."
+                            },
+                            "is_capped": {
+                              "type": "boolean",
+                              "description": "`limit` is a positive cap."
+                            },
+                            "percent_used": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "percent_remaining": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "over_limit": {
+                              "type": "boolean",
+                              "description": "A capped account used past its cap."
+                            }
+                          },
+                          "required": [
+                            "limit_remaining",
+                            "usage",
+                            "limit",
+                            "currency",
+                            "is_capped",
+                            "percent_used",
+                            "percent_remaining",
+                            "over_limit"
+                          ],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "OpenRouter credits, else null."
                     },
                     "account_limits": {
                       "anyOf": [
@@ -127621,7 +127711,8 @@
                     "display_name",
                     "supported",
                     "status",
-                    "message"
+                    "message",
+                    "quota"
                   ],
                   "additionalProperties": {}
                 }
@@ -127915,7 +128006,98 @@
                           "is_active_provider": {
                             "type": "boolean"
                           },
-                          "quota": {},
+                          "quota": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "limit_remaining": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "usage": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "limit": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "currency": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "ISO 4217 code of the amounts (`USD` for OpenRouter); null when the unit is unknown."
+                                  },
+                                  "is_capped": {
+                                    "type": "boolean",
+                                    "description": "`limit` is a positive cap."
+                                  },
+                                  "percent_used": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "percent_remaining": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "over_limit": {
+                                    "type": "boolean",
+                                    "description": "A capped account used past its cap."
+                                  }
+                                },
+                                "required": [
+                                  "limit_remaining",
+                                  "usage",
+                                  "limit",
+                                  "currency",
+                                  "is_capped",
+                                  "percent_used",
+                                  "percent_remaining",
+                                  "over_limit"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "windows": {
                             "type": "array",
                             "items": {

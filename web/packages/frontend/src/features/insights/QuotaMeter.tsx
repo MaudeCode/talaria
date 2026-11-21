@@ -38,8 +38,8 @@ export function quotaStatusText(s: QuotaSource): string {
 
 /** OpenRouter-style credits, for a source with no windows to show a percent from. */
 export function quotaCreditsText(s: QuotaSource, locale: string): string | null {
-  const quota = s.quota as { limit_remaining?: unknown } | null | undefined
-  return typeof quota?.limit_remaining === 'number' ? m.provider_quota_credits_remaining({ amount: new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(quota.limit_remaining) }) : null
+  const remaining = s.quota?.limit_remaining
+  return typeof remaining === 'number' ? m.provider_quota_credits_remaining({ amount: new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(remaining) }) : null
 }
 
 /** One window's server level and the server percents for the mode; the server ships both percents normalized. */
