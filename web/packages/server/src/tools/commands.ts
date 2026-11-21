@@ -98,6 +98,23 @@ const OWNER_ONLY_MESSAGE = 'Only the server owner can open the terminal.'
 export const commandCatalog = (agent: readonly AgentCommand[], owner = true): Command[] => buildCatalog(agent).commands
   .map((command) => owner || !OWNER_COMMANDS.has(command.name) ? command : { ...command, clients: [], unsupported_message: OWNER_ONLY_MESSAGE })
 
+/** The most rows a prefix query returns (TAL-2314), applied after ranking so a late exact name is kept. */
+const SUGGESTION_LIMIT = 40
+
+/**
+ * TAL-2314: the slash-command palette's rows for a typed `prefix`. Entries `client` runs (without one, entries some client
+ * runs) whose name or alias starts with `prefix`, ignoring case, each once in catalog order, except that the entry whose
+ * name or alias equals `prefix` leads. A typed name belongs to one entry, reserved as the catalog reserves it (TAL-1577),
+ * so a literal separator spelling keeps its own command.
+ */
+export function suggestCommands(catalog: readonly Command[], prefix: string, client?: CommandClient): Command[] {
+  const p = prefix.toLowerCase()
+  const names = (c: Command) => [c.name, ...c.aliases].map((n) => n.toLowerCase())
+  const matches = catalog.filter((c) => (client ? c.clients.includes(client) : c.clients.length > 0) && names(c).some((n) => n.startsWith(p)))
+  const exact = matches.filter((c) => names(c).includes(p))
+  return [...exact, ...matches.filter((c) => !exact.includes(c))].slice(0, SUGGESTION_LIMIT)
+}
+
 /** What admission and classification answer for a command token when the Agent registry cannot be read. */
 export const COMMAND_REGISTRY_UNAVAILABLE = 'Slash commands are unavailable because the Agent command registry could not be loaded.'
 

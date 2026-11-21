@@ -923,7 +923,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
         onFocus={() => { setFocusWithin(true); wake() }}
         onPointerDown={() => { pressedInBox.current = true; wake() }}
       >
-        {palette.open && <CommandPaletteList items={palette.items} active={palette.active} listId={palette.listId} onPick={applySuggestion} onHover={palette.setActive} />}
+        {palette.open && <CommandPaletteList items={palette.items} stale={palette.stale} active={palette.active} listId={palette.listId} onPick={applySuggestion} onHover={palette.setActive} />}
         {dragOver && <div className="drop-hint active" id="dropHint" aria-hidden="true">{m.drop_files_to_attach()}</div>}
         {!clarify && <AttachmentTray files={files} placement="card" onRemove={removeFile} onRetry={retryFile} onEditPaste={editPaste} />}
         <textarea

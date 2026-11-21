@@ -22,7 +22,7 @@ import { rememberConnectorLogos } from '../sessions/tool-display.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
 import { skillListing } from '../tools/skills.js'
-import { canonicalExecCommand, classifyCommand, COMMAND_REGISTRY_UNAVAILABLE, commandCatalog, commandToken, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
+import { canonicalExecCommand, classifyCommand, COMMAND_REGISTRY_UNAVAILABLE, commandCatalog, commandToken, SESSION_EXEC_COMMANDS, suggestCommands } from '../tools/commands.js'
 import { spokenText } from './tools-raw.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, forgetGatewayProbes, gatewayStatus, logCatalog, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { EXTERNALLY_MANAGED } from '../tools/gateway-lifecycle.js'
@@ -620,8 +620,9 @@ export const toolsRouter = os.router({
     delete: os.prompts.delete.handler(({ input, context: { ctx } }) => run(() => { deletePrompt(home(ctx), str(input.id).trim()); return { ok: true as const } })),
   },
   commands: {
-    list: os.commands.list.handler(({ context: { ctx } }) => run(async () => {
-      return { commands: commandCatalog((await agentCommands(ctx)) ?? [], await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))) }
+    list: os.commands.list.handler(({ input, context: { ctx } }) => run(async () => {
+      const commands = commandCatalog((await agentCommands(ctx)) ?? [], await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx)))
+      return { commands: input.prefix === undefined && input.client === undefined ? commands : suggestCommands(commands, input.prefix ?? '', input.client) }
     })),
     // TAL-1927: plain text needs neither the registry nor the owner check; the request guard already checked `session_id`.
     classify: os.commands.classify.handler(({ input, context: { ctx } }) => run(async () => {

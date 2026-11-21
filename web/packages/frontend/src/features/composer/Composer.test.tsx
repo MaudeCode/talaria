@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
-import type { CommandDecision, Session, Settings } from '../../contracts'
+import type { Command, CommandDecision, Session, Settings } from '../../contracts'
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
 import { dispatch, getStreamState, resetStreamStoreForTests, getTurnIntent } from '../../stream/store'
@@ -953,6 +953,53 @@ describe('Composer', () => {
     expect(box).toHaveValue('/branch ')
   })
 
+  // TAL-2314: the server answers each typed prefix with its ranked rows; without a prefix it returns the whole catalog.
+  const commandRows = (...names: string[]) => ({ commands: names.map((name): Command => ({ name, aliases: [], handler: 'client', clients: ['web', 'ios'], exec: false })) })
+  const settled = () => waitFor(() => expect(screen.getByRole('listbox')).not.toHaveAttribute('aria-busy', 'true'))
+
+  it.each(['Enter', 'Tab'])('%s picks the exact /mod the server ranks ahead of /model, and /mo keeps /model first (TAL-2314)', async (key) => {
+    const ranked: Record<string, string[]> = { mo: ['model', 'mod'], mod: ['mod', 'model'] }
+    vi.mocked(api.fetchCommands).mockImplementation((prefix?: unknown) => Promise.resolve(commandRows(...typeof prefix === 'string' ? ranked[prefix] ?? [] : ['model', 'mod'])))
+    renderComposer({ ...writable, is_streaming: false })
+    const box = screen.getByRole('textbox')
+    for (const [typed, picked] of [['/mo', '/model '], ['/mod', '/mod ']] as const) {
+      await userEvent.clear(box)
+      await userEvent.type(box, typed)
+      await screen.findByRole('option', { name: picked.trim() })
+      await settled()
+      fireEvent.keyDown(box, { key })
+      expect(box).toHaveValue(picked)
+    }
+  })
+
+  it('a slow answer never picks from another prefix, changes the typed text or runs anything (TAL-2314)', async () => {
+    const mo = deferred<ReturnType<typeof commandRows>>()
+    const mod = deferred<ReturnType<typeof commandRows>>()
+    vi.mocked(api.fetchCommands).mockImplementation((prefix?: unknown) => prefix === 'mo' ? mo.promise : prefix === 'mod' ? mod.promise : Promise.resolve(commandRows('model', 'mod')))
+    vi.mocked(api.startChat).mockClear()
+    const onLocalCommand = vi.fn(() => Promise.resolve(true))
+    renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, onLocalCommand)
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, '/m')
+    await screen.findByRole('option', { name: '/model' })
+    await settled()
+    // `/m`'s rows stay on screen, marked busy, while the newer prefixes load; no key or click picks from them.
+    await userEvent.type(box, 'od')
+    expect(screen.getByRole('listbox')).toHaveAttribute('aria-busy', 'true')
+    for (const key of ['ArrowDown', 'Tab']) fireEvent.keyDown(box, { key })
+    fireEvent.mouseDown(screen.getByRole('option', { name: '/model' }))
+    expect(box).toHaveValue('/mod')
+    // `/mo`'s answer arriving after `/mod`'s leaves the newer rows in place.
+    await act(async () => { mod.resolve(commandRows('mod', 'model')); await mod.promise })
+    await act(async () => { mo.resolve(commandRows('model', 'mod')); await mo.promise })
+    await settled()
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['/mod', '/model'])
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(box).toHaveValue('/mod ')
+    expect(onLocalCommand).not.toHaveBeenCalled()
+    expect(api.startChat).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['/agents', false],
     ['/agents foo', false],
@@ -980,14 +1027,14 @@ describe('Composer', () => {
 
   // TAL-314, TAL-1927: the server resolves a typed alias and says which client runs each command; the catalog only suggests.
   it('runs a typed alias as the server decides and refuses a command Web cannot run', async () => {
-    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'branch', aliases: ['fork'], handler: 'client', clients: ['web', 'ios'], exec: false }] })
+    vi.mocked(api.fetchCommands).mockImplementation((prefix) => Promise.resolve({ commands: ['f', 'fo', 'for', 'fork'].includes(prefix) ? [{ name: 'branch', aliases: ['fork'], handler: 'client', clients: ['web', 'ios'], exec: false }] : [] }))
     decide({ '/fork Copy': client('branch', 'Copy'), '/history': { kind: 'unsupported', name: 'history', message: '/history runs only in the Hermes CLI.' } })
     vi.mocked(api.startBackground).mockResolvedValue({ ok: true, task_id: 'bg1', stream_id: 'bgs', session_id: 'hidden' })
     vi.mocked(api.startChat).mockClear()
     const onLocalCommand = vi.fn((name: string) => Promise.resolve(name === 'branch'))
     renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, onLocalCommand)
     const box = screen.getByRole('textbox')
-    // The palette shows the server's entry once the catalog arrives.
+    // The palette shows the server's entry for the typed alias once it arrives.
     await userEvent.type(box, '/fo')
     expect(await screen.findByRole('option', { name: /\/branch/ })).toBeInTheDocument()
     await userEvent.clear(box)

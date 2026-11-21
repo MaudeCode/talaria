@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Typing a slash command's full name in Web now picks that command, not a longer one that starts the same way.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

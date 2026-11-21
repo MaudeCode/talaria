@@ -686,6 +686,49 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  it('lists the commands a client runs for a typed prefix, an exact name or alias first, ranked before the bound (TAL-2314)', async () => {
+    const row = (name: string, extra: Json = {}) => ({ name, description: `agent ${name}`, category: 'Plugin', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: true, prompt: null, ...extra })
+    const suggest = async (query: string) => ((await json(await s.get(`/api/commands?${query}`))).commands as Json[]).map((c) => c.name)
+    const filler = Array.from({ length: 45 }, (_, i) => row(`zz${String(i).padStart(2, '0')}`))
+    sidecar.respond('commands.registry', () => ({ commands: [
+      row('Model-Card'), row('mod'), row('lint', { aliases: ['re'] }), row('history', { cli_only: true, exec: false, category: 'Session' }),
+      row('plugin-review-all'), row('plugin_review'), row('own-a'), row('own_a'), ...filler, row('zz'),
+    ] }))
+    try {
+      // The reported /mod: the exact plugin leads the client's longer /model, which keeps its place among the rest.
+      expect(await suggest('prefix=mod&client=web')).toEqual(['mod', 'model', 'Model-Card'])
+      expect(await suggest('prefix=MOD&client=web')).toEqual(['mod', 'model', 'Model-Card'])
+      // A short prefix with no exact entry keeps catalog order, so its established first row stays first.
+      expect(await suggest('prefix=mo&client=web')).toEqual(['model', 'Model-Card', 'mod'])
+      // An explicit alias that equals the prefix leads too, and an entry matching by name and alias is listed once.
+      expect(await suggest('prefix=re&client=web')).toEqual(['lint', 'retry', 'reasoning'])
+      expect(await suggest('prefix=comp&client=web')).toEqual(['compress'])
+      expect(await suggest('prefix=bg&client=web')).toEqual(['background'])
+      // Separator spellings resolve as reserved (TAL-1577): a generated alias names its command; a literal keeps its own.
+      expect(await suggest('prefix=plugin-review&client=web')).toEqual(['plugin_review', 'plugin-review-all'])
+      expect(await suggest('prefix=own_a&client=web')).toEqual(['own_a'])
+      expect(await suggest('prefix=own-a&client=web')).toEqual(['own-a'])
+      // Only commands the requesting client runs; without a client, only commands no client runs are left out.
+      expect(await suggest('prefix=term&client=web')).toEqual(['terminal'])
+      expect(await suggest('prefix=term&client=ios')).toEqual([])
+      expect(await suggest('prefix=term')).toEqual(['terminal'])
+      expect(await suggest('prefix=hist&client=web')).toEqual([])
+      expect(await suggest('prefix=nothing&client=web')).toEqual([])
+      // Ranking comes before the bound: an exact name listed after 45 longer ones is still offered, first.
+      const bounded = await suggest('prefix=zz&client=web')
+      expect(bounded).toHaveLength(40)
+      expect(bounded.slice(0, 3)).toEqual(['zz', 'zz00', 'zz01'])
+      // An empty prefix lists the client's commands in catalog order, bounded; callers without a query keep the whole catalog.
+      const all = (await json(await s.get('/api/commands'))).commands as Json[]
+      expect(await suggest('prefix=&client=web')).toEqual(all.filter((c) => (c.clients as string[]).includes('web')).map((c) => c.name).slice(0, 40))
+      expect(all.map((c) => c.name)).toContain('history')
+      expect(all.length).toBeGreaterThan(40)
+    } finally {
+      const recorded = loadSidecarFixtures().get('commands.registry')?.[0]?.result
+      sidecar.respond('commands.registry', () => recorded as never)
+    }
+  })
+
   it('exec runs a generated separator alias as its command once, with the argument bytes unchanged (TAL-1577)', async () => {
     const row = (name: string, extra: Json = {}) => ({ name, description: `agent ${name}`, category: 'Plugin', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: true, prompt: null, ...extra })
     sidecar.respond('commands.registry', () => ({ commands: [row('knowledge-loop'), row('plugin-review'), row('plugin_review'), row('reload-skills', { aliases: ['reload_skills'] }), row('history-log', { cli_only: true, exec: false }), row('Mixed-Case')] }))
