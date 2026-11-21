@@ -2808,6 +2808,10 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
     configs.set(s.state, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, providers: { anthropic: { api_key: 'sk-ant-api03-synthetic-quota-test-key' } } })
     writeFileSync(join(s.state, '.quota_scope_id'), `${'0'.repeat(31)}1\n`)
+    // TAL-45: a capped OpenRouter key, so the fixture carries the server's credit block.
+    writeEnvFile(join(s.state, '.env'), { OPENROUTER_API_KEY: 'sk-or-synthetic-credits-1234' })
+    sidecar.respond('usage.balance', () => ({ status: 'ok', http_status: null, label: 'synthetic', quota: { limit_remaining: 12.5, usage: 7.5, limit: 20 }, is_available: null, balances: [], windows: [] }))
+    sidecar.respond('usage.pool', () => ({ entries: [] }))
     sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: [] }))
     sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, provider: params.provider ?? '', error: 'not logged in' } }))
     // TAL-1125: Codex answers with the sidecar's serialisation of a 24-hour and a 5-hour window the Agent both labels "Session".
@@ -2857,11 +2861,15 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
     ])
     expect(anthropic).toMatchObject({ display_level: 'warning', urgency: { remaining: 'healthy', pace: 'warning' }, pace_window_index: 1, session_window_index: 0, weekly_window_index: 1, fetched_at: '2026-09-28T07:59:30Z', is_stale: false, stale_since: '2026-09-28T08:14:30Z' })
     expect(quotas.computed_at).toBe('2026-09-28T08:00:00Z')
+    // TAL-45: the reported amounts with the server's cap, percents and unit.
+    const credits = { limit_remaining: 12.5, usage: 7.5, limit: 20, currency: 'USD', is_capped: true, percent_used: 37.5, percent_remaining: 62.5, over_limit: false }
+    expect((quotas.sources as Json[]).find((q) => q.provider_id === 'openrouter')?.quota).toEqual(credits)
+    expect((await json(await s.get('/api/provider/quota?provider=openrouter'))).quota).toEqual(credits)
 
     const quota = await json(await s.get('/api/provider/quota?provider=anthropic'))
     expect(quota.computed_at).toBe('2026-09-28T08:00:00Z')
     expect(quota.account_limits).toMatchObject({ windows: [session, weekly, monthly], pace_window_index: 1, session_window_index: 0, weekly_window_index: 1 })
-    // Every branch of the singular route answers its contract: account usage, a keyless OpenRouter, an unsupported provider.
+    // Every branch of the singular route answers its contract: account usage, a keyed OpenRouter, an unsupported provider.
     for (const provider of ['anthropic', 'openrouter', 'zai']) {
       const res = await s.get(`/api/provider/quota?provider=${provider}`)
       expect(res.status).toBe(200)
@@ -3059,7 +3067,7 @@ describe('OpenRouter cost history accrues on quota reads and ships server-comput
       configuredDown = false
       s.deps.catalog.invalidate(s.state)
       sources = ((await json(await s.get('/api/provider/quotas'))).sources as Json[]).filter((q) => q.provider_id === 'openrouter')
-      expect(sources).toEqual([expect.objectContaining({ account_label: 'work@example.test', status: 'available', quota: { usage: 4, limit: 100, limit_remaining: 50 } })])
+      expect(sources).toMatchObject([{ account_label: 'work@example.test', status: 'available', quota: { usage: 4, limit: 100, limit_remaining: 50 } }])
       expect(stored()).toEqual([{ date: '2026-09-28', used: 4, limit: 100 }])
     } finally {
       pool = []

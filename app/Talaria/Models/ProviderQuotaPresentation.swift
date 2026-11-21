@@ -33,17 +33,11 @@ enum ProviderQuotaPresentation {
             basis: settings.colorBasis,
             selection: settings.windowSelection
         )
-        let usedFromQuota: Double? = {
-            guard let usage = source.quota?.usage,
-                  let limit = source.quota?.limit,
-                  limit > 0
-            else { return nil }
-            return min(max(usage / limit * 100, 0), 100)
-        }()
-        // The server ships both window percents normalized (TAL-1782); the mode only picks one.
+        let credits = source.quota.flatMap(creditPercents)
+        // The server ships both window and credit percents normalized (TAL-1782, TAL-45); the mode only picks one.
         let displayedPercent = window.flatMap { settings.percentageMode == .used ? $0.usedPercent : $0.remainingPercent }
-            ?? usedFromQuota.map { settings.percentageMode == .used ? $0 : 100 - $0 }
-        let remaining = window?.remainingPercent ?? usedFromQuota.map { 100 - $0 }
+            ?? credits.map { settings.percentageMode == .used ? $0.used : $0.remaining }
+        let remaining = window?.remainingPercent ?? credits?.remaining
         // The server flags a pace its read saw expire; a cached copy's pace also expires at its own `validUntil`.
         let paceExpired = window?.paceNeedsRefresh == true || window?.pace?.isValid(at: referenceDate) == false
         let pace = paceExpired ? nil : window?.pace
@@ -66,6 +60,17 @@ enum ProviderQuotaPresentation {
             paceNeedsRefresh: window?.pace != nil && pace == nil,
             computedAt: ProviderQuotaDateParser.date(from: source.computedAt)
         )
+    }
+
+    /// The server's percents of a credit cap; nil when uncapped. TAL-2624 deletes the fallback for a server without them.
+    private static func creditPercents(_ quota: ProviderQuotaAmount) -> (used: Double, remaining: Double)? {
+        if quota.isCapped != nil {
+            guard let used = quota.percentUsed, let remaining = quota.percentRemaining else { return nil }
+            return (used, remaining)
+        }
+        guard let usage = quota.usage, let limit = quota.limit, limit > 0 else { return nil }
+        let used = min(max(usage / limit * 100, 0), 100)
+        return (used, 100 - used)
     }
 
     static func periods(

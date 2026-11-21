@@ -363,21 +363,48 @@ public struct ProviderQuotaWindowForecast: Codable, Equatable, Sendable {
     }
 }
 
+/// OpenRouter credits: the provider's amounts and, from a TAL-45 server, its unit, cap and percents of that cap.
 public struct ProviderQuotaAmount: Codable, Equatable, Sendable {
     public let limitRemaining: Double?
     public let usage: Double?
     public let limit: Double?
+    /// ISO 4217 code of the amounts; nil when the unit is unknown.
+    public let currency: String?
+    /// The server's cap decision; nil from a server that predates it.
+    public let isCapped: Bool?
+    public let percentUsed: Double?
+    public let percentRemaining: Double?
+    public let overLimit: Bool?
 
     enum CodingKeys: String, CodingKey {
         case limitRemaining
         case usage
         case limit
+        case currency
+        case isCapped
+        case percentUsed
+        case percentRemaining
+        case overLimit
     }
 
-    init(limitRemaining: Double? = nil, usage: Double? = nil, limit: Double? = nil) {
+    init(
+        limitRemaining: Double? = nil,
+        usage: Double? = nil,
+        limit: Double? = nil,
+        currency: String? = nil,
+        isCapped: Bool? = nil,
+        percentUsed: Double? = nil,
+        percentRemaining: Double? = nil,
+        overLimit: Bool? = nil
+    ) {
         self.limitRemaining = limitRemaining
         self.usage = usage
         self.limit = limit
+        self.currency = currency
+        self.isCapped = isCapped
+        self.percentUsed = percentUsed
+        self.percentRemaining = percentRemaining
+        self.overLimit = overLimit
     }
 
     public init(from decoder: Decoder) throws {
@@ -385,6 +412,11 @@ public struct ProviderQuotaAmount: Codable, Equatable, Sendable {
         limitRemaining = container.decodeQuotaDoubleIfPresent(forKey: .limitRemaining)
         usage = container.decodeQuotaDoubleIfPresent(forKey: .usage)
         limit = container.decodeQuotaDoubleIfPresent(forKey: .limit)
+        currency = container.decodeQuotaStringIfPresent(forKey: .currency)
+        isCapped = container.decodeQuotaBoolIfPresent(forKey: .isCapped)
+        percentUsed = container.decodeQuotaDoubleIfPresent(forKey: .percentUsed)
+        percentRemaining = container.decodeQuotaDoubleIfPresent(forKey: .percentRemaining)
+        overLimit = container.decodeQuotaBoolIfPresent(forKey: .overLimit)
     }
 }
 

@@ -7,9 +7,10 @@ import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, WEB_ROOT, type TestServer } from '../test/harness.js'
-import { composerQuota, ProviderCatalog, quotaSummary, repairSessionModel, withProviderHeadlines, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
+import { classifyQuotaSource, composerQuota, openRouterCredits, ProviderCatalog, quotaSummary, repairSessionModel, withProviderHeadlines, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
 import { OAUTH_PROVIDERS, PROVIDER_MODELS } from './tables.js'
 import { writeEnvFile } from '../test/env-file.js'
+import { QUOTA_THRESHOLD_DEFAULTS } from '../settings.js'
 import { SIDECAR_METHODS, type SidecarResult } from '@maudecode/talaria-web-contracts'
 
 type Json = Record<string, unknown>
@@ -1113,6 +1114,43 @@ describe('Settings › Providers figures (TAL-2135)', () => {
     expect(composerQuota(rows, 'openrouter')).toEqual({ source_id: 'or', label: '12.35 credits left', percent_remaining: null, level: 'healthy' })
     expect(composerQuota(rows, 'zai')).toBeNull()
     expect(composerQuota(rows, 'deepseek')).toBeNull()
+  })
+
+  it.each([
+    ['capped', { limit_remaining: 12.5, usage: 7.5, limit: 20 }, true, 37.5, 62.5, false],
+    ['remaining preferred over usage', { limit_remaining: 15, usage: 7.5, limit: 20 }, true, 25, 75, false],
+    ['usage when remaining is missing', { usage: 7.5, limit: 20 }, true, 37.5, 62.5, false],
+    ['remaining-only', { limit_remaining: 12.5 }, false, null, null, false],
+    ['usage-only', { usage: 7.5, limit: null }, false, null, null, false],
+    ['zero limit', { limit_remaining: 0, usage: 4, limit: 0 }, false, null, null, false],
+    ['negative limit', { limit_remaining: 3, usage: 4, limit: -20 }, false, null, null, false],
+    ['zero remaining', { limit_remaining: 0, usage: 20, limit: 20 }, true, 100, 0, false],
+    ['over the cap', { limit_remaining: -5, usage: 25, limit: 20 }, true, 100, 0, true],
+    ['usage over the cap', { usage: 25, limit: 20 }, true, 100, 0, true],
+    ['negative usage', { usage: -5, limit: 20 }, true, 0, 100, false],
+    ['nothing', null, false, null, null, false],
+  ] as const)('ships OpenRouter credits with server percents: %s (TAL-45)', (_, raw, capped, used, remaining, over) => {
+    const credits = openRouterCredits(raw)
+    expect(credits).toMatchObject({ currency: 'USD', is_capped: capped, percent_used: used, percent_remaining: remaining, over_limit: over })
+    // The provider's own amounts, even past the cap.
+    const reported = (raw ?? {}) as Record<string, unknown>
+    expect([credits.limit_remaining, credits.usage, credits.limit]).toEqual(['limit_remaining', 'usage', 'limit'].map((k) => reported[k] ?? null))
+  })
+
+  it('drops nonfinite and non-numeric credit figures instead of inventing zero (TAL-45)', () => {
+    expect(openRouterCredits({ limit_remaining: Number.NaN, usage: '7', limit: Number.POSITIVE_INFINITY })).toEqual({
+      limit_remaining: null, usage: null, limit: null, currency: 'USD', is_capped: false, percent_used: null, percent_remaining: null, over_limit: false,
+    })
+    // A cap tiny enough to overflow the ratio still clamps to a valid percent.
+    expect(openRouterCredits({ limit_remaining: 1e308, limit: 1e-308 })).toMatchObject({ percent_remaining: 100, percent_used: 0 })
+  })
+
+  it('colours a credit-only source by the credit percent it shows, and never an uncapped one (TAL-45)', () => {
+    const level = (raw: Record<string, number>) => classifyQuotaSource({ status: 'available', windows: [], pace_window_index: null, quota: openRouterCredits(raw) }, QUOTA_THRESHOLD_DEFAULTS).urgency
+    expect(level({ limit_remaining: 12.5, limit: 20 })).toEqual({ remaining: 'healthy', pace: 'healthy' })
+    expect(level({ limit_remaining: 4, limit: 20 })).toEqual({ remaining: 'warning', pace: 'warning' })
+    expect(level({ usage: 25, limit: 20 })).toEqual({ remaining: 'critical', pace: 'critical' })
+    expect(level({ limit_remaining: 0 })).toEqual({ remaining: 'healthy', pace: 'healthy' })
   })
 
   it('names the provider the default model routes to, as the model catalog resolves it', async () => {

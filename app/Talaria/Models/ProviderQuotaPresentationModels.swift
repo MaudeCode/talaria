@@ -126,6 +126,31 @@ struct ProviderQuotaSidebarDisplayOptions: Equatable {
     var showsPaceMarker: Bool { showsRail && requestsPaceMarker }
 }
 
+/// TAL-45: credit amounts in the server's currency, else as plain numbers; the App only formats them.
+extension ProviderQuotaAmount {
+    func formatted(_ value: Double) -> String {
+        if let currency { return value.formatted(.currency(code: currency)) }
+        return value.formatted(.number.precision(.fractionLength(0...2)))
+    }
+
+    /// "$12.50 remaining"; nil without a remaining amount.
+    var remainingLabel: String? {
+        guard let limitRemaining else { return nil }
+        let amount = formatted(limitRemaining)
+        return currency == nil ? String(localized: "\(amount) credits remaining") : String(localized: "\(amount) remaining")
+    }
+
+    /// "$7.50 used of $20.00", "$7.50 used" without a cap; nil without usage.
+    var usageLabel: String? {
+        guard let usage else { return nil }
+        // TAL-2624 deletes the `limit > 0` fallback for a server without `is_capped`.
+        if let limit, isCapped ?? (limit > 0) {
+            return String(localized: "\(formatted(usage)) used of \(formatted(limit))")
+        }
+        return String(localized: "\(formatted(usage)) used")
+    }
+}
+
 enum ProviderQuotaSidebarPresentation {
     static func detail(
         mode: ProviderQuotaSidebarDetail,
@@ -146,6 +171,7 @@ enum ProviderQuotaSidebarPresentation {
             state.percent.map {
                 "\(($0 / 100).formatted(.percent.precision(.fractionLength(0...1)))) \(state.modeLabel)"
             }
+                ?? source.quota.flatMap { $0.remainingLabel ?? $0.usageLabel }
                 ?? ProviderQuotaPresentation.statusLabel(source.status)
         }
     }

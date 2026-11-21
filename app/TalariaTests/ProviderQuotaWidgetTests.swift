@@ -330,6 +330,67 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertTrue(state(early, session, fetched.addingTimeInterval(31)).isStale)
     }
 
+    /// TAL-45: a credit source shows the server's percents of its cap, the sidebar names an uncapped one's amount, and
+    /// only a payload from before the server block keeps the App's own percent (TAL-2624 deletes that fallback).
+    func testCreditPercentsAndAmountsComeFromTheServerBlock() throws {
+        // app/TalariaTests/<file> -> repository root
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: root.appendingPathComponent("contracts/fixtures/provider-quotas.json"))
+        ) as? [String: Any])
+        func credits(_ edit: (inout [String: Any]) -> Void) throws -> ProviderQuotaWidgetSource {
+            var body = fixture
+            var sources = try XCTUnwrap(body["sources"] as? [[String: Any]])
+            let index = try XCTUnwrap(sources.firstIndex { $0["provider_id"] as? String == "openrouter" })
+            var quota = try XCTUnwrap(sources[index]["quota"] as? [String: Any])
+            edit(&quota)
+            sources[index]["quota"] = quota
+            body["sources"] = [sources[index]]
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let response = try decoder.decode(ProviderQuotasResponse.self, from: JSONSerialization.data(withJSONObject: body))
+            return ProviderQuotaWidgetSource(try XCTUnwrap(response.sources.first), scopeID: "qscope_fixture", scopeLabel: "Fixture")
+        }
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        func state(_ source: ProviderQuotaWidgetSource, _ mode: ProviderQuotaPercentageMode) -> ProviderQuotaPresentationState {
+            ProviderQuotaPresentation.state(
+                for: source,
+                settings: ProviderQuotaEvaluationSettings(percentageMode: mode, colorBasis: .overall, windowSelection: .automatic),
+                at: now
+            )
+        }
+
+        let served = try credits { _ in }
+        XCTAssertEqual(served.quota?.currency, "USD")
+        XCTAssertEqual(state(served, .used).percent, 37.5)
+        XCTAssertEqual(state(served, .remaining).percent, 62.5)
+        // The server's percent wins over amounts that disagree with it.
+        let disagreeing = try credits { $0["percent_used"] = 90; $0["percent_remaining"] = 10 }
+        XCTAssertEqual(state(disagreeing, .used).percent, 90)
+        XCTAssertEqual(state(disagreeing, .remaining).remainingPercent, 10)
+        XCTAssertEqual(
+            ProviderQuotaSidebarPresentation.detail(mode: .percentage, source: disagreeing, state: state(disagreeing, .remaining)),
+            "10% remaining"
+        )
+        // Uncapped: no percent or meter, and the sidebar shows the remaining amount, else the usage.
+        let uncapped = try credits { quota in
+            quota["limit"] = NSNull(); quota["is_capped"] = false; quota["percent_used"] = NSNull(); quota["percent_remaining"] = NSNull()
+        }
+        XCTAssertNil(state(uncapped, .used).percent)
+        XCTAssertEqual(ProviderQuotaSidebarPresentation.detail(mode: .percentage, source: uncapped, state: state(uncapped, .used)), "$12.50 remaining")
+        let usageOnly = try credits { quota in
+            quota["limit_remaining"] = NSNull(); quota["limit"] = NSNull(); quota["is_capped"] = false
+            quota["percent_used"] = NSNull(); quota["percent_remaining"] = NSNull()
+        }
+        XCTAssertEqual(ProviderQuotaSidebarPresentation.detail(mode: .percentage, source: usageOnly, state: state(usageOnly, .used)), "$7.50 used")
+        // A server without the block keeps the device percent until TAL-2624.
+        let preServer = try credits { quota in
+            for key in ["currency", "is_capped", "percent_used", "percent_remaining", "over_limit"] { quota[key] = nil }
+        }
+        XCTAssertEqual(state(preServer, .used).percent, 37.5)
+        XCTAssertEqual(preServer.quota?.usageLabel, "7.5 used of 20")
+    }
+
     func testWidgetProfilesCaptureProviderIconVisibilityAndStyle() throws {
         let suite = "ProviderQuotaWidgetProfiles.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

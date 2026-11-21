@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { providerIcon } from './icons.js'
-import type { CatalogAvailability, ModelAllowance, ModelFavorite, SettingsModelPicker, SettingsModelPickerQuery, PlanUsage, ProviderIcon, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { CatalogAvailability, QuotaCredits, ModelAllowance, ModelFavorite, SettingsModelPicker, SettingsModelPickerQuery, PlanUsage, ProviderIcon, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { ModelsLiveSchema, SettingsModelPickerSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
@@ -319,6 +319,26 @@ export function composerQuota(rows: QuotaSourceRow[], provider: string): { sourc
   return { source_id: s.source_id, label, percent_remaining: left, level: w?.display_level ?? (s.display_level as QuotaLevel | undefined) ?? 'unavailable' }
 }
 
+/**
+ * TAL-45: OpenRouter's credits as clients show them: the reported amounts, kept past the cap, null when missing or
+ * nonfinite; a positive limit caps them; the percent of the cap left comes from the remaining amount, else the cap less
+ * usage, clamped to 0–100, and null without a cap or an amount, so an uncapped account never reads exhausted.
+ */
+export function openRouterCredits(raw: unknown): QuotaCredits {
+  const q = dict(raw)
+  const remaining = finite(q.limit_remaining)
+  const usage = finite(q.usage)
+  const limit = finite(q.limit)
+  const cap = limit !== null && limit > 0 ? limit : null
+  const left = cap === null ? null : remaining ?? (usage === null ? null : cap - usage)
+  const percentRemaining = left === null || cap === null ? null : roundTo(Math.min(Math.max((left / cap) * 100, 0), 100), 2)
+  return {
+    limit_remaining: remaining, usage, limit, currency: 'USD', is_capped: cap !== null,
+    percent_used: percentRemaining === null ? null : roundTo(100 - percentRemaining, 2), percent_remaining: percentRemaining,
+    over_limit: cap !== null && ((usage !== null && usage > cap) || (remaining !== null && remaining < 0)),
+  }
+}
+
 /** TAL-2135: marks each provider's `provider_headline` source: the one whose headline window has the least remaining, else its first. */
 export function withProviderHeadlines<T extends QuotaSourceRow>(rows: T[]): (T & { provider_headline: boolean })[] {
   const left = (s: T) => {
@@ -496,6 +516,9 @@ function quotaLevel(window: QuotaWindow | undefined, status: string, basis: keyo
 export interface ClassifiedQuotaWindow extends Omit<QuotaWindow, 'pace'> { pace: (QuotaPace & { status: 'over' | 'on' | 'under' }) | null; projection_eligible: boolean; urgency: QuotaUrgency }
 export function classifyQuotaSource<T extends { status: string; windows: QuotaWindow[]; pace_window_index: number | null }>(source: T, t: QuotaThresholds): Omit<T, 'windows'> & { windows: ClassifiedQuotaWindow[]; urgency: QuotaUrgency; headline_window_index: number | null } {
   const urgency = (w: QuotaWindow | undefined): QuotaUrgency => ({ remaining: quotaLevel(w, source.status, 'remaining', t), pace: quotaLevel(w, source.status, 'pace', t) })
+  // TAL-45: a source without windows is classified on its capped credits, so the colour follows the percent it shows.
+  const creditsLeft = finite(dict((source as Dict).quota).percent_remaining)
+  const first = source.windows[0] ?? (creditsLeft === null ? undefined : { remaining_percent: creditsLeft, pace: null } as QuotaWindow)
   return {
     ...source,
     windows: source.windows.map((w) => ({
@@ -504,7 +527,7 @@ export function classifyQuotaSource<T extends { status: string; windows: QuotaWi
       projection_eligible: w.pace !== null && w.remaining_percent !== null && projectionEligible(w.pace, 100 - w.remaining_percent, t.pace_minimum_elapsed_hours),
       urgency: urgency(w),
     })),
-    urgency: { remaining: urgency(source.windows[0]).remaining, pace: urgency(source.windows[source.pace_window_index ?? 0]).pace },
+    urgency: { remaining: urgency(first).remaining, pace: urgency(source.windows[source.pace_window_index ?? 0] ?? first).pace },
     headline_window_index: source.windows.length === 0 ? null : source.pace_window_index ?? 0,
   }
 }
@@ -1826,7 +1849,7 @@ export class ProviderCatalog {
         if (status === 'ok' && read?.quota) {
           // The cost chart follows the configured key, so another pool account's spend never lands in it.
           if (!credential || credential.matches_api_key) this.recordCostSnapshot(profileHome, read.quota, at)
-          return answer(true, 'available', 'OpenRouter quota status loaded.', { label: 'OpenRouter credits', quota: read.quota })
+          return answer(true, 'available', 'OpenRouter quota status loaded.', { label: 'OpenRouter credits', quota: openRouterCredits(read.quota) })
         }
         return status === 401 || status === 403 ? answer(false, 'invalid_key', rejected('OpenRouter rejected the configured API key.')) : answer(false, 'unavailable', 'OpenRouter quota status is temporarily unavailable.')
       }
