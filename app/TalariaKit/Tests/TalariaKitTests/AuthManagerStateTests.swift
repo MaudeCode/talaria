@@ -600,23 +600,35 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertTrue(manager.servers.isEmpty)
     }
 
-    func testAddServerRejectsAnAlreadyConfiguredURL() async throws {
+    /// TAL-2623: adding a server that is already registered signs that entry in again rather than adding a second one,
+    /// and keeps its headers when the form gives none.
+    func testAddServerSignsAnAlreadyConfiguredURLInAgainWithTheNewPassword() async throws {
         let keychain = InMemoryKeychainStore()
         let registry = ServerRegistry.inMemory(keychain: keychain)
+        let client = MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false))
         let manager = AuthManager(
             keychain: keychain,
-            clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            clientFactory: { _ in client },
+            probeClientFactory: { _, _, _ in client },
+            headerStore: CustomHeaderStore(),
             cookieStorage: cookieStorage,
             serverRegistry: registry
         )
-        await manager.configure(serverURLString: "https://a.test", password: "")
+        await manager.configure(
+            serverURLString: "https://a.test",
+            password: "old",
+            customHeaders: [CustomHeader(name: "X-A", value: "a-token")]
+        )
+        await manager.configure(serverURLString: "https://b.test", password: "b", customHeaders: [])
 
-        let outcome = await manager.addServer(serverURLString: "https://a.test", password: "")
+        let outcome = await manager.addServer(serverURLString: "https://a.test", password: "new")
 
-        XCTAssertEqual(outcome, .failed)
-        XCTAssertEqual(manager.lastErrorMessage, "This server is already configured.")
-        XCTAssertEqual(manager.servers.map(\.id), ["https://a.test"])
-        XCTAssertEqual(manager.state, .loggedIn(server: try XCTUnwrap(URL(string: "https://a.test"))))
+        let a = try XCTUnwrap(URL(string: "https://a.test"))
+        XCTAssertEqual(outcome, .added(a))
+        XCTAssertEqual(manager.servers.map(\.id).sorted(), ["https://a.test", "https://b.test"])
+        XCTAssertEqual(manager.serverPassword(for: "https://a.test"), "new")
+        XCTAssertEqual(manager.state, .loggedIn(server: a))
+        XCTAssertEqual(manager.currentCustomHeaders.map(\.value), ["a-token"])
     }
 
     func testAddServerSucceedsAndSwitchesActive() async throws {

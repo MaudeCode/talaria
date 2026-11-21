@@ -16,6 +16,15 @@ struct AddServerView: View {
     @State private var initials = ""
     @State private var colorHex = HeaderLogoColor.defaultHex
 
+    /// `prefill` is an add-server link's server (TAL-2623); the view still adds nothing until it is submitted.
+    init(authManager: AuthManager, prefill: TalariaDeepLink.AddServer? = nil) {
+        _authManager = Bindable(authManager)
+        _serverURLString = State(initialValue: prefill?.url ?? "")
+        _password = State(initialValue: prefill?.password ?? "")
+        _needsPassword = State(initialValue: prefill?.password.isEmpty == false)
+        _displayName = State(initialValue: prefill?.name ?? "")
+    }
+
     private var trimmedURL: String {
         serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)
     }

@@ -1698,6 +1698,20 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(TalariaDeepLink.publisherID(from: url), publisherID)
     }
 
+    /// TAL-2623: a phone test server's add-server link carries its URL, password and name percent-encoded.
+    func testParsesAnAddServerLinkAndRefusesOneWithoutAnHTTPURL() throws {
+        let scheme = TalariaDeepLink.scheme
+        let link = try XCTUnwrap(URL(string:
+            "\(scheme)://add-server?url=http%3A%2F%2F100.64.1.2%3A8790&password=a%2Bb%26c%3D&name=Test%20server"))
+
+        XCTAssertEqual(
+            TalariaDeepLink.addServer(from: link),
+            TalariaDeepLink.AddServer(url: "http://100.64.1.2:8790", password: "a+b&c=", name: "Test server")
+        )
+        XCTAssertNil(TalariaDeepLink.addServer(from: try XCTUnwrap(URL(string: "\(scheme)://add-server?password=x"))))
+        XCTAssertNil(TalariaDeepLink.addServer(from: try XCTUnwrap(URL(string: "\(scheme)://add-server?url=ftp%3A%2F%2Fh"))))
+    }
+
     /// TAL-2336: with calls in parallel, a finished call leaves the one still running named, as the server picks the current
     /// call for Relay; the last call to finish is named with the target its start carried.
     func testAFinishedParallelCallKeepsTheRunningCallNamed() async throws {

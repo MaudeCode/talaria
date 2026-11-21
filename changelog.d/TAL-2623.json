@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Adding a server that is already in your list signs it in again with the password you entered instead of refusing it.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

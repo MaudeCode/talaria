@@ -62,6 +62,8 @@
 	<false/>
 	<key>TalariaCloudKitContainerIdentifier</key>
 	<string>$(ICLOUD_CONTAINER_IDENTIFIER)</string>
+	<key>TalariaAcceptsAddServerLinks</key>
+	<string>$(APP_ACCEPTS_ADD_SERVER_LINKS)</string>
 	<key>TalariaAppGroupIdentifier</key>
 	<string>$(APP_GROUP_IDENTIFIER)</string>
 	<key>TalariaKeychainService</key>
