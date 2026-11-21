@@ -1,3 +1,10 @@
 {
-  "skip": "Moves the choice of which file diff to open to the server while preserving the App workflow."
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The App opens the working-tree diff for conflicted files.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
 }
