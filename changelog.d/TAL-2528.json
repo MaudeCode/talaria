@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Skills search finds the same skills in the app and in Talaria Web, matching each skill's name, description, or category.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

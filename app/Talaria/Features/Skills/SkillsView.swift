@@ -17,17 +17,21 @@ struct SkillsView: View {
             .toolbar {
                 SkillsListActions(viewModel: viewModel, onAPIError: onAPIError)
             }
-            .task {
-                await loadSkills()
+            .task(id: searchText) {
+                // The server chooses the matching rows (TAL-2528); typing waits for a pause.
+                if !searchText.isEmpty {
+                    try? await Task.sleep(for: .milliseconds(250))
+                    guard !Task.isCancelled else { return }
+                }
+                await viewModel.search(searchText)
+                if let error = viewModel.lastError {
+                    onAPIError(error)
+                }
             }
             .refreshesLive(on: .runEnded, showsStatus: false) {
                 await loadSkills()
             }
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search skills...")
-    }
-
-    private var filteredGroups: [(category: String?, skills: [SkillSummary])] {
-        viewModel.filteredGroupedSkills(searchText: searchText)
     }
 
     @ViewBuilder
@@ -44,21 +48,21 @@ struct SkillsView: View {
                     Task { await loadSkills() }
                 }
             }
-        } else if viewModel.skills.isEmpty {
+        } else if viewModel.skills.isEmpty && viewModel.query.isEmpty {
             ContentUnavailableView {
                 Label("No Skills", systemImage: "hammer")
             } description: {
                 Text("Skills from the Hermes server will appear here.")
             }
-        } else if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && filteredGroups.isEmpty {
+        } else if viewModel.skills.isEmpty {
             ContentUnavailableView {
                 Label("No Results", systemImage: "magnifyingglass")
             } description: {
-                Text("No skills match \"\(searchText)\".")
+                Text("No skills match \"\(viewModel.query)\".")
             }
         } else {
             SidebarList {
-                ForEach(filteredGroups, id: \.category) { group in
+                ForEach(viewModel.groupedSkills, id: \.category) { group in
                     SidebarSectionHeader(group.category ?? String(localized: "Uncategorized"))
                     SkillRows(
                         skills: group.skills,

@@ -11,6 +11,8 @@ public final class SkillsViewModel {
     public private(set) var errorMessage: String?
     public private(set) var lastError: Error?
     public private(set) var togglingSkillNames: Set<String> = []
+    /// The search text the shown rows answer; empty shows the whole install.
+    public private(set) var query = ""
 
     private let client: APIClient
     private let responseCache: ResponseCache?
@@ -41,7 +43,11 @@ public final class SkillsViewModel {
         }
 
         do {
-            let response = try await client.skills(caching: responseCache?.entry(ResponseCache.Kind.skills))
+            // Only the unfiltered list is the offline copy.
+            let response = try await client.skills(
+                query: query.isEmpty ? nil : query,
+                caching: query.isEmpty ? responseCache?.entry(ResponseCache.Kind.skills) : nil
+            )
             guard generation == loadGeneration else { return }
             skills = response.skills ?? []
             categoryGroups = response.categoryGroups
@@ -52,26 +58,16 @@ public final class SkillsViewModel {
         }
     }
 
-    public func filteredGroupedSkills(searchText: String) -> [(category: String?, skills: [SkillSummary])] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return displayGroups(for: skills) }
-
-        let filtered = skills.filter { skill in
-            let name = skill.name?.localizedCaseInsensitiveContains(query) ?? false
-            let description = skill.description?.localizedCaseInsensitiveContains(query) ?? false
-            let category = skill.category?.localizedCaseInsensitiveContains(query) ?? false
-            let tags = skill.tags?.contains { $0.localizedCaseInsensitiveContains(query) } ?? false
-            return name || description || category || tags
-        }
-
-        guard !filtered.isEmpty else { return [] }
-
-        return displayGroups(for: filtered)
+    /// The server chooses the matching rows (TAL-2528); the last rows stay shown until its answer arrives.
+    public func search(_ text: String) async {
+        query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        await load()
     }
 
-    private func displayGroups(for skills: [SkillSummary]) -> [(category: String?, skills: [SkillSummary])] {
+    /// The shown rows in the server's category order.
+    public var groupedSkills: [(category: String?, skills: [SkillSummary])] {
         // Older servers and previously cached responses have no category groups.
-        guard let categoryGroups else { return Self.groupedSkills(for: skills) }
+        guard let categoryGroups else { return Self.localGroups(for: skills) }
         var rowsByName: [String: SkillSummary] = [:]
         for skill in skills {
             if let name = skill.name { rowsByName[name] = skill }
@@ -101,7 +97,7 @@ public final class SkillsViewModel {
         }
     }
 
-    private static func groupedSkills(for skills: [SkillSummary]) -> [(category: String?, skills: [SkillSummary])] {
+    private static func localGroups(for skills: [SkillSummary]) -> [(category: String?, skills: [SkillSummary])] {
         let grouped = Dictionary(grouping: skills, by: categoryName(for:))
         return grouped
             .sorted {

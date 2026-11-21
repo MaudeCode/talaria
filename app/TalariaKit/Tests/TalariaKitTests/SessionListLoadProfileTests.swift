@@ -1300,10 +1300,11 @@ final class DeferredRequestsByPath: @unchecked Sendable {
     private let lock = NSLock()
     private var byPath: [String: DeferredMockURLProtocol] = [:]
 
-    func record(_ request: DeferredMockURLProtocol) {
+    /// `key` names a request that shares its path with others, such as each search's text.
+    func record(_ request: DeferredMockURLProtocol, as key: String? = nil) {
         lock.lock()
         defer { lock.unlock() }
-        byPath[request.request.url?.path ?? ""] = request
+        byPath[key ?? request.request.url?.path ?? ""] = request
     }
 
     func request(_ path: String) -> DeferredMockURLProtocol? {

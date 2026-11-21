@@ -194,7 +194,8 @@ public enum Endpoint: Sendable {
     case feedbackSubmit
     case feedbackOptions
     case feedbackAttachments
-    case skills
+    /// TAL-2528: `query` asks the server for the skills matching the search text.
+    case skills(query: String?)
     case skillContent(name: String, file: String?)
     case toggleSkill
     case upload
@@ -792,6 +793,8 @@ public enum Endpoint: Sendable {
             // TAL-1117: a custom range's days go as picked; the server resolves and validates them.
             return [URLQueryItem(name: "days", value: "\(days)")]
                 + [("start", start), ("end", end)].compactMap { name, value in value.map { URLQueryItem(name: name, value: $0) } }
+        case let .skills(query):
+            return query.map { [URLQueryItem(name: "q", value: $0)] } ?? []
         case let .skillContent(name, file):
             var items = [URLQueryItem(name: "name", value: name)]
             if let file {
