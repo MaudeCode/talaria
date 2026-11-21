@@ -1,0 +1,27 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Insights stacks each day's input and output tokens, shows every figure for a day you press, and calls the longest period 365 Days.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    },
+    {
+      "category": "Added",
+      "summary": "Insights charts daily tokens and hourly activity across any date range you pick.",
+      "highlight": true,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "title": "Insights for any dates",
+        "description": "Pick a custom date range in Insights and chart daily tokens and hourly activity across all of it.",
+        "icon": "sparkles"
+      }
+    }
+  ]
+}

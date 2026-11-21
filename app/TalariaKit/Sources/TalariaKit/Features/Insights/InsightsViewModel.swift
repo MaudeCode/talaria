@@ -11,7 +11,8 @@ public enum AnalyticsTimeframe: String, CaseIterable, Identifiable, Sendable {
     case today
     case last7Days
     case last30Days
-    case allTime
+    /// The server's longest preset; the raw value keeps existing cache keys.
+    case last365Days = "allTime"
     /// TAL-1117: the picked start and end days, resolved by the server.
     case custom
 
@@ -25,8 +26,8 @@ public enum AnalyticsTimeframe: String, CaseIterable, Identifiable, Sendable {
             String(localized: "Last 7 Days")
         case .last30Days:
             String(localized: "Last 30 Days")
-        case .allTime:
-            String(localized: "All Time")
+        case .last365Days:
+            String(localized: "Last \(365) Days")
         case .custom:
             String(localized: "Custom")
         }
@@ -37,7 +38,7 @@ public enum AnalyticsTimeframe: String, CaseIterable, Identifiable, Sendable {
         case .today: String(localized: "Today")
         case .last7Days: String(localized: "7 Days")
         case .last30Days: String(localized: "30 Days")
-        case .allTime: String(localized: "All Time")
+        case .last365Days: String(localized: "365 Days")
         case .custom: String(localized: "Custom")
         }
     }
@@ -51,7 +52,7 @@ public enum AnalyticsTimeframe: String, CaseIterable, Identifiable, Sendable {
             7
         case .last30Days:
             30
-        case .allTime:
+        case .last365Days:
             365
         case .custom:
             30
@@ -253,8 +254,8 @@ public final class InsightsViewModel {
            let start = insightsCalendarDay(range.startDate), let end = insightsCalendarDay(range.endDate), start <= end {
             return (start..<end).formatted(.interval.year().month(.abbreviated).day())
         }
-        // All Time and a custom request the server served as its preset both name the days served.
-        if serverInsights != nil, loadedRequest.timeframe == .allTime || loadedRequest.timeframe == .custom {
+        // The longest preset and a custom request the server served as its preset both name the days served.
+        if serverInsights != nil, loadedRequest.timeframe == .last365Days || loadedRequest.timeframe == .custom {
             return String(localized: "Last \(periodDays) Days")
         }
 

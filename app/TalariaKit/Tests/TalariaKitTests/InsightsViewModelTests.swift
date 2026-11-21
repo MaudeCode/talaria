@@ -6,7 +6,7 @@ final class InsightsViewModelTests: XCTestCase {
         XCTAssertEqual(AnalyticsTimeframe.today.serverDays, 1)
         XCTAssertEqual(AnalyticsTimeframe.last7Days.serverDays, 7)
         XCTAssertEqual(AnalyticsTimeframe.last30Days.serverDays, 30)
-        XCTAssertEqual(AnalyticsTimeframe.allTime.serverDays, 365)
+        XCTAssertEqual(AnalyticsTimeframe.last365Days.serverDays, 365)
     }
 
     func testModelDisplayShareFallsBackFromZeroCostShareToTokenShare() throws {
@@ -63,6 +63,23 @@ final class InsightsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.estimatedCost, 0.42, accuracy: 0.0001)
         XCTAssertEqual(viewModel.totalCacheReadTokens, 80)
         XCTAssertEqual(try XCTUnwrap(viewModel.totalCacheHitPercent), 64.2, accuracy: 0.0001)
+    }
+
+    /// The whole `daily_tokens` series reaches the chart as served, a month's and a year's alike, cache reads included.
+    @MainActor
+    func testTheWholeDailySeriesReachesTheChartInServerOrder() async throws {
+        let first = try XCTUnwrap(insightsCalendarDay("2029-01-01"))
+        for count in [30, 365] {
+            let dates = try (0..<count).map { insightsDayText(try XCTUnwrap(Calendar.current.date(byAdding: .day, value: $0, to: first))) }
+            let rows = dates.enumerated().map { #"{"date": "\#($1)", "input_tokens": \#($0 * 10), "cache_read_tokens": \#($0)}"# }
+            let response = try decodeInsights(#"{"daily_tokens": [\#(rows.joined(separator: ","))]}"#)
+            let viewModel = InsightsViewModel(client: StubInsightsClient(insightsResult: .success(response)))
+
+            await viewModel.load()
+
+            XCTAssertEqual(viewModel.dailyTokens.map(\.date), dates, "\(count) rows")
+            XCTAssertEqual(viewModel.dailyTokens.map(\.cacheReadTokens), Array(0..<count), "\(count) rows")
+        }
     }
 
     @MainActor

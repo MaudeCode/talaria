@@ -389,8 +389,17 @@ struct InsightsView: View {
         if viewModel.dailyTokens.count > 1 {
             let monthly = viewModel.range?.isMonthly == true
             Section {
-                InsightsDailyChart(days: viewModel.dailyTokens, monthly: monthly, metric: $dailyMetric)
-                    .plainSectionRow(separator: .hidden)
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Metric", selection: $dailyMetric) {
+                        ForEach(InsightsDailyMetric.allCases) { metric in
+                            Text(metric.title).tag(metric)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    InsightsDailyChart(days: viewModel.dailyTokens, monthly: monthly, metric: dailyMetric)
+                }
+                .padding(.vertical, 4)
+                .plainSectionRow(separator: .hidden)
             } header: {
                 PlainSectionHeader(title: monthly ? String(localized: "Monthly") : String(localized: "Daily"))
             }
@@ -411,7 +420,8 @@ struct InsightsView: View {
             Section {
                 InsightsActivityChart(
                     categories: InsightsActivityChart.weekdays(viewModel.activityByDay),
-                    accessibilityLabel: "Sessions by weekday",
+                    title: String(localized: "Sessions by weekday"),
+                    categoryTitle: String(localized: "Weekday"),
                     summary: InsightsActivitySummary.weekday(viewModel.peakDay),
                     identifier: "insights-weekday-chart"
                 )
@@ -425,7 +435,8 @@ struct InsightsView: View {
             Section {
                 InsightsActivityChart(
                     categories: InsightsActivityChart.hours(viewModel.activityByHour),
-                    accessibilityLabel: "Sessions by hour",
+                    title: String(localized: "Sessions by hour"),
+                    categoryTitle: String(localized: "Hour"),
                     summary: InsightsActivitySummary.hour(viewModel.peakHour),
                     identifier: "insights-hour-chart"
                 )

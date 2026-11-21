@@ -134,13 +134,17 @@ figure, never prose, never an action, and never nest.
 Both clients follow the same chart contract (the `dataviz` rules):
 
 - One hue (the accent); a selected bar keeps it and the others dim to 35%.
+  The App daily Tokens bar stacks input and output in two tones of it, with a
+  legend; cache reads are part of input, so they stay out of the stack.
 - A baseline, a y-max label, x labels thinned to a readable count, a light
   grid (0.5pt lines on the App, one mid line on Web).
-- A direct readout: the App daily chart reads a day on drag, Web reads a bar
-  on hover.
+- A direct readout: the App daily chart reads the pressed day's every figure
+  (input, output, cache reads, sessions, cost), Web reads a bar on hover.
 - Every point reachable: a "Values" disclosure (App daily), the chart's
   accessibility value (App activity), a toggled table twin (Web).
 - One accessibility element per chart with a summary: count, peak and when.
+  App charts also hand VoiceOver an `AXChartDescriptor` (`InsightsChartAccessibility`)
+  with each bar as a data point, for the chart detail and Audio Graph.
 
 | App | Web |
 | --- | --- |
