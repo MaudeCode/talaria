@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import threading
 from unittest.mock import patch
 
 sys.path.insert(0, sys.argv[1])
@@ -67,3 +68,50 @@ with patch.object(tts_tool, '_select_builtin_engine', lambda provider: (provider
         assert 'gemini' in refused(directory, 'gemini', 'openai')
         assert 'unknown TTS provider' in refused(directory, 'unregistered', 'unregistered')
 assert outputs and all(not path.exists() for path in outputs)
+
+# Overlapping Edge requests in two profiles each get their own spoken-language voice through the Agent's
+# real loader and dispatch; an unrelated Agent read during the overlap sees the unmodified profile config.
+profiles = {home: {'voice': 'fr-FR-DeniseNeural', 'voices': {'it': 'it-IT-IsabellaNeural'}},
+            voice: {'voice': 'en-US-GuyNeural', 'voices': {'en': '${UNSET_VOICE}'}}}
+for directory, edge in profiles.items():
+    (directory / 'config.yaml').write_text(json.dumps({'tts': {'provider': 'edge', 'edge': edge}}))
+written = {directory: (directory / 'config.yaml').read_bytes() for directory in profiles}
+voices, results, unrelated = {}, {}, []
+started, finish = threading.Barrier(3, timeout=30), threading.Barrier(3, timeout=30)
+
+def overlapping(engine, text, file_str, tts_config, instructions):
+    assert engine == 'edge' and tts_config['speed'] == 1.5
+    voices[text] = tts_config['edge']['voice']
+    started.wait()
+    finish.wait()
+    Path(file_str).write_bytes(b'synthetic-audio')
+
+def request(directory, text):
+    results[text] = methods['tts.synthesize'](None, {'profile_home': str(directory), 'text': text, 'provider': 'edge', 'speed': 1.5})
+
+italian, english = 'Ciao, come stai oggi? Questo è un test della voce italiana.', 'The build is green and I will merge it now.'
+with patch.object(tts_tool, '_select_builtin_engine', lambda provider: (provider, None)), \
+        patch.object(tts_tool, '_synthesize_builtin', overlapping):
+    workers = [threading.Thread(target=request, args=(home, italian)), threading.Thread(target=request, args=(voice, english))]
+    for worker in workers:
+        worker.start()
+    started.wait()
+    unrelated.append(tts_tool._load_tts_config())
+    finish.wait()
+    for worker in workers:
+        worker.join(30)
+assert voices == {italian: profiles[home]['voices']['it'], english: 'en-US-AvaNeural'}, voices
+assert set(results) == {italian, english} and all(r['provider'] == 'edge' for r in results.values()), results
+assert unrelated[0]['edge'] == profiles[home], unrelated
+assert tts_tool._load_tts_config()['edge'] == profiles[home]
+uncertain = []
+
+def record(engine, text, file_str, tts_config, instructions):
+    uncertain.append(tts_config['edge']['voice'])
+    Path(file_str).write_bytes(b'synthetic-audio')
+
+with patch.object(tts_tool, '_select_builtin_engine', lambda provider: (provider, None)), \
+        patch.object(tts_tool, '_synthesize_builtin', record):
+    methods['tts.synthesize'](None, {'profile_home': str(home), 'text': 'Ok thanks', 'provider': 'edge', 'speed': 1.5})
+assert uncertain == [profiles[home]['voice']], uncertain
+assert {directory: (directory / 'config.yaml').read_bytes() for directory in profiles} == written

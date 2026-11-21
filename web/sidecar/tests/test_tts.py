@@ -34,12 +34,18 @@ def tts_call(monkeypatch, tmp_path):
 
     methods = build_methods(Runtime())
 
-    def call(generator, provider='piper', configured=None, **params):
+    def call(generator, provider='piper', configured=None, text='Hello', edge=None, agent_reads_config=True, **params):
         config['provider'] = provider if configured is None else configured
+        config.pop('edge', None)
+        if edge is not None:
+            config['edge'] = edge
 
-        def generate(text, *, output_path, speed=None):
+        def generate(spoken, *, output_path, speed=None):
+            assert spoken == text, 'the Agent must receive the caller text unchanged'
             outputs.append(Path(output_path).parent)
-            return generator(text, Path(output_path), speed, config['provider'])
+            # The Agent reads its tts section through _load_tts_config at synthesis time.
+            call.synthesized.append(tool._load_tts_config() if agent_reads_config else config)
+            return generator(spoken, Path(output_path), speed, config['provider'])
 
         tool.text_to_speech_tool = generate
         assert 'tts.synthesize' in methods, 'registered TTS synthesis must be callable through the sidecar'
@@ -51,14 +57,16 @@ def tts_call(monkeypatch, tmp_path):
             yield home
 
         monkeypatch.setattr(tts, 'scoped_home', scope)
-        return methods['tts.synthesize'](None, {'profile_home': str(tmp_path), 'text': 'Hello', 'provider': provider, **params})
+        return methods['tts.synthesize'](None, {'profile_home': str(tmp_path), 'text': text, 'provider': provider, **params})
 
+    call.synthesized = []
+    call.config = config
+    call.tool = tool
     return call, homes, outputs
 
 
 def audio(parts):
     def generate(text, output, speed, provider):
-        assert text == 'Hello'
         paths = []
         for index, (suffix, data) in enumerate(parts):
             path = output.with_name(f'part-{index}.{suffix}')
@@ -159,3 +167,73 @@ def test_audio_outside_the_tempdir_is_not_read_or_deleted(tts_call, tmp_path):
     assert error.value.data['condition'] == 'tts_failed'
     assert outside.read_bytes() == b'private'
     assert all(not path.exists() for path in outputs)
+
+
+ENGLISH = 'The build is green and I will merge it now.'
+ITALIAN = 'Ciao, come stai oggi? Questo è un test della voce italiana.'
+
+
+def edge_voice(config):
+    edge = config.get('edge')
+    return edge.get('voice') if isinstance(edge, dict) else None
+
+
+@pytest.mark.parametrize('text, edge, voice', [
+    (ENGLISH, None, 'en-US-AvaNeural'),
+    (ITALIAN, {'voice': 'en-US-GuyNeural'}, 'it-IT-ElsaNeural'),
+    (ENGLISH, {'voice': 'it-IT-ElsaNeural', 'voices': {'en': ' en-GB-SoniaNeural '}}, 'en-GB-SoniaNeural'),
+    (ITALIAN, {'voices': {'it': '${ITALIAN_VOICE}'}}, 'it-IT-ElsaNeural'),
+    (ENGLISH, {'voices': {'en': 'xx-XX-UnknownNeural'}}, 'en-US-AvaNeural'),
+    (ENGLISH, {'voices': {'en': 7}}, 'en-US-AvaNeural'),
+    (ENGLISH, {'voices': 'en-GB-SoniaNeural'}, 'en-US-AvaNeural'),
+    (ENGLISH, 'edge', 'en-US-AvaNeural'),
+])
+def test_edge_voice_follows_the_spoken_language(tts_call, text, edge, voice):
+    call, _, _ = tts_call
+    call(audio([('mp3', b'audio')]), provider='edge', text=text, edge=edge)
+    assert [edge_voice(config) for config in call.synthesized] == [voice]
+    assert call.config.get('edge') == edge, 'the profile config object is never mutated'
+
+
+@pytest.mark.parametrize('text', [
+    'Ok thanks', 'The plan and il la tavola', 'Das ist ein Test der deutschen Stimme heute', 'Hello',
+])
+def test_uncertain_language_keeps_the_configured_voice(tts_call, text):
+    call, _, _ = tts_call
+    edge = {'voice': 'fr-FR-DeniseNeural', 'voices': {'en': 'en-GB-SoniaNeural', 'it': 'it-IT-DiegoNeural'}}
+    call(audio([('mp3', b'audio')]), provider='edge', text=text, edge=edge)
+    assert call.synthesized == [call.config]
+
+
+def test_uncertain_language_without_a_configured_voice_keeps_the_agent_default(tts_call):
+    call, _, _ = tts_call
+    call(audio([('mp3', b'audio')]), provider='edge', text='Ok thanks')
+    assert call.synthesized == [call.config] and 'edge' not in call.synthesized[0]
+
+
+def test_other_engines_never_apply_edge_language_voices(tts_call):
+    call, _, _ = tts_call
+    call(audio([('mp3', b'audio')]), provider='piper', text=ENGLISH, edge={'voices': {'en': 'en-GB-SoniaNeural'}})
+    assert call.synthesized == [call.config]
+
+
+def test_voice_context_ends_with_each_call_and_wraps_the_loader_once(tts_call):
+    call, _, _ = tts_call
+    original = call.tool._load_tts_config
+    call(audio([('mp3', b'audio')]), provider='edge', text=ENGLISH)
+    def broken(*args):
+        raise OSError('failed writing audio')
+    with pytest.raises(RpcError):
+        call(broken, provider='edge', text=ITALIAN)
+    assert [edge_voice(config) for config in call.synthesized] == ['en-US-AvaNeural', 'it-IT-ElsaNeural']
+    assert call.tool._load_tts_config() is call.config
+    assert call.tool._load_tts_config.__wrapped__ is original
+
+
+def test_agent_that_bypasses_the_config_seam_fails_instead_of_ignoring_the_voice(tts_call):
+    call, _, outputs = tts_call
+    with pytest.raises(RpcError) as error:
+        call(audio([('mp3', b'audio')]), provider='edge', text=ENGLISH, agent_reads_config=False)
+    assert error.value.data['condition'] == 'tts_failed'
+    assert 'voice' in str(error.value)
+    assert outputs and all(not path.exists() for path in outputs)

@@ -429,6 +429,20 @@ normalizer, validation, per-client limiter and `tts_unconfigured` fallback, maps
 rate percentages to speed [0.5, 2], and validates but ignores pitch. Provider errors
 are logged privately and returned as a generic 502. Node sends no provider request.
 
+Automatic Edge voice (TAL-2262) is the one approved exception to Agent-only speech
+policy: when the profile's engine is `edge`, the sidecar picks the voice from the
+spoken language. It runs the Agent's spoken-text cleaner, then votes English and
+Italian stopwords (accented letters count for Italian); a language needs at least
+three words, two votes and a strict lead. Precedence for a recognized language is a
+usable `tts.edge.voices.<en|it>` (on the reviewed Edge allowlist, no unresolved
+`${VAR}`), then `en-US-AvaNeural` or `it-IT-ElsaNeural`. Short, tied, mixed,
+unsupported or malformed input leaves the profile untouched, so `tts.edge.voice` or
+the Agent default speaks. Other engines never read the Edge settings. The voice
+reaches the Agent's own `text_to_speech_tool` through a context-local wrapper around
+its `_load_tts_config`, installed once; only the requesting call sees a copied
+config with that voice, and an Agent that stops reading the config fails the request
+as `tts_failed`. Synthesis, chunking, speed, credentials and audio stay Agent-owned.
+
 
 `plugins.catalog` reads the native reviewed catalog/cache without loading plugins, filters and
 orders it on the sidecar, and returns at most 50 rows per page. Installer-owned metadata supplies
