@@ -15,6 +15,12 @@ multi-select clarification after the approval is answered.
 
 ``worktree.create`` adds a real git worktree under the repository's ``.worktrees/``,
 as the Agent's helper does, so worktree chats run end to end against a synthetic repo.
+
+With ``TALARIA_SIDECAR_REPLAY_SCENARIO=<file>`` (the phone test server's scenario, TAL-2622), a
+``chat.start`` whose message equals a scenario turn's ``user`` plays that turn instead:
+its tool calls as the real sidecar's tool frames, then its approval and clarification,
+each pending until that chat answers, then its Markdown reply. The returned messages
+carry the tool calls and results, so the server persists them like an Agent turn.
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ SIDECAR_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIDECAR_ROOT))
 
 from talaria_sidecar.errors import RpcError  # noqa: E402
+from talaria_sidecar.methods.chat import _args_snapshot, _raw_result, _snippet  # noqa: E402
 from talaria_sidecar.rpc import RpcServer  # noqa: E402
 
 FIXTURES = SIDECAR_ROOT.parent / "packages" / "contracts" / "fixtures" / "sidecar"
@@ -39,6 +46,23 @@ APPROVAL_COMMAND = "printf talaria-contract"
 # ponytail: one fixture turn at a time; use per-session events for concurrent probe turns.
 _APPROVAL_ANSWERED = threading.Event()
 _CLARIFICATION_ANSWERED = threading.Event()
+# Scripted turns wait per chat, so answering one waiting chat never releases another.
+_ANSWERED: dict[tuple[str, str], threading.Event] = {}
+_ANSWERED_LOCK = threading.Lock()
+_SCENARIO: dict[str, dict] = {}
+
+
+def _answered(kind: str, session_id: str) -> threading.Event:
+    with _ANSWERED_LOCK:
+        return _ANSWERED.setdefault((kind, session_id), threading.Event())
+
+
+def _scenario_turns() -> dict[str, dict]:
+    path = os.environ.get("TALARIA_SIDECAR_REPLAY_SCENARIO")
+    if not path:
+        return {}
+    chats = json.loads(Path(path).read_text()).get("chats") or []
+    return {turn["user"]: turn for chat in chats for turn in chat.get("turns") or []}
 
 
 def _bare_model_id(args: str) -> dict:
@@ -71,7 +95,57 @@ def _replay(entry: dict):
     return handler
 
 
+def _turn_result(params: dict, messages: list[dict], reply: str) -> dict:
+    return {
+        "status": "completed", "messages": messages, "history_prefix_len": len(params.get("conversation_history", [])), "final_response": reply, "error": None, "failed": False, "partial": False, "compression_exhausted": False,
+        "tool_limit_reached": False, "max_iterations_summary_request": "", "usage": {"prompt_tokens": 0, "completion_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "estimated_cost_usd": None},
+        "context": {}, "model": params.get("model") or "replay", "provider": params.get("model_provider") or "replay", "compressed": False,
+        "agent_session_id": params.get("session_id", ""), "token_sent": True, "pending_steer": "", "live_tool_calls": [],
+    }
+
+
+def _prompt(ctx, kind: str, session_id: str, payload: dict) -> None:
+    """Emits an approval or clarify frame and holds the turn until that chat answers it (or it is stopped). No timeout:
+    a scripted prompt waits for the phone like a person who has not answered yet."""
+    answered = _answered(kind, session_id)
+    answered.clear()
+    ctx.emit(kind, payload)
+    while not answered.wait(0.1) and not ctx.cancelled:
+        pass
+
+
+def _scripted_turn(ctx, params: dict, turn: dict) -> dict:
+    session_id = str(params.get("session_id") or "")
+    messages: list[dict] = [{"role": "user", "content": params.get("user_message", "")}]
+    calls = [(f"call_{uuid.uuid4().hex[:12]}", tool) for tool in turn.get("tools") or []]
+    if calls:
+        messages.append({"role": "assistant", "content": "", "tool_calls": [
+            {"id": tid, "type": "function", "function": {"name": tool["name"], "arguments": json.dumps(tool.get("args") or {})}} for tid, tool in calls]})
+    for tid, tool in calls:
+        name, args, result = tool["name"], tool.get("args") or {}, tool.get("result", "")
+        # The real sidecar's `tool` and `tool_complete` frames (talaria_sidecar.methods.chat on_tool_start/on_tool_complete).
+        ctx.emit("tool", {"event_type": "tool.started", "name": name, "preview": None, "args": _args_snapshot(args), "tid": tid})
+        ctx.emit("tool_complete", {"event_type": "tool.completed", "name": name, "preview": _snippet(result), "args": _args_snapshot(args), "tid": tid,
+                                   "raw_result": _raw_result(result), "raw_args": _raw_result(args)})
+        messages.append({"role": "tool", "tool_call_id": tid, "name": name, "content": result if isinstance(result, str) else json.dumps(result)})
+    approval = turn.get("approval")
+    if approval and not ctx.cancelled:
+        _prompt(ctx, "approval", session_id, {"request_id": f"scripted-{uuid.uuid4().hex[:12]}", "pattern_key": "scripted",
+                                              "command": approval["command"], "tool_name": approval.get("tool") or "terminal", "cwd": params.get("workspace") or ""})
+    clarify = turn.get("clarify")
+    if clarify and not ctx.cancelled:
+        _prompt(ctx, "clarify", session_id, {"clarify_id": f"scripted-{uuid.uuid4().hex[:12]}", "question": clarify["question"],
+                                             "choices_offered": clarify.get("choices") or [], "multi_select": bool(clarify.get("multi_select"))})
+    reply = str(turn.get("reply") or "")
+    ctx.emit("token", {"text": reply})
+    messages.append({"role": "assistant", "content": reply})
+    return _turn_result(params, messages, reply)
+
+
 def _chat_start(ctx, params: dict) -> dict:
+    turn = _SCENARIO.get(str(params.get("user_message", "")))
+    if turn is not None:
+        return _scripted_turn(ctx, params, turn)
     _APPROVAL_ANSWERED.clear()
     ctx.emit("approval", {"request_id": "talaria-contract-approval", "pattern_key": APPROVAL_PATTERN_KEY, "command": APPROVAL_COMMAND, "tool_name": "terminal", "cwd": params.get("workspace") or ""})
     # Like a real turn, stay pending until the approval is answered (or the request is cancelled / times out).
@@ -86,21 +160,18 @@ def _chat_start(ctx, params: dict) -> dict:
                 break
     ctx.emit("token", {"text": "talaria-contract"})
     fresh = [{"role": "user", "content": params.get("user_message", "")}, {"role": "assistant", "content": "talaria-contract"}]
-    return {
-        "status": "completed", "messages": fresh, "history_prefix_len": len(params.get("conversation_history", [])), "final_response": "talaria-contract", "error": None, "failed": False, "partial": False, "compression_exhausted": False,
-        "tool_limit_reached": False, "max_iterations_summary_request": "", "usage": {"prompt_tokens": 0, "completion_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "estimated_cost_usd": None},
-        "context": {}, "model": params.get("model") or "replay", "provider": params.get("model_provider") or "replay", "compressed": False,
-        "agent_session_id": params.get("session_id", ""), "token_sent": True, "pending_steer": "", "live_tool_calls": [],
-    }
+    return _turn_result(params, fresh, "talaria-contract")
 
 
 def _approval_respond(ctx, params: dict) -> dict:
     _APPROVAL_ANSWERED.set()
+    _answered("approval", str(params.get("session_id") or "")).set()
     return {"ok": True, "resolved": 1, "choice": str(params.get("choice") or "once")}
 
 
 def _clarify_respond(ctx, params: dict) -> dict:
     _CLARIFICATION_ANSWERED.set()
+    _answered("clarify", str(params.get("session_id") or "")).set()
     return {"ok": True}
 
 
@@ -127,6 +198,8 @@ def _shutdown(ctx, params: dict) -> dict:
 
 
 def build_methods() -> dict:
+    global _SCENARIO
+    _SCENARIO = _scenario_turns()
     subs = _substitutions()
     methods = {}
     spoken: dict[str, dict] = {}

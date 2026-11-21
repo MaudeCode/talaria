@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Start or stop a disposable Talaria Web server the phone reaches over Tailscale (TAL-2621).
 
-  scripts/phone-test-server start [--no-build] [--host IP] [--tailscale CLI]
+  scripts/phone-test-server start [--scenario FILE] [--no-build] [--host IP] [--tailscale CLI]
       Builds contracts and server from this checkout, boots the replay-sidecar server under `env -i` with a temp
       HOME on the Mac's Tailscale IPv4, a free port and a random password, waits for /health and a password login,
       and prints {url, password, pid, stateDir, log} as one JSON object on stdout.
+      --scenario seeds the server from a JSON file (TAL-2622; scripts/phone-test-scenarios/example.json shows every
+      field): its files go into the default workspace before boot, then its projects and chats are created through the
+      HTTP API as the App would, each turn played by the replay sidecar, and the result is read back and compared. A
+      turn with an approval or clarify must be its chat's last; it stays waiting until answered on the phone.
   scripts/phone-test-server stop STATE_DIR
       Signals only the PID recorded in STATE_DIR/server.json, waits for it to exit and deletes STATE_DIR.
 
@@ -13,6 +17,7 @@ LAN address. `--host` takes a loopback address for this script's own test.
 """
 
 import argparse
+import http.cookiejar
 import ipaddress
 import json
 import os
@@ -27,6 +32,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -36,6 +42,7 @@ STATE_PREFIX = "talaria-phone-server-"
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
 READY_SECONDS = 60
 RESTATE_ERROR = "changing settings via 'tailscale up' requires mentioning all"
+SETTLE_SECONDS = 30
 
 
 class Failure(Exception):
@@ -147,22 +154,195 @@ def ready(url, password, server):
     return False
 
 
+def load_scenario(path):
+    """Reads a scenario and refuses one the seeding cannot reproduce exactly, before anything boots."""
+    scenario = json.loads(Path(path).read_text())
+    projects = [project["name"] for project in scenario.get("projects") or []]
+    problems = [f"project {name!r} is listed twice" for name in set(projects) if projects.count(name) > 1]
+    for entry in scenario.get("files") or []:
+        relative = Path(entry["path"])
+        if relative.is_absolute() or ".." in relative.parts or not isinstance(entry.get("content"), str):
+            problems.append(f"file {entry['path']!r} needs a relative path inside the workspace and string content")
+    titles, users = [], []
+    for chat in scenario.get("chats") or []:
+        title, turns = chat.get("title") or "", chat.get("turns") or []
+        titles.append(title)
+        users.extend(turn.get("user") for turn in turns)
+        if not title or not turns or not all(isinstance(turn.get("user"), str) and turn["user"] for turn in turns):
+            problems.append(f"chat {title!r} needs a title and at least one turn, each with a user message")
+        if chat.get("project") and chat["project"] not in projects:
+            problems.append(f"chat {title!r} names unknown project {chat['project']!r}")
+        if any(turn.get("approval") or turn.get("clarify") for turn in turns[:-1]):
+            problems.append(f"chat {title!r}: only its last turn may wait for an approval or clarify")
+    problems += [f"chat title {t!r} is used twice" for t in set(titles) if titles.count(t) > 1]
+    # The replay sidecar picks a turn by its exact message, so each message plays one turn.
+    problems += [f"turn message {u!r} is used twice" for u in set(users) if users.count(u) > 1]
+    if problems:
+        raise Failure(f"{path}: " + "; ".join(problems))
+    return scenario
+
+
+class Api:
+    """The server's public HTTP API as the App uses it: a password login, then cookie-authenticated JSON calls."""
+
+    def __init__(self, url, password):
+        self.url = url
+        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        if self.call("/api/auth/login", {"password": password}).get("ok") is not True:
+            raise Failure("password login refused")
+
+    def call(self, path, body=None, **query):
+        url = f"{self.url}{path}" + (f"?{urllib.parse.urlencode(query)}" if query else "")
+        data = None if body is None else json.dumps(body).encode()
+        request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        try:
+            with self.opener.open(request, timeout=10) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            raise Failure(f"{'POST' if data else 'GET'} {path} answered {error.code}: {error.read()[:300]!r}") from None
+
+
+def until(describe, check):
+    """Polls CHECK until it returns a truthy value or SETTLE_SECONDS pass."""
+    deadline = time.monotonic() + SETTLE_SECONDS
+    while time.monotonic() < deadline:
+        value = check()
+        if value:
+            return value
+        time.sleep(0.2)
+    raise Failure(f"timed out after {SETTLE_SECONDS}s waiting for {describe}")
+
+
+def settle(api, session_id, stream_id, turn):
+    """Waits until the turn is done, or until the prompt it leaves waiting is pending on the server."""
+    for kind in ("approval", "clarify"):
+        if turn.get(kind):
+            until(f"{kind} pending in {turn['user']!r}", lambda: api.call(f"/api/{kind}/pending", session_id=session_id).get("pending"))
+            return
+    until(f"{turn['user']!r} to settle", lambda: (lambda status: not status["active"] and not status.get("blocking_stream_id"))(
+        api.call("/api/chat/stream/status", stream_id=stream_id)))
+
+
+def seed(api, scenario):
+    """Creates the scenario's projects and chats through the HTTP API, playing each turn and setting each chat's title,
+    project, pin and archive afterwards, as the App would."""
+    projects = {project["name"]: api.call("/api/projects/create", {"name": project["name"], "color": project.get("color")})["project"]["project_id"]
+                for project in scenario.get("projects") or []}
+    for chat in scenario.get("chats") or []:
+        session_id = api.call("/api/session/new", {})["session"]["session_id"]
+        for turn in chat["turns"]:
+            started = api.call("/api/chat/start", {"session_id": session_id, "message": turn["user"]})
+            if not started.get("stream_id") or started.get("queued"):
+                raise Failure(f"chat {chat['title']!r} did not start {turn['user']!r}: {started}")
+            settle(api, session_id, started["stream_id"], turn)
+        api.call("/api/session/rename", {"session_id": session_id, "title": chat["title"]})
+        if chat.get("project"):
+            api.call("/api/session/move", {"session_id": session_id, "project_id": projects[chat["project"]]})
+        if chat.get("pinned"):
+            api.call("/api/session/pin", {"session_id": session_id, "pinned": True})
+        if chat.get("archived"):
+            api.call("/api/session/archive", {"session_id": session_id, "archived": True})
+
+
+def verify(api, scenario):
+    """Reads the projects, sidebar rows, transcripts and waiting prompts back and lists every difference from the
+    scenario; an empty list means the server shows exactly what the scenario asked for."""
+    mismatches = []
+    projects = {project["name"]: project for project in api.call("/api/projects")["projects"]}
+    for wanted in scenario.get("projects") or []:
+        got = projects.get(wanted["name"])
+        if got is None or got.get("color") != wanted.get("color"):
+            mismatches.append(f"project {wanted['name']!r}: expected color {wanted.get('color')!r}, got {got and got.get('color')!r}")
+    rows = {row["title"]: row for row in api.call("/api/sessions", include_archived="1")["sessions"]}
+    for chat in scenario.get("chats") or []:
+        title = chat["title"]
+        row = rows.get(title)
+        if row is None:
+            mismatches.append(f"chat {title!r} is missing from /api/sessions")
+            continue
+        project = projects.get(chat.get("project") or "", {}).get("project_id")
+        for field, expected in (("pinned", bool(chat.get("pinned"))), ("archived", bool(chat.get("archived"))), ("project_id", project)):
+            if (bool(row.get(field)) if field != "project_id" else row.get(field)) != expected:
+                mismatches.append(f"chat {title!r}: expected {field} {expected!r}, got {row.get(field)!r}")
+        mismatches += [f"chat {title!r}: {m}" for m in transcript_mismatches(api, row["session_id"], chat["turns"])]
+    return mismatches
+
+
+def transcript_mismatches(api, session_id, turns):
+    messages = api.call("/api/session", session_id=session_id, messages="1")["session"]["messages"]
+    text = lambda message: message.get("content") if isinstance(message.get("content"), str) else ""
+    mismatches = []
+    position = 0
+    for turn in turns:
+        user = next((i for i in range(position, len(messages)) if messages[i].get("role") == "user" and text(messages[i]) == turn["user"]), None)
+        if user is None:
+            mismatches.append(f"turn {turn['user']!r} is missing")
+            continue
+        end = next((i for i in range(user + 1, len(messages)) if messages[i].get("role") == "user"), len(messages))
+        rows = messages[user + 1:end]
+        position = end
+        waiting = next((kind for kind in ("approval", "clarify") if turn.get(kind)), None)
+        # A waiting turn's tool rows are in its live stream; the transcript gets them when the turn settles.
+        tools = [row.get("name") for row in rows if row.get("role") == "tool"]
+        if not waiting and tools != [tool["name"] for tool in turn.get("tools") or []]:
+            mismatches.append(f"turn {turn['user']!r}: expected tool rows {[tool['name'] for tool in turn.get('tools') or []]}, got {tools}")
+        if waiting:
+            pending = api.call(f"/api/{waiting}/pending", session_id=session_id).get("pending") or {}
+            expected = turn[waiting]["command"] if waiting == "approval" else turn[waiting]["question"]
+            if expected not in (pending.get("command"), pending.get("question")):
+                mismatches.append(f"turn {turn['user']!r}: expected a pending {waiting} {expected!r}, got {pending or None}")
+        elif not any(row.get("role") == "assistant" and text(row) == turn.get("reply", "") for row in rows):
+            mismatches.append(f"turn {turn['user']!r}: the reply is missing")
+    return mismatches
+
+
 def start(args):
+    scenario = load_scenario(args.scenario) if args.scenario else None
     host = checked_host(args.host) if args.host else tailscale_ipv4(args.tailscale)
     if not args.no_build:
         build()
+    state_dir = Path(tempfile.mkdtemp(prefix=STATE_PREFIX)).resolve()
+    for name in ("home", "state", "workspace"):
+        (state_dir / name).mkdir()
+    if scenario is not None:
+        (state_dir / "scenario.json").write_text(json.dumps(scenario))
+        for entry in scenario.get("files") or []:
+            target = state_dir / "workspace" / entry["path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(entry["content"])
+    record = {"port": free_port(host), "host": host, "password": secrets.token_urlsafe(18)}
+    (state_dir / "server.json").write_text(json.dumps(record))
+    try:
+        url = launch(state_dir)
+    except Exception:
+        shutil.rmtree(state_dir, ignore_errors=True)  # a boot that never started a server leaves no state behind
+        raise
+    if scenario is not None:
+        try:
+            api = Api(url, record["password"])
+            seed(api, scenario)
+            mismatches = verify(api, scenario)
+        except (Failure, OSError, ValueError) as error:
+            mismatches = [f"seeding failed: {error}"]
+        if mismatches:
+            stop(state_dir)
+            raise Failure("the seeded server does not match the scenario:\n" + "\n".join(f"  {m}" for m in mismatches))
+    print(json.dumps({"url": url, "password": record["password"], "pid": json.loads((state_dir / "server.json").read_text())["pid"],
+                      "stateDir": str(state_dir), "log": str(state_dir / "server.log")}))
+    print(f"Stop it with: {Path(__file__).resolve()} stop {state_dir}", file=sys.stderr)
+
+
+def launch(state_dir):
+    """Boots the server on STATE_DIR's recorded host, port and password, records its PID and returns its URL once it
+    serves a login. A scenario.json in STATE_DIR scripts the replay sidecar. A failed boot stops it and raises."""
+    record = json.loads((state_dir / "server.json").read_text())
+    host, port, password = record["host"], record["port"], record["password"]
     node = interpreter(["node", "-p", "process.execPath"])
     python = interpreter([sys.executable, "-c", "import sys; print(sys.executable)"])
     dist = WEB / "packages/server/dist/bin/talaria-web.js"
     if not dist.is_file():
         raise Failure(f"{dist} is missing; run without --no-build")
-
-    state_dir = Path(tempfile.mkdtemp(prefix=STATE_PREFIX)).resolve()
-    for name in ("home", "state", "workspace"):
-        (state_dir / name).mkdir()
     log = state_dir / "server.log"
-    port = free_port(host)
-    password = secrets.token_urlsafe(18)
     url = f"http://{host}:{port}"
     env = {
         "PATH": f"{Path(node).parent}:{Path(python).parent}:/usr/bin:/bin",
@@ -181,19 +361,20 @@ def start(args):
         # `serve` in worker mode: the launcher form clones and installs hermes-agent into the temp state.
         "TALARIA_WEB_WORKER": "1",
     }
-    with log.open("w") as output:
+    if (state_dir / "scenario.json").is_file():
+        env["TALARIA_SIDECAR_REPLAY_SCENARIO"] = str(state_dir / "scenario.json")
+    with log.open("a") as output:
         server = subprocess.Popen(
             [node, str(dist), "serve"], cwd=WEB, env=env, stdin=subprocess.DEVNULL, stdout=output,
             stderr=subprocess.STDOUT, start_new_session=True,
         )
-    record = {"pid": server.pid, "started": process_start(server.pid), "port": port, "host": host, "password": password}
+    record.update(pid=server.pid, started=process_start(server.pid))
     (state_dir / "server.json").write_text(json.dumps(record))
     if not ready(url, password, server):
         tail = log.read_text(errors="replace").splitlines()[-80:]
         stop(state_dir)
         raise Failure("the server did not become ready; last 80 log lines:\n" + "\n".join(tail))
-    print(json.dumps({"url": url, "password": password, "pid": server.pid, "stateDir": str(state_dir), "log": str(log)}))
-    print(f"Stop it with: {Path(__file__).resolve()} stop {state_dir}", file=sys.stderr)
+    return url
 
 
 def stop(state_dir):
@@ -201,7 +382,15 @@ def stop(state_dir):
     record = state_dir / "server.json"
     if not state_dir.name.startswith(STATE_PREFIX) or not record.is_file():
         raise Failure(f"{state_dir} is not a phone test server state directory")
-    recorded = json.loads(record.read_text())
+    terminate(state_dir)
+    shutil.rmtree(state_dir)
+
+
+def terminate(state_dir):
+    """Ends the server STATE_DIR records, signalling only that process; the state stays."""
+    recorded = json.loads((state_dir / "server.json").read_text())
+    if "pid" not in recorded:
+        return
     pid, started = recorded["pid"], recorded["started"]
     for sig, seconds in ((signal.SIGTERM, 15), (signal.SIGKILL, 5)):
         # A server that already exited may have left its PID to an unrelated process; signal only the one we started.
@@ -215,7 +404,6 @@ def stop(state_dir):
             break
     else:
         raise Failure(f"server {pid} survived SIGKILL; {state_dir} kept")
-    shutil.rmtree(state_dir)
 
 
 def process_start(pid):
@@ -245,6 +433,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     start_parser = commands.add_parser("start")
+    start_parser.add_argument("--scenario", help="seed chats, projects and files from this JSON scenario")
     start_parser.add_argument("--no-build", action="store_true", help="skip npm ci and the builds (caller just built)")
     start_parser.add_argument("--host", help="bind this address instead of the Tailscale IPv4 (loopback for tests)")
     start_parser.add_argument("--tailscale", default=shutil.which("tailscale") or "tailscale", help="tailscale CLI path")

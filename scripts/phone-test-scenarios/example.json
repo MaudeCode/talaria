@@ -1,0 +1,60 @@
+{
+  "projects": [
+    {"name": "Demo", "color": "#3b82f6"},
+    {"name": "Release", "color": "#f97316"}
+  ],
+  "files": [
+    {"path": "notes/todo.md", "content": "# Todo\n\n- [x] Seed the phone test server\n- [ ] Check the wide table on the phone\n"},
+    {"path": "README.md", "content": "Phone test workspace.\n"}
+  ],
+  "chats": [
+    {
+      "title": "Wide table",
+      "project": "Demo",
+      "pinned": true,
+      "archived": false,
+      "turns": [
+        {
+          "user": "Read my todo list",
+          "tools": [
+            {"name": "read_file", "args": {"path": "notes/todo.md"}, "result": {"content": "# Todo\n\n- [x] Seed the phone test server\n- [ ] Check the wide table on the phone\n", "total_lines": 4}},
+            {"name": "terminal", "args": {"command": "ls notes"}, "result": "todo.md"}
+          ],
+          "reply": "One item is open: **check the wide table on the phone**."
+        },
+        {
+          "user": "Show the release matrix as a table",
+          "reply": "| Platform | Channel | Build | Status | Owner | Notes |\n|---|---|---|---|---|---|\n| iOS | Nightly | 2026.11.21 | Uploaded | Factory | Waiting for TestFlight processing |\n| iOS | Stable | 2026.11.14 | Live | Release | Phased rollout at 50 percent |\n| Web | Stable | 0.48.2 | Live | Release | Served from the Tailscale host |"
+        }
+      ]
+    },
+    {
+      "title": "Waiting for approval",
+      "project": "Release",
+      "turns": [
+        {
+          "user": "Clean the build folder",
+          "tools": [{"name": "search_files", "args": {"pattern": "build/**"}, "result": {"matches": ["build/app.ipa", "build/logs"]}}],
+          "approval": {"command": "rm -rf build", "tool": "terminal"},
+          "clarify": {"question": "Keep the logs?", "choices": ["Keep logs", "Delete everything"], "multi_select": false},
+          "reply": "The build folder is clean."
+        }
+      ]
+    },
+    {
+      "title": "Pick checks",
+      "turns": [
+        {
+          "user": "Which checks should run before release?",
+          "clarify": {"question": "Which checks?", "choices": ["Unit", "UI", "Contract"], "multi_select": true},
+          "reply": "Running the checks you picked."
+        }
+      ]
+    },
+    {
+      "title": "Archived notes",
+      "archived": true,
+      "turns": [{"user": "Summarize last week's notes", "reply": "Last week shipped the replay sidecar and the phone test server."}]
+    }
+  ]
+}
