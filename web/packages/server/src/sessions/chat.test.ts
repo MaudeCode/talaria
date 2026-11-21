@@ -1602,6 +1602,42 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  const savedTitle = 'Maybe Docker permissions'
+  it.each([
+    { route: 'first title', title: 'fix docker volume permissions', frames: [{ event: 'title_status', status: 'fallback', reason: 'local_summary:llm_invalid_aux', title: 'fix docker volume permissions' }, { event: 'title', title: 'fix docker volume permissions' }] },
+    { route: 'adaptive refresh', title: savedTitle, frames: [{ event: 'title_status', status: 'refresh_skipped', reason: 'llm_invalid_aux', title: savedTitle }] },
+    { route: 'explicit regenerate', title: 'fix docker volume permissions', frames: [] },
+  ])('keeps a hedged reasoning reply out of the $route saved and streamed titles (TAL-2550)', async ({ route, title, frames: expected }) => {
+    const turns = s.deps.turns as unknown as { deps: { titleRefreshEvery: (() => number) | undefined } }
+    const original = turns.deps.titleRefreshEvery
+    const sid = await newSession(s)
+    if (route !== 'first title') {
+      // The fresh-reply rules judge only new replies: a saved generated title they would reject is not retitled.
+      const session = await s.deps.sessionStore.get(sid)
+      session.title = savedTitle
+      session.llm_title_generated = true
+      await s.deps.sessionStore.save(session)
+    }
+    sidecar.respond('chat.start', (params) => completed([...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Run chown on the volume.' }]))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'I think Docker Permissions is a good title', usage: null }))
+    const titleFrames: Json[] = []
+    const turn = async (message: string): Promise<void> => {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+      for (const f of frames) if (f.event === 'title' || f.event === 'title_status') titleFrames.push({ event: f.event, ...(f.data as Json) })
+    }
+    turns.deps.titleRefreshEvery = () => 2
+    try {
+      await turn('fix the docker volume permissions')
+      if (route === 'adaptive refresh') await turn('check the docker volume owner')
+      if (route === 'explicit regenerate') expect(await json(await post(s, '/api/session/title/regenerate', { session_id: sid, prefer_latest: true }))).toMatchObject({ title, status: 'local_summary:llm_invalid_aux' })
+      expect(titleFrames).toMatchObject(expected)
+      expect((await s.deps.sessionStore.get(sid)).title).toBe(title)
+    } finally {
+      turns.deps.titleRefreshEvery = original
+    }
+  })
+
   it.each([
     ['empty_user_message', [], null, 'There is no message to title yet.'],
     ['empty_assistant_message', [{ role: 'user', content: 'ok' }], null, 'There is no reply to title yet.'],

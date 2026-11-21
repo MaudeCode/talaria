@@ -79,14 +79,35 @@ function repairTitleBytes(title: string, source: string): string {
   return fixed
 }
 
+// TAL-2550 (Hermes WebUI exp-v0.52.711): reasoning a model leaks into its reply instead of a title.
+const REASONING_TAGS = 'think|thinking|thought|reasoning|analysis'
+const LEADING_REASONING_BLOCK = new RegExp(`^\\s*<(${REASONING_TAGS})\\b[^>]*>[\\s\\S]*?</\\1>\\s*`, 'i')
+const REASONING_LEAD = /^(?:(?:well|so|hmm+|ok|okay),?\s+)?(?:maybe|perhaps|possibly|probably|i\s+(?:think|guess|suppose|believe|would|recommend|suggest)|i['’]d\s|let['’]s\s+go\s+with|how\s+about|what\s+about|my\s+pick|something\s+like|a\s+good\s+title|the\s+(?:best|final)\s+title|title\s+should)\b/i
+const REASONING_LEFTOVER = new RegExp(`</?(?:${REASONING_TAGS})\\b|["']title["']\\s*:|^\\{`, 'i')
+
+/** The title of a reply that is exactly a `{"title": ...}` object, optionally in a json fence; any other reply unchanged. */
+function titleFromJson(text: string): string {
+  const s = text.trim()
+  const body = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(s)?.[1] ?? s
+  if (!body.startsWith('{')) return text
+  try {
+    const parsed: unknown = JSON.parse(body)
+    if (isDict(parsed) && Object.keys(parsed).length === 1 && typeof parsed.title === 'string') return parsed.title
+  } catch { /* a cut or malformed object stays and is rejected as a fragment */ }
+  return text
+}
+
+/** Judges fresh replies only, so a saved title is never renamed by these rules. */
+const looksLikeLeakedReasoning = (title: string): boolean => REASONING_LEAD.test(title) || REASONING_LEFTOVER.test(title)
+
 export function sanitizeGeneratedTitle(text: unknown, userText: string, assistantText: string): string {
-  let s = stripThinkingMarkup(str(text), false)
+  let s = stripThinkingMarkup(titleFromJson(str(text).replace(LEADING_REASONING_BLOCK, '')), false)
   s = s.replace(/^\s*(?:[*_`~]+\s*)?(?:session\s+title|title)\s*:\s*(?:[*_`~]+\s*)?/i, '')
   s = s.replace(/^\s*title\s*:\s*/i, '')
   s = repairTitleBytes(s, `${userText}\n${assistantText}`)
   s = s.replace(/^[\s"'`*_~]+|[\s"'`*_~]+$/g, '')
   s = s.split(/\s+/).join(' ').trim()
-  if (isBadNewTitle(s) || isAnswerShaped(s)) return ''
+  if (isBadNewTitle(s) || isAnswerShaped(s) || looksLikeLeakedReasoning(s)) return ''
   return s.slice(0, GENERATED_TITLE_MAX_CHARS)
 }
 
