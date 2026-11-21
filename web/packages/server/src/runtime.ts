@@ -505,6 +505,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return (key && contextLengths.get(key)?.context_window_source) || null
     },
     resolveContextLength,
+    modelRouteUrl: async (home, model, provider) => (await catalog.contextLengthInputs(home, model, provider)).base_url,
     modelOptionFor: (model, provider) => catalog.modelOptionFor(profileHome(activeProfile()), model, provider),
     warmModelOptions: () => catalog.warmModelOptions(profileHome(activeProfile())),
     freshModelDefaults: async (profile) => {

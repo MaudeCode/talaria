@@ -17,9 +17,8 @@ def test_real_selection_guards_and_read_only_context(tmp_path):
         from talaria_sidecar.methods import providers, chat
         from talaria_sidecar.home import scoped_home
         home = Path(sys.argv[1]); home.mkdir()
-        params = dict(session_id='guard-test', model='muse-spark-1.2-contributor', provider='custom', current_provider='custom', current_model='old-model', context_tokens=200000, messages=[])
-        route = dict(provider='custom', base_url='https://provider.invalid/v1', api_key='synthetic-key')
-        with scoped_home(home), patch.object(chat, '_resolve_runtime', return_value=route), patch('agent.models_dev.get_model_info', return_value=None), patch('agent.usage_pricing.get_pricing_entry', return_value=None):
+        params = dict(session_id='guard-test', model='muse-spark-1.2-contributor', provider='custom', base_url='https://provider.invalid/v1', current_provider='custom', current_model='old-model', context_tokens=200000, messages=[])
+        with scoped_home(home), patch('agent.models_dev.get_model_info', return_value=None), patch('agent.usage_pricing.get_pricing_entry', return_value=None):
             result = providers.selection_warnings(home, params)
             assert {w['kind'] for w in result['warnings']} == {'data_policy', 'context_cache'}, result
             (home / 'config.yaml').write_text('model:\\n  switch_context_confirm_tokens: 0\\n')
@@ -27,11 +26,9 @@ def test_real_selection_guards_and_read_only_context(tmp_path):
             (home / 'config.yaml').write_text('model:\\n  switch_context_confirm_tokens: 100000\\n')
             params.update(model='ordinary/model', current_model='ordinary/model')
             assert providers.selection_warnings(home, params)['warnings'] == []
-            params['provider'] = 'other-provider'
-            route.update(provider='other-provider', base_url='https://other.invalid/v1')
+            params.update(provider='other-provider', base_url='https://other.invalid/v1')
             assert {w['kind'] for w in providers.selection_warnings(home, params)['warnings']} == {'context_cache'}
-            params.update(provider='custom', current_model='old-model')
-            route.update(provider='custom', base_url='https://provider.invalid/v1')
+            params.update(provider='custom', base_url='https://provider.invalid/v1', current_model='old-model')
             params['context_tokens'] = None
             assert providers.selection_warnings(home, params)['warnings'] == []
             # A different profile's cached Agent must never supply this profile's context.
@@ -57,9 +54,8 @@ def test_real_selection_guards_and_read_only_context(tmp_path):
             params['messages'] = []
             assert providers.selection_warnings(home, params)['context_tokens'] is None
             # Real cost guard reads a fixed local price, without lookup or model requests.
-            route['provider'] = 'anthropic'; route['base_url'] = 'https://api.anthropic.com'
             info = ModelInfo(id='pricey/model', name='pricey/model', family='', provider_id='anthropic', cost_input=50.0, cost_output=200.0)
-            params.update(model='pricey/model', provider='anthropic', context_tokens=1)
+            params.update(model='pricey/model', provider='anthropic', base_url='https://api.anthropic.com', context_tokens=1)
             with patch('agent.models_dev.get_model_info', return_value=info):
                 assert {w['kind'] for w in providers.selection_warnings(home, params)['warnings']} == {'cost'}
             print(json.dumps(result))
@@ -168,3 +164,64 @@ def test_real_agent_parser_answers_model_arguments(tmp_path):
     env['PYTHONPATH'] = f'{SIDECAR_ROOT}:{AGENT_DIR}'
     run = subprocess.run([AGENT_PYTHON, '-c', script], env=env, capture_output=True, text=True, timeout=60)
     assert run.returncode == 0, run.stderr
+
+
+GUARD_PROBE = """
+import json, os, sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+sys.path.append(sys.argv[1])
+import hermes_cli.left_core_migration as left_core
+import hermes_cli.model_selection_guards as guards
+from talaria_sidecar.methods import Registry, providers
+
+home, lab, keyed = Path(os.environ["HERMES_HOME"]), sys.argv[2], sys.argv[3]
+sent, delivered, replied = [], [], []
+real = guards.selection_warnings
+guards.selection_warnings = lambda model, **kw: sent.append([kw["provider"], kw["base_url"], kw["api_key"]]) or real(model, **kw)
+left_core.recover_for_provider = lambda name: delivered.append(name)
+registry = Registry(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
+providers.register(registry)
+guard = registry.methods["models.selection_warnings"]
+pool = lambda: json.loads((home / "auth.json").read_text())["credential_pool"]
+before = pool()
+with patch("agent.models_dev.get_model_info", return_value=None), patch("agent.usage_pricing.get_pricing_entry", return_value=None):
+    for provider, url in [("lab", lab)] * 3 + [("keyed", keyed)] * 2 + [("lab", "https://elsewhere.invalid/v1")]:
+        reply = guard(None, {"profile_home": str(home), "session_id": "guard", "model": "synthetic-model", "provider": provider,
+                             "base_url": url, "current_model": None, "current_provider": None, "context_tokens": None, "messages": []})
+        replied.append([reply["provider"], reply["base_url"]])
+try:
+    from hermes_cli.runtime_provider_custom import main_endpoint_key_for
+    selector = True
+except ImportError:
+    selector = False
+print(json.dumps({"sent": sent, "replied": replied, "pool_unchanged": pool() == before, "delivered": delivered, "selector": selector}, default=lambda o: type(o).__name__))
+"""
+
+
+@requires_agent
+def test_repeated_guard_checks_leave_inference_credentials_untouched(tmp_path):
+    """TAL-2616: a model-switch guard check selects no pool row, mints no key_cmd token and delivers no plugin; the
+    key it hands the guards is the Agent's metadata selection for the configured main endpoint (0.23.3+), else none."""
+    root, lab, keyed = tmp_path / ".hermes", "https://lab.invalid/v1", "https://keyed.invalid/v1"
+    root.mkdir()
+    minted = tmp_path / "minted"
+    (root / "config.yaml").write_text(json.dumps({
+        "model": {"provider": "lab", "default": "synthetic-model", "base_url": lab},
+        "providers": {"lab": {"base_url": lab},
+                      "keyed": {"base_url": keyed, "key_cmd": f"touch {minted} && echo sk-synthetic-minted"}},
+        "credential_pool_strategies": {"lab": "round_robin"}}))
+    rows = [{"id": f"k{i}", "label": f"row{i}", "auth_type": "api_key", "priority": i, "source": "manual",
+             "access_token": f"sk-synthetic-pool-{i}", "base_url": lab} for i in (1, 2)]
+    (root / "auth.json").write_text(json.dumps({"version": 1, "providers": {}, "credential_pool": {"lab": rows}}))
+    run = subprocess.run([AGENT_PYTHON, "-c", GUARD_PROBE, str(AGENT_DIR), lab, keyed],
+                         env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    out = json.loads(run.stdout.strip().splitlines()[-1])
+    assert out["pool_unchanged"]
+    assert not minted.exists()
+    assert out["delivered"] == []
+    matched = "sk-synthetic-pool-1" if out["selector"] else ""
+    assert out["sent"] == [["lab", lab, matched]] * 3 + [["keyed", keyed, ""]] * 2 + [["lab", "https://elsewhere.invalid/v1", ""]]
+    assert out["replied"] == [row[:2] for row in out["sent"]]

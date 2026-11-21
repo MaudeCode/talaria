@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Checking a model switch for warnings in Talaria Web no longer rotates a credential pool, runs a key command or installs a provider plugin.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
