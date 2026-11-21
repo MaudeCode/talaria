@@ -289,6 +289,10 @@ that `workspace/media.ts` `mediaAccessFor` derives from authority:
   bounds decompression as it runs, extracts into a fresh folder with anchored
   exclusive creates, and rejects any member path that leaves it. Tar links and
   devices are skipped.
+- Session titling reads at most the first 4,000 bytes of an opening user row's
+  first `text/*` attachment, only from that session's own attachment folder in
+  the blob store, and sends them to the title model alone
+  (`sessions/titles.ts` `titleExchange`).
 
 ## 6. Agent-side execution
 
