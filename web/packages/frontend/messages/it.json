@@ -867,6 +867,8 @@
 	"model_none_available": "Nessun modello disponibile",
 	"model_not_found_label": "Modello non trovato",
 	"model_picker_providers": "Provider",
+	"model_role_fallback": "Riserva {position}",
+	"model_role_main": "Principale",
 	"model_scope_advisory": "Si applica a questa conversazione dal prossimo messaggio.",
 	"model_scope_toast": "Si applica a questa conversazione dal prossimo messaggio.",
 	"model_search_no_results": "Nessun modello trovato",

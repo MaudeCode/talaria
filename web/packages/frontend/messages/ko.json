@@ -846,6 +846,8 @@
 	"model_none_available": "사용 가능한 모델이 없습니다",
 	"model_not_found_label": "Model not found",
 	"model_picker_providers": "제공자",
+	"model_role_fallback": "대체 {position}",
+	"model_role_main": "기본",
 	"model_scope_advisory": "다음 메시지부터 이 대화에 적용됩니다.",
 	"model_scope_toast": "다음 메시지부터 이 대화에 적용됩니다.",
 	"model_search_no_results": "No models found",

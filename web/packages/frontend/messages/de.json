@@ -836,6 +836,8 @@
 	"model_none_available": "Keine Modelle verfügbar",
 	"model_not_found_label": "Modell nicht gefunden",
 	"model_picker_providers": "Anbieter",
+	"model_role_fallback": "Fallback {position}",
+	"model_role_main": "Haupt",
 	"model_scope_advisory": "Gilt für diesen Chat ab Ihrer nächsten Nachricht.",
 	"model_scope_toast": "Gilt für diesen Chat ab Ihrer nächsten Nachricht.",
 	"model_search_no_results": "Keine Modelle gefunden",

@@ -833,6 +833,8 @@
 	"model_none_available": "沒有可用的模型",
 	"model_not_found_label": "未找到模型",
 	"model_picker_providers": "供應商",
+	"model_role_fallback": "備援 {position}",
+	"model_role_main": "主要",
 	"model_scope_advisory": "從下一則訊息起適用於此對話。",
 	"model_scope_toast": "從下一則訊息起適用於此對話。",
 	"model_search_no_results": "找不到模型",

@@ -144,6 +144,38 @@ describe('ModelChip', () => {
     expect(screen.getByRole('option', { name: 'Saved model · Allowance unknown' })).not.toHaveAttribute('aria-disabled', 'true')
   })
 
+  it('names the server\'s Main and Fallback roles on their rows and in Favorites, and leaves every other row as it was (TAL-2258)', async () => {
+    const long = `Lab ${'Extended Context Reasoning '.repeat(4)}Model`
+    const main = { id: 'claude-opus-4.7', label: 'Claude Opus 4.7', provider_id: 'anthropic', bare_id: 'claude-opus-4.7', favorite: true, configured_role: { kind: 'main' } }
+    catalog = {
+      active_provider: 'anthropic', default_model: 'claude-opus-4.7', default_provider_id: 'anthropic', default_bare_id: 'claude-opus-4.7', default_option_id: 'claude-opus-4.7',
+      groups: [
+        { provider: 'Anthropic', provider_id: 'anthropic', models: [main] },
+        { provider: 'Acme Cloud', provider_id: 'acme-cloud', models: [
+          // The same bare id under another provider carries no role from the server, so it shows none.
+          { id: '@acme-cloud:claude-opus-4.7', label: 'Claude Opus 4.7', provider_id: 'acme-cloud', bare_id: 'claude-opus-4.7' },
+          { id: '@acme-cloud:lab', label: long, provider_id: 'acme-cloud', bare_id: 'lab', configured_role: { kind: 'fallback', position: 2 }, allowance: { state: 'credits', usage_level: null, resets_at_ms: null } },
+        ] },
+      ],
+      favorites: [{ provider_id: 'anthropic', model: 'claude-opus-4.7' }],
+      favorite_option_ids: ['claude-opus-4.7'],
+    }
+    const onChange = vi.fn()
+    renderChip({ model: 'claude-opus-4.7', optionId: 'claude-opus-4.7' }, onChange)
+    await userEvent.click(screen.getByRole('button', { name: /Conversation model/ }))
+    await picker()
+    // Favorites name the role before the provider.
+    expect(optionNames()).toEqual(['Claude Opus 4.7 · Main · Anthropic'])
+    expect(screen.getByRole('option', { name: 'Claude Opus 4.7 · Main · Anthropic' })).toHaveTextContent('Claude Opus 4.7 · Main')
+    await userEvent.click(within(rail()).getByRole('button', { name: 'Acme Cloud' }))
+    const fallback = `${long} · Fallback 2 · Uses credits`
+    expect(optionNames()).toEqual(['Claude Opus 4.7', fallback])
+    expect(screen.getByRole('option', { name: 'Claude Opus 4.7' })).not.toHaveTextContent(/Main|Fallback/)
+    expect(screen.getByRole('option', { name: fallback })).toHaveTextContent('Fallback 2 · Uses credits')
+    await userEvent.click(screen.getByRole('option', { name: fallback }))
+    expect(onChange).toHaveBeenCalledWith('@acme-cloud:lab', 'acme-cloud')
+  })
+
   it('lists Favorites then each provider on the rail; a provider tab filters the list and search spans them all (TAL-1858)', async () => {
     catalog = FAVORITES_CATALOG
     renderChip({ model: 'claude-opus-4.7', optionId: 'claude-opus-4.7' })

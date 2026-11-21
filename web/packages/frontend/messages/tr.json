@@ -846,6 +846,8 @@
 	"model_none_available": "Kullanılabilir model yok",
 	"model_not_found_label": "Model bulunamadı",
 	"model_picker_providers": "Sağlayıcılar",
+	"model_role_fallback": "Yedek {position}",
+	"model_role_main": "Ana",
 	"model_scope_advisory": "Bir sonraki mesajınızdan itibaren bu görüşmeye uygulanır.",
 	"model_scope_toast": "Bir sonraki mesajınızdan itibaren bu görüşmeye uygulanır.",
 	"model_search_no_results": "Hiçbir model bulunamadı",

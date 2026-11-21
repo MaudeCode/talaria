@@ -121528,6 +121528,40 @@
                                 "favorite": {
                                   "type": "boolean",
                                   "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                                },
+                                "configured_role": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "const": "main"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ]
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "const": "fallback"
+                                        },
+                                        "position": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991,
+                                          "exclusiveMinimum": 0
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "position"
+                                      ]
+                                    }
+                                  ],
+                                  "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                                 }
                               },
                               "required": [
@@ -121820,6 +121854,40 @@
                           "favorite": {
                             "type": "boolean",
                             "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                          },
+                          "configured_role": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "const": "main"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "const": "fallback"
+                                  },
+                                  "position": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "position"
+                                ]
+                              }
+                            ],
+                            "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                           }
                         },
                         "required": [
@@ -121986,6 +122054,40 @@
                           "favorite": {
                             "type": "boolean",
                             "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                          },
+                          "configured_role": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "const": "main"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "const": "fallback"
+                                  },
+                                  "position": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "position"
+                                ]
+                              }
+                            ],
+                            "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                           }
                         },
                         "required": [
@@ -123428,6 +123530,40 @@
                                 "favorite": {
                                   "type": "boolean",
                                   "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                                },
+                                "configured_role": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "const": "main"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ]
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "const": "fallback"
+                                        },
+                                        "position": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991,
+                                          "exclusiveMinimum": 0
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "position"
+                                      ]
+                                    }
+                                  ],
+                                  "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                                 }
                               },
                               "required": [
@@ -123719,6 +123855,40 @@
                           "favorite": {
                             "type": "boolean",
                             "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                          },
+                          "configured_role": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "const": "main"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "const": "fallback"
+                                  },
+                                  "position": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "position"
+                                ]
+                              }
+                            ],
+                            "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                           }
                         },
                         "required": [
@@ -123945,6 +124115,40 @@
                           "favorite": {
                             "type": "boolean",
                             "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                          },
+                          "configured_role": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "const": "main"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "const": "fallback"
+                                  },
+                                  "position": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "position"
+                                ]
+                              }
+                            ],
+                            "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                           }
                         },
                         "required": [
@@ -124415,6 +124619,40 @@
                                     "favorite": {
                                       "type": "boolean",
                                       "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                                    },
+                                    "configured_role": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "const": "main"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind"
+                                          ]
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "const": "fallback"
+                                            },
+                                            "position": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "position"
+                                          ]
+                                        }
+                                      ],
+                                      "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                                     }
                                   },
                                   "required": [
@@ -124706,6 +124944,40 @@
                               "favorite": {
                                 "type": "boolean",
                                 "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                              },
+                              "configured_role": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "const": "main"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "const": "fallback"
+                                      },
+                                      "position": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991,
+                                        "exclusiveMinimum": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "position"
+                                    ]
+                                  }
+                                ],
+                                "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                               }
                             },
                             "required": [
@@ -126715,6 +126987,40 @@
                                 "favorite": {
                                   "type": "boolean",
                                   "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                                },
+                                "configured_role": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "const": "main"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ]
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "const": "fallback"
+                                        },
+                                        "position": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991,
+                                          "exclusiveMinimum": 0
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "position"
+                                      ]
+                                    }
+                                  ],
+                                  "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                                 }
                               },
                               "required": [
@@ -130042,6 +130348,40 @@
                                     "favorite": {
                                       "type": "boolean",
                                       "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                                    },
+                                    "configured_role": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "const": "main"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind"
+                                          ]
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "const": "fallback"
+                                            },
+                                            "position": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "position"
+                                          ]
+                                        }
+                                      ],
+                                      "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                                     }
                                   },
                                   "required": [
@@ -130333,6 +130673,40 @@
                               "favorite": {
                                 "type": "boolean",
                                 "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                              },
+                              "configured_role": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "const": "main"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "const": "fallback"
+                                      },
+                                      "position": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991,
+                                        "exclusiveMinimum": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "position"
+                                    ]
+                                  }
+                                ],
+                                "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                               }
                             },
                             "required": [
@@ -131080,6 +131454,40 @@
                                     "favorite": {
                                       "type": "boolean",
                                       "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                                    },
+                                    "configured_role": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "const": "main"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind"
+                                          ]
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "const": "fallback"
+                                            },
+                                            "position": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991,
+                                              "exclusiveMinimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "position"
+                                          ]
+                                        }
+                                      ],
+                                      "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                                     }
                                   },
                                   "required": [
@@ -131371,6 +131779,40 @@
                               "favorite": {
                                 "type": "boolean",
                                 "description": "TAL-1857: the profile starred this `provider_id` and `bare_id` pair."
+                              },
+                              "configured_role": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "const": "main"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "const": "fallback"
+                                      },
+                                      "position": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991,
+                                        "exclusiveMinimum": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "position"
+                                    ]
+                                  }
+                                ],
+                                "description": "TAL-2258: this pair is the profile's Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model."
                               }
                             },
                             "required": [

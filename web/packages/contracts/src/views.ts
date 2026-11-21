@@ -1269,6 +1269,12 @@ export const ReasoningStatusSchema = z.looseObject({ auxiliary_reasoning: Auxili
 export type ReasoningStatus = z.infer<typeof ReasoningStatusSchema>
 export const QuotaLevelSchema = z.enum(['healthy', 'warning', 'critical', 'stale', 'unavailable'])
 export type QuotaLevel = z.infer<typeof QuotaLevelSchema>
+/** TAL-2258: the profile's main model, or its 1-based place in `fallback_providers`, matched by `provider_id` and `bare_id`. */
+export const ConfiguredModelRoleSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('main') }),
+  z.object({ kind: z.literal('fallback'), position: z.number().int().positive() }),
+])
+export type ConfiguredModelRole = z.infer<typeof ConfiguredModelRoleSchema>
 /**
  * TAL-301: `provider_id`/`bare_id` are the server's split of `id`; clients match a stored `(model, provider)` against them and send `id` back.
  * TAL-807: `limit` is present while the provider's credential pool cannot serve this model until `resets_at` (ISO-8601 UTC).
@@ -1280,6 +1286,7 @@ export const ModelEntrySchema = z.looseObject({
   preferences_editable: z.boolean().optional(),
   hidden: z.boolean().optional().describe('TAL-2193: this profile hides the model from its Settings picker.'),
   favorite: z.boolean().optional().describe('TAL-1857: the profile starred this `provider_id` and `bare_id` pair.'),
+  configured_role: ConfiguredModelRoleSchema.optional().describe('TAL-2258: this pair is the profile\'s Main model or a Fallback; Main wins over a fallback naming the same pair, and a repeated fallback keeps its first position. Absent for every other model.'),
 })
 /** TAL-1857: one starred model, named by its routing provider and bare id. */
 export const ModelFavoriteSchema = z.object({ provider_id: z.string().trim().toLowerCase().min(1).max(200), model: z.string().trim().min(1).max(500) })
