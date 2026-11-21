@@ -78,24 +78,27 @@ it('lights the group folding that row, which is all the reader can see of it (TA
   expect(view.container.querySelector('.tool-worklog-summary')).toHaveClass('tool-flash-denied')
 })
 
-it('measures live height at segment and status boundaries rather than each token (TAL-1203)', () => {
-  const run = liveRun()
-  run.emit({ event: 'token', data: { text: 'First line' } })
-  const view = render(<LiveTurnView turn={run.turn} name="Assistant" mode="compact_worklog" userVisible />)
-  const row = view.container.querySelector<HTMLElement>('.live-turn')!
-  const measure = vi.spyOn(row, 'getBoundingClientRect')
-  for (let line = 0; line < 20; line++) {
-    run.emit({ event: 'token', data: { text: `Line ${line}\n` } })
+it('takes live height from the browser\'s own layout, never by measuring a streamed token (TAL-1203, TAL-2279)', () => {
+  const calls: unknown[] = []
+  vi.stubGlobal('ResizeObserver', class { observe(el: Element) { calls.push(el) } disconnect() { calls.push('disconnect') } })
+  try {
+    const run = liveRun()
+    run.emit({ event: 'token', data: { text: 'First line' } })
+    const view = render(<LiveTurnView turn={run.turn} name="Assistant" mode="compact_worklog" userVisible />)
+    const row = view.container.querySelector<HTMLElement>('.live-turn')!
+    const measure = vi.spyOn(row, 'getBoundingClientRect')
+    for (let line = 0; line < 20; line++) {
+      run.emit({ event: 'token', data: { text: `Line ${line}\n` } })
+      view.rerender(<LiveTurnView turn={run.turn} name="Assistant" mode="compact_worklog" userVisible />)
+    }
+    run.emit({ event: 'done', data: {} })
     view.rerender(<LiveTurnView turn={run.turn} name="Assistant" mode="compact_worklog" userVisible />)
+    expect(measure).not.toHaveBeenCalled()
+    // Observed once for the turn, not again per streamed token.
+    expect(calls).toEqual([row])
+  } finally {
+    vi.unstubAllGlobals()
   }
-  expect(measure).not.toHaveBeenCalled()
-  run.emit({ event: 'tool', data: { id: 'a', name: 'read_file', args: { path: 'a.txt' } } })
-  view.rerender(<LiveTurnView turn={run.turn} name="Assistant" mode="compact_worklog" userVisible />)
-  expect(measure).toHaveBeenCalledTimes(1)
-  run.emit({ event: 'done', data: {} })
-  view.rerender(<LiveTurnView turn={run.turn} name="Assistant" mode="compact_worklog" userVisible />)
-  expect(measure).toHaveBeenCalledTimes(2)
-  measure.mockRestore()
 })
 
 const pills = (container: HTMLElement) => [...container.querySelectorAll('.live-run-status')]

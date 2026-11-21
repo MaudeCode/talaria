@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When a reply finishes and its work folds into \"Worked\", earlier messages no longer jump up before moving down.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

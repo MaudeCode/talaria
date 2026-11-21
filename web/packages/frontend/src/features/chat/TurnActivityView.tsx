@@ -46,8 +46,12 @@ function SettleSpacer({ turnKey }: { turnKey: string }) {
     el.style.height = `${live.height}px`
     const body = row.querySelector<HTMLElement>(':scope > .assistant-turn-blocks > .activity:not(.open) > .activity-body')
     if (body) body.hidden = false
-    const gap = Math.max(0, live.height - (row.getBoundingClientRect().height - live.height))
+    const opened = row.getBoundingClientRect().height - live.height
+    const gap = Math.max(0, live.height - opened)
     el.style.height = `${gap}px`
+    // TAL-2279: an opened row taller than the live turn starts its body that much shorter, so the row begins at the
+    // live height instead of growing first. The fold's keyframes hold the start once it runs, so the inline height goes.
+    if (body && opened > live.height) body.style.height = `${Math.max(0, body.getBoundingClientRect().height - (opened - live.height))}px`
     const fold = (target: HTMLElement, done: () => void) => {
       const motion = revealHeight(target, { open: false })
       if (motion) void motion.finished.then(done, () => undefined)
@@ -56,7 +60,10 @@ function SettleSpacer({ turnKey }: { turnKey: string }) {
     if (gap > 1) fold(el, () => { el.style.height = '' })
     else el.style.height = ''
     // Hand the body back to the disclosure; a click during the fold may already have reopened it.
-    if (body) fold(body, () => { if (!body.parentElement?.classList.contains('open')) body.hidden = true })
+    if (body) {
+      fold(body, () => { if (!body.parentElement?.classList.contains('open')) body.hidden = true })
+      body.style.height = ''
+    }
   }, [turnKey])
   return <div ref={ref} aria-hidden="true" />
 }

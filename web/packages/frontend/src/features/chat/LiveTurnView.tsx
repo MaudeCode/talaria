@@ -29,9 +29,15 @@ export function LiveTurnView({ turn, name, mode, userVisible, omitToolIds }: { t
   const activity = liveActivity({ segments, tools, groups, status, terminalState, turnId, streamId }, omitToolIds)
   const streaming = activity.status === 'running'
   const rowRef = useRef<HTMLDivElement>(null)
+  // TAL-2279: every laid-out height, so the settled row folds from the height on screen, including tokens streamed into
+  // the last segment. The observer reports the size the browser already laid out, so it forces no layout.
   useLayoutEffect(() => {
-    if (rowRef.current) rememberLiveTurnHeight(activity.key, rowRef.current.getBoundingClientRect().height)
-  }, [activity.key, turn.segments.length, turn.status])
+    const row = rowRef.current
+    if (!row || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => { const size = entry?.borderBoxSize[0]; if (size) rememberLiveTurnHeight(activity.key, size.blockSize) })
+    observer.observe(row)
+    return () => observer.disconnect()
+  }, [activity.key])
   return (
     <div ref={rowRef} className="msg-row assistant-turn live-turn" data-role="assistant" data-live="1" data-stream-id={turn.streamId} data-status={turn.status} aria-busy={streaming}>
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span></div>
