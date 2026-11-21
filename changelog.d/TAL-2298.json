@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Web masks more vendor credentials and incoming webhook secrets in sessions, exports, and shares.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
