@@ -5,11 +5,10 @@ public struct ReasoningStatusResponse: Decodable, Equatable, Sendable {
     let showReasoning: Bool?
     let reasoningEffort: String?
     let effort: String?
-    /// Model-aware effort vocabulary from `GET /api/reasoning` (`supported_efforts`),
-    /// already trimmed, lowercased and unique on the server (TAL-2506).
-    /// `nil` on older servers that don't send the field — callers must fall back
-    /// to the static effort list (issue #18).
-    let supportedEfforts: [String]?
+    /// The levels a picker lists, from `GET /api/reasoning` (`effort_options`, TAL-2529): the model's
+    /// own, then a saved effort it does not list. `nil` on older servers — callers fall back to the
+    /// static effort list (issue #18).
+    let effortOptions: [String]?
     /// `supports_reasoning_effort` — `false` means the resolved model has no
     /// effort control at all (hide the picker). `nil` on older servers.
     public let supportsReasoningEffort: Bool?

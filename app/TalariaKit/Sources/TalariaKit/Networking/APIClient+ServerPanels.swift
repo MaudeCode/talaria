@@ -89,7 +89,7 @@ extension APIClient {
     }
 
     /// Reasoning status for a specific model/provider (`GET /api/reasoning`).
-    /// Passing the session's current model + provider makes `supported_efforts`
+    /// Passing the session's current model + provider makes `effort_options`
     /// model-accurate (mirrors the upstream WebUI composer chip, issue #18);
     /// with no params the server resolves the config default model instead.
     /// `auxiliaryTask` previews that slot's proposed route without a write; do not combine it with `sessionID`.

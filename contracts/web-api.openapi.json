@@ -3160,6 +3160,13 @@
                                     },
                                     "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                   },
+                                  "effort_options": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                  },
                                   "supports_reasoning_effort": {
                                     "type": "boolean"
                                   },
@@ -3207,6 +3214,7 @@
                                 "required": [
                                   "reasoning_effort",
                                   "supported_efforts",
+                                  "effort_options",
                                   "supports_reasoning_effort",
                                   "supports_thinking_toggle",
                                   "actions",
@@ -4370,6 +4378,13 @@
                                     },
                                     "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                   },
+                                  "effort_options": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                  },
                                   "supports_reasoning_effort": {
                                     "type": "boolean"
                                   },
@@ -4417,6 +4432,7 @@
                                 "required": [
                                   "reasoning_effort",
                                   "supported_efforts",
+                                  "effort_options",
                                   "supports_reasoning_effort",
                                   "supports_thinking_toggle",
                                   "actions",
@@ -5409,6 +5425,13 @@
                                     },
                                     "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                   },
+                                  "effort_options": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                  },
                                   "supports_reasoning_effort": {
                                     "type": "boolean"
                                   },
@@ -5456,6 +5479,7 @@
                                 "required": [
                                   "reasoning_effort",
                                   "supported_efforts",
+                                  "effort_options",
                                   "supports_reasoning_effort",
                                   "supports_thinking_toggle",
                                   "actions",
@@ -6755,6 +6779,13 @@
                                     },
                                     "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                   },
+                                  "effort_options": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                  },
                                   "supports_reasoning_effort": {
                                     "type": "boolean"
                                   },
@@ -6802,6 +6833,7 @@
                                 "required": [
                                   "reasoning_effort",
                                   "supported_efforts",
+                                  "effort_options",
                                   "supports_reasoning_effort",
                                   "supports_thinking_toggle",
                                   "actions",
@@ -13379,6 +13411,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -13426,6 +13465,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -14382,6 +14422,13 @@
                               },
                               "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                             },
+                            "effort_options": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                            },
                             "supports_reasoning_effort": {
                               "type": "boolean"
                             },
@@ -14429,6 +14476,7 @@
                           "required": [
                             "reasoning_effort",
                             "supported_efforts",
+                            "effort_options",
                             "supports_reasoning_effort",
                             "supports_thinking_toggle",
                             "actions",
@@ -21159,6 +21207,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -21206,6 +21261,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -27600,6 +27656,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -27647,6 +27710,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -28715,6 +28779,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -28762,6 +28833,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -29802,6 +29874,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -29849,6 +29928,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -30896,6 +30976,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -30943,6 +31030,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -37271,6 +37359,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -37318,6 +37413,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -38419,6 +38515,13 @@
                                       },
                                       "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                     },
+                                    "effort_options": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                    },
                                     "supports_reasoning_effort": {
                                       "type": "boolean"
                                     },
@@ -38466,6 +38569,7 @@
                                   "required": [
                                     "reasoning_effort",
                                     "supported_efforts",
+                                    "effort_options",
                                     "supports_reasoning_effort",
                                     "supports_thinking_toggle",
                                     "actions",
@@ -39587,6 +39691,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -39634,6 +39745,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -46295,6 +46407,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -46342,6 +46461,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -47625,6 +47745,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -47672,6 +47799,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -48710,6 +48838,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -48757,6 +48892,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -55876,6 +56012,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -55923,6 +56066,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -62261,6 +62405,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -62308,6 +62459,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -68708,6 +68860,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -68755,6 +68914,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -75153,6 +75313,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -75200,6 +75367,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -79997,6 +80165,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -80044,6 +80219,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -81081,6 +81257,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -81128,6 +81311,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -94583,6 +94767,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -94630,6 +94821,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -101020,6 +101212,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -101067,6 +101266,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -102112,6 +102312,13 @@
                               },
                               "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                             },
+                            "effort_options": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                            },
                             "supports_reasoning_effort": {
                               "type": "boolean"
                             },
@@ -102159,6 +102366,7 @@
                           "required": [
                             "reasoning_effort",
                             "supported_efforts",
+                            "effort_options",
                             "supports_reasoning_effort",
                             "supports_thinking_toggle",
                             "actions",
@@ -108156,6 +108364,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -108203,6 +108418,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -109129,6 +109345,13 @@
                                   },
                                   "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                 },
+                                "effort_options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                },
                                 "supports_reasoning_effort": {
                                   "type": "boolean"
                                 },
@@ -109176,6 +109399,7 @@
                               "required": [
                                 "reasoning_effort",
                                 "supported_efforts",
+                                "effort_options",
                                 "supports_reasoning_effort",
                                 "supports_thinking_toggle",
                                 "actions",
@@ -114738,6 +114962,13 @@
                                       },
                                       "description": "TAL-2506: normalized as `ReasoningStatus.supported_efforts`."
                                     },
+                                    "effort_options": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "description": "TAL-2529: the levels a picker offers, as `ReasoningStatus.effort_options`."
+                                    },
                                     "supports_reasoning_effort": {
                                       "type": "boolean"
                                     },
@@ -114785,6 +115016,7 @@
                                   "required": [
                                     "reasoning_effort",
                                     "supported_efforts",
+                                    "effort_options",
                                     "supports_reasoning_effort",
                                     "supports_thinking_toggle",
                                     "actions",
@@ -128558,6 +128790,13 @@
                       },
                       "description": "TAL-2506: the route's levels, trimmed, lowercased, non-empty and unique, in the Agent's order; render them as shipped. Absent only on the `auxiliary_task` preview."
                     },
+                    "effort_options": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-2529: the efforts a picker offers, in order: `supported_efforts`, then the current `reasoning_effort` when it is non-empty and not listed (a saved `none`). The provider default (`''`) is not included; clients add their localized Default row. Absent only on the `auxiliary_task` preview."
+                    },
                     "supports_reasoning_effort": {
                       "type": "boolean"
                     },
@@ -128728,6 +128967,13 @@
                         "type": "string"
                       },
                       "description": "TAL-2506: the route's levels, trimmed, lowercased, non-empty and unique, in the Agent's order; render them as shipped. Absent only on the `auxiliary_task` preview."
+                    },
+                    "effort_options": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-2529: the efforts a picker offers, in order: `supported_efforts`, then the current `reasoning_effort` when it is non-empty and not listed (a saved `none`). The provider default (`''`) is not included; clients add their localized Default row. Absent only on the `auxiliary_task` preview."
                     },
                     "supports_reasoning_effort": {
                       "type": "boolean"

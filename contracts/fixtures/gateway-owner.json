@@ -152,6 +152,11 @@
             "medium",
             "high"
           ],
+          "effort_options": [
+            "low",
+            "medium",
+            "high"
+          ],
           "supports_reasoning_effort": true,
           "supports_thinking_toggle": true,
           "actions": [
@@ -182,6 +187,11 @@
         "reasoning_control": {
           "reasoning_effort": "high",
           "supported_efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "effort_options": [
             "low",
             "medium",
             "high"
@@ -220,6 +230,11 @@
             "medium",
             "high"
           ],
+          "effort_options": [
+            "low",
+            "medium",
+            "high"
+          ],
           "supports_reasoning_effort": true,
           "supports_thinking_toggle": true,
           "actions": [
@@ -250,6 +265,11 @@
         "reasoning_control": {
           "reasoning_effort": "high",
           "supported_efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "effort_options": [
             "low",
             "medium",
             "high"
@@ -286,6 +306,11 @@
         "reasoning_control": {
           "reasoning_effort": "high",
           "supported_efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "effort_options": [
             "low",
             "medium",
             "high"

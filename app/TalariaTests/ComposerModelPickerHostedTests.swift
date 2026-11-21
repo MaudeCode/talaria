@@ -230,7 +230,7 @@ final class ComposerModelPickerHostedTests: APIClientTestCase {
                 throw URLError(.networkConnectionLost)
             case "/api/reasoning":
                 if attemptedWrite.value && !recovered.value { throw URLError(.networkConnectionLost) }
-                return apiTestJSONResponse(#"{"reasoning_effort":"low","supports_session_scope":true,"supports_reasoning_effort":true,"supported_efforts":["low","high"]}"#, for: request)
+                return apiTestJSONResponse(#"{"reasoning_effort":"low","supports_session_scope":true,"supports_reasoning_effort":true,"effort_options":["low","high"]}"#, for: request)
             default: return nil
             }
         }
@@ -366,7 +366,7 @@ final class ComposerModelPickerHostedTests: APIClientTestCase {
             switch request.url?.path {
             case "/api/models", "/api/models/picker": return apiTestJSONResponse(catalog, for: request)
             case "/api/models/live": return apiTestJSONResponse(#"{"models":[]}"#, for: request)
-            case "/api/reasoning": return apiTestJSONResponse(#"{"reasoning_effort":"low","supports_session_scope":true,"supports_reasoning_effort":true,"supported_efforts":["low","high"]}"#, for: request)
+            case "/api/reasoning": return apiTestJSONResponse(#"{"reasoning_effort":"low","supports_session_scope":true,"supports_reasoning_effort":true,"effort_options":["low","high"]}"#, for: request)
             case "/api/profiles": return apiTestJSONResponse(#"{"profiles":[{"name":"work","model":"shared","provider":"alpha"}],"active":"work"}"#, for: request)
             case "/api/workspaces": return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
             case "/api/commands": return apiTestJSONResponse(#"{"commands":[]}"#, for: request)

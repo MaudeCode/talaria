@@ -998,6 +998,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
                     "show_reasoning": state.thinking,
                     "reasoning_effort": state.effort,
                     "supported_efforts": ["low", "medium", "high"],
+                    "effort_options": ["low", "medium", "high"],
                     "supports_reasoning_effort": true,
                     "supports_session_scope": true,
                     "supports_thinking_toggle": true

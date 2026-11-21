@@ -321,7 +321,7 @@ it('offers the chosen model\'s own speed tiers before the server answers (TAL-13
 })
 
 describe('the profile reasoning defaults (TAL-2078)', () => {
-  const status = { show_reasoning: true, reasoning_effort: 'medium', supported_efforts: ['low', 'medium', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true }
+  const status = { show_reasoning: true, reasoning_effort: 'medium', effort_options: ['low', 'medium', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true }
   const refusal = () => new ApiError({ kind: 'http', status: 409, path: '/api/reasoning', message: 'config.yaml is package-managed.' })
   const held = () => { let reject!: (e: unknown) => void; const promise = new Promise<never>((_, r) => { reject = r }); return { promise, reject } }
   const effortRow = () => screen.queryByRole('radiogroup', { name: 'Reasoning effort' }) ?? screen.queryByRole('combobox', { name: 'Reasoning effort' })
@@ -353,7 +353,7 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
   })
 
   it('offers more than three server efforts in a select (TAL-2137)', async () => {
-    vi.mocked(fetchReasoning).mockResolvedValue({ ...status, supported_efforts: ['minimal', 'low', 'medium', 'high'] })
+    vi.mocked(fetchReasoning).mockResolvedValue({ ...status, effort_options: ['minimal', 'low', 'medium', 'high'] })
     vi.mocked(setReasoningEffort).mockResolvedValue({ ...status, reasoning_effort: 'minimal' })
     await renderSection(<ModelsSection />)
     const select = await screen.findByRole('combobox', { name: 'Reasoning effort' })
@@ -364,8 +364,8 @@ describe('the profile reasoning defaults (TAL-2078)', () => {
     expect(setReasoningEffort).toHaveBeenCalledWith('minimal', null, null, undefined)
   })
 
-  it('shows a saved effort the model does not list and lets Default clear it (TAL-2137)', async () => {
-    vi.mocked(fetchReasoning).mockResolvedValue({ ...status, reasoning_effort: 'none' })
+  it('renders the server\'s effort options, including a saved effort the model does not list, and lets Default clear it (TAL-2529)', async () => {
+    vi.mocked(fetchReasoning).mockResolvedValue({ ...status, reasoning_effort: 'none', effort_options: ['low', 'medium', 'high', 'none'] })
     vi.mocked(setReasoningEffort).mockResolvedValue({ ...status, reasoning_effort: null })
     await renderSection(<ModelsSection />)
     const select = await screen.findByRole('combobox', { name: 'Reasoning effort' })

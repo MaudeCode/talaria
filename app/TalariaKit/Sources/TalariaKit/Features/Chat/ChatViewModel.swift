@@ -483,7 +483,7 @@ public final class ChatViewModel {
             if pendingReasoningSelection != nil { pendingReasoningSelection = nil }
         }
     }
-    /// Model-aware effort vocabulary (`supported_efforts` from `GET /api/reasoning`).
+    /// The levels the effort picker lists (`effort_options` from `GET /api/reasoning`, TAL-2529).
     /// `nil` on older servers → the composer falls back to the static list (issue #18).
     public private(set) var supportedReasoningEfforts: [String]?
     /// `supports_reasoning_effort`; `false` hides the composer effort control.
@@ -1512,7 +1512,7 @@ extension ChatViewModel {
 
         guard token == reasoningGatingFetchToken else { return }
 
-        supportedReasoningEfforts = response.supportedEfforts
+        supportedReasoningEfforts = response.effortOptions
         supportsReasoningEffort = response.supportsReasoningEffort
 
         if let pending = pendingReasoningSelection, pending.needsReadback, requestedReasoningEffort != nil,
@@ -1877,7 +1877,7 @@ extension ChatViewModel {
               pending.sessionID == sessionID, pendingReasoningSelection?.effort == pending.effort,
               !Task.isCancelled else { return nil }
         selectedReasoningEffort = serverEffort
-        supportedReasoningEfforts = status.supportedEfforts
+        supportedReasoningEfforts = status.effortOptions
         supportsReasoningEffort = status.supportsReasoningEffort
         let applied = serverEffort == pending.effort
         if applied { composerConfigurationErrorMessage = nil }

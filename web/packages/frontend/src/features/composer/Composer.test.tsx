@@ -515,7 +515,7 @@ describe('Composer', () => {
     ['hides', [], false],
   ] as const)('%s the reasoning picker as the owner\'s server-sent actions allow (TAL-1319)', (_, actions, shown) => {
     const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0,
-      reasoning_control: { reasoning_effort: 'high', supported_efforts: ['low', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, actions: [...actions], deferred: null } }
+      reasoning_control: { reasoning_effort: 'high', supported_efforts: ['low', 'high'], effort_options: ['low', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true, actions: [...actions], deferred: null } }
     renderComposer({ ...writable, read_only: true, owner_attachment: owner })
     expect(document.querySelector('#composerReasoningChip') !== null).toBe(shown)
   })

@@ -838,7 +838,7 @@ test('the composer menus open upward under their name, check the chosen row, and
     { mode: 'safe', available: true, reason: null, can_attach: false, can_reference: false },
   ], selectable: true } }))
   await page.route('**/api/profiles', (route) => route.fulfill({ json: { profiles: [{ name: 'default', is_default: true }, { name: 'research' }], active: 'default' } }))
-  await page.route('**/api/reasoning**', (route) => route.fulfill({ json: { supports_reasoning_effort: true, reasoning_effort: 'medium', supported_efforts: ['low', 'medium', 'high'] } }))
+  await page.route('**/api/reasoning**', (route) => route.fulfill({ json: { supports_reasoning_effort: true, reasoning_effort: 'medium', supported_efforts: ['low', 'medium', 'high'], effort_options: ['low', 'medium', 'high'] } }))
   await page.goto('/')
   await page.locator('#msg').click()
   const strip = page.locator('.composer-strip')

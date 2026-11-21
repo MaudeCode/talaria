@@ -10,7 +10,7 @@ final class ModelsSettingsViewModelTests: XCTestCase {
         String(decoding: try! JSONSerialization.data(withJSONObject: [
             "reasoning_effort": effort, "show_reasoning": thinking,
             "supports_reasoning_effort": supportsEffort, "supports_thinking_toggle": supportsThinking,
-            "supported_efforts": efforts
+            "effort_options": efforts
         ]), as: UTF8.self)
     }
 
@@ -41,7 +41,7 @@ final class ModelsSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(model.defaultModel, "fixture-model")
         XCTAssertTrue(model.showsReasoningEffort)
         XCTAssertFalse(model.showsThinkingToggle)
-        XCTAssertEqual(model.supportedEfforts, ["low", "medium", "ultra"])
+        XCTAssertEqual(model.effortOptions, ["low", "medium", "ultra"])
         XCTAssertEqual(model.reasoningEffort, "medium")
         XCTAssertTrue(model.showThinking)
 
@@ -52,7 +52,7 @@ final class ModelsSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(model.defaultModel, "other-model")
         XCTAssertFalse(model.showsReasoningEffort)
         XCTAssertTrue(model.showsThinkingToggle)
-        XCTAssertEqual(model.supportedEfforts, [])
+        XCTAssertEqual(model.effortOptions, [])
         XCTAssertEqual(model.reasoningEffort, "")
         XCTAssertFalse(model.showThinking)
     }

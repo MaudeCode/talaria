@@ -173,11 +173,11 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertEqual(response.showReasoning, true)
         XCTAssertEqual(response.reasoningEffort, "high")
         XCTAssertEqual(response.effectiveEffort, "high")
-        XCTAssertNil(response.supportedEfforts)
+        XCTAssertNil(response.effortOptions)
         XCTAssertNil(response.supportsReasoningEffort)
     }
 
-    func testReasoningStatusPassesModelProviderQueryAndDecodesSupportedEfforts() async throws {
+    func testReasoningStatusPassesModelProviderQueryAndDecodesEffortOptions() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/reasoning")
             XCTAssertEqual(request.httpMethod, "GET")
@@ -192,8 +192,9 @@ final class APIClientConfigurationTests: APIClientTestCase {
             return apiTestJSONResponse("""
             {
               "show_reasoning": true,
-              "reasoning_effort": "medium",
+              "reasoning_effort": "none",
               "supported_efforts": ["minimal", "low", "medium", "high", "xhigh"],
+              "effort_options": ["minimal", "low", "medium", "high", "xhigh", "none"],
               "supports_reasoning_effort": true
             }
             """, for: request)
@@ -201,7 +202,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
 
         let response = try await client.reasoning(model: "gpt-5.4", provider: "openai")
 
-        XCTAssertEqual(response.supportedEfforts, ["minimal", "low", "medium", "high", "xhigh"])
+        XCTAssertEqual(response.effortOptions, ["minimal", "low", "medium", "high", "xhigh", "none"])
         XCTAssertEqual(response.supportsReasoningEffort, true)
     }
 
