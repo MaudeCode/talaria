@@ -87,16 +87,34 @@ class TailscaleTests(unittest.TestCase):
                 pts.checked_host(host)
 
 
+def disposable_checkout(test):
+    """A test-owned checkout with its own hostile web/.env: the script and server dist are copied, the rest of web/ is
+    linked. The server finds its web root above its dist, so it reads this .env, never the developer's."""
+    real = SCRIPT.resolve().parents[1] / "web"
+    root = Path(os.path.realpath(tempfile.mkdtemp()))
+    test.addCleanup(shutil.rmtree, root)
+    server = root / "web" / "packages" / "server"
+    server.mkdir(parents=True)
+    for source, target, own in ((real, root / "web", {"packages", ".env"}), (real / "packages", server.parent, {"server"}),
+                                (real / "packages" / "server", server, {"dist"})):
+        for entry in source.iterdir():
+            if entry.name not in own:
+                (target / entry.name).symlink_to(entry)
+    shutil.copytree(real / "packages" / "server" / "dist", server / "dist")
+    (root / "web" / ".env").write_text("TALARIA_WEB_PASSWORD=checkout-password\n")
+    (root / "scripts").mkdir()
+    return Path(shutil.copy2(SCRIPT, root / "scripts" / SCRIPT.name))
+
+
 class ServerTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        pts.build()
+
     def test_start_serves_a_password_login_and_stop_removes_the_server(self):
-        # A checkout web/.env with another password must not reach the server. Created exclusively, so a developer's
-        # own web/.env is never overwritten.
-        dotenv = SCRIPT.resolve().parents[1] / "web" / ".env"
-        with dotenv.open("x") as hostile:
-            hostile.write("TALARIA_WEB_PASSWORD=checkout-password\n")
-        self.addCleanup(dotenv.unlink)
+        script = disposable_checkout(self)
         started = subprocess.run(
-            [sys.executable, str(SCRIPT), "start", "--host", "127.0.0.1"], capture_output=True, text=True
+            [sys.executable, str(script), "start", "--no-build", "--host", "127.0.0.1"], capture_output=True, text=True
         )
         self.assertEqual(started.returncode, 0, started.stderr[-4000:])
         server = json.loads(started.stdout)
@@ -112,11 +130,25 @@ class ServerTests(unittest.TestCase):
             with opener.open(f"{server['url']}/api/sessions", timeout=10) as response:
                 self.assertEqual(response.status, 200)
         finally:
-            stopped = subprocess.run([sys.executable, str(SCRIPT), "stop", server["stateDir"]], capture_output=True, text=True)
+            stopped = subprocess.run([sys.executable, str(script), "stop", server["stateDir"]], capture_output=True, text=True)
         self.assertEqual(stopped.returncode, 0, stopped.stderr)
         with self.assertRaises(ProcessLookupError):
             os.kill(server["pid"], 0)
         self.assertFalse(Path(server["stateDir"]).exists())
+
+    def test_stop_never_signals_a_reused_pid(self):
+        bystander = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE)
+        self.addCleanup(bystander.wait)
+        self.addCleanup(bystander.kill)
+        state_dir = Path(os.path.realpath(tempfile.mkdtemp(prefix=pts.STATE_PREFIX)))
+        self.addCleanup(shutil.rmtree, state_dir, True)
+        # The record names the bystander's PID with another process's start time, as after the server exited and the
+        # PID was reused.
+        (state_dir / "server.json").write_text(json.dumps({"pid": bystander.pid, "started": "Thu Jan  1 00:00:00 1970"}))
+        stopped = subprocess.run([sys.executable, str(SCRIPT), "stop", str(state_dir)], capture_output=True, text=True)
+        self.assertIsNone(bystander.poll())
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertFalse(state_dir.exists())
 
 
 if __name__ == "__main__":

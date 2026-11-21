@@ -186,7 +186,8 @@ def start(args):
             [node, str(dist), "serve"], cwd=WEB, env=env, stdin=subprocess.DEVNULL, stdout=output,
             stderr=subprocess.STDOUT, start_new_session=True,
         )
-    (state_dir / "server.json").write_text(json.dumps({"pid": server.pid, "port": port, "host": host, "password": password}))
+    record = {"pid": server.pid, "started": process_start(server.pid), "port": port, "host": host, "password": password}
+    (state_dir / "server.json").write_text(json.dumps(record))
     if not ready(url, password, server):
         tail = log.read_text(errors="replace").splitlines()[-80:]
         stop(state_dir)
@@ -200,20 +201,30 @@ def stop(state_dir):
     record = state_dir / "server.json"
     if not state_dir.name.startswith(STATE_PREFIX) or not record.is_file():
         raise Failure(f"{state_dir} is not a phone test server state directory")
-    pid = json.loads(record.read_text())["pid"]
+    recorded = json.loads(record.read_text())
+    pid, started = recorded["pid"], recorded["started"]
     for sig, seconds in ((signal.SIGTERM, 15), (signal.SIGKILL, 5)):
-        try:
-            os.kill(pid, sig)
-        except ProcessLookupError:
+        # A server that already exited may have left its PID to an unrelated process; signal only the one we started.
+        if not owned(pid, started):
             break
+        os.kill(pid, sig)
         deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline and alive(pid):
+        while time.monotonic() < deadline and owned(pid, started):
             time.sleep(0.1)
-        if not alive(pid):
+        if not owned(pid, started):
             break
     else:
         raise Failure(f"server {pid} survived SIGKILL; {state_dir} kept")
     shutil.rmtree(state_dir)
+
+
+def process_start(pid):
+    """The process's start time from ps: with the PID, it tells our server from a later process that reused the PID."""
+    return subprocess.run(["ps", "-p", str(pid), "-o", "lstart="], capture_output=True, text=True).stdout.strip()
+
+
+def owned(pid, started):
+    return alive(pid) and process_start(pid) == started
 
 
 def alive(pid):
