@@ -870,7 +870,6 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     restAnimation.current = animation
     animation.onfinish = () => { if (restAnimation.current === animation) restAnimation.current = null }
   }, [resting])
-  const showYolo = yolo && !hide('hide_composer_yolo')
   // TAL-1336: an owner chat's server reads its processes and subagents from that owner.
   const background = useBackgroundTasks(session ? sessionId : null).data
   const backgroundTasks = background?.tasks ?? EMPTY_TASKS
@@ -889,7 +888,8 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     ...(btwNotice ? [btwNotice] : []),
     ...(commandNotice ? [commandNotice] : []),
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
-    ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
+    // TAL-2613: active YOLO skips approvals, so its warning always shows; the setting hides only the Turn off action.
+    ...(yolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: hide('hide_composer_yolo') ? undefined : { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
     ...(sessionId && (pinnedCount > 0 || delivery?.visible) ? [{ id: 'background', content: <><Layers size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{delivery?.visible ? delegationSummary(delivery) : m.bg_card_count({ n: pinnedCount })}</span></>, detail: { title: m.bg_card_title(), content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} delivery={delivery} /> } }] : []),
     ...(sessionId && (queued.length > 0 || ownerInputs) ? [{ id: 'queue', tone: outcomeUnknown ? 'warning' as const : undefined, content: <><ListPlus size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{outcomeUnknown ? m.owner_outcome_unknown() : m.queued_count({ n: queued.length + ownerInputs })}</span></>, detail: { title: ownerInputs ? m.owner_inputs() : m.queued_count({ n: queued.length }), content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={admissions} onAdmissionAction={props.onOwnerAction} /> } }] : []),
   ]

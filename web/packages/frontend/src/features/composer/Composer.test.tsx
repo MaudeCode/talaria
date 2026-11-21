@@ -170,6 +170,22 @@ describe('Composer', () => {
     expect(attach()).not.toBeNull()
   })
 
+  // TAL-2613: hiding the YOLO control drops only its Turn off action; active YOLO always warns, since approvals are skipped.
+  it.each([
+    [true, false, true, true],
+    [true, true, true, false],
+    [false, false, false, false],
+    [false, true, false, false],
+  ])('YOLO %s with the control hidden %s: warning %s, Turn off action %s', async (yolo, hidden, warning, action) => {
+    const onToggleYolo = vi.fn()
+    renderComposer(writable, null, noop, { hide_composer_yolo: hidden }, undefined, undefined, { yolo, onToggleYolo })
+    const chip = document.querySelector<HTMLElement>('[data-notice="yolo"]')
+    expect(chip?.textContent?.includes('YOLO: approvals off') ?? false).toBe(warning)
+    const turnOff = chip && within(chip).queryByRole('button', { name: 'Turn off' })
+    expect(!!turnOff).toBe(action)
+    if (turnOff) { await userEvent.click(turnOff); expect(onToggleYolo).toHaveBeenCalledOnce() }
+  })
+
   it('keeps the fresh-chat Agent mode reachable when the other strip controls are hidden (TAL-1040)', async () => {
     const settings = { hide_composer_workspace: true, hide_composer_toolsets: true, hide_composer_profile: true } as unknown as Settings
     renderComposer(null, null, noop, settings, undefined, undefined, { onExecutionModeChange: vi.fn() })

@@ -22,7 +22,7 @@ import { showToast } from '../toast/toast'
 import { SettingsSection } from './SettingsSection'
 
 /** The ten hideable controls in the composer's order, by the name each toggle in the drawing has. */
-const CONTROLS = ['Attach button', 'Model', 'Reasoning', 'Profile', 'Workspace', 'Toolsets', 'Provider quota', 'Context ring', 'Microphone', 'YOLO mode notice']
+const CONTROLS = ['Attach button', 'Model', 'Reasoning', 'Profile', 'Workspace', 'Toolsets', 'Provider quota', 'Context ring', 'Microphone', 'YOLO Turn off button; the warning always shows']
 
 /** What the real composer decides for its model chip from the same settings: hidden or shown. */
 function ComposerModelChip() {

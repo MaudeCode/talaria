@@ -2752,7 +2752,7 @@
 	"settings_label_composer_situational_controls": "Situational composer controls",
 	"settings_label_composer_toolsets": "Toolsets",
 	"settings_label_composer_workspace": "Workspace",
-	"settings_label_composer_yolo": "YOLO mode notice",
+	"settings_label_composer_yolo": "YOLO Turn off button; the warning always shows",
 	"settings_label_compression_prepare_ahead": "Prepare compaction in the background",
 	"settings_label_confirm_external_links": "Confirm before opening external links",
 	"settings_label_continue_interrupted_chats": "Continue interrupted chats",

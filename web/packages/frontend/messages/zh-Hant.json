@@ -1564,7 +1564,7 @@
 	"settings_label_composer_situational_controls": "情境化輸入區控件",
 	"settings_label_composer_toolsets": "工具集",
 	"settings_label_composer_workspace": "工作區",
-	"settings_label_composer_yolo": "YOLO 模式提示",
+	"settings_label_composer_yolo": "YOLO 關閉按鈕（警告始終顯示）",
 	"settings_label_conversation_outline": "對話大綱",
 	"settings_label_cron_sessions": "排程任務",
 	"settings_label_dashboard_mode": "官方 Hermes 儀表板",

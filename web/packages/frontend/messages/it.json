@@ -1639,7 +1639,7 @@
 	"settings_label_composer_situational_controls": "Situational composer controls",
 	"settings_label_composer_toolsets": "Set di strumenti",
 	"settings_label_composer_workspace": "Area di lavoro",
-	"settings_label_composer_yolo": "Avviso modalità YOLO",
+	"settings_label_composer_yolo": "Pulsante Disattiva YOLO; l’avviso è sempre visibile",
 	"settings_label_conversation_outline": "Struttura della conversazione",
 	"settings_label_cron_sessions": "Attività pianificate",
 	"settings_label_dashboard_mode": "Dashboard ufficiale Hermes",

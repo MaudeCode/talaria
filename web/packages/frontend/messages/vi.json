@@ -1564,7 +1564,7 @@
 	"settings_label_composer_situational_controls": "Điều khiển khung soạn thảo theo ngữ cảnh",
 	"settings_label_composer_toolsets": "Bộ công cụ",
 	"settings_label_composer_workspace": "Không gian làm việc",
-	"settings_label_composer_yolo": "Thông báo chế độ YOLO",
+	"settings_label_composer_yolo": "Nút Tắt YOLO; cảnh báo luôn hiển thị",
 	"settings_label_conversation_outline": "Dàn ý cuộc trò chuyện",
 	"settings_label_cron_sessions": "Tác vụ đã lên lịch",
 	"settings_label_dashboard_mode": "Bảng điều khiển Hermes chính thức",

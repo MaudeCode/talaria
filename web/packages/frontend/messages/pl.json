@@ -1673,7 +1673,7 @@
 	"settings_label_composer_situational_controls": "Sytuacyjne kontrolki edytora wiadomości",
 	"settings_label_composer_toolsets": "Zestawy narzędzi",
 	"settings_label_composer_workspace": "Obszar roboczy",
-	"settings_label_composer_yolo": "Informacja o trybie YOLO",
+	"settings_label_composer_yolo": "Przycisk Wyłącz YOLO; ostrzeżenie jest zawsze widoczne",
 	"settings_label_conversation_outline": "Konspekt rozmowy",
 	"settings_label_cron_sessions": "Zaplanowane zadania",
 	"settings_label_dashboard_mode": "Oficjalny panel Hermes",
