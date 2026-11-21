@@ -2,7 +2,7 @@ import { filterAsync } from '../util.js'
 import { sessionPath, sessionDirectory, useJsonStorage } from '../test/storage.js'
 import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type SseFrame, type TestServer, openStateDb } from '../test/harness.js'
@@ -1661,6 +1661,52 @@ describe('chat turns through the sidecar', () => {
       expect(sent.find((m) => m.role === 'user')).toMatchObject({ data_use: ['no_training', 'zero_retention'] })
       expect(JSON.stringify(sent)).not.toContain('display_metadata')
     } finally { stateRead?.mockRestore() }
+  })
+
+  describe('titles from a long paste (TAL-2364)', () => {
+    // 999 two-byte letters and one four-byte emoji: the 1,000-character slice ends on a whole surrogate pair.
+    const opening = `${'é'.repeat(999)}😀`
+    let sent = ''
+    const upload = async (sid: string, name: string, body: string): Promise<Json> => {
+      const up = await s.deps.uploads.store(sid, name, Buffer.from(body))
+      return { path: up.path, mime: up.mime, name: up.filename }
+    }
+    const open = async (message: string, files: [string, string][]): Promise<Json> => {
+      const sid = await newSession(s)
+      const attachments = await Promise.all(files.map(([name, body]) => upload(sid, name, body)))
+      const res = await post(s, '/api/chat/start', { session_id: sid, message, attachments })
+      expect(res.status).toBe(200)
+      await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}`, (f) => f.event === 'stream_end')
+      return (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    }
+    beforeEach(() => {
+      sent = ''
+      sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Looked at it.' }]))
+      sidecar.respond('aux.complete', (params) => { sent = str((params.messages as Json[]).find((m) => m.role === 'user')?.content); return { model: 'aux', text: 'Title: "Accented paste review"', usage: null } })
+    })
+
+    it('titles a paste-only opener from the paste opening, whole characters and at most 1,000', async () => {
+      const session = await open('', [['pasted-1.txt', `${opening}BEYOND`]])
+      expect(sent).toContain(`User request:\n${opening}\n\nAssistant context`)
+      expect(sent).not.toContain('BEYOND')
+      expect(session.title).toBe('Accented paste review')
+    })
+
+    it('puts the typed line before the paste opening and adds nothing from a non-text file', async () => {
+      await open('why does this fail?', [['shot.pdf', 'PDF BODY'], ['pasted-2.txt', opening]])
+      expect(sent).toContain(`User request:\nwhy does this fail?\n\n${opening}\n\nAssistant context`)
+      expect(sent).not.toMatch(/PDF BODY|Attached files/)
+    })
+
+    it('resolves the paste from a state.db opener that carries only the attached-files line', async () => {
+      const sid = await newSession(s)
+      const { path } = await upload(sid, 'pasted-3.txt', opening)
+      const session = await s.deps.sessionStore.get(sid)
+      session.messages = [{ role: 'user', content: `\n\n[Attached files: ${str(path)}]` }, { role: 'assistant', content: 'Looked at it.' }]
+      await s.deps.sessionStore.save(session)
+      expect((await post(s, '/api/session/title/regenerate', { session_id: sid })).status).toBe(200)
+      expect(sent).toContain(`User request:\n${opening}\n\nAssistant context`)
+    })
   })
 
   it('skips background titling when the profile turns auxiliary.title_generation.enabled off; manual regenerate still titles (TAL-531)', async () => {

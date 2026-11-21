@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A chat that opens with a long paste now gets a title drawn from the pasted text instead of staying Untitled.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

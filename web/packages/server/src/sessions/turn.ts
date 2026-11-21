@@ -44,7 +44,7 @@ import { persistentStateChanges, persistentStateSnapshot } from './state-saved.j
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
 import { agentSteerText, asRefusedAsk, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, finalAnswerOf, hasNativeImages, isConversationalAssistant, withFinalAssistantAnswer, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutBinaryText, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withNestedJson, withoutNativeImages, withoutToolImages, type IdentityCache } from './merge.js'
 import { isAutomaticSource, mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
-import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
+import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleExchange, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { CHECKPOINT_STORE_BUSY_MESSAGE } from '../workspace/rollback.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
@@ -2144,7 +2144,7 @@ export class TurnRunner {
    * `llm_title_generated`. An explicit regenerate runs even with `auxiliary.title_generation.enabled` off (TAL-531).
    */
   async generateTitle(s: Session, opts: { preferLatest?: boolean } = {}): Promise<{ title: string | null; status: string; rawPreview: string }> {
-    const [userText, assistantText] = opts.preferLatest ? latestExchangeSnippets(s.messages) : firstExchangeSnippets(s.messages, { scanPastConsecutiveUsers: true })
+    const [userText, assistantText] = await titleExchange(this.deps.blobs, s.session_id, opts.preferLatest ? latestExchangeSnippets(s.messages) : firstExchangeSnippets(s.messages, { scanPastConsecutiveUsers: true }))
     if (!userText) return { title: null, status: 'empty_user_message', rawPreview: '' }
     let next = ''
     let llmStatus = 'empty_assistant_message'
@@ -2180,7 +2180,7 @@ export class TurnRunner {
     // A claimed CLI session still carrying its default `<Source> Session` title is retitled like a new chat (TAL-256).
     const defaultTitle = (session: Session): boolean => looksLikeDefaultCliTitle({ title: session.title, source_tag: session.source_tag, raw_source: session.raw_source, session_source: session.session_source, source_label: session.source_label })
     const eligible = ['Untitled', 'New Chat', ''].includes(placeholder) || placeholder === titleFrom(s.messages, '') || invalidExisting || defaultTitle(s)
-    const [userText, assistantText] = firstExchangeSnippets(s.messages)
+    const [userText, assistantText] = await titleExchange(this.deps.blobs, sessionId, firstExchangeSnippets(s.messages))
     // Python `_put_title_status`: empty reason/title/raw_preview keys are omitted.
     const status = async (status: string, reason = '', title = '', rawPreview = ''): Promise<void> => {
       await put('title_status', { session_id: sessionId, status, ...(reason ? { reason } : {}), ...(title ? { title } : {}), ...(rawPreview ? { raw_preview: rawPreview } : {}) })
@@ -2239,7 +2239,7 @@ export class TurnRunner {
     const every = this.deps.titleRefreshEvery?.() ?? 0
     const exchanges = countExchanges(s.messages)
     if (every <= 0 || exchanges <= 0 || exchanges % every !== 0) return
-    const [userText, assistantText] = latestExchangeSnippets(s.messages)
+    const [userText, assistantText] = await titleExchange(this.deps.blobs, s.session_id, latestExchangeSnippets(s.messages))
     if (!userText || !assistantText) return
     // Admission is released before title work, so an earlier turn's refresh may still be running: refreshes apply in
     // turn order and each reads the title its predecessor wrote.

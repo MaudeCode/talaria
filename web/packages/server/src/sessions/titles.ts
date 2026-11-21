@@ -1,9 +1,14 @@
 /** Session title generation after the first exchange (Python `api/streaming.py` title helpers). */
 import { isDict, messageText, stripWorkspacePrefix, withheldPromptText } from './merge.js'
+import { attachedFilesNamed, userPromptText } from './prompt-text.js'
+import { attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
+import { guessMime } from '../workspace/upload.js'
+import { resolvePathLikePython } from '../workspace/paths.js'
 import { str } from '../util.js'
 
 export const GENERATED_TITLE_MAX_CHARS = 50
 const TITLE_CONTEXT_CHARS = 2000
+const PASTE_TITLE_CHARS = 1000
 
 export function stripThinkingMarkup(text: string, trim = true): string {
   const stripped = text.replace(/<think(?:ing)?\b[^>]*>[\s\S]*?<\/think(?:ing)?>/gi, '').replace(/<think(?:ing)?\b[^>]*>[\s\S]*/i, '')
@@ -94,46 +99,83 @@ function withoutWithheldTurns(messages: unknown[]): unknown[] {
   })
 }
 
+type Row = Record<string, unknown>
+/** The exchange's user and assistant text, and the user row they came from, whose pasted text `titleExchange` adds. */
+export type ExchangeSnippets = [string, string, Row | null]
+
+/** TAL-2364: the first `text/*` file a user row attaches: from its `attachments`, else from the attached-files line a state.db prompt carries. */
+export function attachedTextPath(row: Row): string | null {
+  const listed = (Array.isArray(row.attachments) ? row.attachments : []).filter(isDict).map((a) => ({ path: str(a.path).trim(), mime: str(a.mime) })).filter((a) => a.path)
+  const files = listed.length ? listed : (attachedFilesNamed(messageText(row.content))?.split(', ').map((path) => ({ path: path.replace(/\\(.)/g, '$1'), mime: '' })) ?? [])
+  return files.find((f) => (f.mime || guessMime(f.path)).startsWith('text/'))?.path ?? null
+}
+
+const titleUserText = (row: Row): string => stripThinkingMarkup(userPromptText(messageText(row.content)))
+
 /** `scanPastConsecutiveUsers` keeps scanning past queued opening user rows to the first complete pair (manual regenerate, #7543). */
-export function firstExchangeSnippets(messages: unknown[], opts: { scanPastConsecutiveUsers?: boolean } = {}): [string, string] {
+export function firstExchangeSnippets(messages: unknown[], opts: { scanPastConsecutiveUsers?: boolean } = {}): ExchangeSnippets {
+  let opener: Row | null = null
   let user = ''
   let asst = ''
   for (const m of withoutWithheldTurns(messages)) {
     if (!m || typeof m !== 'object') continue
-    const row = m as Record<string, unknown>
+    const row = m as Row
     if (row.role === 'user') {
-      const candidate = stripThinkingMarkup(stripWorkspacePrefix(messageText(row.content), true))
-      if (candidate && !user) user = candidate
-      else if (user && candidate && !opts.scanPastConsecutiveUsers) break
-    } else if (row.role === 'assistant' && user) {
+      const candidate = titleUserText(row)
+      // A row with only a pasted text file still opens the exchange (TAL-2364).
+      const opens = Boolean(candidate) || attachedTextPath(row) !== null
+      if (opens && !opener) { opener = row; user = candidate } else if (opener && opens && !opts.scanPastConsecutiveUsers) break
+    } else if (row.role === 'assistant' && opener) {
       const candidate = messageText(row.content)
       if (row.tool_calls && (!candidate || isBadNewTitle(candidate))) continue
       if (candidate) asst = candidate
     }
-    if (user && asst) break
+    if (opener && asst) break
   }
-  return [user.slice(0, TITLE_CONTEXT_CHARS), asst.slice(0, TITLE_CONTEXT_CHARS)]
+  return [user.slice(0, TITLE_CONTEXT_CHARS), asst.slice(0, TITLE_CONTEXT_CHARS), opener]
+}
+
+/**
+ * TAL-2364: the title's user text: what was typed, then the first 1,000 characters of the row's first text file (a long
+ * paste), read through the upload store. Only the session's own uploads are read; the agent prompt and transcript never
+ * see it. An unreadable file adds nothing.
+ */
+export async function titleExchange(blobs: BlobStore, sessionId: string, [typed, assistant, opener]: ExchangeSnippets): Promise<[string, string]> {
+  const path = opener ? attachedTextPath(opener) : null
+  const key = path ? blobKeyForPath(blobs.attachmentRoot(), resolvePathLikePython(path)) : null
+  let paste = ''
+  if (key?.startsWith(attachmentPrefix(sessionId))) {
+    try {
+      // Four bytes hold any UTF-8 character, so this range holds 1,000 whole ones; `stream` drops a cut trailing one.
+      const got = await blobs.get(key, { start: 0, end: PASTE_TITLE_CHARS * 4 - 1 })
+      const chunks: Buffer[] = []
+      for await (const chunk of got?.body ?? []) chunks.push(chunk as Buffer)
+      paste = Array.from(new TextDecoder().decode(Buffer.concat(chunks), { stream: true })).slice(0, PASTE_TITLE_CHARS).join('').trim()
+    } catch { /* an unreadable paste titles from the typed text alone */ }
+  }
+  return [[typed, paste].filter(Boolean).join('\n\n'), assistant]
 }
 
 /** Python `_latest_exchange_snippets`: the last complete user+assistant pair, walking backwards. */
-export function latestExchangeSnippets(messages: unknown[]): [string, string] {
+export function latestExchangeSnippets(messages: unknown[]): ExchangeSnippets {
+  let opener: Row | null = null
   let user = ''
   let asst = ''
   for (const m of withoutWithheldTurns(messages).reverse()) {
     if (!m || typeof m !== 'object') continue
-    const row = m as Record<string, unknown>
+    const row = m as Row
     if (row.role === 'assistant' && !asst) {
       const candidate = messageText(row.content)
       if (row.tool_calls && (!candidate || isBadNewTitle(candidate))) continue
       if (candidate) asst = candidate
     } else if (row.role === 'user') {
-      const candidate = stripThinkingMarkup(stripWorkspacePrefix(messageText(row.content), true))
-      if (!candidate) { user = ''; asst = ''; break }
-      if (!user) user = candidate
-      if (user && asst) break
+      const candidate = titleUserText(row)
+      if (!candidate && attachedTextPath(row) === null) { opener = null; user = ''; asst = ''; break }
+      if (!opener) { opener = row; user = candidate }
+      if (asst) break
     }
   }
-  return [user.slice(0, TITLE_CONTEXT_CHARS), asst.slice(0, TITLE_CONTEXT_CHARS)]
+  return [user.slice(0, TITLE_CONTEXT_CHARS), asst.slice(0, TITLE_CONTEXT_CHARS), opener]
 }
 
 /** Python `_count_exchanges`: user rows with text. */
