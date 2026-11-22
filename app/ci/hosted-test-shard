@@ -59,7 +59,7 @@ import app_test_plan  # noqa: E402
 
 TARGET = app_test_plan.HOSTED
 WEIGHTS = HERE / "hosted-test-weights.json"
-MAX_SHARDS = 4  # Five hosted macOS slots: one build and four simulators.
+MAX_SHARDS = 1  # TAL-2411 benchmark: one shard.
 WITHIN = 1.10  # The fewest shards predicted to finish within 10% of the fastest width.
 # Repeats of a pull request's added and changed tests (TAL-2402). The budgets keep the repeats inside the time a pull
 # request already spends: in benchmark run 44224379174 the 90 s repeat shard's test step took 156 s beside its lane
