@@ -1,0 +1,89 @@
+{
+  "idle": {
+    "scope": "agent_home",
+    "available": true,
+    "unavailable_reason": null,
+    "server": "talaria-host",
+    "profile": "default",
+    "retention_seconds": 3600,
+    "job": null
+  },
+  "running": {
+    "scope": "agent_home",
+    "available": true,
+    "unavailable_reason": null,
+    "server": "talaria-host",
+    "profile": "default",
+    "retention_seconds": 3600,
+    "job": {
+      "id": "0f3c9a1e5b7d4c2a8e6f1b3d5a7c9e0f",
+      "state": "running",
+      "phase": "archiving",
+      "completed": 412,
+      "total": 1280,
+      "started_at": 1800000000,
+      "finished_at": null,
+      "complete": null,
+      "file_name": null,
+      "size_bytes": null,
+      "download_url": null,
+      "expires_at": null,
+      "error": null
+    }
+  },
+  "ready": {
+    "scope": "agent_home",
+    "available": true,
+    "unavailable_reason": null,
+    "server": "talaria-host",
+    "profile": "default",
+    "retention_seconds": 3600,
+    "job": {
+      "id": "0f3c9a1e5b7d4c2a8e6f1b3d5a7c9e0f",
+      "state": "ready",
+      "phase": null,
+      "completed": 1280,
+      "total": 1280,
+      "started_at": 1800000000,
+      "finished_at": 1800000042,
+      "complete": true,
+      "file_name": "hermes-agent-home-20270115-080000.zip",
+      "size_bytes": 48211904,
+      "download_url": "api/agent-backup/download?id=0f3c9a1e5b7d4c2a8e6f1b3d5a7c9e0f",
+      "expires_at": 1800003642,
+      "error": null
+    }
+  },
+  "failed": {
+    "scope": "agent_home",
+    "available": true,
+    "unavailable_reason": null,
+    "server": "talaria-host",
+    "profile": "default",
+    "retention_seconds": 3600,
+    "job": {
+      "id": "0f3c9a1e5b7d4c2a8e6f1b3d5a7c9e0f",
+      "state": "failed",
+      "phase": null,
+      "completed": null,
+      "total": null,
+      "started_at": 1800000000,
+      "finished_at": 1800000003,
+      "complete": null,
+      "file_name": null,
+      "size_bytes": null,
+      "download_url": null,
+      "expires_at": null,
+      "error": "Another Hermes backup is already running."
+    }
+  },
+  "named_profile": {
+    "scope": "agent_home",
+    "available": false,
+    "unavailable_reason": "named_profile",
+    "server": "talaria-host",
+    "profile": "default",
+    "retention_seconds": 3600,
+    "job": null
+  }
+}

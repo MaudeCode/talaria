@@ -27,6 +27,7 @@ import { canonicalExecCommand, classifyCommand, COMMAND_REGISTRY_UNAVAILABLE, co
 import { spokenText } from './tools-raw.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, forgetGatewayProbes, gatewayStatus, logCatalog, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { EXTERNALLY_MANAGED } from '../tools/gateway-lifecycle.js'
+import { AgentBackupRunning, agentBackupRefusal, agentBackupStatus } from '../tools/agent-backup.js'
 import { NOT_CONTROLLED, restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
 import { PluginSettingsInvalid, planPluginSettings, pluginSettingsView, serializePluginSettingsSave } from '../tools/plugin-settings.js'
@@ -875,6 +876,24 @@ export const toolsRouter = os.router({
     start: os.gateway.start.handler(({ context: { ctx } }) => run(() => gatewayAction(ctx, 'start'))),
     stop: os.gateway.stop.handler(({ context: { ctx } }) => run(() => gatewayAction(ctx, 'stop'))),
     restart: os.gateway.restart.handler(({ context: { ctx } }) => run(() => gatewayAction(ctx, 'restart'))),
+  },
+  agentBackup: {
+    status: os.agentBackup.status.handler(({ context: { ctx } }) => run(() => agentBackupStatus(ctx))),
+    create: os.agentBackup.create.handler(({ context: { ctx } }) => run(() => {
+      const reason = agentBackupRefusal(ctx)
+      if (reason) throw new HttpError(403, 'Only the root profile can back up the whole Agent home.', { code: 'agent_backup_unavailable', unavailable_reason: reason })
+      try { ctx.deps.agentBackups.start(ctx.deps.profileHome('default')) } catch (error) {
+        if (error instanceof AgentBackupRunning) throw new HttpError(409, error.message, { code: 'agent_backup_running' })
+        throw error
+      }
+      return agentBackupStatus(ctx)
+    })),
+    discard: os.agentBackup.discard.handler(({ input, context: { ctx } }) => run(() => {
+      const reason = agentBackupRefusal(ctx)
+      if (reason === 'named_profile' || reason === 'isolated_profile') throw new HttpError(403, 'Only the root profile can manage the Agent-home backup.', { code: 'agent_backup_unavailable', unavailable_reason: reason })
+      ctx.deps.agentBackups.discard(input.id)
+      return agentBackupStatus(ctx)
+    })),
   },
   mcp: {
     servers: os.mcp.servers.handler(({ context: { ctx } }) => run(async () => ctx.deps.mcp.servers(home(ctx), await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))) as Promise<never>)),

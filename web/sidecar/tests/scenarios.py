@@ -207,6 +207,9 @@ UNEXERCISED.add("plugins.set_enabled")
 # Pausing an idle task needs a seeded task state; test_plugin_idle_tasks.py covers it with synthetic profiles.
 UNEXERCISED.add("plugins.idle_task_set_paused")
 
+# An Agent-home backup runs the native CLI; test_agent_backup.py covers it on a disposable root (TAL-2661).
+UNEXERCISED.add("backup.create")
+
 # A replay case sends a provider request; test_skill_replay.py covers it with a fake transport.
 UNEXERCISED.add("skills.replay_case")
 

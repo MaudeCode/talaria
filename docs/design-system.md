@@ -320,7 +320,7 @@ action not in it gets a row here in the same change:
 | Action | Icon | Action | Icon |
 | --- | --- | --- | --- |
 | Add, new, register | `plus` | Refresh, check now, retry | `refresh-cw` |
-| Update, update all, apply an update | `circle-arrow-up` | Install, import | `download` |
+| Update, update all, apply an update | `circle-arrow-up` | Install, import, download a file | `download` |
 | Edit, change, replace, choose | `pencil` | Remove, delete, uninstall | `trash-2` |
 | Save, set, submit, approve | `check` | Copy | `copy` |
 | Settings of an item | `settings-2` | More actions | `ellipsis` |
@@ -329,7 +329,7 @@ action not in it gets a row here in the same change:
 | Use this profile | `arrow-left-right` | Restart | `rotate-cw` |
 | Stop, shut down | `power` | Reset, restore the default | `rotate-ccw` |
 | Play, preview | `play` | Back, previous page | `chevron-left` |
-| Sign out, log out | `log-out` | Clear, unset, cancel an inline form | `x` |
+| Sign out, log out | `log-out` | Clear, unset, cancel an inline form or a running job | `x` |
 | Set as default | `circle-check` | Search | `search` |
 | Browse the catalog | `store` | Details | `info` |
 | First page | `chevrons-left` | Next page | `chevron-right` |
@@ -340,7 +340,7 @@ action not in it gets a row here in the same change:
 | Stop playing | `square` | Close a docked panel | `x` |
 | Collapse a docked panel to its header | `chevron-down` | Expand a collapsed panel | `chevron-up` |
 | Show raw, show formatted (a tool row's raw view) | `braces` | Take photo | `camera` |
-| View a code block as a picture (`svg`) | `eye` | | |
+| View a code block as a picture (`svg`) | `eye` | Back up | `archive` |
 
 ## 13. Menus
 

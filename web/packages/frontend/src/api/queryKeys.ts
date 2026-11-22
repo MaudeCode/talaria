@@ -97,6 +97,7 @@ export const keys = {
   health: { agent: ['health', 'agent'] as const, system: ['health', 'system'] as const },
   updates: { check: ['updates', 'check'] as const, summary: ['updates', 'summary'] as const },
   updateNotifications: ['update-notifications'] as const,
+  agentBackup: ['agent-backup'] as const,
   plugins: ['plugins'] as const,
   pluginCatalog: ['plugin-catalog'] as const,
   mcp: { all: ['mcp'] as const, servers: ['mcp', 'servers'] as const, tools: ['mcp', 'tools'] as const },

@@ -169,7 +169,7 @@ handler runs when `isOperatorOnly(method, path)` is true:
 
 - Every method on `OPERATOR_ONLY_PATHS`, `/api/groups`, and every path under
   `OPERATOR_ONLY_PREFIXES` (`/api/terminal/`, `/api/onboarding/oauth/`,
-  `/api/groups/`, `/api/screen/`).
+  `/api/groups/`, `/api/screen/`, `/api/agent-backup/`).
 - Every method but GET and HEAD on `OPERATOR_ONLY_WRITES`
   (`/api/mcp/servers`, `/api/mcp/servers/{name}`, `/api/providers`).
 
@@ -219,6 +219,19 @@ hands control back. A viewer lives only as long as the login it opened with:
 it rechecks that session on every frame it sends and every 5 s, and closes
 with 4401 (handing control back) once the login signs out or expires. A private-bridge owner (TAL-1977) or a served profile has no
 reachable display socket, so its screen is unavailable.
+
+**The Agent-home backup (TAL-2661).** `/api/agent-backup` and everything under
+it are owner-only, and the handlers also refuse a named profile and isolated
+profile mode (`tools/agent-backup.ts` `agentBackupRefusal`), because the
+Agent's `hermes backup` archives the whole Agent root: every profile, its
+`.env` and credentials. The client sends only `scope: agent_home`; the server
+picks the root home and the output path, a new `0700` directory under the Web
+state directory (`agent-backups/<id>/`), which the sidecar checks is private and
+its own before it runs the command (`methods/backup.py`) and tightens the
+archive to `0600` after. The archive streams from that file with no buffering
+(`serveFileBytes`, anchored, hard links refused), is deleted after an hour, on
+delete, before the next backup and at the next start, and a failed or cancelled
+run's directory is removed at once. Errors are one bounded Agent line, redacted.
 
 **When a new route belongs on the owner-only list.** Add it to
 `OPERATOR_ONLY_PATHS`, `OPERATOR_ONLY_PREFIXES` or `OPERATOR_ONLY_WRITES`, and

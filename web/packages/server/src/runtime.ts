@@ -2,7 +2,7 @@
  * Assemble the application dependencies for one state directory. Used by the
  * launcher and by tests, which pass a temp directory and a fixed environment.
  */
-import { applyRedactionPolicy } from './redact.js'
+import { applyRedactionPolicy, redactString } from './redact.js'
 import { redactFeedbackText, reportIssue } from './feedback.js'
 import { usageRead } from './sessions/usage-read.js'
 import { SESSION_WAIT_DEFAULT_S, SIDECAR_METHODS, type ContextWindowSource, type PendingSteer, type RuntimeDescribe, type SessionGoal, type SessionNotice, type SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -33,6 +33,7 @@ import { ConnectorOffers } from './tools/connectors.js'
 import { Groups } from './sessions/groups.js'
 import { HygieneTicker } from './tools/hygiene.js'
 import { PruneAdvice } from './tools/prune-advice.js'
+import { AgentBackups } from './tools/agent-backup.js'
 import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps, RequestScope } from './http/context.js'
@@ -1157,6 +1158,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     updates: null as unknown as UpdateService,
     updateNotifications,
     pruneAdvice,
+    agentBackups: new AgentBackups({ dir: join(config.stateDir, 'agent-backups'), sidecar: () => sidecar, log, redact: (text) => redactString(text) }),
     gatewayRestarts: null as unknown as GatewayRestartQueue,
     gatewayLifecycle: (home: string) => gatewayLifecycle({
       env, stateDir: config.stateDir, sidecar: () => sidecar, log,

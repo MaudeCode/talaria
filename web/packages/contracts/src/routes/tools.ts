@@ -1,6 +1,7 @@
 import { McpCostPatchSchema } from '../mcp-cost-policy.js'
 import { MeshyCardQuerySchema, MeshyCardSchema, MeshyDetailsQuerySchema, MeshyDetailsSchema, MeshyOverviewSchema, MeshySaveImagesInputSchema, MeshySaveInputSchema, MeshySaveResultSchema, MeshyTaskQuerySchema, MeshyTaskResultSchema } from '../meshy.js'
 import { oc, type OpenAPI } from '@orpc/contract'
+import { AgentBackupCreateSchema, AgentBackupIdSchema, AgentBackupStatusSchema } from '../agent-backup.js'
 import { SkillRevisionsInputSchema, SkillRevisionsSchema } from '../sidecar-shared.js'
 import { SkillReplayJobSchema, SkillReplayJobsSchema, SkillReplayPlanQuerySchema, SkillReplayPlanSchema, SkillReplayStartSchema } from '../skill-replay.js'
 import { z } from 'zod'
@@ -148,6 +149,12 @@ export const toolsContract = {
     start: oc.route({ method: 'POST', path: '/api/gateway/start', tags, summary: 'Run `hermes gateway start` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. 409 while another gateway action runs, 500 with the Agent\'s first error line on failure, 504 after 60 seconds. 409 `gateway_externally_managed` (`GatewayLifecycleRefusal`) before anything runs when Web does not control the monitored Gateway (TAL-1627).' }).input(Loose.optional()).output(GatewayActionSchema),
     stop: oc.route({ method: 'POST', path: '/api/gateway/stop', tags, summary: 'Run `hermes gateway stop` for the active profile (operator only). 409 while another gateway action runs, 500 with the Agent\'s first error line on failure, 504 after 60 seconds. 409 `gateway_externally_managed` (`GatewayLifecycleRefusal`) before anything runs when Web does not control the monitored Gateway (TAL-1627).' }).input(Loose.optional()).output(GatewayActionSchema),
     restart: oc.route({ method: 'POST', path: '/api/gateway/restart', tags, summary: 'Run `hermes gateway restart` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. The old gateway drains for the Agent\'s own restart budget before it is replaced. 409 while another gateway action runs, 500 with the Agent\'s first error line on failure, 504 with the sidecar\'s timeout message once that budget runs out. 409 `gateway_externally_managed` (`GatewayLifecycleRefusal`) before anything runs when Web does not control the monitored Gateway (TAL-1627).' }).input(Loose.optional()).output(GatewayActionSchema),
+  },
+  /** TAL-2661: the owner's full native Agent-home backup, for the root profile only. Every route is owner-only. */
+  agentBackup: {
+    status: oc.route({ method: 'GET', path: '/api/agent-backup', tags, summary: 'Whether this request may back up the Agent home (`available`, else `unavailable_reason`), the host and root profile it covers, and the current or most recent backup.' }).output(AgentBackupStatusSchema),
+    create: oc.route({ method: 'POST', path: '/api/agent-backup', tags, summary: 'Start `hermes backup` for the whole Agent home, every profile included, into a private server directory, and answer at once with `job.state` `running`; read the status for progress and the outcome. A previous archive is deleted first. 403 `agent_backup_unavailable` with `unavailable_reason` from a named profile, isolated profile mode or without an Agent; 409 `agent_backup_running` while one runs.' }).input(AgentBackupCreateSchema).output(AgentBackupStatusSchema),
+    discard: oc.route({ method: 'DELETE', path: '/api/agent-backup/{id}', tags, summary: 'Cancel the running backup `id` (its child is stopped and its files removed) or delete its finished archive. An unknown id changes nothing. Answers the status as it now stands.' }).input(z.object({ id: AgentBackupIdSchema })).output(AgentBackupStatusSchema),
   },
   mcp: {
     servers: oc.route({ method: 'GET', path: '/api/mcp/servers', tags }).output(McpServersSchema),

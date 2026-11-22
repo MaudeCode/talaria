@@ -30,6 +30,15 @@ export function appUrl(path: string): URL {
   return new URL(path.replace(/^\/+/, ''), appRoot())
 }
 
+/** Save an app-relative URL through a download link, so the browser's own download handles it (an attachment the server names). */
+export function downloadFromApp(path: string): void {
+  const a = document.createElement('a')
+  a.href = appUrl(path).href
+  a.download = ''
+  a.rel = 'noopener'
+  a.click()
+}
+
 /** Router basepath: the mount pathname without its trailing slash, `/` for a root mount. */
 export function routerBasepath(root: URL = appRoot()): string {
   const p = root.pathname.replace(/\/+$/, '')

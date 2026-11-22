@@ -40,6 +40,8 @@ export const OPERATOR_ONLY_PATHS = new Set([
   '/api/session/recovery/audit', '/api/session/recovery/repair-safe',
   // TAL-2201: these re-point a profile's model endpoint, write provider credentials, or make the server fetch a URL.
   '/api/onboarding/setup', '/api/onboarding/probe', '/api/onboarding/complete', '/api/providers/self-hosted', '/api/providers/delete', '/api/dashboard/config',
+  // TAL-2661: the archive holds every profile's state and credentials.
+  '/api/agent-backup',
 ])
 
 /**
@@ -47,7 +49,7 @@ export const OPERATOR_ONLY_PATHS = new Set([
  * cards and the profile's toolsets; a device-code sign-in saves a provider credential. TAL-2380: the agent's screen shows
  * what it works on and, taken over, drives its desktop as the agent's user.
  */
-export const OPERATOR_ONLY_PREFIXES = ['/api/terminal/', '/api/onboarding/oauth/', '/api/groups/', '/api/screen/']
+export const OPERATOR_ONLY_PREFIXES = ['/api/terminal/', '/api/onboarding/oauth/', '/api/groups/', '/api/screen/', '/api/agent-backup/']
 
 /**
  * TAL-2201: reads stay open, every other method is owner-only. An MCP server's `command` runs on the host with the next

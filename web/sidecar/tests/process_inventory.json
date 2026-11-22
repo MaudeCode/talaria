@@ -8,6 +8,20 @@
         ""
       ]
     },
+    "tests/test_agent_backup.py::test_native_backup_archives_every_profile_into_a_private_file": {
+      "layer": "compatibility",
+      "reason": "The supported Agent's own hermes backup, run through the sidecar for a disposable root, must archive every profile, a readable state.db snapshot and .env, publish an owner-only file into the Web server's private directory inside the home, leave no staging there and never archive that directory; only the release's collectors and atomic staging decide this. No network or providers.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_backup.py::test_a_held_native_backup_lock_reports_busy": {
+      "layer": "compatibility",
+      "reason": "A real flock on the Agent's .backup.lock must make the installed CLI refuse with the exit code and line the sidecar maps to busy, writing no archive; only actual lock exclusion and the release's refusal text prove the mapping.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_agent_tool_presentations.py::test_every_registered_agent_tool_has_a_presentation": {
       "layer": "compatibility",
       "reason": "The supported Agent's real tool registry (a model_tools import in a disposable home) must match the Talaria presentation table, so an Agent release that adds or drops a tool fails before its pin lands. A separate Agent interpreter loads the registry; no network or providers.",

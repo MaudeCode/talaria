@@ -43,6 +43,7 @@ import { MeshyError } from '../tools/meshy.js'
 import { fetchRemoteImage, publicImageFetch, relaySlot, RemoteImageError, vouchedRemoteImage } from '../http/remote-image.js'
 import { dashboardScope } from '../tools/dashboard-plugins.js'
 import { ProfileError } from '../profiles/profiles.js'
+import { agentBackupRefusal } from '../tools/agent-backup.js'
 
 const SANDBOX_CSP = 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox'
 const DANGEROUS_TYPES = new Set(['text/html', 'application/xhtml+xml', 'image/svg+xml'])
@@ -60,6 +61,7 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
   '/api/remote-image': handleRemoteImage,
   '/api/profile/avatar': handleProfileAvatar,
   '/api/folder/download': handleFolderDownload,
+  '/api/agent-backup/download': handleAgentBackupDownload,
   '/api/session/export': handleSessionExport,
   '/api/transcribe/stream': handleTranscribeStream,
   '/api/screen/ws': async (ctx) => { await ctx.deps.screens.handle(ctx) },
@@ -429,6 +431,15 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
   } finally {
     ctx.res.end()
   }
+}
+
+/** TAL-2661: the ready Agent-home archive, opened without following a link out of its private directory. */
+async function handleAgentBackupDownload(ctx: RequestContext): Promise<void> {
+  const reason = agentBackupRefusal(ctx)
+  if (reason === 'named_profile' || reason === 'isolated_profile') throw new HttpError(403, 'Only the root profile can download the Agent-home backup.')
+  const archive = ctx.deps.agentBackups.archive(ctx.query.get('id') ?? '')
+  if (!archive) throw new HttpError(404, 'not found')
+  await serveFileBytes(ctx, archive.path, { mime: 'application/zip', disposition: 'attachment', cacheControl: 'no-store', anchorRoot: archive.dir, downloadName: archive.name, denyHardLinks: true })
 }
 
 async function handleSessionExport(ctx: RequestContext): Promise<void> {

@@ -10,7 +10,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { SessionRow, SessionsList } from '../../contracts'
-import { appUrl } from '../../lib/appRoot'
+import { appUrl, downloadFromApp } from '../../lib/appRoot'
 import { copyText, copyWithToast } from '../../lib/clipboard'
 import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
@@ -175,13 +175,7 @@ export function SessionMenuItems({ row, active, anchor }: { row: SessionRow; act
   })
   const sessionUrl = () => appUrl(`session/${encodeURIComponent(sid)}`).href
   const copyLink = () => { copyWithToast(sessionUrl(), m.copied(), m.session_link_copy_failed()) }
-  const exportAs = (format: 'json' | 'markdown' | 'html') => {
-    const a = document.createElement('a')
-    a.href = appUrl(api.exportSessionUrl(sid, format)).href
-    a.download = ''
-    a.rel = 'noopener'
-    a.click()
-  }
+  const exportAs = (format: 'json' | 'markdown' | 'html') => { downloadFromApp(api.exportSessionUrl(sid, format)) }
   return (
     <>
       {/* The row's menu replaces the browser's link menu, so it carries Open in new tab. */}
