@@ -8817,6 +8817,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -9833,6 +9840,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -11605,6 +11619,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -16618,6 +16639,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -17634,6 +17662,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -19406,6 +19441,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -23072,6 +23114,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -24088,6 +24137,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -25860,6 +25916,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -32810,6 +32873,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -33826,6 +33896,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -35598,6 +35675,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -41883,6 +41967,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -42899,6 +42990,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -44671,6 +44769,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -51513,6 +51618,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -52529,6 +52641,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -54301,6 +54420,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -57911,6 +58037,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -58927,6 +59060,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -60699,6 +60839,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -64371,6 +64518,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -65387,6 +65541,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -67159,6 +67320,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -70829,6 +70997,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -71845,6 +72020,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -73617,6 +73799,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -77057,6 +77246,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -78619,6 +78815,13 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "wrapped_at": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0,
+                              "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                             }
                           },
                           "required": [
@@ -90596,6 +90799,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -91612,6 +91822,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -93384,6 +93601,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -97046,6 +97270,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -98062,6 +98293,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -99834,6 +100072,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -104203,6 +104448,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -105219,6 +105471,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [
@@ -106991,6 +107250,13 @@
                                             "type": "integer",
                                             "minimum": -9007199254740991,
                                             "maximum": 9007199254740991
+                                          },
+                                          "wrapped_at": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991,
+                                            "exclusiveMinimum": 0,
+                                            "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                           }
                                         },
                                         "required": [
@@ -111208,6 +111474,13 @@
                                                       "type": "integer",
                                                       "minimum": -9007199254740991,
                                                       "maximum": 9007199254740991
+                                                    },
+                                                    "wrapped_at": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991,
+                                                      "exclusiveMinimum": 0,
+                                                      "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                     }
                                                   },
                                                   "required": [
@@ -112006,7 +112279,8 @@
                                                             "lines": {},
                                                             "total_lines": {},
                                                             "truncated": {},
-                                                            "next_offset": {}
+                                                            "next_offset": {},
+                                                            "wrapped_at": {}
                                                           }
                                                         },
                                                         "matches": {
@@ -113603,6 +113877,13 @@
                                                 "type": "integer",
                                                 "minimum": -9007199254740991,
                                                 "maximum": 9007199254740991
+                                              },
+                                              "wrapped_at": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991,
+                                                "exclusiveMinimum": 0,
+                                                "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                               }
                                             },
                                             "required": [
@@ -164622,6 +164903,13 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "wrapped_at": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991,
+                                                  "exclusiveMinimum": 0,
+                                                  "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                 }
                                               },
                                               "required": [
@@ -165638,6 +165926,13 @@
                                                           "type": "integer",
                                                           "minimum": -9007199254740991,
                                                           "maximum": 9007199254740991
+                                                        },
+                                                        "wrapped_at": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991,
+                                                          "exclusiveMinimum": 0,
+                                                          "description": "TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent's `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent."
                                                         }
                                                       },
                                                       "required": [

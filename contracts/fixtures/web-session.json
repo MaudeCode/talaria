@@ -7275,6 +7275,27 @@
       },
       "call-again": {
         "text": "Unchanged since the last read"
+      },
+      "call-archive": {
+        "text": "1|aaaaaaaaaaaaaaaaaaaa\n2|tail",
+        "file_excerpt": {
+          "path": "/home/u/.hermes/cache/tool_results/call_1.json",
+          "language": null,
+          "start_line": 1,
+          "lines": [
+            {
+              "n": 1,
+              "text": "aaaaaaaaaaaaaaaaaaaa"
+            },
+            {
+              "n": 2,
+              "text": "tail"
+            }
+          ],
+          "total_lines": 2,
+          "truncated": false,
+          "wrapped_at": 20
+        }
       }
     },
     "session": {
@@ -7490,6 +7511,48 @@
               },
               "duration": null,
               "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "path",
+                  "value": "/home/u/.hermes/cache/tool_results/call_1.json",
+                  "multiline": false
+                }
+              ],
+              "kind": "read",
+              "target": "/home/u/.hermes/cache/tool_results/call_1.json",
+              "function": {
+                "name": "read_file",
+                "arguments": "{\"path\":\"/home/u/.hermes/cache/tool_results/call_1.json\"}"
+              },
+              "id": "call-archive",
+              "done": true,
+              "is_error": false,
+              "result": "{\"content\":\"1|aaaaaaaaaaaaaaaaaaaa\\n2|tail\",\"total_lines\":2,\"file_size\":24,\"truncated\":false,\"extracted_document\":true,\"long_lines_wrapped_at\":20}",
+              "result_view": {
+                "text": "1|aaaaaaaaaaaaaaaaaaaa\n2|tail",
+                "file_excerpt": {
+                  "path": "/home/u/.hermes/cache/tool_results/call_1.json",
+                  "language": null,
+                  "start_line": 1,
+                  "lines": [
+                    {
+                      "n": 1,
+                      "text": "aaaaaaaaaaaaaaaaaaaa"
+                    },
+                    {
+                      "n": 2,
+                      "text": "tail"
+                    }
+                  ],
+                  "total_lines": 2,
+                  "truncated": false,
+                  "wrapped_at": 20
+                }
+              },
+              "duration": null,
+              "type": "function"
             }
           ],
           "_turn_id": "file-run",
@@ -7528,10 +7591,18 @@
           "_display": "in_scene"
         },
         {
+          "role": "tool",
+          "content": "{\"content\":\"1|aaaaaaaaaaaaaaaaaaaa\\n2|tail\",\"total_lines\":2,\"file_size\":24,\"truncated\":false,\"extracted_document\":true,\"long_lines_wrapped_at\":20}",
+          "timestamp": 6006,
+          "tool_call_id": "call-archive",
+          "_turn_id": "file-run",
+          "_display": "in_scene"
+        },
+        {
           "role": "assistant",
           "content": "Done.",
           "message_id": "file-answer",
-          "timestamp": 6006,
+          "timestamp": 6007,
           "_anchor_activity_scene": {
             "version": "activity_scene_v1",
             "activity_rows": [
@@ -7563,6 +7634,8 @@
                   "kind": "read",
                   "target": "src/app.ts",
                   "focus_path": "src/app.ts",
+                  "raw_args": "{\n  \"path\": \"src/app.ts\",\n  \"offset\": 12,\n  \"limit\": 2\n}",
+                  "raw_result": "{\n  \"content\": \"12|import { run } from './run'\\n13|run(2)\",\n  \"total_lines\": 40,\n  \"file_size\": 600,\n  \"truncated\": true,\n  \"hint\": \"Use offset=14 to continue reading (showing 12-13 of 40 lines)\"\n}",
                   "args": {
                     "path": "src/app.ts",
                     "offset": 12,
@@ -7595,9 +7668,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"path\": \"src/app.ts\",\n  \"offset\": 12,\n  \"limit\": 2\n}",
-                  "raw_result": "{\n  \"content\": \"12|import { run } from './run'\\n13|run(2)\",\n  \"total_lines\": 40,\n  \"file_size\": 600,\n  \"truncated\": true,\n  \"hint\": \"Use offset=14 to continue reading (showing 12-13 of 40 lines)\"\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               },
@@ -7618,6 +7689,8 @@
                   ],
                   "kind": "search",
                   "target": "run",
+                  "raw_args": "{\n  \"pattern\": \"run\"\n}",
+                  "raw_result": "{\n  \"total_count\": 5,\n  \"matches_format\": \"path-grouped\",\n  \"matches_text\": \"src/app.ts\\n  1: import { run } from './run'\\n  13: run(2)\\nsrc/run.ts\\n  1: export function run(n: number) {}\\n  4: run(0)\\n  9: run(1)\"\n}",
                   "args": {
                     "pattern": "run"
                   },
@@ -7667,9 +7740,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"pattern\": \"run\"\n}",
-                  "raw_result": "{\n  \"total_count\": 5,\n  \"matches_format\": \"path-grouped\",\n  \"matches_text\": \"src/app.ts\\n  1: import { run } from './run'\\n  13: run(2)\\nsrc/run.ts\\n  1: export function run(n: number) {}\\n  4: run(0)\\n  9: run(1)\"\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0",
                 "merged_count": 2
@@ -7696,6 +7767,8 @@
                   ],
                   "kind": "search",
                   "target": "run",
+                  "raw_args": "{\n  \"pattern\": \"run\",\n  \"output_mode\": \"count\"\n}",
+                  "raw_result": "{\n  \"total_count\": 5,\n  \"counts\": {\n    \"src/app.ts\": 2,\n    \"src/run.ts\": 3\n  }\n}",
                   "args": {
                     "pattern": "run",
                     "output_mode": "count"
@@ -7726,9 +7799,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"pattern\": \"run\",\n  \"output_mode\": \"count\"\n}",
-                  "raw_result": "{\n  \"total_count\": 5,\n  \"counts\": {\n    \"src/app.ts\": 2,\n    \"src/run.ts\": 3\n  }\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-search"
@@ -7761,6 +7832,8 @@
                   "kind": "read",
                   "target": "src/app.ts",
                   "focus_path": "src/app.ts",
+                  "raw_args": "{\n  \"path\": \"src/app.ts\",\n  \"offset\": 12,\n  \"limit\": 2\n}",
+                  "raw_result": "{\n  \"status\": \"unchanged\",\n  \"message\": \"File unchanged since last read.\",\n  \"path\": \"src/app.ts\",\n  \"dedup\": true,\n  \"content_returned\": false\n}",
                   "args": {
                     "path": "src/app.ts",
                     "offset": 12,
@@ -7774,11 +7847,63 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"path\": \"src/app.ts\",\n  \"offset\": 12,\n  \"limit\": 2\n}",
-                  "raw_result": "{\n  \"status\": \"unchanged\",\n  \"message\": \"File unchanged since last read.\",\n  \"path\": \"src/app.ts\",\n  \"dedup\": true,\n  \"content_returned\": false\n}"
+                  "cost_usd": null
                 },
-                "group_id": "group:0"
+                "group_id": "group:0",
+                "merged_count": 2
+              },
+              {
+                "row_id": "tool:call-archive",
+                "order_index": 4,
+                "role": "tool",
+                "created_at": 6001,
+                "tool": {
+                  "id": "call-archive",
+                  "name": "read_file",
+                  "args_fields": [
+                    {
+                      "key": "path",
+                      "value": "/home/u/.hermes/cache/tool_results/call_1.json",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "read",
+                  "target": "/home/u/.hermes/cache/tool_results/call_1.json",
+                  "raw_args": "{\n  \"path\": \"/home/u/.hermes/cache/tool_results/call_1.json\"\n}",
+                  "raw_result": "{\n  \"content\": \"1|aaaaaaaaaaaaaaaaaaaa\\n2|tail\",\n  \"total_lines\": 2,\n  \"file_size\": 24,\n  \"truncated\": false,\n  \"extracted_document\": true,\n  \"long_lines_wrapped_at\": 20\n}",
+                  "args": {
+                    "path": "/home/u/.hermes/cache/tool_results/call_1.json"
+                  },
+                  "preview": null,
+                  "result": "{\"content\":\"1|aaaaaaaaaaaaaaaaaaaa\\n2|tail\",\"total_lines\":2,\"file_size\":24,\"truncated\":false,\"extracted_document\":true,\"long_lines_wrapped_at\":20}",
+                  "result_view": {
+                    "text": "1|aaaaaaaaaaaaaaaaaaaa\n2|tail",
+                    "file_excerpt": {
+                      "path": "/home/u/.hermes/cache/tool_results/call_1.json",
+                      "language": null,
+                      "start_line": 1,
+                      "lines": [
+                        {
+                          "n": 1,
+                          "text": "aaaaaaaaaaaaaaaaaaaa"
+                        },
+                        {
+                          "n": 2,
+                          "text": "tail"
+                        }
+                      ],
+                      "total_lines": 2,
+                      "truncated": false,
+                      "wrapped_at": 20
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-again"
               }
             ],
             "final_answer": "Done.",
@@ -7788,18 +7913,13 @@
             "has_consumed_steering": false,
             "file_changes": [],
             "turn_summary": [],
-            "activity_rows_total": 4,
-            "activity_rows_offset": 0,
-            "activity_rows_complete": true,
-            "activity_rows_omitted": 0,
-            "activity_scene_ref": "325e6e9b8e2e9c24a84b940387ae56336ff77947a70e0b5742f10b81a86c1836",
             "activity_groups": [
               {
                 "group_id": "group:0",
                 "parts": [
                   {
                     "kind": "read",
-                    "count": 2,
+                    "count": 3,
                     "failed": 0
                   },
                   {
@@ -7817,7 +7937,7 @@
               "parts": [
                 {
                   "kind": "read",
-                  "count": 2,
+                  "count": 3,
                   "failed": 0
                 },
                 {
@@ -7828,7 +7948,12 @@
               ],
               "failed": 0,
               "running": false
-            }
+            },
+            "activity_rows_total": 5,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "1b685c12f6b4ebb5017914ca59e9cb2ad902de129a917e2b3fea63fba5fe217f"
           },
           "_turn_id": "file-run",
           "_display": "row"

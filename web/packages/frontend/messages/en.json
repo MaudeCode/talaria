@@ -3411,6 +3411,7 @@
 	"tool_outcome_skipped": "Skipped",
 	"tool_read_stopped": "Stopped at line {line} of {total}",
 	"tool_read_stopped_at": "Stopped at line {line}",
+	"tool_read_wrapped": "Long lines wrapped at {width} characters",
 	"tool_result_error": "Error: {error}",
 	"tool_result_exit_code": "Exit code: {code}",
 	"tool_result_label": "Result",

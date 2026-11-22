@@ -365,6 +365,19 @@ describe('read_file and search_files sections (TAL-2323)', () => {
     expect(read({ content: '1|Title\n2|Body', total_lines: 2, truncated: false, extracted_document: true }, { path: 'doc.docx' }).file_excerpt).toEqual({ path: 'doc.docx', language: null, start_line: 1, lines: [{ n: 1, text: 'Title' }, { n: 2, text: 'Body' }], total_lines: 2, truncated: false })
   })
 
+  it('keeps the width an archive read wrapped its long lines at, live and on replay (TAL-2686)', () => {
+    // Agent v0.23.3 `_read_extracted_document` paging a pruned tool-result archive: gutters index the wrapped view.
+    const archive = { path: '/home/u/.hermes/cache/tool_results/call_1.json' }
+    const wrapped = { content: `1|${'a'.repeat(4)}\n2|${'a'.repeat(4)}\n3|tail`, total_lines: 3, file_size: 14, truncated: false, extracted_document: true, long_lines_wrapped_at: 4 }
+    expect(read(wrapped, archive).file_excerpt?.wrapped_at).toBe(4)
+    const messages = [{ role: 'assistant', tool_calls: [{ id: 'w1', type: 'function', function: { name: 'read_file', arguments: JSON.stringify(archive) } }] }, { role: 'tool', tool_call_id: 'w1', content: JSON.stringify(wrapped) }]
+    const [assistant] = withToolCallOutcomes(messages, [], null) as { tool_calls: { result_view: ToolResultView }[] }[]
+    expect(assistant!.tool_calls[0]!.result_view.file_excerpt?.wrapped_at).toBe(4)
+    expect(decidedResultView({ file_excerpt: read(wrapped, archive).file_excerpt }).file_excerpt?.wrapped_at).toBe(4)
+    // An unwrapped read, an older Agent's payload and a malformed marker show ordinary line numbers.
+    for (const marker of [undefined, 0, -2, 2.5, '4', true, null]) expect(read({ ...wrapped, long_lines_wrapped_at: marker }, archive).file_excerpt).not.toHaveProperty('wrapped_at')
+  })
+
   it('shows a repeat read, a missing file and a blocked read as one line, never JSON', () => {
     expect(read({ status: 'unchanged', message: 'File unchanged since last read…', path: 'src/app.ts', dedup: true, content_returned: false })).toEqual({ text: 'Unchanged since the last read' })
     expect(read({ error: 'File not found: src/ap.ts', not_found: true, similar_files: ['src/app.ts', 'src/api.ts'] })).toEqual({ error: 'File not found: src/ap.ts\nSimilar files: src/app.ts, src/api.ts', outcome: { key: 'failed', tone: 'error', value: 'File not found: src/ap.ts' } })

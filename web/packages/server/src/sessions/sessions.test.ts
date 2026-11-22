@@ -3362,18 +3362,21 @@ describe('session detail ships read_file and search_files sections (TAL-2323)', 
 
   const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
   const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
-  /** A cut-short read, a path-grouped content search, a count search and a repeat read, as Agent v0.23 returns them. */
+  /** A cut-short read, a path-grouped content search, a count search, a repeat read and a wrapped archive read, as Agent v0.23 returns them. */
   const transcript: Json[] = [
     { role: 'user', content: 'Read app.ts and find run', message_id: 'file-user', timestamp: 6000, _turn_id: 'file-run' },
     { role: 'assistant', content: '', message_id: 'file-calls', timestamp: 6001, _turn_id: 'file-run', tool_calls: [
       call('call-read', 'read_file', { path: 'src/app.ts', offset: 12, limit: 2 }), call('call-search', 'search_files', { pattern: 'run' }),
       call('call-count', 'search_files', { pattern: 'run', output_mode: 'count' }), call('call-again', 'read_file', { path: 'src/app.ts', offset: 12, limit: 2 }),
+      call('call-archive', 'read_file', { path: '/home/u/.hermes/cache/tool_results/call_1.json' }),
     ] },
     { role: 'tool', tool_call_id: 'call-read', content: JSON.stringify({ content: '12|import { run } from \'./run\'\n13|run(2)', total_lines: 40, file_size: 600, truncated: true, hint: 'Use offset=14 to continue reading (showing 12-13 of 40 lines)' }), timestamp: 6002, _turn_id: 'file-run' },
     { role: 'tool', tool_call_id: 'call-search', content: JSON.stringify({ total_count: 5, matches_format: 'path-grouped', matches_text: 'src/app.ts\n  1: import { run } from \'./run\'\n  13: run(2)\nsrc/run.ts\n  1: export function run(n: number) {}\n  4: run(0)\n  9: run(1)' }), timestamp: 6003, _turn_id: 'file-run' },
     { role: 'tool', tool_call_id: 'call-count', content: JSON.stringify({ total_count: 5, counts: { 'src/app.ts': 2, 'src/run.ts': 3 } }), timestamp: 6004, _turn_id: 'file-run' },
     { role: 'tool', tool_call_id: 'call-again', content: JSON.stringify({ status: 'unchanged', message: 'File unchanged since last read.', path: 'src/app.ts', dedup: true, content_returned: false }), timestamp: 6005, _turn_id: 'file-run' },
-    { role: 'assistant', content: 'Done.', message_id: 'file-answer', timestamp: 6006, _turn_id: 'file-run' },
+    // TAL-2686: Agent v0.23.3 paging a pruned tool-result archive, a long line wrapped into numbered lines of 20 characters.
+    { role: 'tool', tool_call_id: 'call-archive', content: JSON.stringify({ content: `1|${'a'.repeat(20)}\n2|tail`, total_lines: 2, file_size: 24, truncated: false, extracted_document: true, long_lines_wrapped_at: 20 }), timestamp: 6006, _turn_id: 'file-run' },
+    { role: 'assistant', content: 'Done.', message_id: 'file-answer', timestamp: 6007, _turn_id: 'file-run' },
   ]
 
   it('matches the shared contract fixture in full detail and every window, on the calls and the scene alike', async () => {
