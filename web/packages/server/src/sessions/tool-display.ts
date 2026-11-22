@@ -398,7 +398,8 @@ export function toolName(call: Record<string, unknown>): string {
   return bridgedCall(call)?.name ?? rawToolName(call)
 }
 
-function rawToolName(call: Record<string, unknown>): string {
+/** The name a call carries itself: a bridge's is `tool_call`. */
+export function rawToolName(call: Record<string, unknown>): string {
   return str(call.name) || str(call.tool_name) || (isDict(call.function) ? str(call.function.name) : '')
 }
 
