@@ -7,13 +7,14 @@ import { handleGroupFile } from './groups-router.js'
 import { closeSync, createReadStream, existsSync, statSync, realpathSync } from 'node:fs'
 import { readdir, realpath, stat } from 'node:fs/promises'
 import { Readable } from 'node:stream'
-import { OwnerExportFormatSchema } from '@maudecode/talaria-web-contracts'
+import { OWNER_IMAGE_LIMIT, OwnerExportFormatSchema } from '@maudecode/talaria-web-contracts'
 import { basename, join, relative } from 'node:path'
 import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
 import { activeProfileName, requestCanManageServer } from '../auth/gate.js'
 import { assertWorkspaceFileAllowed, escapeRequest, fileError, fileOpsSession } from './sessions-router.js'
 import { HttpFailure } from '../sessions/service.js'
+import { ownerImage } from '../sessions/owner-images.js'
 import { materializeAttachment } from '../sessions/storage/blobs.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, safeResolve, safeResolveWs, unlinkAnchored } from '../workspace/fs.js'
@@ -33,6 +34,7 @@ import { OfficeError, officeFormat, officeRequestBudget, previewOffice, type Off
 import { writeFully } from '../fs/atomic.js'
 import { pythonPrettyJson, renderSessionHtml, renderSessionMarkdown } from '../sessions/export.js'
 import type { Session } from '../sessions/session.js'
+import { uploadInbox } from './session-visibility.js'
 import { handleCspReport, handleTranscribe, handleTts } from './tools-raw.js'
 import { handleOidcCallback, handleOidcStart } from './auth-raw.js'
 import { handleTranscribeStream } from './transcribe-stream.js'
@@ -519,22 +521,15 @@ export async function uploadFile(ctx: RequestContext, form: MultipartResult): Pr
   return file
 }
 
-/** An unknown session and another profile's session both answer 404 before anything is written. */
-async function uploadSessionVisible(ctx: RequestContext, sessionId: string): Promise<boolean> {
-  let session: Session
-  try {
-    // A form field passes no request guard: refuse here, before the load can repair or cache the session.
-    if (!(await ctx.deps.sessions.sessionIdVisible(sessionId))) throw new SessionNotFound(sessionId)
-    session = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }))
-  } catch {
-    await ctx.json({ error: 'Session not found' }, { status: 404 })
-    return false
-  }
-  if (!ctx.deps.sessions.visibleToRequest(session)) {
-    await ctx.json({ error: 'Session not found' }, { status: 404 })
-    return false
-  }
-  return true
+/**
+ * An unknown session and another profile's session both answer 404 before anything is written; so does an owner chat
+ * where `inboxes` leaves it out. A form field passes no request guard, so this refuses before any load.
+ */
+async function uploadSessionVisible(ctx: RequestContext, sessionId: string, inboxes: readonly ('web' | 'owner')[] = ['web']): Promise<'web' | 'owner' | null> {
+  const inbox = await uploadInbox(ctx, sessionId)
+  if (inbox && inboxes.includes(inbox)) return inbox
+  await ctx.json({ error: 'Session not found' }, { status: 404 })
+  return null
 }
 
 /** Stage one feedback attachment: exactly one `file` part plus its declared `contentType` field. */
@@ -550,8 +545,18 @@ async function handleUpload(ctx: RequestContext): Promise<void> {
   if (!form) return
   const sessionId = form.fields.session_id ?? ctx.query.get('session_id') ?? ''
   const file = (await uploadFile(ctx, form))
-  if (!file || !(await uploadSessionVisible(ctx, sessionId))) return
+  const inbox = file && await uploadSessionVisible(ctx, sessionId, ['web', 'owner'])
+  if (!file || !inbox) return
   try {
+    if (inbox === 'owner') {
+      // TAL-1344: an owner chat's draft holds only images its owner stages; anything else is refused before it is stored.
+      try { ownerImage(sanitizeUploadName(file.filename), file.body) } catch (error) {
+        if (error instanceof HttpFailure) { (await ctx.json({ error: error.message, ...error.extra }, { status: 415 })); return }
+        throw error
+      }
+      await ctx.json({ ...(await ctx.deps.uploads.store(sessionId, file.filename, file.body)), max_attachments_per_message: OWNER_IMAGE_LIMIT })
+      return
+    }
     await ctx.json(await ctx.deps.uploads.store(sessionId, file.filename, file.body))
   } catch (error) {
     if (error instanceof UploadConflict) { (await ctx.json({ error: error.message }, { status: 409 })); return }

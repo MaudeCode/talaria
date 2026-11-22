@@ -861,6 +861,19 @@
                 "can_attach": {
                   "type": "boolean"
                 },
+                "attachment_mimes": {
+                  "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach.",
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "image/png",
+                      "image/jpeg",
+                      "image/gif",
+                      "image/webp"
+                    ]
+                  }
+                },
                 "restarting": {
                   "type": "boolean",
                   "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."

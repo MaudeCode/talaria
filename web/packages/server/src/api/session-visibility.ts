@@ -18,6 +18,18 @@ export async function sessionIdVisibleToRequest(ctx: RequestContext, sid: unknow
   return (await ctx.deps.sessions.sessionIdVisible(sid))
 }
 
+/**
+ * The upload inbox a request may use: a visible Web session's, or a visible canonical owner chat's, which has no Web
+ * session document and takes only images its owner stages (TAL-1344). Null for an unknown or another profile's session.
+ */
+export async function uploadInbox(ctx: RequestContext, sid: string): Promise<'web' | 'owner' | null> {
+  if (!sid || !(await ctx.deps.sessions.sessionIdVisible(sid))) return null
+  if (await ctx.deps.sessions.owner?.isOwned(sid)) return 'owner'
+  try {
+    return ctx.deps.sessions.visibleToRequest(await ctx.deps.sessionStore.get(sid, { metadataOnly: true })) ? 'web' : null
+  } catch { return null }
+}
+
 /** Pre-dispatch query guard for every `/api/` request (raw, SSE, and contract routes). */
 export async function guardQuerySessionId(ctx: RequestContext): Promise<boolean> {
   const sid = ctx.query.get('session_id')

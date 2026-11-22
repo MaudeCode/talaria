@@ -254,11 +254,10 @@ describe('canonical owner attachment', () => {
     expect(await response.text()).not.toContain(secret)
   })
 
-  it('refuses incomplete mutations, unsafe workspace selections, file uploads, and blocking chat before owner dispatch', async () => {
+  it('refuses incomplete mutations, unsafe workspace selections, and blocking chat before owner dispatch', async () => {
     sidecar.respond('gateway.session', () => attached(snapshot()))
     expect((await post('/api/chat/owner-action', { session_id: sid, action: 'mutate', operation: 'reset', payload: {} })).status).toBe(400)
     expect((await post('/api/chat/owner-action', { session_id: sid, action: 'mutate', operation: 'workspace', payload: { cwd: '/untrusted-owner-fixture' }, request_id: 'change-workspace', expected_revision: 2, execution_generation: 1 })).status).toBe(400)
-    expect((await post('/api/chat/start', { session_id: sid, submission_id: 'image', message: 'file', attachments: [{ path: '/untrusted-owner-fixture/key', mime: 'image/png' }] })).status).toBe(400)
     expect((await post('/api/chat', { session_id: sid, message: 'blocking' })).status).toBe(409)
     expect(sidecar.calls.filter((c) => c.method === 'gateway.session').every((call) => (call.params as { action: string }).action === 'snapshot')).toBe(true)
     expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)

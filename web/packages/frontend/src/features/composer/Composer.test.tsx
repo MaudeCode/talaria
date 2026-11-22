@@ -500,6 +500,16 @@ describe('Composer', () => {
     await waitFor(() => expect(api.startChat).toHaveBeenCalledWith(expect.objectContaining({ session_id: native.session_id, message: 'Continue with the same Agent', submission_id: expect.stringMatching(/^[a-f0-9]{32}$/) })))
   })
 
+  it('offers an image-staging owner only the kinds its server lists, and keeps a long paste as text (TAL-1344)', () => {
+    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: true, attachment_mimes: ['image/png' as const, 'image/webp' as const],
+      restarting: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0 }
+    const view = renderComposer({ ...writable, read_only: true, owner_attachment: owner })
+    expect(screen.getByRole('button', { name: /attach files/i })).toBeInTheDocument()
+    expect(view.container.querySelector('#fileInput')).toHaveAttribute('accept', 'image/png,image/webp')
+    fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { items: [], getData: () => 'x'.repeat(9000) } })
+    expect(api.uploadFile).not.toHaveBeenCalled()
+  })
+
   it('shows an attached owner\'s background work behind the chip, counted by the server (TAL-1336, TAL-1531)', async () => {
     const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [], queued_input_count: 0 }
     // A count unlike the rows sent: the chip shows the server's number, never a recount.
