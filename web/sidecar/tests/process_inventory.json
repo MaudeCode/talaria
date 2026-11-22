@@ -963,6 +963,21 @@
         "[True]"
       ]
     },
+    "tests/test_config_write.py::test_config_set_keeps_entered_credentials_in_profile_env": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent credential references: the release's own config_secret_refs names, .env writer and ${VAR} resolution decide where an entered key lands and what config.get resolves.",
+      "cases": [""]
+    },
+    "tests/test_config_write.py::test_config_set_refuses_credential_before_any_write": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent refusals: the release's managed .env scope and endpoint-name ownership must refuse the whole save before config.yaml or .env changes.",
+      "cases": [""]
+    },
+    "tests/test_config_write.py::test_config_set_keeps_credentials_inline_without_native_references": {
+      "layer": "compatibility",
+      "reason": "The config-secret-refs shim: a save through the installed Agent writer keeps the key inline when the Agent lacks config_secret_refs.",
+      "cases": [""]
+    },
     "tests/test_config_write.py::test_config_set_preserves_comments_quotes_order_and_removals": {
       "layer": "compatibility",
       "reason": "The installed Agent's YAML parser and atomic_config_replace writer must keep comments, quoting, key order and removals through config.get and config.set on a real sidecar; only the release's own round-trip writer shows what it preserves.",

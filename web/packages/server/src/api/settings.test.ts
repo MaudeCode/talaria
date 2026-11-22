@@ -536,6 +536,9 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
         ['/api/settings', { compression_prepare_ahead: true }],
         ['/api/model/set', { scope: 'auxiliary', task: 'compression', provider: 'anthropic', model: 'claude-opus-4-7' }],
         ['/api/model/set', { scope: 'auxiliary', task: 'delegation', provider: 'anthropic', model: 'claude-opus-4-7' }],
+        // TAL-2304: the sidecar refuses an entered key's .env name with this condition too, before either file changes.
+        ['/api/model/set', { scope: 'main', provider: 'custom', model: 'synthetic-model', advanced: { base_url: 'https://models.invalid/v1', api_key: 'synthetic-entered-key' } }],
+        ['/api/model/set', { scope: 'auxiliary', task: 'compression', provider: 'custom', model: 'synthetic-model', advanced: { base_url: 'https://models.invalid/v1', api_key: 'synthetic-entered-key' } }],
       ] as const) {
         const res = await post(s, path, input)
         expect(res.status).toBe(409)

@@ -8,7 +8,7 @@ import pathlib
 
 import pytest
 
-from conftest import SidecarProcess, agent_script, requires_agent
+from conftest import AGENT_DIR, SidecarProcess, agent_script, requires_agent
 from talaria_sidecar import SIDECAR_RPC_VERSION
 
 
@@ -382,3 +382,115 @@ def test_config_get_distinguishes_unavailable_managed_policy(hermes_home: pathli
         result = sidecar.result("config.get", {"profile_home": str(hermes_home)})
     assert result["config"] == {"talaria": {"agent_approvals": True}}
     assert result["managed"] is None
+
+
+# TAL-2304: a config.set that enters a credential keeps it in the profile's .env under the Agent's own name.
+native_refs = pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "hermes_cli" / "config_secret_refs.py").is_file(),
+                                 reason="Agent without config_secret_refs")
+CREDENTIAL_HOME = r'''
+import os
+from pathlib import Path
+from talaria_sidecar.errors import RpcError
+from talaria_sidecar.methods import Registry, config
+
+home = Path(os.environ["HERMES_HOME"])
+path, env = home / "config.yaml", home / ".env"
+url = "https://models.example.test/v1"
+registry = Registry(None)
+config.register(registry)
+params = {"profile_home": str(home)}
+def save(desired):
+    return registry.methods["config.set"](None, {**params, "config": desired})
+def env_lines():
+    return env.read_text().splitlines() if env.exists() else []
+'''
+
+
+@requires_agent
+@native_refs
+def test_config_set_keeps_entered_credentials_in_profile_env(hermes_home: pathlib.Path) -> None:
+    agent_script(hermes_home, CREDENTIAL_HOME + r'''
+from hermes_cli.config_secret_refs import aux_api_key_env, endpoint_api_key_env
+
+path.write_text("model:\n  provider: custom\n  base_url: https://models.example.test/v1\nauxiliary:\n  compression:\n    provider: custom\n    base_url: https://aux.example.test/v1\n    api_key: synthetic-inline-kept\n")
+desired = config.read_config(path)["config"]
+desired["model"]["api_key"] = "synthetic-model-key"
+desired["auxiliary"]["vision"] = {"provider": "openrouter", "model": "synthetic", "api_key": "synthetic-vision-key"}
+desired["delegation"] = {"provider": "custom", "base_url": "https://agents.example.test/v1", "api_key": "synthetic-delegation-key"}
+save(desired)
+
+names = {"model": endpoint_api_key_env(url), "vision": aux_api_key_env("vision"), "delegation": "HERMES_DELEGATION_API_KEY"}
+assert names["model"] != endpoint_api_key_env("https://models-example.test/v1")
+saved = config.read_config(path)["config"]
+assert saved["model"]["api_key"] == "${%s}" % names["model"]
+assert saved["auxiliary"]["vision"]["api_key"] == "${%s}" % names["vision"]
+assert saved["delegation"]["api_key"] == "${%s}" % names["delegation"]
+# An inline key the save did not change stays where the user put it.
+assert saved["auxiliary"]["compression"]["api_key"] == "synthetic-inline-kept"
+assert "synthetic-model-key" not in path.read_text()
+assert {f"{names['model']}=synthetic-model-key", f"{names['vision']}=synthetic-vision-key", f"{names['delegation']}=synthetic-delegation-key"} <= set(env_lines())
+assert env.stat().st_mode & 0o777 == 0o600
+resolved = registry.methods["config.get"](None, params)["resolved"]
+assert resolved["model"]["api_key"] == "synthetic-model-key"
+assert resolved["auxiliary"]["vision"]["api_key"] == "synthetic-vision-key"
+assert not [name for name in names.values() if name in os.environ]
+
+# Rotating the key replaces the variable's value behind the same reference; an unrelated save moves nothing.
+saved["model"]["api_key"] = "synthetic-rotated-key"
+saved["agent"] = {"max_turns": 5}
+save(saved)
+saved = config.read_config(path)["config"]
+assert saved["model"]["api_key"] == "${%s}" % names["model"]
+assert saved["auxiliary"]["compression"]["api_key"] == "synthetic-inline-kept"
+assert f"{names['model']}=synthetic-rotated-key" in env_lines()
+assert "synthetic-model-key" not in env.read_text()
+''')
+
+
+@requires_agent
+@native_refs
+def test_config_set_refuses_credential_before_any_write(hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    managed = tmp_path / "managed"
+    managed.mkdir()
+    (managed / ".env").write_text("AUXILIARY_VISION_API_KEY=synthetic-admin-key\n")
+    agent_script(hermes_home, f"import os; os.environ['HERMES_MANAGED_DIR'] = {str(managed)!r}\n" + CREDENTIAL_HOME + r'''
+from hermes_cli.config_secret_refs import endpoint_api_key_env
+
+name = endpoint_api_key_env(url)
+# Another endpoint already reads this endpoint's variable and holds a different key in it.
+path.write_text("model:\n  provider: custom\n  base_url: https://models.example.test/v1\nfallback_providers:\n- provider: custom\n  base_url: https://other.example.test/v1\n  api_key: ${%s}\n" % name)
+env.write_text(f"{name}=synthetic-other-key\n")
+for vision in (False, True):
+    original, original_env = path.read_bytes(), env.read_bytes()
+    desired = config.read_config(path)["config"]
+    if vision:  # an administrator-managed variable refuses the whole save, not just its slot
+        desired["fallback_providers"] = []
+        desired["auxiliary"] = {"vision": {"provider": "openrouter", "model": "synthetic", "api_key": "synthetic-vision-key"}}
+    desired["model"]["api_key"] = "synthetic-model-key"
+    try:
+        save(desired)
+    except RpcError as error:
+        assert error.data["condition"] == "config_write_refused", error.data
+    else:
+        raise AssertionError("credential save succeeded")
+    assert path.read_bytes() == original
+    assert env.read_bytes() == original_env
+''')
+
+
+@requires_agent
+def test_config_set_keeps_credentials_inline_without_native_references(hermes_home: pathlib.Path) -> None:  # agent-shim: config-secret-refs
+    agent_script(hermes_home, CREDENTIAL_HOME + r'''
+from unittest.mock import patch
+
+original_import = config.importlib.import_module
+def import_module(name):
+    if name == "hermes_cli.config_secret_refs":
+        raise ImportError("Agent before v0.23.2")
+    return original_import(name)
+
+with patch.object(config.importlib, "import_module", side_effect=import_module):
+    save({"model": {"provider": "custom", "base_url": url, "api_key": "synthetic-model-key"}})
+assert config.read_config(path)["config"]["model"]["api_key"] == "synthetic-model-key"
+assert not env.exists()
+''')

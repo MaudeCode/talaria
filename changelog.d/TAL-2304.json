@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "A model API key you enter in Settings is saved in the profile's environment file, and config.yaml keeps only a reference to it.",
+      "highlight": true,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "title": "API keys stay out of config.yaml",
+        "description": "Keys you enter for a model are stored with your other secrets, not in the shared settings file.",
+        "icon": "security"
+      }
+    }
+  ]
+}

@@ -20,6 +20,12 @@
       "tests": ["web/sidecar/tests/test_config_write.py"]
     },
     {
+      "id": "config-secret-refs",
+      "lastRequired": "0.23.1",
+      "summary": "hermes_cli.config_secret_refs is new in 0.23.2; older Agents keep an entered model credential inline in config.yaml.",
+      "tests": ["web/sidecar/tests/test_config_write.py"]
+    },
+    {
       "id": "dashboard-credential-binding",
       "lastRequired": "0.23.1",
       "summary": "BasicAuthProvider(credential_id=) is new in 0.23.2; older Agents sign dashboard sessions with the secret alone.",

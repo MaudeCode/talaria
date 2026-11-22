@@ -318,7 +318,15 @@ model, each auxiliary slot and the top-level delegation block drop their
 `api_key`, `key_env`, `api_key_env` and `api_mode` when a write or reset gives
 them another provider or endpoint; a key entered with that write stays, and a
 bare `custom` endpoint keeps its key across paths on one origin
-(`config/agent-config.ts` `bindCredentialsToRoute`).
+(`config/agent-config.ts` `bindCredentialsToRoute`). A key a save enters or
+changes in one of those blocks lands in the profile's `.env` under the Agent's
+own name (`config_secret_refs`), and `config.yaml` stores only its `${NAME}`
+reference; inline keys a save leaves alone stay. A name another endpoint
+reads with a different key, or an administrator-managed name, refuses the
+whole save before either file changes, and the sidecar never publishes the
+key into its process environment
+(`web/sidecar/talaria_sidecar/methods/config.py` `_route_entered_credentials`).
+Agents before v0.23.2 keep the key inline.
 
 ## 7. Deployment
 
