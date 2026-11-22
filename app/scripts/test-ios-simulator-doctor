@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""Synthetic simulator-doctor checks: fake xcrun, ps and sysctl; never touches a real simulator."""
+from contextlib import suppress
+import json
+import os
+from pathlib import Path
+import select
+import signal
+import subprocess
+import sys
+import tempfile
+import unittest
+
+DOCTOR = Path(__file__).resolve().parent / 'ios-simulator-doctor'
+UDID = '00000000-0000-0000-0000-000000000001'
+OTHER = '00000000-0000-0000-0000-000000000002'
+APP = 'UIKitApplication:dev.kil.talaria.xctest[1a2b][rb-legacy]'
+CEILING = 60  # Shared ceiling for one doctor run; only a hang reaches it. Wedged children outlive it.
+XCRUN = '''#!/usr/bin/env bash
+echo "$*" >> "$FIXTURE/calls"
+[[ -e "$FIXTURE/$2.fail" ]] && exit 1
+if [[ -e "$FIXTURE/$2.hang" ]]; then
+    # One child escapes into its own session; one stays in the probe's group, holding the FIFO open.
+    "$PYTHON" -c 'import os, time; os.setsid(); time.sleep(300)' &
+    echo $! > "$FIXTURE/escaped.pid"
+    exec 3>"$FIXTURE/group.fifo"
+    sleep 300 &
+    echo $! > "$FIXTURE/grouped.pid"
+    wait
+fi
+case "$2" in list) cat "$FIXTURE/devices.json" ;; spawn) cat "$FIXTURE/jobs" ;; *) exit 1 ;; esac
+'''
+PS = '''#!/usr/bin/env bash
+if [[ "$1" == -axo ]]; then cat "$FIXTURE/stalled" 2>/dev/null; exit 0; fi
+if [[ "$2" == stat= ]] && grep -qx "$4" "$FIXTURE/zombies" 2>/dev/null; then echo Z; exit 0; fi
+exec /bin/ps "$@"
+'''
+SYSCTL = '''#!/usr/bin/env bash
+case "$2" in
+    hw.memsize) echo 17179869184 ;;
+    vm.swapusage) echo "total = 12288.00M  used = $(cat "$FIXTURE/swap" 2>/dev/null || echo 0).00M  free = 0.00M" ;;
+esac
+'''
+
+
+def signal_if_running(pid):
+    with suppress(ProcessLookupError):
+        os.kill(pid, signal.SIGKILL)
+
+
+def running(pid):
+    state = subprocess.run(['/bin/ps', '-o', 'stat=', '-p', str(pid)], capture_output=True, text=True).stdout
+    return state.strip()[:1] not in ('', 'Z')
+
+
+class Doctor(unittest.TestCase):
+    def setUp(self):
+        work = Path(self.enterContext(tempfile.TemporaryDirectory(prefix='ios-doctor-check-')))
+        self.fixture, tools, self.leases = work / 'fixture', work / 'bin', work / 'pool' / 'leases'
+        for path in (self.fixture, tools, self.leases):
+            path.mkdir(parents=True)
+        for name, script in (('xcrun', XCRUN), ('ps', PS), ('sysctl', SYSCTL)):
+            (tools / name).write_text(script)
+            (tools / name).chmod(0o755)
+        self.env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}', FIXTURE=str(self.fixture),
+                        PYTHON=sys.executable, IOS_SIMULATOR_POOL_DIR=str(self.leases.parent))
+        self.env.pop('IOS_SIMULATOR_ID', None)
+        self.env.pop('IOS_SIMULATOR_DOCTOR_TIMEOUT', None)
+        self.owner = self.disposable()
+        self.reset()
+
+    def reset(self):
+        for path in self.fixture.iterdir():
+            path.unlink()
+        self.device('Booted')
+        self.write('jobs', 'PID\tStatus\tLabel\n')
+
+    def write(self, name, content=''):
+        (self.fixture / name).write_text(content)
+
+    def device(self, state):
+        devices = [dict(udid=UDID, name='iOS Test 1', state=state), dict(udid=OTHER, name='iOS Test 2', state='Booted')]
+        self.write('devices.json', json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-27-0': devices}}))
+
+    def disposable(self):
+        process = subprocess.Popen(['sleep', '60'], start_new_session=True)
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        return process.pid
+
+    def lease(self, udid, pid):
+        (self.leases / f'{udid}.lock').write_text(f'{pid}\n')
+
+    def run_doctor(self, *arguments, expected=1, **environment):
+        try:
+            result = subprocess.run([str(DOCTOR), *arguments], env=dict(self.env, **environment),
+                                    capture_output=True, text=True, timeout=CEILING)
+        except subprocess.TimeoutExpired:
+            self.fail(f'the doctor hung past {CEILING} s')
+        self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+        return result.stdout
+
+    def test_each_state_has_its_verdict(self):
+        zombie = self.disposable()
+        cases = {
+            'HEALTHY': ({}, 0, None),
+            'NOT_BOOTED': ({}, 0, 'Shutdown'),
+            'DEVICE_UNRESPONSIVE': ({'spawn.fail': ''}, 1, None),
+            'MEMORY_PRESSURE': ({'spawn.fail': '', 'stalled': 'U /CoreSimulator/xpcproxy_sim\n' * 5}, 1, None),
+            'ZOMBIE_APP': ({'jobs': f'PID\tStatus\tLabel\n{zombie}\t0\t{APP}\n', 'zombies': f'{zombie}\n'}, 1, None),
+        }
+        for verdict, (files, status, state) in cases.items():
+            with self.subTest(verdict):
+                self.reset()
+                if state:
+                    self.device(state)
+                for name, content in files.items():
+                    self.write(name, content)
+                self.assertIn(f'\n{verdict}: ', self.run_doctor(UDID, expected=status))
+        self.assertIn('\nUNKNOWN_DEVICE: ', self.run_doctor('00000000-0000-0000-0000-0000000000ff'))
+
+    def test_memory_pressure_alone_only_warns(self):
+        self.write('swap', '9000')
+        output = self.run_doctor(UDID, expected=0)
+        self.assertIn('\nHEALTHY: ', output)
+        self.assertIn('Warning: The Mac is short on memory (8.8 GB swap used', output)
+
+    def test_follow_up_names_the_live_lease_owner(self):
+        self.lease(UDID, self.owner)
+        self.write('spawn.fail')
+        output = self.run_doctor(UDID)
+        self.assertIn(f'Lease: held by PID {self.owner}: sleep 60\n', output)
+        self.assertIn(f'Next: Stop the run that holds the lease (PID {self.owner})', output)
+
+    def test_follow_up_for_a_stale_quarantined_lease_suggests_shutdown(self):
+        exited = subprocess.Popen(['true'])
+        exited.wait()
+        self.lease(UDID, exited.pid)
+        self.write('spawn.fail')
+        (self.leases / f'{UDID}.dirty').write_text('')
+        output = self.run_doctor(UDID)
+        self.assertIn(f'Lease: stale (PID {exited.pid} has exited; the next acquisition reclaims it); quarantined', output)
+        self.assertIn(f'Next: No live run holds a lease, so nothing will release it: `xcrun simctl shutdown {UDID}`', output)
+
+    def test_wedged_probe_stops_only_its_own_process_group(self):
+        self.lease(OTHER, self.owner)
+        unrelated = self.disposable()
+        os.mkfifo(self.fixture / 'group.fifo')
+        group = os.open(self.fixture / 'group.fifo', os.O_RDONLY | os.O_NONBLOCK)
+        self.addCleanup(os.close, group)
+        self.write('list.hang')
+        output = self.run_doctor(UDID, IOS_SIMULATOR_DOCTOR_TIMEOUT='1')
+        escaped = int((self.fixture / 'escaped.pid').read_text())
+        self.assertTrue((self.fixture / 'grouped.pid').exists(), 'the wedged probe never opened its FIFO')
+        self.addCleanup(signal_if_running, escaped)
+        self.assertIn('\nSERVICE_UNRESPONSIVE: ', output)
+        self.assertIn(f'live pool leases (PID {self.owner})', output)
+        # Every writer in the probe's group has exited once the FIFO reads end of file.
+        readable, _, _ = select.select([group], [], [], CEILING)
+        self.assertEqual(readable, [group], 'the probe group outlived its timeout')
+        self.assertEqual(os.read(group, 1), b'')
+        self.assertTrue(running(escaped) and running(unrelated) and running(self.owner),
+                        'the doctor signalled a process outside its probe group')
+
+    def test_only_observes(self):
+        self.lease(UDID, self.owner)
+        (self.leases / f'{UDID}.dirty').write_text('')
+        before = {path.name: path.read_text() for path in self.leases.iterdir()}
+        self.run_doctor(UDID, expected=0)
+        self.assertEqual((self.fixture / 'calls').read_text().splitlines(),
+                         ['simctl list devices --json', f'simctl spawn {UDID} launchctl list'])
+        self.assertEqual({path.name: path.read_text() for path in self.leases.iterdir()}, before)
+
+    def test_udid_comes_from_the_argument_or_the_environment(self):
+        self.run_doctor(expected=64)
+        self.assertIn(f'Simulator: {UDID} (iOS Test 1, Booted)', self.run_doctor(expected=0, IOS_SIMULATOR_ID=UDID))
+
+
+if __name__ == '__main__':
+    unittest.main()

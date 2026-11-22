@@ -150,6 +150,14 @@ Agent/MCP flow:
   baselines behind each threshold, and how to compare a run. Flows that need the
   system to deliver a gesture, sheet or launch are checked on a phone:
   [phone checks](docs/phone-checks.md).
+- When a simulator stops responding, run `scripts/ios-simulator-doctor <udid>` (default `$IOS_SIMULATOR_ID`) before
+  touching it. It is read-only and bounds every probe (`IOS_SIMULATOR_DOCTOR_TIMEOUT`, default 20 s), then prints
+  the device's pool lease owner and one verdict with the next step: `SERVICE_UNRESPONSIVE` (CoreSimulator itself is
+  stuck; restarting it stops every booted simulator, so only the Mac owner decides), `DEVICE_UNRESPONSIVE`,
+  `MEMORY_PRESSURE` (the device stopped answering while the Mac pages; heavy swap alone is only a warning),
+  `ZOMBIE_APP` (a killed or detached debugger left Talaria a zombie), `NOT_BOOTED`, `UNKNOWN_DEVICE` or `HEALTHY`.
+  A device under a live lease is released by stopping that run, never by shutting it down underneath it. Exit 0
+  means nothing is stuck.
 - `scripts/test-history-drag --simulator-id ID --agent-device PATH --config PATH --session SESSION`
   drives the hosted history regression with a real native drag. Use an idle pool
   simulator and the driver arguments supplied by T3's Device panel. The harness
