@@ -327,6 +327,9 @@
                             }
                           ]
                         },
+                        "instance_id": {
+                          "type": "string"
+                        },
                         "trusted_auth_enabled": {
                           "type": "boolean"
                         },
@@ -405,7 +408,8 @@
                         "passkey_feature_flag",
                         "auth_disabled_acknowledged",
                         "can_manage_server",
-                        "no_password_warning"
+                        "no_password_warning",
+                        "instance_id"
                       ]
                     },
                     "profile": {
@@ -1688,6 +1692,9 @@
                         }
                       ]
                     },
+                    "instance_id": {
+                      "type": "string"
+                    },
                     "trusted_auth_enabled": {
                       "type": "boolean"
                     },
@@ -1766,7 +1773,8 @@
                     "passkey_feature_flag",
                     "auth_disabled_acknowledged",
                     "can_manage_server",
-                    "no_password_warning"
+                    "no_password_warning",
+                    "instance_id"
                   ]
                 }
               }

@@ -122,6 +122,8 @@ export interface AppDeps {
   version: string
   /** Seconds since the epoch when the server started. */
   startedAt: number
+  /** TAL-2663: this install's stable opaque identity (`<stateDir>/instance_id`). */
+  instanceId: string
   log: (line: string) => void
   /** Bounded feedback-safe error entries; raw log payloads are never retained here. */
   recentErrors: () => readonly string[]

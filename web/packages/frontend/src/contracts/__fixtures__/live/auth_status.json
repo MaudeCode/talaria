@@ -3,6 +3,7 @@
     "auth_disabled_acknowledged": false,
     "auth_enabled": false,
     "can_manage_server": true,
+    "instance_id": "q3Xv9mJ2kR8tLp4wZb1cNg",
     "logged_in": false,
     "no_password_warning": "error",
     "oidc_enabled": false,

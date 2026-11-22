@@ -467,6 +467,13 @@ describe('password auth', () => {
     expect(await json(await s.get('/api/bootstrap', { headers: { cookie } }))).toMatchObject({ webui_version: 'web-v0.0.0-test', auth: { passkeys_count: 0 } })
   })
 
+  it('a signed-out /api/auth/status carries the instance_id persisted in the state directory (TAL-2663)', async () => {
+    const status = await json(await s.get('/api/auth/status'))
+    expect(status).toMatchObject({ auth_enabled: true, logged_in: false })
+    expect(status.instance_id).toMatch(/^[A-Za-z0-9_-]{22}$/)
+    expect(status.instance_id).toBe(readFileSync(join(s.state, 'instance_id'), 'utf8'))
+  })
+
   it('public paths stay reachable', async () => {
     for (const path of ['/login', '/health', '/api/bootstrap', '/api/auth/status', '/sw.js', '/manifest.webmanifest']) expect((await s.get(path)).status, path).toBe(200)
     const boot = BootstrapSchema.parse(await (await s.get('/api/bootstrap')).json())

@@ -37,6 +37,7 @@ import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps, RequestScope } from './http/context.js'
 import { checkoutRevision, detectWebuiVersion, loadReleaseInfo, loadWhatsNew, whenDescribeInputsChange } from './release.js'
+import { loadInstanceId } from './instance.js'
 import { gatewayDrainDetail, ghcrExperimental, githubJson, normalizeChannel, normalizeWebChannel, purgePycache, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
 import { appendContinuation, continueChat, UPDATE_CONTINUATION_PROMPT, UPDATE_CONTINUATION_SOURCE, type ContinuationRun } from './tools/update-continuation.js'
@@ -1057,6 +1058,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     version,
     recentErrors: () => recentErrors,
     startedAt: now(),
+    instanceId: loadInstanceId(config.stateDir),
     log,
     stats: { requestsTotal: 0, lastRequestAt: 0 },
     // Python bootstrap `features`: live dashboard, remote terminal backend, extensions enabled, isolated mode.

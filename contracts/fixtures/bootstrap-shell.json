@@ -7,7 +7,7 @@
     "browser_language": "en",
     "bot_name": "Hermes",
     "assistant_name": "Hermes",
-    "auth": { "auth_enabled": false, "logged_in": false, "oidc_enabled": false, "oidc_native_handoff_enabled": false, "oidc_unavailable": false, "password_auth_enabled": false, "passwordless_enabled": false, "passkeys_enabled": false, "passkeys_count": 0, "passkey_feature_flag": false, "auth_disabled_acknowledged": false, "can_manage_server": true, "no_password_warning": "error" },
+    "auth": { "auth_enabled": false, "logged_in": false, "oidc_enabled": false, "oidc_native_handoff_enabled": false, "oidc_unavailable": false, "password_auth_enabled": false, "passwordless_enabled": false, "passkeys_enabled": false, "passkeys_count": 0, "passkey_feature_flag": false, "auth_disabled_acknowledged": false, "can_manage_server": true, "no_password_warning": "error", "instance_id": "q3Xv9mJ2kR8tLp4wZb1cNg" },
     "profile": { "name": "default", "is_default": true },
     "onboarding": { "completed": true },
     "features": { "dashboard": false, "terminal_remote_backend": false, "extensions": false, "single_profile_mode": false },
@@ -26,7 +26,7 @@
     "browser_language": "en",
     "bot_name": "Hermes",
     "assistant_name": "Hermes",
-    "auth": { "auth_enabled": true, "logged_in": false, "oidc_enabled": false, "oidc_native_handoff_enabled": false, "oidc_unavailable": false, "password_auth_enabled": true, "passwordless_enabled": false, "passkeys_enabled": false, "passkeys_count": 0, "passkey_feature_flag": false, "auth_disabled_acknowledged": false, "can_manage_server": false, "no_password_warning": null },
+    "auth": { "auth_enabled": true, "logged_in": false, "oidc_enabled": false, "oidc_native_handoff_enabled": false, "oidc_unavailable": false, "password_auth_enabled": true, "passwordless_enabled": false, "passkeys_enabled": false, "passkeys_count": 0, "passkey_feature_flag": false, "auth_disabled_acknowledged": false, "can_manage_server": false, "no_password_warning": null, "instance_id": "q3Xv9mJ2kR8tLp4wZb1cNg" },
     "profile": null,
     "onboarding": null,
     "features": { "dashboard": false, "terminal_remote_backend": false, "extensions": false, "single_profile_mode": false }
