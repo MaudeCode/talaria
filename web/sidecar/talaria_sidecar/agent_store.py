@@ -229,6 +229,11 @@ def session_row(db, session_id: str) -> dict | None:
     return db.get_session(session_id)
 
 
+def usage_store(db):
+    """Where the store keeps usage counters, ``prompt_cache_generation`` among them."""
+    return db.usage if native() else db
+
+
 def compression_tip(db, session_id: str) -> str | None:
     """The live end of the session's compression chain; the session itself when nothing continued it."""
     return db.lineage.tip(session_id) if native() else db.get_compression_tip(session_id)

@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Context details now show whether the chat's prompt cache is warm, may still be warm, has expired, or is unknown, with how sure the Agent is and until when.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Prompt cache in context details",
+        "description": "See whether a chat's cached prompt is still warm before you return to it.",
+        "icon": "speed"
+      }
+    }
+  ]
+}

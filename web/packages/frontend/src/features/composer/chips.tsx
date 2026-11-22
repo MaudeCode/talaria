@@ -19,8 +19,8 @@ import { IconButton } from '../../ui/Button'
 import { Segmented } from '../../ui/Segmented'
 import { useSettingField } from '../settings/useSettingField'
 import { useLocale } from '../../i18n/useLocale'
-import { formatPercent, resetTime } from '../../i18n/units'
-import type { ContextWindowSource, ExecutionMode, ExecutionModes } from '@maudecode/talaria-web-contracts'
+import { formatDurationUnits, formatElapsed, formatPercent, resetTime } from '../../i18n/units'
+import type { ContextWindowSource, ExecutionMode, ExecutionModes, PromptCacheWindow } from '@maudecode/talaria-web-contracts'
 import type { z } from 'zod'
 import type { ProviderQuotasSchema } from '../../contracts'
 
@@ -482,6 +482,7 @@ function LoadedContextDetail({ sessionId, identity }: { sessionId: string; ident
   return <div className="mt-2 flex min-w-0 flex-col gap-2 border-t border-border pt-2" data-context-detail>
     {detail.source && <span className="text-muted">{sources[detail.source]()}</span>}
     {detail.used_tokens != null && detail.window_tokens != null && <span className="tabular-nums">{m.context_detail_occupancy({ used: detail.used_tokens.toLocaleString(), total: windowText(detail.window_tokens, detail.window_source) })}</span>}
+    {detail.prompt_cache && <PromptCacheRows window={detail.prompt_cache} />}
     <span className="font-medium">{m.context_category_estimates()}</span>
     <dl className="flex flex-col gap-1">
       {detail.categories.map((category) => <div key={category.id}>
@@ -496,5 +497,27 @@ function LoadedContextDetail({ sessionId, identity }: { sessionId: string; ident
       <span className="tabular-nums text-muted">{m.context_file_size({ characters: file.characters?.toLocaleString() ?? m.context_unknown(), tokens: file.tokens?.toLocaleString() ?? m.context_unknown() })}</span>
     </li>)}</ul></>}
     {detail.truncated && <span className="text-muted">{m.context_details_limited()}</span>}
+  </div>
+}
+
+const CACHE_UNKNOWN = { session_rotated: m.context_cache_unknown_session_rotated, compacted: m.context_cache_unknown_compacted, route_changed: m.context_cache_unknown_route_changed, storage_unavailable: m.context_cache_unknown_storage_unavailable, no_published_window: m.context_cache_unknown_no_published_window, invalid: m.context_cache_unknown_invalid }
+const CACHE_CONFIDENCE = { proven: m.context_cache_proven, declared: m.context_cache_declared, assumed: m.context_cache_assumed }
+const CACHE_TIERS: Record<'5m' | '30m' | '1h' | '12h' | '24h', Parameters<typeof formatDurationUnits>[1]> = { '5m': [5, 'minute'], '30m': [30, 'minute'], '1h': [1, 'hour'], '12h': [12, 'hour'], '24h': [24, 'hour'] }
+
+/** TAL-2647: the Agent's prompt-cache window as the server classified it, countdown included; only times, tiers and durations are formatted here. */
+function PromptCacheRows({ window: cache }: { window: PromptCacheWindow }) {
+  const locale = useLocale()
+  const at = (seconds: number) => resetTime(locale, seconds * 1000)
+  const tier = (t: NonNullable<PromptCacheWindow['tier']>) => t === 'in_memory' ? m.context_cache_in_memory() : formatDurationUnits(locale, CACHE_TIERS[t])
+  let line: string
+  if (cache.state === 'unknown') line = CACHE_UNKNOWN[cache.reason]()
+  else if (cache.state === 'warm' && cache.guaranteed_until != null && cache.remaining_seconds != null) line = m.context_cache_warm({ time: at(cache.guaranteed_until), remaining: formatElapsed(locale, cache.remaining_seconds, false) })
+  else if (cache.estimated_until == null) line = m.context_unknown()
+  else line = (cache.state === 'expired' ? m.context_cache_expired : m.context_cache_maybe_warm)({ time: at(cache.estimated_until) })
+  return <div className="flex flex-col" data-prompt-cache={cache.state}>
+    <span className="font-medium">{m.context_prompt_cache()}</span>
+    <span className="tabular-nums">{line}</span>
+    {cache.state !== 'unknown' && <span className="text-muted">{CACHE_CONFIDENCE[cache.confidence]()}{cache.tier && ` · ${tier(cache.tier)}`}</span>}
+    {cache.coverage.length > 1 && <ul className="tabular-nums text-muted">{cache.coverage.map((row) => <li key={row.tier}>{m.context_cache_tier_until({ tier: tier(row.tier), time: at(row.until) })}</li>)}</ul>}
   </div>
 }
