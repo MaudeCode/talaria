@@ -205,9 +205,11 @@ export function SessionListPanel() {
   const [source, setSource] = useState<SessionSource>('webui')
   const [project, setProject] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
-  // TAL-606: select mode and its chosen ids, device-local; only rows the list shows count as selected.
-  const [selecting, setSelecting] = useState(false)
-  const [selected, setSelected] = useState<string[]>([])
+  // TAL-606: select mode and its chosen ids, device-local; only rows the list shows count as selected. `session` names one
+  // visit to select mode, so a bulk result that lands after Done and Select again leaves the new selection alone.
+  const [select, setSelect] = useState<{ session: string; ids: string[] } | null>(null)
+  const selected = select?.ids ?? []
+  const setSelected = (next: (ids: string[]) => string[]) => setSelect((cur) => cur && { ...cur, ids: next(cur.ids) })
   // TAL-2478: the server lists only the chosen source tab, project and archive state.
   const projectParam = project === NO_PROJECT ? 'none' : (project ?? undefined)
   const listParams: api.SessionListParams = { sidebar_source: source, ...(projectParam ? { project_id: projectParam } : {}), ...(showArchived ? { include_archived: true } : {}) }
@@ -346,8 +348,14 @@ export function SessionListPanel() {
   // Select all covers the dated groups, never the collapsed Scheduled and Webhook groups (as in the App).
   // One bulk call takes at most SESSIONS_BULK_MAX ids, so Select all stops there and other rows wait until one is cleared.
   const selectAll = groups.filter((g) => !isDisclosure(g.id)).flatMap((g) => g.rows.flatMap(withNested)).filter(canSelect).slice(0, SESSIONS_BULK_MAX).map((r) => r.session_id)
-  const endSelect = () => { setSelecting(false); setSelected([]) }
-  const selection = selecting ? { ids: selected, full: selectedRows.length >= SESSIONS_BULK_MAX, onToggle: (id: string) => setSelected((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])) } : undefined
+  // A bulk result settles only the ids it sent: the refused come back selected, rows chosen since stay chosen, and the
+  // mode ends once nothing is left selected.
+  const onBulkResult = (session: string, sent: readonly string[], failed: readonly string[]) => setSelect((cur) => {
+    if (cur?.session !== session) return cur
+    const ids = [...new Set([...cur.ids.filter((id) => !sent.includes(id)), ...failed])]
+    return ids.length ? { session, ids } : null
+  })
+  const selection = select ? { ids: selected, full: selectedRows.length >= SESSIONS_BULK_MAX, onToggle: (id: string) => setSelected((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])) } : undefined
   const onArchive = (id: string, archived: boolean) => mutateArchive({ id, archived })
   const navigate = useNavigate()
   // Legacy J/K: open the next or previous shown session in sidebar order, unless typing, modified, or inside a dialog or menu (TAL-613).
@@ -385,12 +393,12 @@ export function SessionListPanel() {
     <div className="panel-view active" id="panelChat">
       <PanelSearch
         title={<SectionHeader detail={filterDetail ? <span data-chats-detail title={filterDetail}>{filterDetail}</span> : null}>{m.sidebar_chats()}</SectionHeader>}
-        actions={<SessionFilterMenu source={source} onSource={setSource} webuiCount={webuiCount} cliCount={cliCount} project={project} onProject={setProject} projects={projectList} hasUnprojected={data?.has_unprojected ?? false} showArchived={showArchived} onShowArchived={setShowArchived} onSelect={() => setSelecting(true)} onImport={() => importInput.current?.click()} />}
+        actions={<SessionFilterMenu source={source} onSource={setSource} webuiCount={webuiCount} cliCount={cliCount} project={project} onProject={setProject} projects={projectList} hasUnprojected={data?.has_unprojected ?? false} showArchived={showArchived} onShowArchived={setShowArchived} onSelect={() => setSelect((cur) => cur ?? { session: randomHex(), ids: [] })} onImport={() => importInput.current?.click()} />}
         open={searchOpen} onOpenChange={setSearchOpen} value={filter} onValueChange={setFilter} clearLabel={m.clear_conversation_filter()} className="session-search"
         id="sessionSearch" placeholder={m.filter_conversations()} aria-label={m.filter_conversations()}
       />
       <input ref={importInput} type="file" accept=".json,application/json" hidden aria-label={m.import_session_json_tooltip()} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) importSession.mutate(file) }} />
-      {selecting && <SessionSelectionBar rows={selectedRows} selectable={selectAll} onSelected={setSelected} showArchived={showArchived} activeId={activeId} onDone={endSelect} />}
+      {select && <SessionSelectionBar session={select.session} rows={selectedRows} selectable={selectAll} onSelected={(ids) => setSelected(() => ids)} onResult={onBulkResult} showArchived={showArchived} activeId={activeId} onDone={() => setSelect(null)} />}
       <MotionList items={groups.flatMap((g) => g.rows.flatMap((r) => [r, ...(children.get(r.session_id) ?? [])]))} itemKey={(r) => r.session_id}
         scope={JSON.stringify([scope, q, collapsedGroups, data?.active_profile, q.length >= 2 ? search.dataUpdatedAt : null])} context={context} ready={list.isSuccess}
         className="session-list" id="sessionList" selection={{ key: activeId, className: 'session-selection' }}>
