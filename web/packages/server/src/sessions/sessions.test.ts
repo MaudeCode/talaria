@@ -12,6 +12,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTes
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
+import { BLANK_SECTION, docx, docxPackage, pptx, xlsx } from '../test/office-fixtures.js'
 import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { diffHunks } from '../text/diff.js'
@@ -1080,6 +1081,68 @@ describe('projects, workspaces, and files over HTTP', () => {
     expect(rows).toHaveLength(500)
   })
 
+  it('file reads preview Office documents as text and refuse a hostile archive (TAL-262)', async () => {
+    const ws = realpathSync(s.workspace)
+    const sid = String((await newSession(s, { workspace: ws })).session_id)
+    writeFileSync(join(ws, 'plan.docx'), await docx('Goals', 'Ship it'))
+    writeFileSync(join(ws, 'table.docx'), await docxPackage(`<w:tbl/>${BLANK_SECTION}`))
+    writeFileSync(join(ws, 'budget.xlsx'), await xlsx([{ name: 'Q1', rows: Array.from({ length: 501 }, (_, i) => ({ A1: { v: String(i) } })) }]))
+    writeFileSync(join(ws, 'deck.pptx'), await pptx([['Hello']]))
+    writeFileSync(join(ws, 'bomb.docx'), await docxPackage(BLANK_SECTION, [['zeros.bin', Buffer.alloc(300_000)]]))
+    const read = async (path: string) => {
+      const res = await s.get(`/api/file?session_id=${sid}&path=${path}`)
+      return { status: res.status, body: await json(res) }
+    }
+    expect(await read('plan.docx')).toMatchObject({ status: 200, body: { source: 'workspace', preview: 'office', office_format: 'docx', content: 'Goals\nShip it', editable: true } })
+    expect((await read('plan.docx')).body.edit_blocked_reason).toBeUndefined()
+    expect(await read('table.docx')).toMatchObject({ status: 200, body: { preview: 'office', editable: false, edit_blocked_reason: 'docx contains unsupported structures' } })
+    expect(await read('budget.xlsx')).toMatchObject({ status: 200, body: { preview: 'office', office_format: 'xlsx', editable: false, edit_blocked_reason: 'xlsx preview is read-only', truncated: true } })
+    expect(await read('deck.pptx')).toMatchObject({ status: 200, body: { preview: 'office', office_format: 'pptx', content: 'Slide 1\nHello', editable: false } })
+    expect(await read('bomb.docx')).toEqual({ status: 400, body: { error: 'Office preview exceeds safe archive limits' } })
+  })
+
+  it('office-save writes an editable .docx and leaves the file untouched on every refusal (TAL-262)', async () => {
+    const ws = realpathSync(s.workspace)
+    const sid = String((await newSession(s, { workspace: ws })).session_id)
+    const files: Record<string, Buffer> = {
+      'edit.docx': await docx('Before'),
+      'table.docx': await docxPackage(`<w:tbl/>${BLANK_SECTION}`),
+      'sheet.xlsx': await xlsx([{ name: 'S', rows: [] }]),
+      'deck.pptx': await pptx([['x']]),
+      'notes.txt': Buffer.from('plain'),
+    }
+    for (const [name, bytes] of Object.entries(files)) writeFileSync(join(ws, name), bytes)
+    mkdirSync(join(ws, 'folder.docx'))
+    symlinkSync(join(ws, 'edit.docx'), join(ws, 'link.docx'))
+    const save = async (path: string, content = 'After', session = sid) => {
+      const res = await post(s, '/api/file/office-save', { session_id: session, path, content })
+      return { status: res.status, body: await json(res) }
+    }
+    const refusals: [string, number, string, string?][] = [
+      ['edit.docx', 404, 'Session not found', 'deadbeef0000'],
+      ['missing.docx', 404, 'File not found'],
+      ['link.docx', 400, 'Cannot save to a symlinked entry'],
+      ['folder.docx', 400, 'Cannot save: path is a directory'],
+      ['notes.txt', 400, 'Office save is only available for .docx, .xlsx, and .pptx files'],
+      ['sheet.xlsx', 400, 'xlsx is preview-only'],
+      ['deck.pptx', 400, 'pptx is preview-only'],
+      ['table.docx', 400, 'docx contains unsupported structures'],
+    ]
+    for (const [path, status, error, session] of refusals) expect(await save(path, 'After', session), path).toEqual({ status, body: { error } })
+    expect(await save('edit.docx', 'x'.repeat(120_001))).toEqual({ status: 400, body: { error: 'DOCX content exceeds the editable size limit' } })
+    const remote = vi.spyOn(s.deps.workspaces, 'profileSupportsLocalIo').mockReturnValue(false)
+    try { expect((await save('edit.docx')).status).toBe(400) } finally { remote.mockRestore() }
+    let release!: () => void
+    const held = s.deps.git.holdWorkspace(ws, () => new Promise<void>((resolve) => { release = resolve }))
+    try { expect((await save('edit.docx')).status).toBe(409) } finally { release(); await held }
+    for (const [name, bytes] of Object.entries(files)) expect(readFileSync(join(ws, name)).equals(bytes), name).toBe(true)
+
+    const saved = await save('edit.docx', 'After\n\nMore')
+    expect(saved).toMatchObject({ status: 200, body: { ok: true, path: 'edit.docx', preview: 'office', office_format: 'docx', content: 'After\n\nMore', editable: true } })
+    expect(saved.body.size).toBe(readFileSync(join(ws, 'edit.docx')).length)
+    expect((await json(await s.get(`/api/file?session_id=${sid}&path=edit.docx`))).content).toBe('After\n\nMore')
+  })
+
   it('file operations keep the Python validation contract: require(), Office guard, listing timestamps, launcher errors', async () => {
     const ws = realpathSync(s.workspace)
     const sid = String((await newSession(s, { workspace: ws })).session_id)
@@ -1094,12 +1157,11 @@ describe('projects, workspaces, and files over HTTP', () => {
     // `recursive` is truthy-checked like `body.get("recursive")`.
     mkdirSync(join(ws, 'rdir'))
     expect((await post(s, '/api/file/delete', { session_id: sid, path: 'rdir', recursive: 1 })).status).toBe(200)
-    // Office documents are refused by the text save.
+    // Office documents are refused by the text save, which points at their own save (TAL-262).
     writeFileSync(join(ws, 'doc.docx'), 'PK\u0003\u0004binary')
     res = await post(s, '/api/file/save', { session_id: sid, path: 'doc.docx', content: 'x' })
     expect(res.status).toBe(400)
-    // `/api/file/office-save` was dropped with TAL-245: the refusal must not point clients at a 404.
-    expect((await json(res)).error).toBe('Office documents cannot be saved from the Web UI')
+    expect((await json(res)).error).toBe('Use /api/file/office-save for Office documents')
     expect(readFileSync(join(ws, 'doc.docx'), 'utf8')).toBe('PK\u0003\u0004binary')
     // Listing timestamps are decimal strings.
     const listing = await json(await s.get(`/api/list?session_id=${sid}`))

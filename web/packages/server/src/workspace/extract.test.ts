@@ -3,21 +3,13 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Readable, Writable } from 'node:stream'
 import { afterEach, describe, expect, it } from 'vitest'
 import { loopTurnsDuring } from '../test/sync-fs.js'
 import { CorruptArchive, extractArchive } from './extract.js'
-import { ZipWriter } from './zip.js'
+import { zipBuffer } from './zip.js'
 
 const CAP = 200 * 1024 * 1024
 
-async function zipOf(members: [string, Buffer][]): Promise<Buffer> {
-  const chunks: Buffer[] = []
-  const zip = new ZipWriter(new Writable({ write(chunk: Buffer, _enc, cb) { chunks.push(chunk); cb() } }))
-  for (const [name, data] of members) await zip.addFile(name, Readable.from([data]), data.length)
-  await zip.finish()
-  return Buffer.concat(chunks)
-}
 
 function tarOf(members: [string, Buffer][]): Buffer {
   const parts: Buffer[] = []
@@ -45,7 +37,7 @@ describe('extractArchive off the event loop', () => {
 
   it('yields between the members of a 2,000-member zip and writes every member byte-for-byte', async () => {
     const members = Array.from({ length: 2000 }, (_, i): [string, Buffer] => [`d${String(i % 20)}/f${String(i)}.txt`, Buffer.from(`member ${String(i)}\n`.repeat(i % 7))])
-    const bytes = await zipOf(members)
+    const bytes = await zipBuffer(members)
     const root = tmp()
     const { value, turns } = await loopTurnsDuring(() => extractArchive(bytes, 'many.zip', root, root, CAP))
     expect(turns).toBeGreaterThan(100)

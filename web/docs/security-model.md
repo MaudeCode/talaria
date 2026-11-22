@@ -296,6 +296,16 @@ that `workspace/media.ts` `mediaAccessFor` derives from authority:
   bounds decompression as it runs, extracts into a fresh folder with anchored
   exclusive creates, and rejects any member path that leaves it. Tar links and
   devices are skipped.
+- Office previews and `.docx` saves (`workspace/office.ts`) preflight every
+  archive before parsing: at most 256 members, 8,000,000 bytes uncompressed,
+  per-part caps, a compression ratio of at most 200, member names that stay
+  inside the archive, no ZIP64, no two entries sharing one member, compressed
+  input no larger than the archive, and each member inflated no further than its
+  declared size. XML parts with a `<!DOCTYPE` are refused and only the
+  predefined and numeric entities expand. Each listed sheet or slide part is
+  parsed once, and all the Office files of one upload share a single
+  8,000,000-byte budget. A refusal answers 400. An uploaded Office file's
+  `<name>.md` copy is an exclusive create beside it.
 - Session titling reads at most the first 4,000 bytes of an opening user row's
   first `text/*` attachment, only from that session's own attachment folder in
   the blob store, and sends them to the title model alone

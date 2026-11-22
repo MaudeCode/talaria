@@ -4,30 +4,22 @@
  * destination, for each supported archive format.
  */
 import { spawnSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { Readable, Writable } from 'node:stream'
 import { gzipSync } from 'node:zlib'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { ZipWriter } from '../workspace/zip.js'
+import { zipBuffer } from '../workspace/zip.js'
+import { docx, docxPackage, plainParagraphs, pptx, xlsx } from '../test/office-fixtures.js'
 
 type Json = Record<string, unknown>
 const MB = 1024 * 1024
 
-async function zipOf(members: Record<string, Buffer | string>): Promise<Buffer> {
-  const chunks: Buffer[] = []
-  const zip = new ZipWriter(new Writable({ write(chunk: Buffer, _enc, cb) { chunks.push(chunk); cb() } }))
-  for (const [name, data] of Object.entries(members)) {
-    const bytes = Buffer.from(data)
-    await zip.addFile(name, Readable.from([bytes]), bytes.length)
-  }
-  await zip.finish()
-  return Buffer.concat(chunks)
-}
+const zipOf = (members: Record<string, Buffer | string>): Promise<Buffer> => zipBuffer(Object.entries(members).map(([name, data]) => [name, Buffer.from(data)] as const))
 
 interface TarMember { name: string; data?: Buffer | string; type?: string; link?: string }
 
@@ -328,6 +320,36 @@ describe('archive extraction, workspace upload, and copy path', () => {
         configs.clear()
         s.deps.agentConfig.invalidate()
       }
+    })
+
+    it('writes a Markdown copy beside an uploaded Office file and keeps the upload when it cannot (TAL-262)', async () => {
+      const uploads: [string, Buffer, string][] = [['plan.docx', await docx('Goals'), 'Goals'], ['budget.xlsx', await xlsx([{ name: 'Q1', rows: [{ A1: { v: '7' } }] }]), 'Sheet: Q1\n7'], ['deck.pptx', await pptx([['Hi']]), 'Slide 1\nHi']]
+      for (const [name, bytes, text] of uploads) {
+        const { status, body } = await wsUpload(name, bytes, 'office')
+        expect(status, name).toBe(200)
+        expect(body.sidecar, name).toEqual({ filename: `${name}.md`, path: join(ws, 'office', `${name}.md`), size: Buffer.byteLength(text), office_format: name.slice(-4) })
+        expect(readFileSync(join(ws, 'office', `${name}.md`), 'utf8')).toBe(text)
+      }
+      expect((await wsUpload('plain.txt', Buffer.from('x'), 'office')).body.sidecar).toBeUndefined()
+      const corrupt = await wsUpload('broken.docx', Buffer.from('not a zip'), 'office')
+      expect(corrupt).toMatchObject({ status: 200, body: { filename: 'broken.docx', sidecar_error: 'Office sidecar extraction failed' } })
+      expect(corrupt.body.sidecar).toBeUndefined()
+      expect(existsSync(join(ws, 'office', 'broken.docx.md'))).toBe(false)
+      writeFileSync(join(ws, 'office', 'kept.docx.md'), 'mine')
+      expect(await wsUpload('kept.docx', await docx('New'), 'office')).toMatchObject({ status: 200, body: { sidecar_error: 'Office sidecar extraction failed' } })
+      expect(readFileSync(join(ws, 'office', 'kept.docx.md'), 'utf8')).toBe('mine')
+    })
+
+    it('previews the Office files of one upload within one shared archive budget (TAL-262)', async () => {
+      // Each file is within its own 8,000,000-byte cap; together they are past the one the request shares.
+      const heavy = async (text: string) => docxPackage(plainParagraphs(text), ['a', 'b'].map((n): [string, Buffer] => [`media/${n}.bin`, Buffer.from(randomBytes(1_100_000).toString('hex'))]))
+      const { status, body } = await send('/api/workspace/upload', { session_id: sid, path: 'office-budget' }, [['file', 'one.docx', await heavy('One')], ['file', 'two.docx', await heavy('Two')]])
+      expect(status).toBe(200)
+      const [one, two] = body.files as Json[]
+      expect(one).toMatchObject({ filename: 'one.docx', sidecar: { filename: 'one.docx.md' } })
+      expect(two).toMatchObject({ filename: 'two.docx', sidecar_error: 'Office sidecar extraction failed' })
+      expect(existsSync(join(ws, 'office-budget', 'two.docx'))).toBe(true)
+      expect(existsSync(join(ws, 'office-budget', 'two.docx.md'))).toBe(false)
     })
 
     it('extracts a zip into <path>/<stem> and removes the archive', async () => {

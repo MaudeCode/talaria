@@ -83461,7 +83461,8 @@
                         "pdf",
                         "audio",
                         "video",
-                        "binary"
+                        "binary",
+                        "office"
                       ],
                       "type": "string"
                     },
@@ -83479,6 +83480,23 @@
                     },
                     "preview_url": {
                       "type": "string"
+                    },
+                    "office_format": {
+                      "enum": [
+                        "docx",
+                        "xlsx",
+                        "pptx"
+                      ],
+                      "type": "string",
+                      "description": "An `office` preview's format (TAL-262)."
+                    },
+                    "editable": {
+                      "type": "boolean",
+                      "description": "An `office` preview's text saves back through `files.officeSave`; only a plain-paragraph `.docx` is editable."
+                    },
+                    "edit_blocked_reason": {
+                      "type": "string",
+                      "description": "Why an `office` preview is not editable, in English; clients show it as sent."
                     }
                   },
                   "required": [
@@ -83563,6 +83581,151 @@
                     "path",
                     "size"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file/office-save": {
+      "post": {
+        "operationId": "files.officeSave",
+        "tags": [
+          "files"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "path"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "enum": [
+                        "workspace",
+                        "managed"
+                      ],
+                      "type": "string",
+                      "description": "Which store the reply reads: workspace files or the session's managed buffers."
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    },
+                    "write_semantics": {
+                      "const": "unconditional"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "lines": {
+                      "type": "number"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "binary": {
+                      "type": "boolean"
+                    },
+                    "mime": {
+                      "type": "string"
+                    },
+                    "preview": {
+                      "enum": [
+                        "text",
+                        "markdown",
+                        "csv",
+                        "html",
+                        "image",
+                        "pdf",
+                        "audio",
+                        "video",
+                        "binary",
+                        "office"
+                      ],
+                      "type": "string"
+                    },
+                    "table": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "table_truncated": {
+                      "type": "boolean"
+                    },
+                    "preview_url": {
+                      "type": "string"
+                    },
+                    "office_format": {
+                      "enum": [
+                        "docx",
+                        "xlsx",
+                        "pptx"
+                      ],
+                      "type": "string",
+                      "description": "An `office` preview's format (TAL-262)."
+                    },
+                    "editable": {
+                      "type": "boolean",
+                      "description": "An `office` preview's text saves back through `files.officeSave`; only a plain-paragraph `.docx` is editable."
+                    },
+                    "edit_blocked_reason": {
+                      "type": "string",
+                      "description": "Why an `office` preview is not editable, in English; clients show it as sent."
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "path",
+                    "size",
+                    "preview",
+                    "ok"
+                  ],
+                  "additionalProperties": {}
                 }
               }
             }
@@ -84381,7 +84544,8 @@
                         "pdf",
                         "audio",
                         "video",
-                        "binary"
+                        "binary",
+                        "office"
                       ],
                       "type": "string"
                     },
@@ -84399,6 +84563,23 @@
                     },
                     "preview_url": {
                       "type": "string"
+                    },
+                    "office_format": {
+                      "enum": [
+                        "docx",
+                        "xlsx",
+                        "pptx"
+                      ],
+                      "type": "string",
+                      "description": "An `office` preview's format (TAL-262)."
+                    },
+                    "editable": {
+                      "type": "boolean",
+                      "description": "An `office` preview's text saves back through `files.officeSave`; only a plain-paragraph `.docx` is editable."
+                    },
+                    "edit_blocked_reason": {
+                      "type": "string",
+                      "description": "Why an `office` preview is not editable, in English; clients show it as sent."
                     },
                     "escape_read_only": {
                       "const": true,
@@ -140068,6 +140249,23 @@
                                 },
                                 "preview_url": {
                                   "type": "string"
+                                },
+                                "office_format": {
+                                  "enum": [
+                                    "docx",
+                                    "xlsx",
+                                    "pptx"
+                                  ],
+                                  "type": "string",
+                                  "description": "An `office` preview's format (TAL-262)."
+                                },
+                                "editable": {
+                                  "type": "boolean",
+                                  "description": "An `office` preview's text saves back through `files.officeSave`; only a plain-paragraph `.docx` is editable."
+                                },
+                                "edit_blocked_reason": {
+                                  "type": "string",
+                                  "description": "Why an `office` preview is not editable, in English; clients show it as sent."
                                 }
                               },
                               "additionalProperties": {}
@@ -140126,6 +140324,23 @@
                                 },
                                 "preview_url": {
                                   "type": "string"
+                                },
+                                "office_format": {
+                                  "enum": [
+                                    "docx",
+                                    "xlsx",
+                                    "pptx"
+                                  ],
+                                  "type": "string",
+                                  "description": "An `office` preview's format (TAL-262)."
+                                },
+                                "editable": {
+                                  "type": "boolean",
+                                  "description": "An `office` preview's text saves back through `files.officeSave`; only a plain-paragraph `.docx` is editable."
+                                },
+                                "edit_blocked_reason": {
+                                  "type": "string",
+                                  "description": "Why an `office` preview is not editable, in English; clients show it as sent."
                                 }
                               },
                               "additionalProperties": {}
@@ -140184,6 +140399,23 @@
                                 },
                                 "preview_url": {
                                   "type": "string"
+                                },
+                                "office_format": {
+                                  "enum": [
+                                    "docx",
+                                    "xlsx",
+                                    "pptx"
+                                  ],
+                                  "type": "string",
+                                  "description": "An `office` preview's format (TAL-262)."
+                                },
+                                "editable": {
+                                  "type": "boolean",
+                                  "description": "An `office` preview's text saves back through `files.officeSave`; only a plain-paragraph `.docx` is editable."
+                                },
+                                "edit_blocked_reason": {
+                                  "type": "string",
+                                  "description": "Why an `office` preview is not editable, in English; clients show it as sent."
                                 }
                               },
                               "additionalProperties": {}
@@ -140242,6 +140474,23 @@
                                 },
                                 "preview_url": {
                                   "type": "string"
+                                },
+                                "office_format": {
+                                  "enum": [
+                                    "docx",
+                                    "xlsx",
+                                    "pptx"
+                                  ],
+                                  "type": "string",
+                                  "description": "An `office` preview's format (TAL-262)."
+                                },
+                                "editable": {
+                                  "type": "boolean",
+                                  "description": "An `office` preview's text saves back through `files.officeSave`; only a plain-paragraph `.docx` is editable."
+                                },
+                                "edit_blocked_reason": {
+                                  "type": "string",
+                                  "description": "Why an `office` preview is not editable, in English; clients show it as sent."
                                 }
                               },
                               "additionalProperties": {}
@@ -174241,7 +174490,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Per-file `{filename, path, size, mime, is_image, extracted}`; an archive adds `extracted_files`/`extracted_count`, or `extract_error` when extraction failed.",
+            "description": "Per-file `{filename, path, size, mime, is_image, extracted}`; an archive adds `extracted_files`/`extracted_count`, or `extract_error` when extraction failed. A `.docx`, `.xlsx` or `.pptx` file also gets a `<name>.md` copy of its preview text, reported as `sidecar` `{filename, path, size, office_format}`, or `sidecar_error` when it could not be written (the upload still succeeds).",
             "content": {
               "application/json": {}
             }

@@ -21,6 +21,7 @@ import { assetGrantValue, signAssetGrant } from '../auth/crypto.js'
 import { FileTooLargeError, NotFoundError, PathTraversalError, openAnchoredFd, safeResolveWs } from '../workspace/fs.js'
 import { resolvePathLikePython } from '../workspace/paths.js'
 import { readFilePreview, type FilePreview } from '../workspace/preview.js'
+import { OfficeError } from '../workspace/office.js'
 import { mimeFor } from '../workspace/media.js'
 
 const NAMESPACE = 'show-blocks'
@@ -191,8 +192,8 @@ export class ShowBlocks {
     let preview: FilePreview | null
     try { preview = readFilePreview(workspace, rel) } catch (error) {
       if (error instanceof NotFoundError || (error as NodeJS.ErrnoException).code === 'ENOENT') throw missing()
-      if (!(error instanceof FileTooLargeError)) throw error
-      preview = null // too long to preview as text: a download only
+      if (!(error instanceof FileTooLargeError || error instanceof OfficeError)) throw error
+      preview = null // too long to preview as text, or an Office file its preview refuses: a download only
     }
     const name = basename(rel)
     const title = text(params.title, 'title', false) || name
@@ -227,6 +228,7 @@ export class ShowBlocks {
       preview = readFilePreview(workspace, rel)
     } catch (error) {
       if (error instanceof FileTooLargeError) throw refuse(400, 'file_too_large', error.message)
+      if (error instanceof OfficeError) throw refuse(400, 'media_unsupported', `${path}: ${error.message}`)
       if (error instanceof NotFoundError || (error as NodeJS.ErrnoException).code === 'ENOENT') throw refuse(404, 'file_not_found', `${path} is not a file in this session's workspace`)
       throw error
     }

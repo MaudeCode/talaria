@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Web Files page again previews Word, Excel and PowerPoint files and saves edits to Word documents; workspace uploads of Office files also get a Markdown copy.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Office files in Files",
+        "description": "Read Word, Excel and PowerPoint files in the Files panel, and edit plain Word documents.",
+        "icon": "attachment"
+      }
+    }
+  ]
+}

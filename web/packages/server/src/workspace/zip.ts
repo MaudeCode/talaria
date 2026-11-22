@@ -8,7 +8,7 @@
  */
 import { crc32, createDeflateRaw } from 'node:zlib'
 export { crc32 } from 'node:zlib'
-import type { Readable, Writable } from 'node:stream'
+import { PassThrough, Readable, type Writable } from 'node:stream'
 
 interface Entry { name: Buffer; crc: number; compressed: number; uncompressed: number; offset: number; time: number; date: number; zip64: boolean }
 
@@ -171,4 +171,15 @@ export class ZipWriter {
     end.writeUInt16LE(0, 20)
     await this.write(end)
   }
+}
+
+/** An in-memory archive of `members` in order (the Office save's repack, and tests' zip fixtures). */
+export async function zipBuffer(members: Iterable<readonly [string, Buffer]>): Promise<Buffer> {
+  const out = new PassThrough()
+  const chunks: Buffer[] = []
+  out.on('data', (chunk: Buffer) => chunks.push(chunk))
+  const zip = new ZipWriter(out)
+  for (const [name, data] of members) await zip.addFile(name, Readable.from([data]), data.length)
+  await zip.finish()
+  return Buffer.concat(chunks)
 }
