@@ -2251,22 +2251,27 @@ export class ProviderCatalog {
     if (this.resetRedemptions.has(key)) return { outcome: 'in_progress', windows_reset: null, credit: null, reset_credits: null }
     this.resetRedemptions.add(key)
     try {
-      const sidecar = this.deps.sidecar()
-      let answer: SidecarResult<'usage.redeem_reset_credit'> = { outcome: 'unavailable', http_status: null, windows_reset: null, credits: null }
-      if (sidecar) {
+      const attempt = async (): Promise<SidecarResult<'usage.redeem_reset_credit'>> => {
+        const sidecar = this.deps.sidecar()
+        if (!sidecar) return { outcome: 'unavailable', http_status: null, windows_reset: null, credits: null }
         try {
-          answer = await sidecar.call('usage.redeem_reset_credit', { profile_home: profileHome, ...(account.credential_id ? { credential_id: account.credential_id } : {}), credit_id: creditId, redeem_request_id: requestId }, { timeoutMs: 60_000 })
+          return await sidecar.call('usage.redeem_reset_credit', { profile_home: profileHome, ...(account.credential_id ? { credential_id: account.credential_id } : {}), credit_id: creditId, redeem_request_id: requestId }, { timeoutMs: 60_000 })
         } catch (error) {
           this.deps.log(`[catalog] Codex reset redemption failed: ${str((error as Error).message)}`)
-          answer = { ...answer, outcome: 'unknown' }
+          return { outcome: 'unknown', http_status: null, windows_reset: null, credits: null }
         }
       }
+      const answer = await attempt()
       const read = answer.credits ? { status: 'ok' as const, http_status: null, ...answer.credits } : await this.readResetCredits(profileHome, account)
       const at = this.deps.now()
       const view = resetCreditsView(sourceId, read, at, isoAt(at))
       const listed = view.status === 'available' ? view : null
       const credit = listed ? [...listed.credits, ...listed.history].find((c) => c.id === creditId) ?? null : null
-      const outcome = answer.outcome === 'no_credentials' ? 'unsupported' : answer.outcome === 'unknown' && credit?.state === 'redeemed' ? 'reset' : answer.outcome
+      const recovered = answer.outcome === 'unknown' && credit?.state === 'redeemed'
+      // A lost answer whose grant this reread shows spent is this reset. Replaying the same attempt id cannot spend another
+      // grant; the sidecar's confirmation of it lifts the account's pool cooldown as a confirmed reset does.
+      if (recovered) await attempt()
+      const outcome = answer.outcome === 'no_credentials' ? 'unsupported' : recovered ? 'reset' : answer.outcome
       if (outcome !== 'unsupported') await this.refreshCodexUsage(profileHome, account)
       return { outcome, windows_reset: answer.windows_reset, credit, reset_credits: listed }
     } finally {

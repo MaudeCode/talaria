@@ -104,13 +104,20 @@ describe('banked Codex usage-limit resets (TAL-2681)', () => {
 
   it('reconciles a lost answer from the provider\'s list before saying anything was spent', async () => {
     const work = await codex('work@example.test')
-    // The sidecar call fails after the provider spent the grant: the reread shows it redeemed, so the reset stands.
-    sidecar.respond('usage.redeem_reset_credit', (params) => { spend(params); throw new SidecarError('sidecar connection lost', { condition: 'sidecar_unavailable' }) })
+    // The sidecar call fails after the provider spent the grant: the reread shows it redeemed, so the reset stands, and the
+    // same attempt is replayed once so the sidecar confirms it (and lifts the pool cooldown) without spending another grant.
+    sidecar.respond('usage.redeem_reset_credit', (params) => {
+      if (accounts.work!.list.credits.find((c) => c.id === params.credit_id)?.status === 'redeemed') return { outcome: 'already_redeemed', http_status: null, windows_reset: 0, credits: structuredClone(accounts.work!.list) }
+      spend(params)
+      throw new SidecarError('sidecar connection lost', { condition: 'sidecar_unavailable' })
+    })
     expect(await redeem(work.source_id, 'rc_full_a')).toMatchObject({ outcome: 'reset', credit: { id: 'rc_full_a', state: 'redeemed' } })
+    expect(redeemCalls().map((c) => [c.credit_id, c.redeem_request_id])).toEqual([['rc_full_a', 'attempt-0001'], ['rc_full_a', 'attempt-0001']])
+    expect(accounts.work!.list.available_count).toBe(3)
     // It fails before the provider saw it: the grant is still there and the outcome stays unknown, never retried by the server.
     sidecar.respond('usage.redeem_reset_credit', () => { throw new SidecarError('sidecar connection lost', { condition: 'sidecar_unavailable' }) })
     expect(await redeem(work.source_id, 'rc_full_b', 'attempt-0002')).toMatchObject({ outcome: 'unknown', credit: { id: 'rc_full_b', state: 'available', redeemable: true } })
-    expect(redeemCalls().map((c) => c.credit_id)).toEqual(['rc_full_a', 'rc_full_b'])
+    expect(redeemCalls().map((c) => c.credit_id)).toEqual(['rc_full_a', 'rc_full_a', 'rc_full_b'])
   })
 
   it('answers in_progress to a second redemption for an account while its first is pending', async () => {

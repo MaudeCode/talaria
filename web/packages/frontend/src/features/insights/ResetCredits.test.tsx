@@ -5,6 +5,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ResetCreditRedemptionSchema, ResetCreditsSchema, type ResetCredit, type ResetCreditRedemption, type ResetCredits as Credits } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
+import type { UseQueryResult } from '@tanstack/react-query'
+import type { z } from 'zod'
+import { ProviderQuotasSchema } from '../../contracts'
+import { ProviderQuotaRows } from './ProviderQuotaRows'
 import { ResetCredits } from './ResetCredits'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), fetchResetCredits: vi.fn(), redeemResetCredit: vi.fn() }))
@@ -94,5 +98,18 @@ describe('ResetCredits (TAL-2681)', () => {
     expect(row('rc_used')).toHaveAttribute('data-state', 'redeemed')
     expect(row('rc_used')).toHaveTextContent('Used')
     expect(row('rc_expired')).toHaveTextContent('Expired')
+  })
+
+  it('offers the resets of an exhausted account, which has no windows to show', async () => {
+    vi.mocked(api.fetchResetCredits).mockResolvedValue(listed([FULL_A]))
+    const quotas = ProviderQuotasSchema.parse({ version: 1, computed_at: '2030-01-01T00:00:00Z', scope_id: 'qscope_test', profile_id: 'default', active_provider: 'openai-codex', requested_source_id: null, missing_source: false, sources: [
+      { source_id: 'qsrc_codex', provider_id: 'openai-codex', provider_label: 'OpenAI Codex', account_label: 'work@example.test', status: 'unavailable', status_message: 'OpenAI Codex credential is unavailable.', windows: [], reset_credits: true },
+    ] })
+    const query = { data: quotas, isPending: false, isError: false, isFetching: false, error: null } as unknown as UseQueryResult<z.infer<typeof ProviderQuotasSchema>>
+    render(<QueryClientProvider client={new QueryClient()}><ProviderQuotaRows quotas={query} mode="used" onRefresh={vi.fn()} /></QueryClientProvider>)
+    const unavailable = document.querySelector('[data-section="insights-quotas-unavailable"]') as HTMLElement
+    expect(await within(unavailable).findByText('Available 1')).toBeInTheDocument()
+    expect(within(unavailable).getByRole('button', { name: 'Use reset' })).toBeEnabled()
+    expect(vi.mocked(api.fetchResetCredits)).toHaveBeenCalledWith('qsrc_codex')
   })
 })

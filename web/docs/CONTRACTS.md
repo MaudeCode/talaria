@@ -735,10 +735,13 @@ and orders `credits` by expiry and `history` by recency. A read never redeems.
 sidecar's `usage.redeem_reset_credit` first rereads the list and sends the consume
 only when that account holds the grant as available, with the caller's
 `request_id` as `redeem_request_id`, so a retried attempt is answered
-`already_redeemed` rather than spending again. A lost answer (network loss,
-timeout, a 5xx, or a failed sidecar call) is `unknown` until a reread shows the
-grant redeemed. After a confirmed reset the sidecar runs the Agent's own
-`clear_codex_pool_quota_cooldowns` for that token. The server allows one
+`already_redeemed` rather than spending again; a grant the list shows spent is
+sent only to replay its attempt that way, never an unspent expired one. A lost
+answer (network loss, timeout, a 5xx, or a failed sidecar call) is `unknown`
+until a reread shows the grant redeemed; the server then replays that attempt
+once, so the sidecar confirms it. After a confirmed or replayed reset the sidecar
+runs the Agent's own `clear_codex_pool_quota_cooldowns` for that token. An
+exhausted pool account, which has no windows, still shows its resets. The server allows one
 redemption per account at a time (`in_progress`), then rereads the account's pool
 state and usage past every cache, so the quota rows show the provider's values.
 Nothing sends a chat command, touches a session or edits local counters. The

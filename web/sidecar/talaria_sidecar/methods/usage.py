@@ -544,11 +544,13 @@ def reset_credits(credential_id: str | None) -> dict:
 
 
 def redeem_reset_credit(credential_id: str | None, credit_id: str, redeem_request_id: str) -> dict:
-    """Spend exactly ``credit_id`` of this account. The grant must be one of the account's own available grants in a
-    fresh list, so another account's grant, a used one or an expired one is never sent. ``redeem_request_id`` is the
-    caller's attempt id: retrying one attempt reuses it, and the backend answers ``already_redeemed`` instead of spending
-    again. An answer that never arrives (network loss, timeout, a 5xx) is ``unknown`` until the reread list shows the
-    grant redeemed. ``credits`` is that reread, or null when it failed."""
+    """Spend exactly ``credit_id`` of this account. The grant must be one of the account's own grants in a fresh list,
+    so another account's grant is never sent, nor an unspent expired one. ``redeem_request_id`` is the caller's attempt
+    id: retrying one attempt reuses it, and the backend answers ``already_redeemed`` instead of spending again. A grant
+    the list already shows spent is sent only to replay its attempt this way: the pinned ``credit_id`` cannot spend
+    another grant, and a confirmed replay still lifts the account's pool cooldown. An answer that never arrives (network
+    loss, timeout, a 5xx) is ``unknown`` until the reread list shows the grant redeemed. ``credits`` is that reread, or
+    null when it failed."""
     result = {"outcome": "unavailable", "http_status": None, "windows_reset": None, "credits": None}
     account = _codex_account(credential_id)
     if account is None:
@@ -567,7 +569,7 @@ def redeem_reset_credit(credential_id: str | None, credit_id: str, redeem_reques
         log.debug("Codex reset credit list failed", exc_info=True)
         return result
     credit = next((c for c in before["credits"] if c["id"] == credit_id), None)
-    if credit is None or not _redeemable(credit):
+    if credit is None or not (_redeemable(credit) or credit.get("status") in {"redeeming", "redeemed"}):
         return {**result, "outcome": "not_found" if credit is None else "not_available", "credits": before}
     try:
         body = _codex_json(consume_url, headers, {"redeem_request_id": redeem_request_id, "credit_id": credit_id})
@@ -587,8 +589,9 @@ def redeem_reset_credit(credential_id: str | None, credit_id: str, redeem_reques
     after = next((c for c in (result["credits"] or {}).get("credits", []) if c["id"] == credit_id), None)
     if result["outcome"] == "unknown" and after is not None and after.get("status") == "redeemed":
         result["outcome"] = "reset"
-    if result["outcome"] == "reset":
-        # The Agent's own follow-up to a confirmed reset: this account's pool entry stops waiting out its old limit.
+    if result["outcome"] in {"reset", "already_redeemed"}:
+        # The Agent's own follow-up to a confirmed reset, this attempt's or a replayed one's: this account's pool entry
+        # stops waiting out its old limit.
         try:
             from hermes_cli.auth import clear_codex_pool_quota_cooldowns
 

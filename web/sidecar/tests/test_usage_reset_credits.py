@@ -49,24 +49,34 @@ class _Response(io.BytesIO):
 
 
 class Backend:
-    """The Codex reset-credit endpoints: the list, and a consume that marks the chosen grant redeemed unless told to fail."""
+    """The Codex reset-credit endpoints: the list, and a consume that marks the chosen grant redeemed unless told to fail.
+    Like the provider, a spent grant answers its own attempt id ``already_redeemed`` and refuses any other."""
 
     def __init__(self, monkeypatch):
         self.credits = copy.deepcopy(PROVIDER_LIST)
         self.requests: list[tuple[str, str, str, dict | None]] = []
         self.consume_error: Exception | None = None
         self.spend_then_fail = False
+        self.lists_fail_after_consume = False
+        self.spent_by: dict[str, str] = {}
         monkeypatch.setattr(usage, "_open_balance", self.open)
 
     def open(self, request, timeout=None):
         body = json.loads(request.data) if request.data else None
         self.requests.append((request.get_method(), request.full_url, request.get_header("Authorization"), body))
         if request.full_url == LIST_URL and request.get_method() == "GET":
+            if self.lists_fail_after_consume and self.consumes:
+                raise socket.timeout("timed out")
             return _Response(json.dumps(self.credits).encode())
         assert request.full_url == CONSUME_URL and request.get_method() == "POST", request.full_url
+        grant = next(c for c in self.credits["credits"] if c["id"] == body["credit_id"])
+        if grant["status"] == "redeemed":
+            if self.spent_by.get(grant["id"]) != body["redeem_request_id"]:
+                raise urllib.error.HTTPError(CONSUME_URL, 409, "conflict", {}, io.BytesIO(b"{}"))
+            return _Response(json.dumps({"code": "already_redeemed", "windows_reset": 0}).encode())
         if self.consume_error is not None and not self.spend_then_fail:
             raise self.consume_error
-        grant = next(c for c in self.credits["credits"] if c["id"] == body["credit_id"])
+        self.spent_by[grant["id"]] = body["redeem_request_id"]
         grant.update(status="redeemed", redeemed_at="2026-11-22T12:00:00Z")
         self.credits["available_count"] -= 1
         if self.consume_error is not None:
@@ -118,12 +128,28 @@ def test_redeem_spends_exactly_the_chosen_grant_of_that_account(agent, monkeypat
     assert agent == ["tok-home"]
 
 
-@pytest.mark.parametrize(("credit_id", "outcome"), [("rc_other_account", "not_found"), ("rc_used", "not_available"), ("rc_expired", "not_available")])
+@pytest.mark.parametrize(("credit_id", "outcome"), [("rc_other_account", "not_found"), ("rc_expired", "not_available")])
 def test_a_grant_this_account_cannot_spend_is_never_sent(agent, monkeypatch, credit_id, outcome):
     backend = Backend(monkeypatch)
     result = usage.redeem_reset_credit("work", credit_id, "attempt-1")
     assert (result["outcome"], backend.consumes, agent) == (outcome, [], [])
     assert result["credits"]["available_count"] == 4
+
+
+def test_a_spent_grant_is_only_replayed_by_its_own_attempt(agent, monkeypatch):
+    # The answer and the reread are both lost: the outcome is unknown and the cooldown stays until the attempt is confirmed.
+    backend = Backend(monkeypatch)
+    backend.consume_error, backend.spend_then_fail, backend.lists_fail_after_consume = socket.timeout("timed out"), True, True
+    assert (usage.redeem_reset_credit("work", "rc_full_a", "attempt-1")["outcome"], agent) == ("unknown", [])
+    # Replaying that attempt confirms it without spending anything more, and lifts the cooldown.
+    backend.consume_error, backend.lists_fail_after_consume = None, False
+    assert usage.redeem_reset_credit("work", "rc_full_a", "attempt-1")["outcome"] == "already_redeemed"
+    assert agent == ["tok-work"]
+    # Another attempt on a spent grant is refused and spends nothing.
+    result = usage.redeem_reset_credit("work", "rc_used", "attempt-2")
+    assert (result["outcome"], result["http_status"], agent) == ("refused", 409, ["tok-work"])
+    assert result["credits"]["available_count"] == 3
+    assert [b["credit_id"] for b in backend.consumes] == ["rc_full_a", "rc_full_a", "rc_used"]
 
 
 @pytest.mark.parametrize("lost", [lambda: socket.timeout("timed out"), lambda: urllib.error.HTTPError(CONSUME_URL, 502, "bad gateway", {}, io.BytesIO(b""))], ids=["timeout", "502"])

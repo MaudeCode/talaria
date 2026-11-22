@@ -46,6 +46,8 @@ export function ProviderQuotaRows({ quotas, mode, onRefresh }: { quotas: UseQuer
                     <Row compact key={s.source_id} data-quota-source={s.source_id} data-quota-status={s.status ?? 'unavailable'}>
                       <span className="font-medium text-text">{quotaSourceName(s)}</span>
                       <span className="text-muted">{quotaStatusText(s)}</span>
+                      {/* TAL-2681: an exhausted Codex account has no windows, and its banked resets matter most then. */}
+                      {s.reset_credits && <ResetCredits sourceId={s.source_id} account={s.account_label || quotaSourceName(s)} locale={locale} />}
                     </Row>
                   ))}
                 </RowList>

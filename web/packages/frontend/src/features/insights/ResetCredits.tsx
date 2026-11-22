@@ -70,7 +70,7 @@ export function ResetCredits({ sourceId, account, locale }: { sourceId: string; 
   if (!data) return null
   const busy = redeem.isPending ? redeem.variables.id : null
   return (
-    <div className="flex flex-col gap-1.5" data-quota-resets={sourceId} data-status={data.status}>
+    <div className="flex w-full flex-col gap-1.5" data-quota-resets={sourceId} data-status={data.status}>
       <SectionHeader
         detail={data.status === 'available' ? m.reset_credits_available({ count: new Intl.NumberFormat(locale).format(data.available_count) }) : undefined}
         action={data.status === 'available' && (
