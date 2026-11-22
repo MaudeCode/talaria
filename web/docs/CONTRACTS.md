@@ -746,7 +746,7 @@ redemption per account at a time (`in_progress`), then rereads the account's poo
 state and usage past every cache, so the quota rows show the provider's values.
 Nothing sends a chat command, touches a session or edits local counters. The
 shared fixture is `contracts/fixtures/codex-reset-credits.json`. This uses sidecar
-RPC version 106.
+RPC version 107.
 
 ## Persistent delegation settings
 
