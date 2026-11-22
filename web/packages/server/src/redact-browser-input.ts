@@ -156,6 +156,16 @@ function typedSpans(code: string, cut: boolean): Span[] {
     if (at) at.push(match.index)
     else names.set(match[0], [match.index])
   }
+  /** The strings that may define each name when run: text handed to `exec` can assign, import or declare it (`exec("pw = 'x'")`). */
+  const defined = new Map<string, Literal[]>()
+  for (const literal of literals) {
+    const text = code.slice(literal.start, literal.end)
+    for (const match of [...text.matchAll(/([\p{L}_][\p{L}\p{N}_]*)\s*[-+*/%|&^@:]?=(?!=)/gu), ...text.matchAll(/\b(?:def|class|for|as|import)\s+([\p{L}_][\p{L}\p{N}_]*)/gu)]) {
+      const by = defined.get(match[1]!)
+      if (!by) defined.set(match[1]!, [literal])
+      else if (by.at(-1) !== literal) by.push(literal)
+    }
+  }
   const spans: Span[] = []
   const masked = new Set<number>()
   const followed = new Set<string>()
@@ -375,6 +385,10 @@ function typedSpans(code: string, cut: boolean): Span[] {
       call.lastIndex = at + name.length
       return { at, k, def, defines: def !== null && at === start + def[0].lastIndexOf(def[1]!), params: def ? start + def[0].length - 1 : -1, called: call.test(skeleton) }
     })
+    for (const literal of defined.get(name) ?? []) {
+      spend(typed.length)
+      if (!typed.some(([start, end]) => start <= literal.start && literal.start < end)) maskStatement(literal.stmt)
+    }
     // A name the snippet only ever calls (`str`, `goto`) is a helper from outside it. One it binds anywhere (an alias
     // `add = pw.append`, a `def`) may carry the value through each call too.
     const bound = uses.some((use) => use.defines || !use.called)
