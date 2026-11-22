@@ -286,6 +286,12 @@ describe('memory, skill, session, scheduled job, connection and clarify rows (TA
     }
     expect(['session', 'schedule', 'connection', 'question'].map((kind) => toolText('en').actionLabel(kind, 'done', '', 'tool'))).toEqual(['Searched past chats', 'Managed scheduled jobs', 'Managed connections', 'Asked a question'])
   })
+
+  it('reads a todo call as the to-do list it updated, never as listed files (TAL-993)', async () => {
+    const view = await renderRouted(<ToolCard call={{ ...call, name: 'todo_list', kind: 'todo', target: '' }} />)
+    expect(view.container.querySelector('[data-tool-kind="todo"] svg.lucide-list-todo')).not.toBeNull()
+    expect(screen.getByRole('button')).toHaveTextContent('Updated the to-do list')
+  })
 })
 
 // TAL-1171: each tool row of the shared fixture opens what its call named: the job on Tasks, the card on its board, and a chat

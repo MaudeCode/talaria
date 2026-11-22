@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An agent's to-do list update now reads \"Updated the to-do list\" in a chat's activity instead of \"Listed files\".",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

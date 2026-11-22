@@ -270,7 +270,7 @@
     "presentation": "media"
   },
   "todo_list": {
-    "kind": "list",
+    "kind": "todo",
     "presentation": "todo"
   },
   "video_analyze": {

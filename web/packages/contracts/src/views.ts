@@ -56,7 +56,7 @@ export type Attachment = z.infer<typeof AttachmentSchema>
  * TAL-2330: `mcp` runs an MCP server's tool (`mcp__<server>__<tool>`) and `connector` a hosted connector's
  * (`connectors__<app>__<tool>`); each names its app in `app` and its action in `target`.
  */
-export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'session', 'schedule', 'connection', 'question', 'kanban', 'browser', 'computer', 'mcp', 'connector', 'unknown'])
+export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'session', 'schedule', 'connection', 'question', 'kanban', 'todo', 'browser', 'computer', 'mcp', 'connector', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
 /**
  * TAL-2327: what a call of a kind whose tools act differently (`kanban`) does, which picks the verb clients show for it in
@@ -160,7 +160,7 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   skills_list: { kind: 'skill', presentation: 'rows' },
   terminal: { kind: 'shell', presentation: 'terminal' },
   text_to_speech: { kind: 'audio', presentation: 'media' },
-  todo_list: { kind: 'list', presentation: 'todo' },
+  todo_list: { kind: 'todo', presentation: 'todo' },
   video_analyze: { kind: 'video_analysis', presentation: 'analysis' },
   video_generate: { kind: 'video', presentation: 'media' },
   vision_analyze: { kind: 'image_analysis', presentation: 'analysis' },
