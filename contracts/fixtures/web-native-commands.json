@@ -1,0 +1,28 @@
+{
+  "quick_command": {
+    "name": "deploy",
+    "description": "exec: ./deploy.sh",
+    "category": "User commands",
+    "aliases": [],
+    "args_hint": "",
+    "subcommands": [],
+    "cli_only": false,
+    "gateway_only": false,
+    "exec": true,
+    "prompt": null,
+    "handler": "agent",
+    "clients": ["web", "ios"]
+  },
+  "exec_request": { "command": "/refine deploy steps", "session_id": "native-chat" },
+  "exec_response": { "output": "⚗ Reviewing this conversation in the background (focus: deploy steps) — any memory/skill updates will be reported when done." },
+  "refused_response": { "error": "This command is not available in this chat.", "code": "owner_command_refused" },
+  "unknown_response": { "error": "The command outcome is unknown. Check the chat before running it again.", "code": "owner_command_unknown" },
+  "review_summary_event": {
+    "type": "review.summary",
+    "session_id": "native-chat",
+    "replay_epoch": "owner-epoch",
+    "seq": 6,
+    "payload": { "text": "💾 Self-improvement review: Memory updated · Skill 'deploy' patched" }
+  },
+  "review_notice": { "level": "info", "text": "💾 Self-improvement review: Memory updated · Skill 'deploy' patched" }
+}

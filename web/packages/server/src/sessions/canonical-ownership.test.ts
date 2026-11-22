@@ -297,7 +297,9 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     const before = stored()
     sidecar.respond('chat.refine', () => ({ output: 'would launch review' }))
     const response = await post(s, '/api/commands/exec', { session_id: sid, command: '/refine' })
-    expect(response.status).toBe(403)
+    // TAL-1338: the command belongs to the owner, which this sidecar cannot reach; nothing falls back to a local Agent.
+    expect(response.status).toBe(409)
+    expect(await json(response)).toMatchObject({ code: 'owner_command_unavailable' })
     expect(sidecar.calls.filter((c) => c.method === 'chat.refine')).toEqual([])
     expect(stored()).toEqual(before)
   })
@@ -448,7 +450,8 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     await cache(sid)
     sidecar.respond('commands.exec', () => ({ output: 'would change session state', source: 'agent' }))
     const response = await post(s, '/api/commands/exec', { session_id: sid, command })
-    expect(response.status, JSON.stringify(await json(response))).toBe(403)
+    // TAL-1338: an unreachable owner refuses it; it never runs through this sidecar.
+    expect(response.status, JSON.stringify(await json(response))).toBe(409)
     expect(sidecar.calls.filter((c) => c.method === 'commands.exec')).toEqual([])
   })
 

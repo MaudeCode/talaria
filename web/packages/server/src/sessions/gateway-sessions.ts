@@ -10,6 +10,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { ConnectorOperationSnapshotSchema, OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ConnectorOperationSnapshot, type ConnectorOperationView, type OwnerReasoning, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange, type OwnerWork } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
+import type { SidecarResult } from '@maudecode/talaria-web-contracts/sidecar'
+import { QUICK_COMMAND_CATEGORY, QUICK_COMMAND_OWNER_MESSAGE } from '../tools/commands.js'
 import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
 import { taskView, taskTitle, isTerminal, startsBackgroundWork, type BackgroundTaskStore, type Receipt } from './background-tasks.js'
@@ -91,6 +93,21 @@ function ownerUsage(payload: Row, complete = false): Row {
 }
 
 const EFFORT_LIST_SECONDS = 30
+/** TAL-1338: how long an owner's quick-command list serves the palette and classification before it is read again. */
+const QUICK_COMMANDS_SECONDS = 30
+/** TAL-1338: the longest argument the owner dispatch accepts (`GatewaySessionParams.arg`). */
+const OWNER_COMMAND_ARG_MAX = 8192
+/** TAL-1338: how long a review summary stays above the composer. */
+const REVIEW_SUMMARY_TTL_MS = 5 * 60_000
+
+/** TAL-1338: the owner's refusals of a command it did not run, as the command output shows them. */
+const COMMAND_REFUSALS: Record<string, string> = {
+  unsupported_command: 'This command is not available in this chat.', command_unavailable: 'This command is not available in this chat.',
+  permission_denied: 'The owning Agent denied this command.', profile_mismatch: 'The owning Agent denied this command.',
+  read_only: 'This chat is read-only on its owning Agent.', not_found: 'This chat is not open on its owning Agent.', invalid_params: 'The owning Agent rejected this command.',
+  cwd_unavailable: 'The chat\'s workspace no longer exists.', owner_changed: 'The owning Agent changed. Run the command again.',
+  runtime_draining: 'The owning gateway is restarting. Try again once it is back.', gateway_restarting: 'The owning gateway is restarting. Try again once it is back.',
+}
 
 /** Translate only owner-confirmed outcomes; an unknown receipt never means applied. */
 function modelChange(receipt: Row, selection: Row = {}): ModelChange {
@@ -243,6 +260,7 @@ export class GatewaySessions {
   private readonly modelChanges = new Map<string, { epoch: number; replay: string; change: ModelChange }>()
   private readonly deferredReasoning = new Map<string, { epoch: number; replay: string; effort: string | null }>()
   private readonly effortLists = new Map<string, { at: number; efforts: string[] }>()
+  private readonly quickLists = new Map<string, { at: number; commands: NonNullable<GatewaySessionResult['quick_commands']> }>()
   /** TAL-2072: each chat's stored rows before its attach rows, for the attach identity they were read against. */
   private readonly olderRows = new Map<string, { key: string; rows: Row[]; bytes: number }>()
   /** TAL-2072: the stored read filling a chat's older rows now; a concurrent view of the same attach joins it. */
@@ -387,7 +405,7 @@ export class GatewaySessions {
               observation.todoSequence = Number(event.seq)
               observation.snapshot = { ...snap, todo_state: { todos: data.todos as Row[], revision: Number(data.revision) }, last_sequence: Math.max(snap.last_sequence, Number(event.seq)) }
               this.changed(target)
-            } else if (event.type === 'notification.show' || event.type === 'notification.clear') {
+            } else if (event.type === 'notification.show' || event.type === 'notification.clear' || event.type === 'review.summary') {
               const snap = observation.snapshot
               const state = this.noticeState(target, snap)
               if (event.session_id !== target.sid || event.replay_epoch !== snap.replay_epoch
@@ -395,10 +413,17 @@ export class GatewaySessions {
                   || !Number.isSafeInteger(event.seq) || Number(event.seq) <= state.sequence) return
               state.sequence = Number(event.seq)
               const key = typeof data.key === 'string' ? data.key : typeof data.id === 'string' ? data.id : ''
-              if (!key) return
-              const scopedKey = `${state.identity}:plugin:${ownerStateId(key)}`
-              if (event.type === 'notification.clear') this.notices.clear(target.key, scopedKey)
-              else this.addNativeNotice(target, scopedKey, data)
+              // TAL-1338: a review's summary (a /refine or a turn's own) has no turn; the latest one shows, for a while.
+              // An empty summary means the review changed nothing.
+              if (event.type === 'review.summary') {
+                if (typeof data.text !== 'string' || !data.text.trim()) return
+                this.addNativeNotice(target, `${state.identity}:review`, { text: redactString(data.text, this.deps.redactEnabled()), level: 'info', kind: 'ttl', ttl_ms: REVIEW_SUMMARY_TTL_MS })
+              } else {
+                if (!key) return
+                const scopedKey = `${state.identity}:plugin:${ownerStateId(key)}`
+                if (event.type === 'notification.clear') this.notices.clear(target.key, scopedKey)
+                else this.addNativeNotice(target, scopedKey, data)
+              }
               this.changed(target)
             } else if (event.type === 'connection.request' || event.type === 'connection.update') {
               const snap = observation.snapshot
@@ -539,6 +564,59 @@ export class GatewaySessions {
     } else await settle(launch.state === 'accepted' || launch.state === 'pending' ? 'unknown' : launch.state)
     const saved = await store.get(scope, taskId)
     return { task_id: taskId, stream_id: streamId, session_id: sid, launch: { state: saved?.launch_state ?? (launch.state === 'accepted' || launch.state === 'pending' ? 'unknown' : launch.state), task_id: native.task_id ? taskId : null } }
+  }
+
+  /**
+   * TAL-1338: a registered command (a quick or plugin command, an Agent command, `/refine`) run by the session's own owner
+   * under its policy and workspace; null when no native owner holds `sid`. Talaria never builds an Agent or runs the command
+   * itself for an owner chat, and an outcome it cannot confirm is reported, never dispatched again.
+   */
+  async command(sid: string, name: string, arg: string, { serverOwner }: { serverOwner: boolean }): Promise<string | null> {
+    // Unknown ownership is not an owner: the local path's own gate then refuses the chat.
+    const target = await this.target(sid, this.deps.activeProfile())
+    if (!target) return null
+    if (arg.length > OWNER_COMMAND_ARG_MAX) throw new HttpFailure(400, 'The command is too long.')
+    // A quick command runs outside the Agent's approval flow: only the server owner runs one, and a requester who is not
+    // the owner runs nothing while the owner's quick commands cannot be read. The owner resolves `_` and `-` alike.
+    if (!serverOwner) {
+      const quick = await this.quickRows(target)
+      if (!quick) throw new HttpFailure(503, 'The owning Agent\'s commands could not be checked. Try again.')
+      const spelling = (n: string) => n.toLowerCase().replace(/-/g, '_')
+      if (quick.some((c) => spelling(c.name) === spelling(name))) throw new HttpFailure(403, QUICK_COMMAND_OWNER_MESSAGE)
+    }
+    const current = await this.call(target, { action: 'snapshot' })
+    const snap = current.snapshot
+    if (current.state !== 'attached' || snap?.session_id !== sid) throw new HttpFailure(409, 'The owning Agent cannot run commands now. Check its gateway.', { code: 'owner_command_unavailable' })
+    const result = await this.call(target, { action: 'command_dispatch', name, arg, authority_epoch: snap.authority_epoch, replay_epoch: snap.replay_epoch })
+    const outcome = result.command_result
+    if (result.state === 'attached' && outcome?.kind === 'output') return redactString(outcome.output, this.deps.redactEnabled())
+    if (result.state === 'attached' && outcome?.kind === 'prompt') throw new HttpFailure(409, `/${name} starts a turn on its owning Agent; send it as a message.`, { code: 'owner_command_refused' })
+    const refusal = result.state === 'refused' || result.state === 'incompatible' ? COMMAND_REFUSALS[result.reason ?? ''] : undefined
+    if (refusal) throw new HttpFailure(409, refusal, { code: 'owner_command_refused' })
+    throw new HttpFailure(409, 'The command outcome is unknown. Check the chat before running it again.', { code: 'owner_command_unknown' })
+  }
+
+  /**
+   * TAL-1338: the quick commands the owner of `sid` registers, as Agent registry rows that only that owner runs; null when no
+   * native owner holds `sid` or it cannot list them now. Read at most every QUICK_COMMANDS_SECONDS per chat.
+   */
+  async quickCommands(sid: string): Promise<SidecarResult<'commands.registry'>['commands'] | null> {
+    const target = await this.target(sid, this.deps.activeProfile())
+    const quick = target && await this.quickRows(target)
+    return quick ? quick.map((c) => ({ name: c.name, description: c.description, category: QUICK_COMMAND_CATEGORY, aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: true, prompt: null })) : null
+  }
+
+  private async quickRows(target: Target): Promise<NonNullable<GatewaySessionResult['quick_commands']> | null> {
+    const now = this.deps.now()
+    let cached = this.quickLists.get(target.key)
+    if (!cached || now - cached.at >= QUICK_COMMANDS_SECONDS) {
+      const result = await this.call(target, { action: 'command_catalog' })
+      if (result.state !== 'attached' || !result.quick_commands) return null
+      cached = { at: now, commands: result.quick_commands }
+      this.quickLists.set(target.key, cached)
+      if (this.quickLists.size > 256) this.quickLists.delete(this.quickLists.keys().next().value!)
+    }
+    return cached.commands
   }
 
   async launchTasks(sid: string, profile?: string): Promise<BackgroundTask[]> {
@@ -764,7 +842,7 @@ export class GatewaySessions {
     const modelMutation = params.action === 'mutate' && params.operation === 'model'
     if (modelMutation) this.modelMutations.set(target.key, (this.modelMutations.get(target.key) ?? 0) + 1)
     try {
-      const result = await sidecar.call('gateway.session', { ...params, profile_home: target.home, session_id: target.sid }, { timeoutMs: params.action === 'mutate' ? 675_000 : params.action === 'shell_exec' ? 40_000 : 35_000, ...(signal ? { signal } : {}) })
+      const result = await sidecar.call('gateway.session', { ...params, profile_home: target.home, session_id: target.sid }, { timeoutMs: params.action === 'mutate' ? 675_000 : params.action === 'command_dispatch' ? 125_000 : params.action === 'shell_exec' ? 40_000 : 35_000, ...(signal ? { signal } : {}) })
       if (params.action === 'mutate' && params.operation === 'model' && result.snapshot) {
         const change = modelChange(result.receipt ?? {}, params.payload)
         // The stream can resolve a deferred pick before its HTTP ACK returns. Keep the later observation.
@@ -1562,7 +1640,7 @@ export class GatewaySessions {
             const event = frame.data as Row
             const data = (event.payload ?? {}) as Row
             const kind = str(event.type)
-            if (kind === 'notification.show' || kind === 'notification.clear') {
+            if (kind === 'notification.show' || kind === 'notification.clear' || kind === 'review.summary') {
               await put('notices', { session_id: target.sid, notices: this.nativeNotices(target, observation.snapshot) })
               return
             }

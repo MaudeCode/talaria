@@ -8,6 +8,16 @@ const ObjectSchema = z.record(z.string(), z.unknown())
 export const CapturedCommandSchema = z.string().min(1).max(8192).regex(/\S/, 'Command must not be blank')
 /** UTF-16 limits cover the owner's 4000/2000 Unicode code points. Native owner redacts before bounding these captured streams. Never interpreted as terminal control sequences. */
 export const CapturedCommandResultSchema = z.object({ stdout: z.string().max(8000), stderr: z.string().max(4000), code: z.number().int() })
+/**
+ * TAL-1338: one registered command the owner ran for its session (`command_dispatch`). `output` is the owner's reply text,
+ * bounded; `prompt` means the owner answered with a turn for the client to send, which Talaria never submits from a command.
+ */
+export const OwnerCommandResultSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('output'), output: z.string().max(64_000) }),
+  z.object({ kind: z.literal('prompt') }),
+])
+/** TAL-1338: a quick command the owner's profile config registers (`command_catalog`), listed as the owner lists it. */
+export const OwnerQuickCommandSchema = z.object({ name: z.string().regex(/^[A-Za-z][\w-]*$/).max(64), description: z.string().max(200) })
 export const OWNER_EXPORT_MAX_BYTES = 4 * 1024 * 1024
 export const OwnerExportFormatSchema = z.enum(['json', 'markdown', 'html'])
 export const OwnerExportSchema = z.object({
@@ -111,6 +121,8 @@ export const GatewaySessionResultSchema = z.object({
   work_outcome: OwnerWorkOutcomeSchema.optional().describe('`work_stop`, `work_steer`: what the owner did with this one row.'),
   lock: z.object({ status: z.enum(['ok', 'expired']), remaining: z.array(z.string()).optional() }).optional()
     .describe('`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.'),
+  command_result: OwnerCommandResultSchema.optional().describe('`command_dispatch`: what the owner did with the command.'),
+  quick_commands: z.array(OwnerQuickCommandSchema).max(200).optional().describe("`command_catalog`: the session profile's registered quick commands."),
 })
 /** TAL-1271: the owner's multi-question clarify, asked once of the viewers attached when it parks (watch stream `clarify_batch`). */
 export const GatewayClarifyBatchSchema = z.object({
@@ -126,10 +138,12 @@ export const ConnectionAnswerSchema = z.union([
 export type ConnectionAnswer = z.infer<typeof ConnectionAnswerSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'transcript', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry', 'work_list', 'work_tail', 'work_transcript', 'work_stop', 'work_steer', 'launch_background', 'launch_btw']),
+  action: z.enum(['snapshot', 'watch', 'transcript', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry', 'work_list', 'work_tail', 'work_transcript', 'work_stop', 'work_steer', 'launch_background', 'launch_btw', 'command_dispatch', 'command_catalog']),
   row_id: z.number().int().positive().optional(), emoji: ReactionEmojiSchema.nullable().optional(),
   format: OwnerExportFormatSchema.optional(), redact: z.boolean().optional(),
   command: CapturedCommandSchema.optional(),
+  name: z.string().regex(/^[A-Za-z][\w-]*$/).max(64).optional().describe('`command_dispatch`: the registered command, as typed without its slash.'),
+  arg: z.string().max(8192).optional().describe('`command_dispatch`: the rest of the typed command.'),
   authority_epoch: z.number().int().nonnegative().optional(), replay_epoch: z.string().min(1).optional(),
   request_id: z.string().min(1).max(128).optional(), text: z.string().optional(),
   submission_id: z.string().min(1).max(128).optional(),

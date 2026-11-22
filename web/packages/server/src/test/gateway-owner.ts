@@ -5,7 +5,7 @@ import { expect, vi } from 'vitest'
 import { SessionEnvelopeSchema, type GatewaySnapshot, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
 import type { StreamFrame } from '../sidecar/client.js'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { bootTestServer, openStateDb, type TestServer } from './harness.js'
+import { bootTestServer, openStateDb, type BootOptions, type TestServer } from './harness.js'
 
 // Shared by the gateway session test files. The canonical owner attachment tests are split across files so that CI
 // shards can balance them (TAL-1774).
@@ -21,9 +21,9 @@ export const admission = (status: 'queued' | 'started' | 'unknown' | 'terminal' 
 interface OwnerAttachment { s: TestServer; db: DatabaseSync; sidecar: FakeSidecar }
 
 /** Boots a server whose sidecar is fake and whose Agent state.db holds the canonical-ownership fixture. */
-export async function bootOwnerAttachment(): Promise<OwnerAttachment> {
+export async function bootOwnerAttachment(options: Omit<BootOptions, 'sidecar'> = {}): Promise<OwnerAttachment> {
   const sidecar = new FakeSidecar()
-  const s = await bootTestServer({ sidecar })
+  const s = await bootTestServer({ ...options, sidecar })
   const db = openStateDb(join(s.state, 'state.db'))
   db.exec(fixture.schema.join('\n'))
   for (const sql of fixture.inserts) db.exec(sql)

@@ -343,7 +343,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     if (next.trim()) clarify.clearSelection()
   }
   const canAnswer = !!value.trim() || !!clarify?.selected.length
-  const palette = useCommandPalette(clarify || room ? '' : text)
+  const palette = useCommandPalette(clarify || room ? '' : text, sessionId)
   // A newly resolved identity first adopts its text. Persisting the previous render would erase
   // the loaded draft or copy another owner's text; the identity state also preserves early typing.
   useDraftPersistence(draftIdentity === localStateId ? localStateId : null, text, !room && !session?.owner_attachment)
