@@ -89,3 +89,26 @@ it('shows the server\'s install command while the desktop packages are missing',
   expect(screen.getByText('sudo apt-get install -y tigervnc-standalone-server xfce4')).toBeVisible()
   expect(sockets).toEqual([])
 })
+
+it('sends overlapping take-over and hand-back in order and shows the newest choice, whatever answers last', async () => {
+  render(<ScreenViewer open onOpenChange={vi.fn()} screen={running} />)
+  const takeOver = await screen.findByRole('button', { name: 'Take over' })
+  await waitFor(() => { expect(takeOver).toBeEnabled() })
+  let answerTake: (view: ScreenView) => void = () => undefined
+  leaseScreen.mockImplementationOnce(() => new Promise((resolve) => { answerTake = resolve }))
+  leaseScreen.mockResolvedValueOnce({ ...running, control: 'agent' })
+  leaseScreen.mockResolvedValueOnce({ ...running, control: 'you' })
+  act(() => { fireEvent.click(takeOver) })
+  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Hand back' })) })
+  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Take over' })) })
+  // The newest choice shows at once; the later requests wait for the first to settle.
+  expect(screen.getByRole('button', { name: 'Hand back' })).toBeVisible()
+  await waitFor(() => { expect(leaseScreen).toHaveBeenCalledTimes(1) })
+  await act(async () => { await Promise.resolve() })
+  expect(leaseScreen).toHaveBeenCalledTimes(1)
+  await act(async () => { answerTake({ ...running, control: 'you' }); await Promise.resolve() })
+  await waitFor(() => { expect(leaseScreen).toHaveBeenCalledTimes(3) })
+  expect(leaseScreen.mock.calls.map(([input]) => (input as { action: string }).action)).toEqual(['acquire', 'release', 'acquire'])
+  await waitFor(() => { expect(sockets[0]!.viewOnly).toBe(false) })
+  expect(screen.getByRole('button', { name: 'Hand back' })).toBeVisible()
+})

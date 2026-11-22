@@ -31,6 +31,24 @@ export function ScreenViewer({ open, onOpenChange, screen }: { open: boolean; on
   )
 }
 
+/**
+ * One take-over or hand-back. A refusal rolls back. An unknown outcome (lost answer, timeout, 5xx) may have reached the
+ * owner, so this viewer's own read decides; if that fails too, the shown control stays until the next choice settles it.
+ */
+async function settleLease(viewId: string, action: 'acquire' | 'release', apply: (control: Control) => void, rollBack: () => void): Promise<void> {
+  try {
+    apply((await leaseScreen({ view_id: viewId, action })).control)
+  } catch (error) {
+    showErrorToast(error)
+    if (isDefiniteRefusal(error)) { rollBack(); return }
+    try {
+      apply((await fetchScreenView({ view_id: viewId })).control)
+    } catch {
+      // Unknown still: keep what is shown.
+    }
+  }
+}
+
 function ScreenBody({ screen }: { screen: ScreenView }) {
   if (screen.state === 'not_installed') {
     const command = screen.install_command
@@ -76,6 +94,7 @@ function LiveScreen({ initialControl }: { initialControl: Control }) {
       // Another viewer took control, the screen stopped or the link dropped; the server handed back what this one held.
       client.addEventListener('disconnect', () => {
         setConnection('disconnected')
+        if (confirmed.current === 'you') confirmed.current = 'agent'
         setControl((held) => (held === 'you' ? 'agent' : held))
       })
       rfb.current = client
@@ -90,25 +109,22 @@ function LiveScreen({ initialControl }: { initialControl: Control }) {
   // noVNC's own input gate is only presentation; the server and the Agent refuse input from a viewer without control.
   useEffect(() => { if (rfb.current) rfb.current.viewOnly = control !== 'you' }, [control, connection])
 
-  const lease = async (action: 'acquire' | 'release') => {
-    const before = control
+  // Take-overs and hand-backs reach the server one at a time, in the order chosen; the newest choice shows at once, and
+  // only its own answer (or the control last confirmed, on its refusal) replaces it.
+  const confirmed = useRef<Control>(initialControl)
+  const latest = useRef(0)
+  const queue = useRef<Promise<void>>(Promise.resolve())
+  const lease = (action: 'acquire' | 'release') => {
+    const mine = ++latest.current
     setControl(action === 'acquire' ? 'you' : 'agent')
-    try {
-      setControl((await leaseScreen({ view_id: viewId, action })).control)
-    } catch (error) {
-      showErrorToast(error)
-      // A refusal rolls back. An unknown outcome (lost answer, timeout, 5xx) may have reached the owner, so this viewer's
-      // own read decides; if that fails too, the shown control stays until the next take-over or hand-back settles it.
-      if (isDefiniteRefusal(error)) { setControl(before); return }
-      try {
-        setControl((await fetchScreenView({ view_id: viewId })).control)
-      } catch {
-        // Unknown still: keep what is shown.
-      }
-    }
+    const apply = (value: Control) => { confirmed.current = value; if (mine === latest.current) setControl(value) }
+    const rollBack = () => { if (mine === latest.current) setControl(confirmed.current) }
+    queue.current = queue.current.then(() => settleLease(viewId, action, apply, rollBack))
   }
 
   const reconnect = () => {
+    // A new viewer holds nothing (the disconnect already gave up held control); answers owed to the old one change nothing shown.
+    latest.current++
     setConnection('connecting')
     setViewId(newViewId())
   }
@@ -121,8 +137,8 @@ function LiveScreen({ initialControl }: { initialControl: Control }) {
         {connection === 'disconnected'
           ? <IconButton variant="default" label={m.screen_reconnect()} onClick={reconnect}><RefreshCw aria-hidden="true" /></IconButton>
           : control === 'you'
-            ? <IconButton variant="default" label={m.screen_hand_back()} onClick={() => { void lease('release') }}><Hand aria-hidden="true" /></IconButton>
-            : <IconButton variant="default" label={m.screen_take_over()} disabled={connection !== 'connected'} onClick={() => { void lease('acquire') }}><MousePointerClick aria-hidden="true" /></IconButton>}
+            ? <IconButton variant="default" label={m.screen_hand_back()} onClick={() => { lease('release') }}><Hand aria-hidden="true" /></IconButton>
+            : <IconButton variant="default" label={m.screen_take_over()} disabled={connection !== 'connected'} onClick={() => { lease('acquire') }}><MousePointerClick aria-hidden="true" /></IconButton>}
       </div>
       <div ref={host} className="screen-canvas relative aspect-[16/10] max-h-[calc(90dvh-9rem)] w-full overflow-hidden rounded-lg border border-border bg-black" data-control={control} data-connection={connection} />
     </div>
