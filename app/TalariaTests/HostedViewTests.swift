@@ -781,57 +781,64 @@ final class SettingsPlacementHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "settings-search-opened-row")
     }
 
-    func testSettingsSearchButtonSitsInTheBottomBarOnPhoneAndTopTrailingOnPad() async throws {
+    // One test per size over `assertSettingsSearchPlacement(size:)` (TAL-2405): together they ran over 20 s on CI.
+    func testSettingsSearchButtonSitsInTheBottomBarOnPhone() async throws {
+        try await assertSettingsSearchPlacement(size: HostedSize.phone)
+    }
+
+    func testSettingsSearchButtonSitsTopTrailingOnPad() async throws {
+        try await assertSettingsSearchPlacement(size: HostedSize.padLandscape)
+    }
+
+    private func assertSettingsSearchPlacement(size: CGSize) async throws {
         let fixture = try FixtureApp(for: self)
-        for size in [HostedSize.phone, HostedSize.padLandscape] {
-            let window = try hostWindow(fixture.sessionList(), size: size)
-            try await openSidebar(in: window)
-            let opened = await awaitCondition { self.settingsAvatar(in: window) != nil }
-            XCTAssertTrue(opened, "The sidebar must offer Settings")
-            XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(settingsAvatar(in: window))))
-            _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-user-profile" }
-            let sheet = try XCTUnwrap(window.rootViewController?.presentedViewController)
-            _ = await awaitCondition { self.settingsSearchButton(in: window) != nil }
-            attachHostedScreenshot(window, name: size == HostedSize.phone ? "settings-search-closed-phone" : "settings-search-closed-pad")
-            if size == HostedSize.phone {
-                let button = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-search-button" }
-                let frame = window.convert(button.accessibilityFrame, from: window.screen.coordinateSpace)
-                XCTAssertGreaterThan(frame.minY, window.bounds.height * 0.8, "iPhone puts Settings search in the bottom bar")
-            } else {
-                XCTAssertEqual(sheet.traitCollection.horizontalSizeClass, .regular)
-                let bar = try XCTUnwrap(sheet.view.firstView(ofType: UINavigationBar.self))
-                let trailing = (bar.topItem?.trailingItemGroups.flatMap(\.barButtonItems) ?? []) + (bar.topItem?.rightBarButtonItems ?? [])
-                XCTAssertTrue(trailing.contains { $0.accessibilityIdentifier == "settings-search-button" },
-                              "iPad puts Settings search at the top bar's trailing edge")
-            }
-            let field = try await openSettingsSearch(in: window)
-            field.text = "thinking"
-            field.sendActions(for: .editingChanged)
-            _ = try await requireElement(in: window) {
-                HostedAccessibility.identifier(of: $0) == "settings-search-settings-chat-expand-thinking-by-default"
-            }
-            attachHostedScreenshot(window, name: size == HostedSize.phone ? "settings-search-open-phone" : "settings-search-open-pad")
-            let close = try await requireElement(in: window, label: "Close search")
-            XCTAssertTrue(HostedAccessibility.activate(close))
-            _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-user-profile" }
-            let restored = await awaitCondition { self.settingsSearchButton(in: window) != nil }
-            XCTAssertTrue(restored, "Closing search brings the button back")
-            XCTAssertNil(window.firstView(ofType: UITextField.self), "Closing search hides the field")
-            // Leave search open, dismiss Settings and reopen it: search starts closed again.
-            _ = try await openSettingsSearch(in: window)
-            let dismiss = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Close")
-                ?? HostedAccessibility.toolbarItem("Close", in: window))
-            XCTAssertTrue(HostedAccessibility.activate(dismiss))
-            let dismissed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
-            XCTAssertTrue(dismissed, "Close must dismiss Settings")
-            try await openSidebar(in: window)
-            _ = await awaitCondition { self.settingsAvatar(in: window) != nil }
-            XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(settingsAvatar(in: window))))
-            _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-user-profile" }
-            _ = try await openSettingsSearch(in: window)
-            window.isHidden = true
-            window.rootViewController = nil
+        let window = try hostWindow(fixture.sessionList(), size: size)
+        try await openSidebar(in: window)
+        let opened = await awaitCondition { self.settingsAvatar(in: window) != nil }
+        XCTAssertTrue(opened, "The sidebar must offer Settings")
+        XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(settingsAvatar(in: window))))
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-user-profile" }
+        let sheet = try XCTUnwrap(window.rootViewController?.presentedViewController)
+        _ = await awaitCondition { self.settingsSearchButton(in: window) != nil }
+        attachHostedScreenshot(window, name: size == HostedSize.phone ? "settings-search-closed-phone" : "settings-search-closed-pad")
+        if size == HostedSize.phone {
+            let button = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-search-button" }
+            let frame = window.convert(button.accessibilityFrame, from: window.screen.coordinateSpace)
+            XCTAssertGreaterThan(frame.minY, window.bounds.height * 0.8, "iPhone puts Settings search in the bottom bar")
+        } else {
+            XCTAssertEqual(sheet.traitCollection.horizontalSizeClass, .regular)
+            let bar = try XCTUnwrap(sheet.view.firstView(ofType: UINavigationBar.self))
+            let trailing = (bar.topItem?.trailingItemGroups.flatMap(\.barButtonItems) ?? []) + (bar.topItem?.rightBarButtonItems ?? [])
+            XCTAssertTrue(trailing.contains { $0.accessibilityIdentifier == "settings-search-button" },
+                          "iPad puts Settings search at the top bar's trailing edge")
         }
+        let field = try await openSettingsSearch(in: window)
+        field.text = "thinking"
+        field.sendActions(for: .editingChanged)
+        _ = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-search-settings-chat-expand-thinking-by-default"
+        }
+        attachHostedScreenshot(window, name: size == HostedSize.phone ? "settings-search-open-phone" : "settings-search-open-pad")
+        let close = try await requireElement(in: window, label: "Close search")
+        XCTAssertTrue(HostedAccessibility.activate(close))
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-user-profile" }
+        let restored = await awaitCondition { self.settingsSearchButton(in: window) != nil }
+        XCTAssertTrue(restored, "Closing search brings the button back")
+        XCTAssertNil(window.firstView(ofType: UITextField.self), "Closing search hides the field")
+        // Leave search open, dismiss Settings and reopen it: search starts closed again.
+        _ = try await openSettingsSearch(in: window)
+        let dismiss = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Close")
+            ?? HostedAccessibility.toolbarItem("Close", in: window))
+        XCTAssertTrue(HostedAccessibility.activate(dismiss))
+        let dismissed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(dismissed, "Close must dismiss Settings")
+        try await openSidebar(in: window)
+        _ = await awaitCondition { self.settingsAvatar(in: window) != nil }
+        XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(settingsAvatar(in: window))))
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-user-profile" }
+        _ = try await openSettingsSearch(in: window)
+        window.isHidden = true
+        window.rootViewController = nil
     }
 
     private func settingsAvatar(in window: UIWindow) -> NSObject? {

@@ -177,7 +177,11 @@ test('long history beside a live run renders on a slow CPU', async ({ page }, te
   }
 })
 
-test('off-screen history halves long tasks during a 200-token stream', async ({ page }, testInfo) => {
+// In the baseline nearly every token past the first twenty is a long task, so 50 tokens keep the paired comparison
+// while the run stays inside the per-test budget; 200 took 47-52 s on CI (TAL-2405).
+const STREAM_TOKENS = 50
+
+test(`off-screen history halves long tasks during a ${STREAM_TOKENS}-token stream`, async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'paired CPU measurements use one fixed viewport')
   test.setTimeout(180_000)
   const history = await liveHistory(page), { sid } = history
@@ -219,12 +223,12 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
         w.observer = new PerformanceObserver((list) => { w.longTasks.push(...list.getEntries()) })
         w.observer.observe({ type: 'longtask' })
       })
-      for (let token = 0; token < 200; token++) {
+      for (let token = 0; token < STREAM_TOKENS; token++) {
         history.run.stream!.write(`event: token\ndata: ${JSON.stringify({ text: 'word ' })}\n\n`)
         // Each token renders before the next is sent, so tokens arrive as separate frames rather than one coalesced chunk.
         await page.waitForFunction((count) => (document.querySelector('.live-turn .msg-body')?.textContent?.match(/word/g)?.length ?? 0) > count, token, { polling: 'raf' })
       }
-      await expect(page.locator('.live-turn .msg-body')).toContainText('word '.repeat(200).trim())
+      await expect(page.locator('.live-turn .msg-body')).toContainText('word '.repeat(STREAM_TOKENS).trim())
       await expect.poll(() => distance(page)).toBeLessThan(2)
       const tasks = await page.evaluate(async () => {
         // A frame painted after the last token's render: its long task has ended and is recorded.
@@ -241,8 +245,8 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
       await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
     }
     const [baseline, contained] = samples as [number, number]
-    console.info('Long-task samples', { baseline, contained, samples, tokens: 200, timings, taskTimings })
-    await testInfo.attach('long-task-counts', { body: JSON.stringify({ baseline, contained, samples, tokens: 200, timings, taskTimings }), contentType: 'application/json' })
+    console.info('Long-task samples', { baseline, contained, samples, tokens: STREAM_TOKENS, timings, taskTimings })
+    await testInfo.attach('long-task-counts', { body: JSON.stringify({ baseline, contained, samples, tokens: STREAM_TOKENS, timings, taskTimings }), contentType: 'application/json' })
     expect(baseline, 'baseline must exercise long tasks').toBeGreaterThan(0)
     expect(contained, 'contained long tasks must be at most half the baseline').toBeLessThanOrEqual(baseline / 2)
   } finally {

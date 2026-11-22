@@ -173,7 +173,7 @@ test('video is re-encoded smaller, without audio, at most 1280 px wide and withi
   // The clip's size depends on how many frames the runner draws, so the budget comes from the recording.
   await page.route('**/blank', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html>' }))
   await page.goto('/blank')
-  const clip = await syntheticClip(page, 3)
+  const clip = await syntheticClip(page, 1)
   expect(await tracks(clip)).toEqual({ audio: 1, width: 1920 })
   const maxVideoBytes = Math.floor(clip.length / 2)
   expect(clip.length).toBeGreaterThan(maxVideoBytes)
