@@ -366,23 +366,28 @@ function xlsxPreviewText(parts: Map<string, Buffer>): { content: string; truncat
     for (const row of data ? named(data, 'row') : []) {
       rowIndex = Number(attr(row, 'r') ?? rowIndex + 1) || rowIndex + 1
       if (rowIndex > MAX_XLSX_PREVIEW_ROWS_PER_SHEET) { b.truncated = true; break }
-      const values: string[] = []
-      for (const cell of named(row, 'c')) {
-        const column = columnOf(attr(cell, 'r'), values.length + 1)
-        while (values.length < column - 1) values.push('')
-        values.push(cellValue(cell, book))
-      }
       const line = new PreviewBuilder(b.remaining - (b.started ? 1 : 0))
-      for (const value of values) {
-        if (++cells > MAX_XLSX_PREVIEW_CELLS_PER_SHEET) { b.truncated = true; break }
-        if (line.hasContent && !line.append('\t')) break
-        if (!line.value(value)) { if (!line.truncated) b.truncated = true; break }
+      // Every column up to a cell counts against the budget as it is reached, so a far-off reference (`AAAAAAA1`)
+      // truncates instead of padding; each cell after the first keeps its tab, so values stay under their columns.
+      let position = 0
+      let hasValue = false
+      const emit = (value: string): boolean => {
+        if (++cells > MAX_XLSX_PREVIEW_CELLS_PER_SHEET) { b.truncated = true; return false }
+        if (position++ > 0 && !line.append('\t')) return false
+        if (!line.value(value)) { if (!line.truncated) b.truncated = true; return false }
+        hasValue ||= value.trim() !== ''
+        return true
       }
-      if (b.truncated) break
-      if (line.hasContent) {
-        if (!b.startLine() || !b.append(line.text)) break
-        if (line.truncated) { b.truncated = true; break }
+      cellsInRow: for (const cell of named(row, 'c')) {
+        const column = Math.max(columnOf(attr(cell, 'r'), position + 1), position + 1)
+        while (position < column - 1) if (!emit('')) break cellsInRow
+        if (!emit(cellValue(cell, book))) break
       }
+      // The cells that fit stay, even when the row ran out of budget.
+      const stopped = b.truncated
+      b.truncated = false
+      if (hasValue && (!b.startLine() || !b.append(line.text.trimEnd()))) break
+      if (stopped || line.truncated) { b.truncated = true; break }
     }
     if (b.truncated) break
   }

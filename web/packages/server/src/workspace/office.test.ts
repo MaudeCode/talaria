@@ -72,6 +72,19 @@ describe('xlsx preview', () => {
     expect(previewOffice('b.xlsx', book)).toEqual({ path: 'b.xlsx', size: book.length, office_format: 'xlsx', content: 'Sheet: Budget\nRent\tTRUE\t42.5\n2024-01-15\t2024-01-16\t45306', lines: 3, editable: false, edit_blocked_reason: 'xlsx preview is read-only' })
   })
 
+  it('keeps the tab of each empty cell before a value, so values stay under their columns', async () => {
+    const book = await xlsx([{ name: 'S', rows: [{ A1: '0', B1: '1' }, { B2: { v: '10' } }, { A3: { v: '' }, C3: { v: '7' } }] }], ['Name', 'Value'])
+    expect(previewOffice('s.xlsx', book).content).toBe('Sheet: S\nName\tValue\n\t10\n\t\t7')
+  })
+
+  it('counts a far-off column reference against the cell budget instead of padding up to it', async () => {
+    const book = await xlsx([{ name: 'Far', rows: [{ A1: { v: 'kept' }, AAAAAAA1: { v: 'far' } }] }])
+    const preview = previewOffice('f.xlsx', book)
+    expect(preview.truncated).toBe(true)
+    expect(preview.content.startsWith('Sheet: Far\nkept')).toBe(true)
+    expect(preview.content).not.toContain('far')
+  })
+
   it('stops at 20 sheets and 500 rows per sheet', async () => {
     const manySheets = previewOffice('s.xlsx', await xlsx(Array.from({ length: 21 }, (_, i) => ({ name: `S${String(i + 1)}`, rows: [{ A1: { v: String(i + 1) } }] }))))
     expect(manySheets.truncated).toBe(true)
