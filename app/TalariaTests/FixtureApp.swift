@@ -241,8 +241,10 @@ final class HostedTestBundle: NSObject, XCTestObservation {
                 }
                 finished = true
             }
-            let deadline = Date(timeIntervalSinceNow: 180)
-            while !finished, Date() < deadline { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05)) }
+            // No test starts before the warm-up ends, however long a loaded host takes; each step has its own bounded
+            // waits. A warm-up left running opened its next FixtureApp mid-test, whose reset cancelled that test's
+            // requests, and its assertions failed whichever test was running (TAL-2688).
+            while !finished { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05)) }
             for window in windows {
                 window.isHidden = true
                 window.rootViewController = nil
