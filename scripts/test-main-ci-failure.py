@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The CI repair session's failure report, needs-a-person issues, reads and merge, and the pull request failure report,
+"""The CI repair session's failure report, reads and merge, and the pull request failure report,
 over fake GitHub and a disposable repository; no live service is contacted."""
 
 import importlib.util
@@ -59,11 +59,11 @@ class FakeGitHub:
     GitHub does, and filter=all every attempt. Other runs are served by ID; any other path fails the test."""
 
     def __init__(self, jobs, annotations=None, run=None, runs=(), pulls=(), position="identical", logs=None,
-                 others=None, issues=()):
+                 others=None):
         self.jobs, self.annotations, self.paths, self.logs = jobs, annotations or {}, [], logs or {}
         self.run = main_run(**(run or {}))
         self.runs, self.pulls, self.position = list(runs), list(pulls), position
-        self.others, self.issues, self.sent = others or {}, [dict(item) for item in issues], []
+        self.others = others or {}
 
     def get(self, path):
         self.paths.append(path)
@@ -94,29 +94,13 @@ class FakeGitHub:
             return {"workflow_runs": self.runs}
         if "/pulls?" in path:
             return self.pulls
-        if (found := re.search(r"/issues\?per_page=100&page=(\d+)$", path)):
-            page = int(found.group(1))
-            return [item for item in self.issues if item.get("state", "open") == "open"][(page - 1) * 100:page * 100]
         raise AssertionError(path)
-
-    def send(self, method, path, body):
-        """Opens an issue as GitHub does: it gets the next number and the caller's association."""
-        self.sent.append((method, path, body))
-        assert (method, path) == ("POST", f"repos/{REPO}/issues"), (method, path)
-        issue = {"number": 100 + len(self.issues), "state": "open", "author_association": "OWNER", **body}
-        self.issues.append(issue)
-        return issue
 
     def log(self, job_id):
         self.paths.append(f"log {job_id}")
         if self.logs.get(job_id) is None and job_id in self.logs:
             raise subprocess.CalledProcessError(1, "gh", stderr="HTTP 410: logs are no longer available")
         return self.logs.get(job_id, "")
-
-
-def issue(number, body, association="OWNER"):
-    """An open issue as GitHub lists it: who opened it decides whether its marker counts."""
-    return {"number": number, "state": "open", "body": body, "author_association": association}
 
 
 def env(**overrides):
@@ -291,18 +275,13 @@ class ReportTests(unittest.TestCase):
         decision = self.decide(jobs=flaky_shard(passed=False), logs={4: FLAKY_LOG + second + FLAKY_LOG})
         self.assertEqual([fact["test"] for fact in decision["work"]],
                          [FLAKY, "TalariaTests/DuoFoldHostedTests/testRotatesTheFold"])
-        # A parked test beside a new failure no longer hides it.
-        decision = self.decide(jobs=flaky_shard(passed=False), logs={4: FLAKY_LOG + second},
-                               issues=[issue(10, f"ci-repair-known: {handoff.key(FLAKY)}")])
-        self.assertEqual([fact["test"] for fact in decision["work"]], ["TalariaTests/DuoFoldHostedTests/testRotatesTheFold"])
 
     def test_a_failing_spec_on_a_later_annotation_page_is_seen(self):
-        parked = {"annotation_level": "failure", "path": "web/packages/frontend/e2e/cache.spec.ts", "start_line": 12}
+        first = {"annotation_level": "failure", "path": "web/packages/frontend/e2e/cache.spec.ts", "start_line": 12}
         new = {"annotation_level": "failure", "path": "web/packages/frontend/e2e/login.spec.ts", "start_line": 7}
         decision = self.decide(jobs=[job(4, "web / frontend / e2e (3/6)", "failure", step="Run the browser tests")],
-                               annotations={4: [parked] * 100 + [new]},
-                               issues=[issue(10, f"ci-repair-known: {handoff.key('e2e/cache.spec.ts')}")])
-        self.assertEqual([fact["test"] for fact in decision["work"]], ["e2e/login.spec.ts:7"])
+                               annotations={4: [first] * 100 + [new]})
+        self.assertEqual([fact["test"] for fact in decision["work"]], ["e2e/cache.spec.ts:12", "e2e/login.spec.ts:7"])
 
     def test_every_failing_spec_in_one_playwright_shard_is_its_own_failure(self):
         notes = {4: [{"annotation_level": "failure", "path": "web/packages/frontend/e2e/cache.spec.ts", "start_line": 12},
@@ -311,10 +290,6 @@ class ReportTests(unittest.TestCase):
         jobs = [job(4, "web / frontend / e2e (3/6)", "failure", step="Run the browser tests")]
         self.assertEqual([fact["test"] for fact in self.decide(jobs=jobs, annotations=notes)["work"]],
                          ["e2e/cache.spec.ts:12", "e2e/login.spec.ts:7"])
-        # A parked spec beside a new failure no longer hides it.
-        parked = [issue(10, f"ci-repair-known: {handoff.key('e2e/cache.spec.ts')}")]
-        self.assertEqual([fact["test"] for fact in self.decide(jobs=jobs, annotations=notes, issues=parked)["work"]],
-                         ["e2e/login.spec.ts:7"])
 
     def test_an_unreadable_log_leaves_the_failure_keyed_by_its_job_and_step(self):
         decision = self.decide(jobs=flaky_shard(passed=False), logs={4: None})
@@ -337,27 +312,6 @@ class ReportTests(unittest.TestCase):
                 message = self.report(runs=runs, annotations={1: notes})["message"]
                 self.assertIn("tested every suite", message)
                 self.assertNotIn("/compare/", message)
-
-    def test_a_failure_with_an_open_needs_a_person_issue_is_known_not_repaired(self):
-        keys = [handoff.key(f"{name} › Run the suite") for name in SIDECAR]
-        known = [issue(10, f"ci-repair-known: {keys[0]}"), issue(11, f"Found\n\nci-repair-known: {keys[1]}")]
-        message = self.report(issues=known)["message"]
-        self.assertEqual(re.findall(r"^- \[([0-9a-f]{12})\]", message, re.M), [keys[2]])
-        self.assertIn(f"- Known, with open needs-a-person issue #11: [{keys[1]}] {SIDECAR[1]} › step 2.", message)
-        decision = self.report(issues=known + [issue(12, f"ci-repair-known: {keys[2]}")])
-        self.assertEqual(decision, {"action": "stop", "reason": "every failure has an open needs-a-person issue"})
-        # Only an issue a collaborator opened counts.
-        for association in ("NONE", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR"):
-            ignored = issue(12, f"ci-repair-known: {keys[2]}", association)
-            self.assertEqual(self.report(issues=known + [ignored])["action"], "work", association)
-
-    def test_a_parked_failure_reuses_its_open_issue_or_opens_one(self):
-        github = FakeGitHub([])
-        self.assertEqual(handoff.park(github, "0123456789ab", RUN), {"parked": 100})
-        self.assertIn("ci-repair-known: 0123456789ab", github.issues[0]["body"])
-        self.assertEqual(handoff.park(github, "0123456789ab", RUN + 1), {"parked": 100})
-        self.assertEqual(len(github.sent), 1)
-        self.assertEqual(handoff.park(github, "not-a-key", RUN)["action"], "stop")
 
 
 class LogTests(unittest.TestCase):
@@ -680,7 +634,7 @@ class DisposableRepository:
 
 
 class RepositoryGitHub(FakeGitHub):
-    """The disposable repository's GitHub: its run, its issues, one repair PR, CI Gate per commit, a squash merge."""
+    """The disposable repository's GitHub: its run, one repair PR, CI Gate per commit, a squash merge."""
 
     def __init__(self, repository, jobs):
         super().__init__(jobs, run={"head_sha": repository.main()})
@@ -713,8 +667,6 @@ class RepositoryGitHub(FakeGitHub):
 
     def send(self, method, path, body):
         self.paths.append(path)
-        if "/issues" in path:
-            return super().send(method, path, body)
         assert (method, path) == ("PUT", f"repos/{REPO}/pulls/{self.pull['number']}/merge"), path
         if body["sha"] != self.pull["head"]["sha"]:
             raise subprocess.CalledProcessError(1, "gh", stderr="HTTP 409: Head branch was modified")
@@ -1092,7 +1044,7 @@ class GuideTests(unittest.TestCase):
 
     def test_every_command_the_guide_names_is_one_the_script_takes(self):
         named = set(re.findall(r'python3 "\$S" (\w+)', self.GUIDE))
-        self.assertEqual(named, {"report", "park", "findings", "land"})
+        self.assertEqual(named, {"report", "findings", "land"})
         for command in named:
             with redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as exit:
                 handoff.main([command, "--help"])
