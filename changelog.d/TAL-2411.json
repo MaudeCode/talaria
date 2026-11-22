@@ -1,0 +1,1 @@
+{"skip": "CI tooling only: removes the unused macOS contention cap from the App test planner; no app behavior changes."}

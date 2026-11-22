@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Plan, select and prove the App's XCTest shards (TAL-1550, TAL-2390).
 
-  ci/hosted-test-shard plan LANE [CAPACITY]   print the shard plan (JSON) for a hosted lane of
-                                              `scripts/changed-components.py --app-plan`; CAPACITY is `capacity`'s output
-  ci/hosted-test-shard capacity               observe competing pull request demand for macOS runners (JSON); read-only
+  ci/hosted-test-shard plan LANE              print the shard plan (JSON) for a hosted lane of
+                                              `scripts/changed-components.py --app-plan`
   ci/hosted-test-shard args SHARD             print one shard's xcodebuild selection, one argument per line
   ci/hosted-test-shard prepare-options SHARD  print scripts/prepare-ui-simulator's options for one shard
   ci/hosted-test-shard cases RESULTS          print the test cases an `xcresulttool get test-results tests` JSON or an
@@ -51,9 +50,7 @@ import heapq
 import json
 import os
 import re
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -63,14 +60,7 @@ import app_test_plan  # noqa: E402
 TARGET = app_test_plan.HOSTED
 WEIGHTS = HERE / "hosted-test-weights.json"
 MAX_SHARDS = 4  # Five hosted macOS slots: one build and four simulators.
-SLOTS = 5
 WITHIN = 1.10  # The fewest shards predicted to finish within 10% of the fastest width.
-# Under verified competing pull request demand, at most three shards beside the build leave a slot for the other head.
-# "observe" records that decision without applying it; "enforce" applies it. Enforce once paired measurements show a
-# lower time to green across the contending heads (TAL-2390).
-CONTENTION_POLICY = "observe"
-CONTENTION_MAX = 3
-STALE_SECONDS = 120
 # Repeats of a pull request's added and changed tests (TAL-2402). The budgets keep the repeats inside the time a pull
 # request already spends: in benchmark run 44224379174 the 90 s repeat shard's test step took 156 s beside its lane
 # shard's 127 s, and the 60 s package repeat job finished with the App build (about 400 s each). There, a 15 s hosted
@@ -172,20 +162,7 @@ def finish(loads, slots, timeline):
     return round(last, 1)
 
 
-def policy(capacity):
-    """The maximum width and why, from a capacity observation."""
-    observed = capacity or {"status": "unavailable", "reason": "no observation"}
-    contended = observed.get("status") == "contended"
-    if contended and time.time() - observed.get("observed_at", 0) > STALE_SECONDS:
-        observed = {**observed, "status": "stale"}
-        contended = False
-    cap = CONTENTION_MAX if contended else MAX_SHARDS
-    applied = cap if CONTENTION_POLICY == "enforce" else MAX_SHARDS
-    return applied, {"policy": CONTENTION_POLICY, "observed": observed.get("status"), "would_cap": cap, "max_width": applied,
-                     "competing": observed.get("competing", []), "reason": observed.get("reason", "")}
-
-
-def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS, reserved=0, native=None):
+def plan(lane, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS, reserved=0, native=None):
     """The shard plan for a hosted lane. `table` defaults to hosted-test-weights.json and a full lane's `classes` to the
     checkout's; `at_once` is how many shards the workflow runs at a time (a release runs two). `reserved` counts the
     run's other macOS jobs beside the build (a package repeat job), which leave the shards fewer of the five slots.
@@ -201,13 +178,12 @@ def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=M
     identifiers = [] if empty else [f"{TARGET}/{cls}" for cls in (classes if classes is not None else discover())] \
         if full else lane["identifiers"]
     duo_planned, duo_left_out = (native or duo)(identifiers) if identifiers and repetitions == 1 else ([], {})
-    limit, decision = policy(capacity)
-    limit = max(1, min(limit, MAX_SHARDS - reserved - (1 if repeat else 0) - (1 if duo_planned else 0)))
+    limit = max(1, MAX_SHARDS - reserved - (1 if repeat else 0) - (1 if duo_planned else 0))
     if repetitions > 1:
         limit = 1  # A focused investigation repeats its selection on one runner.
     if empty:
         return {"target": TARGET, "mode": "empty", "partial": True, "width": 0, "shards": [repeat_shard(repeat, 1, table)],
-                "candidates": [], "capacity": decision, "fallbacks": [],
+                "candidates": [], "fallbacks": [],
                 "startup": {"overlapping_build": 0, "beyond_build": 0}}
     grouped = groups(identifiers, table)
     slots = min(limit, at_once)
@@ -240,7 +216,7 @@ def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=M
         entries.append(duo_shard(duo_planned, duo_left_out, len(entries) + 1, table))
     timeline = table["timeline"]
     return {"target": TARGET, "mode": lane["mode"], "partial": not full, "width": width, "shards": entries,
-            "candidates": candidates, "capacity": decision,
+            "candidates": candidates,
             "fallbacks": sorted(cls for cls, (_, _, measured) in grouped.items() if not measured),
             "startup": {"overlapping_build": min(timeline["startup"], timeline["artifact"] + timeline["download"]),
                         "beyond_build": max(0, timeline["startup"] - timeline["artifact"] - timeline["download"])}}
@@ -288,9 +264,6 @@ def describe(result):
                  f"~{startup['beyond_build']} s extends the critical path")
     if result["fallbacks"]:
         lines.append(f"- Fallback weights for: {', '.join(result['fallbacks'])}")
-    capacity = result["capacity"]
-    lines.append(f"- Capacity: {capacity['observed']}; policy {capacity['policy']} would cap at {capacity['would_cap']}, "
-                 f"max width {capacity['max_width']}" + (f" ({capacity['reason']})" if capacity["reason"] else ""))
     return "\n".join(lines)
 
 
@@ -534,42 +507,6 @@ def package_repeat(result):
     return ["--repeat", str(PACKAGE_REPEAT_ATTEMPTS), "--budget", str(PACKAGE_REPEAT_BUDGET), *identifiers]
 
 
-def capacity(repository, run_id, timeout=20):
-    """Read-only: another live pull request's ci.yml run with a queued macOS job. Never waits, never raises."""
-    started = time.time()
-
-    def api(path):
-        remaining = timeout - (time.time() - started)
-        if remaining <= 0:
-            raise TimeoutError("capacity lookup ran out of time")
-        output = subprocess.run(["gh", "api", "-H", "Cache-Control: no-cache", path], capture_output=True, text=True,
-                                timeout=remaining, check=True).stdout
-        return json.loads(output)
-
-    observation = {"observed_at": int(time.time()), "slots": SLOTS, "competing": []}
-    try:
-        runs = []
-        for status in ("queued", "in_progress"):
-            runs += api(f"repos/{repository}/actions/workflows/ci.yml/runs?event=pull_request&status={status}&per_page=30")["workflow_runs"]
-        live = {}  # A pull request's newest run; its concurrency group cancels the older ones.
-        for run in runs:
-            if str(run["id"]) != str(run_id) and run.get("pull_requests"):
-                number = run["pull_requests"][0]["number"]
-                if number not in live or run["id"] > live[number]["id"]:
-                    live[number] = run
-        for number, run in sorted(live.items())[:10]:
-            jobs = api(f"repos/{repository}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100")["jobs"]
-            queued = [job for job in jobs if job["status"] == "queued" and any(
-                label == "xcode-27" or label.startswith("macos") for label in job.get("labels", []))]
-            if queued:
-                observation["competing"].append({"run": run["id"], "pull_request": number, "head": run["head_sha"],
-                                                 "job": queued[0]["name"], "queued_at": queued[0].get("created_at")})
-        observation["status"] = "contended" if observation["competing"] else "quiet"
-    except (OSError, ValueError, KeyError, IndexError, TimeoutError, subprocess.SubprocessError) as error:
-        observation.update(status="unavailable", reason=f"{type(error).__name__}: {error}"[:200])
-    return observation
-
-
 def receipts(directory, suffix):
     return {int(path.name.removeprefix("shard-").removesuffix(suffix)): path for path in Path(directory).glob(f"shard-*{suffix}")}
 
@@ -578,14 +515,11 @@ def main(argv):
     command, *values = argv
     if command == "plan":
         lane = json.loads(Path(values[0]).read_text())
-        observed = json.loads(Path(values[1]).read_text()) if len(values) > 1 else None
-        result = plan(lane, capacity=observed, repetitions=int(os.environ.get("REPETITIONS", "1")),
+        result = plan(lane, repetitions=int(os.environ.get("REPETITIONS", "1")),
                       at_once=int(os.environ.get("SHARDS_AT_ONCE", str(MAX_SHARDS))),
                       reserved=int(os.environ.get("RESERVED_SLOTS", "0")))
         print(describe(result), file=sys.stderr)
         print(json.dumps(result, separators=(",", ":")))
-    elif command == "capacity":
-        print(json.dumps(capacity(os.environ["GITHUB_REPOSITORY"], os.environ.get("GITHUB_RUN_ID", ""))))
     elif command == "args":
         print("\n".join(selection(json.loads(Path(values[0]).read_text()))))
     elif command == "prepare-options":
