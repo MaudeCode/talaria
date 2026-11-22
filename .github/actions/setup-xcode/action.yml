@@ -4,7 +4,8 @@
 #     xcode-version: "27.1"   # major.minor; optional, defaults to 27.1
 # Selects that Xcode with maxim-lobanov/setup-xcode, then fails unless xcodebuild reports the same major.minor;
 # there is no fallback to another version. It prints `xcodebuild -version`, the iOS SDK and the simulator runtimes,
-# and exports IOS_SIMULATOR_OS: the newest SDK-compatible runtime with the iPhone 17 used by CI and contract jobs.
+# and exports IOS_SIMULATOR_OS: the newest SDK-compatible runtime with the iPhone 17 used by CI and contract jobs, and
+# IOS_SIMULATOR_DUO_OS: the newest SDK-compatible runtime that supports the iPhone Duo, or empty.
 # It also puts bash 5 first on PATH (setup-bash), which the App's scripts need.
 # The image can ship a newer runtime with only a different device, so build and test select the same usable runtime.
 name: Set up Xcode
@@ -45,3 +46,12 @@ runs:
           || { echo "::error::No installed iOS simulator runtime with an available iPhone 17 can run the iOS ${sdk} SDK"; exit 1; }
         echo "iOS simulator runtime ${simulator_os}"
         echo "IOS_SIMULATOR_OS=${simulator_os}" >> "$GITHUB_ENV"
+        # The native Duo shard's runtime (TAL-1456): the newest the SDK runs that supports the iPhone Duo, whether or not
+        # the image created one. Empty when none does; that shard then skips.
+        duo_os=$(xcrun simctl list runtimes --json | jq -r --arg sdk "$sdk" '
+          def version: split(".") | map(tonumber) | .[:2];
+          [.runtimes[] | select(.isAvailable and (.identifier | startswith("com.apple.CoreSimulator.SimRuntime.iOS-")))
+           | select(any(.supportedDeviceTypes[]?; .identifier == "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo"))
+           | .version | select(version <= ($sdk | version))] | max_by(version) // empty | version | map(tostring) | join(".")')
+        echo "iPhone Duo runtime ${duo_os:-none}"
+        echo "IOS_SIMULATOR_DUO_OS=${duo_os}" >> "$GITHUB_ENV"

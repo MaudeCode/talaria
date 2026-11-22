@@ -112,9 +112,13 @@ class PlanTests(unittest.TestCase):
     def test_a_full_plan_runs_every_hosted_class_of_this_checkout(self):
         classes = shard.discover()
         result = shard.plan({"mode": "full", "identifiers": ["TalariaTests"]})
-        self.assertEqual(sorted(name.split("/")[1] for name in planned(result)), classes)
+        *lanes, native = result["shards"]
+        self.assertEqual(sorted(name.split("/")[1] for entry in lanes for name in entry["planned"]), classes)
         self.assertIn("SessionListHostedTests", classes)
-        self.assertEqual(result["width"], 4)
+        # The native Duo shard takes the fifth slot beside the build; its known failures stay out, named by ticket.
+        self.assertEqual(result["width"], 3)
+        self.assertTrue(native["duo"] and native["planned"])
+        self.assertEqual(native["skip"], sorted(shard.app_test_plan.DUO_KNOWN_FAILURES))
 
 
 class CapacityTests(unittest.TestCase):
@@ -297,6 +301,66 @@ class RepeatTests(unittest.TestCase):
             with self.subTest(name):
                 last = shard.plan({"mode": "empty", "identifiers": [], "repeat": repeat}, table=table)["shards"][-1]
                 self.assertEqual(last["repetitions"], attempts)
+
+    def test_native_duo_tests_get_their_own_shard_within_the_five_slots(self):
+        native = (["TalariaTests/Heavy1/testSlow", "TalariaTests/Split"], {"TalariaTests/Split/testKnown": "TAL-2563"})
+        four = lane("Heavy1", "Heavy2", "Heavy3", "Heavy4")
+        cases = [
+            # Four heavy classes alone take four shards; beside the Duo shard at most three, and two finish as early.
+            ("the lane gives up a shard for the Duo", four, {}, 2),
+            ("beside the repeats too", {**four, "repeat": ["TalariaTests/Heavy2/testX"]}, {}, 2),
+            ("repeated attempts add none", four, {"repetitions": 2}, 1),
+            ("a lane with no native Duo test adds none", four, {"native": lambda identifiers: ([], {})}, 4),
+        ]
+        for name, selected, options, width in cases:
+            with self.subTest(name):
+                result = shard.plan(selected, table=TABLE, **{"native": lambda identifiers: native, **options})
+                self.assertEqual(result["width"], width)
+                self.assertLessEqual(len(result["shards"]), shard.MAX_SHARDS)
+                duo = [entry for entry in result["shards"] if entry.get("duo")]
+                if name.startswith(("the lane", "beside")):
+                    self.assertEqual(duo[0]["shard"], len(result["shards"]))
+                    self.assertEqual(shard.selection(duo[0]), ["-only-testing:TalariaTests/Heavy1/testSlow",
+                                                               "-only-testing:TalariaTests/Split",
+                                                               "-skip-testing:TalariaTests/Split/testKnown"])
+                else:
+                    self.assertEqual(duo, [])
+
+    def test_the_native_duo_shard_is_proved_on_its_own_or_reports_its_skip(self):
+        result = shard.plan(lane("Heavy1", "Split"), table=TABLE,
+                            native=lambda identifiers: (["TalariaTests/Split"], {"TalariaTests/Split/testKnown": "TAL-2563"}))
+        duo = result["shards"][-1]["shard"]
+        # The Duo tests also ran, and skipped, on the lane's iPhone 17 shard.
+        lane_ran = {entry["shard"]: [f"{identifier}/testA" if identifier.count("/") == 1 else identifier
+                                     for identifier in entry["planned"]] for entry in result["shards"][:-1]}
+        lane_ran = {number: cases + (["TalariaTests/Split/testKnown"] if "TalariaTests/Split/testA" in cases else [])
+                    for number, cases in lane_ran.items()}
+        lines = shard.check(result, {**lane_ran, duo: ["TalariaTests/Split/testA", "TalariaTests/Split/testB"]})
+        self.assertEqual(lines[-1], f"- Native iPhone Duo shard {duo}: 2 test case(s) for 1 planned identifier(s); "
+                                    "left out TalariaTests/Split/testKnown (TAL-2563)")
+        skipped = shard.check(result, lane_ran, {duo: "no Duo runtime"})
+        self.assertEqual(skipped[-1], f"- Native iPhone Duo shard {duo}: skipped, no Duo runtime")
+        broken = {
+            "has no receipt and no skip reason": {},
+            "ran unplanned TalariaTests/Split/testKnown": {duo: ["TalariaTests/Split/testA", "TalariaTests/Split/testKnown"]},
+            "ran unplanned TalariaTests/Heavy1/testA": {duo: ["TalariaTests/Split/testA", "TalariaTests/Heavy1/testA"]},
+            "TalariaTests/Split/testA ran 2 times": {duo: ["TalariaTests/Split/testA"] * 2},
+        }
+        for message, receipt in broken.items():
+            with self.subTest(message), self.assertRaisesRegex(ValueError, message):
+                shard.check(result, {**lane_ran, **receipt})
+
+    def test_the_native_duo_proof_names_its_device_and_each_outcome(self):
+        entry = {"shard": 4, "known_failures": {"TalariaTests/B/testKnown": "TAL-2563"}}
+        results = self.bundle(("B/testOne()", [("Passed",)]), ("B/testTwo()", [("Skipped",)]))
+        device = {"name": "iPhone Duo", "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo",
+                  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-1", "udid": "DUO-UDID"}
+        self.assertEqual(shard.native(entry, results, device), [
+            "### Native iPhone Duo shard 4",
+            "- Device: iPhone Duo (com.apple.CoreSimulator.SimDeviceType.iPhone-Duo), "
+            "com.apple.CoreSimulator.SimRuntime.iOS-27-1, DUO-UDID",
+            "- Passed: 1", "- Skipped: 1", "  - TalariaTests/B/testTwo",
+            "- Left out: TalariaTests/B/testKnown, a known Duo failure (TAL-2563)"])
 
     def test_the_lane_gate_leaves_out_the_repeat_receipt(self):
         result = shard.plan({**lane("Heavy1"), "repeat": ["TalariaTests/Heavy1/testSlow"]}, table=TABLE)

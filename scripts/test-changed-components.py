@@ -23,6 +23,9 @@ spec.loader.exec_module(routing)
 spec = importlib.util.spec_from_file_location("web_browser_plan", SCRIPT.with_name("web_browser_plan.py"))
 browser = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(browser)
+spec = importlib.util.spec_from_file_location("app_test_plan", SCRIPT.with_name("app_test_plan.py"))
+app_plan = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(app_plan)
 MAX_SPECS = browser.MAX_SPECS
 ALL = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "web_sidecar", "relay", "contracts"}
@@ -985,6 +988,56 @@ BROWSER_SOURCES = {
     "e2e/uses-shared.spec.ts": "import { s } from './shared.spec'\n",
     "e2e/uses-unit.spec.ts": "import { shared } from '../src/lib/shared.test.js'\n",
 }
+
+
+class NativeDuoTests(unittest.TestCase):
+    """The hosted tests only a native iPhone Duo runs, and the Duo shard's share of a lane (TAL-1456)."""
+
+    SOURCES = {"app/TalariaTests/BarTests.swift": """import XCTest
+final class BarTests: XCTestCase {
+    func testReadsTheBar() { XCTAssertEqual(window.traitCollection.verticalBarEdge, .leading) }
+    func testKnown() { XCTAssertEqual(window.traitCollection.verticalBarEdge, .trailing) }
+    func testPlain() { XCTAssertTrue(true) }
+}
+""", "app/TalariaTests/ArrangedTests.swift": """import XCTest
+final class ArrangedTests: XCTestCase {
+    private func arranged() throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Needs iOS 27.1") }
+    }
+    func testArranged() throws { try arranged() }
+    func testOlderRuntime() throws { guard #available(iOS 27.0, *) else { throw XCTSkip("Needs iOS 27") } }
+    func testNoSkip() { guard #available(iOS 27.1, *) else { return } }
+}
+"""}
+
+    def setUp(self):
+        self.universe = app_plan.Universe("TalariaTests", self.SOURCES)
+        known = {"TalariaTests/BarTests/testKnown": "TAL-1"}
+        patcher = mock.patch.object(app_plan, "DUO_KNOWN_FAILURES", known)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_test_reading_the_bar_or_skipping_below_the_duo_runtime_needs_the_duo(self):
+        self.assertEqual(sorted(app_plan.native_duo(self.universe)), [
+            "TalariaTests/ArrangedTests/testArranged", "TalariaTests/BarTests/testKnown", "TalariaTests/BarTests/testReadsTheBar"])
+
+    def test_the_duo_shard_takes_the_lanes_native_tests_and_leaves_out_known_failures(self):
+        cases = [
+            ("a full lane", ["TalariaTests"], ["TalariaTests/ArrangedTests/testArranged", "TalariaTests/BarTests/testReadsTheBar"],
+             {"TalariaTests/BarTests/testKnown": "TAL-1"}),
+            ("a class", ["TalariaTests/ArrangedTests"], ["TalariaTests/ArrangedTests/testArranged"], {}),
+            ("a native method", ["TalariaTests/BarTests/testReadsTheBar"], ["TalariaTests/BarTests/testReadsTheBar"], {}),
+            ("only a known failure", ["TalariaTests/BarTests/testKnown"], [], {"TalariaTests/BarTests/testKnown": "TAL-1"}),
+            ("an unrelated test", ["TalariaTests/BarTests/testPlain", "TalariaTests/ArrangedTests/testNoSkip"], [], {}),
+        ]
+        for name, lane, planned, left_out in cases:
+            with self.subTest(name):
+                self.assertEqual(app_plan.duo_selection(self.universe, lane), (planned, left_out))
+
+    def test_a_known_failure_the_tree_no_longer_has_is_stale(self):
+        with mock.patch.object(app_plan, "DUO_KNOWN_FAILURES", {"TalariaTests/BarTests/testGone": "TAL-1"}), \
+                self.assertRaisesRegex(app_plan.Uncertain, "testGone .TAL-1. is not in the tested tree"):
+            app_plan.duo_selection(self.universe, ["TalariaTests/BarTests"])
 
 
 class BrowserPlanTests(unittest.TestCase):

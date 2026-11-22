@@ -43,6 +43,12 @@ scripts/select-ios-simulator   # finds an iPhone Duo, or creates one on the newe
 scripts/test-ios TalariaTests/ComposerChipLayoutTests
 ```
 
+CI runs the hosted tests that need the native Duo, as selected by the diff, in the
+**App native Duo tests** shard, on a Duo `scripts/select-ios-simulator` finds or
+creates at setup-xcode's `IOS_SIMULATOR_DUO_OS`; a runner image without one skips
+that shard with its reason. See
+[Native iPhone Duo tests in CI](../DEVELOPMENT.md#native-iphone-duo-tests-in-ci).
+
 ### Set a Duo posture
 
 `scripts/duo-pose <udid|booted> <open|closed|book|rotate-right> [--screenshot <path>]`

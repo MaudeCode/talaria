@@ -10,7 +10,10 @@
                                               XCTest log (swift test's output) ran, as Target/Class/method lines
   ci/hosted-test-shard check PLAN DIR         require DIR's shard-N.txt receipts to match PLAN: every planned identifier
                                               ran, in its own shard, exactly once, and nothing else ran. An App test plan
-                                              checks its explicit TalariaKitTests lane as one shard
+                                              checks its explicit TalariaKitTests lane as one shard. The native Duo
+                                              shard is checked on its own, or reports DIR's shard-N.skipped reason
+  ci/hosted-test-shard native SHARD RESULTS DEVICE
+                                              print the native Duo shard's device and each test case's outcome there
   ci/hosted-test-shard filter PLAN            print the anchored `swift test --filter` for an App test plan's explicit
                                               TalariaKitTests lane
   ci/hosted-test-shard report PLAN DIR        print each shard's estimate beside its actual test time (DIR/shard-N.time)
@@ -36,8 +39,14 @@ A pull request's lane also lists the test methods its diff added or changed (`re
 the repeat shard: it runs them up to REPEAT_ATTEMPTS times on one simulator beside the lane's shards, stopping at the first
 failure or once REPEAT_BUDGET seconds of testing are spent after the first complete attempt. It is a detector, not a
 retry: any failing attempt fails it. Its receipts prove nothing for the lane, so the lane's gate leaves it out.
+
+A lane that selects tests only a native iPhone Duo runs (app_test_plan.native_duo, TAL-1456) also gets the native Duo
+shard: those tests on an iPhone Duo at the newest runtime the SDK runs that supports it, beside the lane's iPhone 17
+shards, where they skip. It takes a slot as the repeat shard does, leaves out the known Duo failures with their tickets,
+and the gate proves it on its own; a runner image without a compatible Duo skips it with the reason.
 """
 
+import functools
 import heapq
 import json
 import os
@@ -85,18 +94,32 @@ def weights():
     return json.loads(WEIGHTS.read_text())
 
 
-def discover(root=HERE.parents[1]):
-    """The hosted target's concrete test classes at the checkout under `root`."""
+@functools.cache
+def universe(root=HERE.parents[1]):
+    """The hosted target's declarations at the checkout under `root`, read once per process."""
     cwd = os.getcwd()
     os.chdir(root)
     try:
-        planner = app_test_plan.Planner("HEAD", None, app_test_plan.Tree(None))
-        universe = planner.universe(TARGET)
+        found = app_test_plan.Planner("HEAD", None, app_test_plan.Tree(None)).universe(TARGET)
     finally:
         os.chdir(cwd)
-    if not isinstance(universe, app_test_plan.Universe):
-        raise ValueError(str(universe))
-    return sorted(identifier.split("/")[1] for identifier in universe.whole(universe.test_classes))
+    if not isinstance(found, app_test_plan.Universe):
+        raise ValueError(str(found))
+    return found
+
+
+def discover(root=HERE.parents[1]):
+    """The hosted target's concrete test classes at the checkout under `root`."""
+    found = universe(root)
+    return sorted(identifier.split("/")[1] for identifier in found.whole(found.test_classes))
+
+
+def duo(identifiers, root=HERE.parents[1]):
+    """(planned, {left out: ticket}) for the native Duo shard of a lane's identifiers at the checkout under `root`."""
+    try:
+        return app_test_plan.duo_selection(universe(root), identifiers)
+    except app_test_plan.Uncertain as error:
+        raise ValueError(str(error)) from error
 
 
 def groups(identifiers, table):
@@ -162,25 +185,30 @@ def policy(capacity):
                      "competing": observed.get("competing", []), "reason": observed.get("reason", "")}
 
 
-def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS, reserved=0):
+def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS, reserved=0, native=None):
     """The shard plan for a hosted lane. `table` defaults to hosted-test-weights.json and a full lane's `classes` to the
     checkout's; `at_once` is how many shards the workflow runs at a time (a release runs two). `reserved` counts the
-    run's other macOS jobs beside the build (a package repeat job), which leave the shards fewer of the five slots."""
+    run's other macOS jobs beside the build (a package repeat job), which leave the shards fewer of the five slots.
+    `native` maps the lane's identifiers to the native Duo shard's (planned, {left out: ticket}); it defaults to `duo` at
+    the checkout."""
     table = table or weights()
     full = lane["mode"] == "full"
     repeat = sorted(lane.get("repeat") or []) if repetitions == 1 else []
     empty = lane["mode"] == "empty" or not lane.get("identifiers")
     if empty and not repeat:
         raise ValueError("an empty lane has no shards; the workflow skips the simulators")
+    # Repeated attempts and a repeat-only run add no native Duo shard.
+    identifiers = [] if empty else [f"{TARGET}/{cls}" for cls in (classes if classes is not None else discover())] \
+        if full else lane["identifiers"]
+    duo_planned, duo_left_out = (native or duo)(identifiers) if identifiers and repetitions == 1 else ([], {})
     limit, decision = policy(capacity)
-    limit = max(1, min(limit, MAX_SHARDS - reserved - (1 if repeat else 0)))
+    limit = max(1, min(limit, MAX_SHARDS - reserved - (1 if repeat else 0) - (1 if duo_planned else 0)))
     if repetitions > 1:
         limit = 1  # A focused investigation repeats its selection on one runner.
     if empty:
         return {"target": TARGET, "mode": "empty", "partial": True, "width": 0, "shards": [repeat_shard(repeat, 1, table)],
                 "candidates": [], "capacity": decision, "fallbacks": [],
                 "startup": {"overlapping_build": 0, "beyond_build": 0}}
-    identifiers = [f"{TARGET}/{cls}" for cls in (classes if classes is not None else discover())] if full else lane["identifiers"]
     grouped = groups(identifiers, table)
     slots = min(limit, at_once)
     widths = range(1, min(limit, len(grouped)) + 1)
@@ -208,6 +236,8 @@ def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=M
         })
     if repeat:
         entries.append(repeat_shard(repeat, len(entries) + 1, table))
+    if duo_planned:
+        entries.append(duo_shard(duo_planned, duo_left_out, len(entries) + 1, table))
     timeline = table["timeline"]
     return {"target": TARGET, "mode": lane["mode"], "partial": not full, "width": width, "shards": entries,
             "candidates": candidates, "capacity": decision,
@@ -226,6 +256,16 @@ def repeat_shard(identifiers, number, table):
             "estimate": REPEAT_BUDGET, "repetitions": repetitions, "repeat": True, "budget": REPEAT_BUDGET}
 
 
+def duo_shard(identifiers, left_out, number, table):
+    """The native iPhone Duo shard: its tests also run, and skip, on the lane's iPhone 17 shards, so the lane's gate
+    leaves its receipt out and proves it on its own. Its estimate is the iPhone 17's measured time, where most skip."""
+    return {"shard": number, "target": TARGET, "planned": identifiers, "catch_all": False, "only": identifiers,
+            "skip": sorted(left_out), "known_failures": left_out,
+            "notifications": any(identifier.split("/")[1] in NOTIFICATION_CLASSES for identifier in identifiers),
+            "estimate": round(sum(seconds for _, seconds, _ in groups(identifiers, table).values()), 1),
+            "repetitions": 1, "duo": True}
+
+
 def describe(result):
     lines = [f"### Hosted test plan: {result['mode']}, {result['width']} shard(s)"]
     for candidate in result["candidates"]:
@@ -236,6 +276,10 @@ def describe(result):
         if shard.get("repeat"):
             lines.append(f"- Shard {shard['shard']} repeats {len(shard['planned'])} added or changed test(s): up to "
                          f"{shard['repetitions']} attempts within {shard['budget']} s, stopping at the first failure")
+            continue
+        if shard.get("duo"):
+            lines.append(f"- Shard {shard['shard']} runs {len(shard['planned'])} native iPhone Duo identifier(s)"
+                         + "".join(f"; leaves out {known} ({ticket})" for known, ticket in shard["known_failures"].items()))
             continue
         lines.append(f"- Shard {shard['shard']}: {len(shard['planned'])} identifier(s), ~{shard['estimate']:.0f} s"
                      + (", plus any class the scanner missed" if shard["catch_all"] else ""))
@@ -265,26 +309,31 @@ def prepare_options(shard):
 def cases(path):
     """Target/Class/method for every test case a result file records, once per run (repetitions repeat it)."""
     text = Path(path).read_text(errors="replace")
-    found = []
     if not text.lstrip().startswith("{"):  # An XCTest log; swift test writes no XCTest xUnit report without --parallel.
         return [f"{target}/{cls}/{method}" for target, cls, method in LOGGED.findall(text)]
+    return [case for case, node in test_cases(json.loads(text)) for _ in range(max(1, len(repetitions(node))))]
 
+
+def test_cases(results):
+    """(Target/Class/method, its node) for every test case in an `xcresulttool get test-results tests` JSON."""
     def visit(node, target):
         kind = node.get("nodeType")
         if kind == "Unit test bundle":
             target = node.get("name")
         if kind == "Test Case":
             match = RESULT.match(node.get("nodeIdentifier", ""))
-            repeats = [child for child in node.get("children", []) if child.get("nodeType") == "Repetition"]
             if match and target:
-                found.extend([f"{target}/{match['class']}/{match['method']}"] * max(1, len(repeats)))
+                yield f"{target}/{match['class']}/{match['method']}", node
             return
         for child in node.get("children", []):
-            visit(child, target)
+            yield from visit(child, target)
 
-    for root in json.loads(text).get("testNodes", []):
-        visit(root, None)
-    return found
+    for root in results.get("testNodes", []):
+        yield from visit(root, None)
+
+
+def repetitions(node):
+    return [child for child in node.get("children", []) if child.get("nodeType") == "Repetition"]
 
 
 def package_shards(result):
@@ -310,11 +359,15 @@ def swift_filter(result):
     return "|".join(patterns)
 
 
-def check(result, ran):
-    """`ran` maps each shard number to the Target/Class/method cases it ran. Returns the summary lines. The repeat shard
-    proves nothing for the lane: its receipt is left out, and `repeated` judges it in its own job."""
+def check(result, ran, skipped=None):
+    """`ran` maps each shard number to the Target/Class/method cases it ran, and `skipped` a skipped native Duo shard's
+    number to its reason. Returns the summary lines. The repeat shard proves nothing for the lane: its receipt is left
+    out, and `repeated` judges it in its own job. The native Duo shard's tests also ran on the lane's shards, so it is
+    proved on its own."""
     result = package_shards(result)
-    expected = {shard["shard"]: shard for shard in result["shards"] if not shard.get("repeat")}
+    expected = {shard["shard"]: shard for shard in result["shards"] if not shard.get("repeat") and not shard.get("duo")}
+    native = [check_duo(shard, ran.get(shard["shard"]), (skipped or {}).get(shard["shard"]))
+              for shard in result["shards"] if shard.get("duo")]
     ran = {number: cases for number, cases in ran.items() if number in expected or
            not any(shard["shard"] == number for shard in result["shards"])}
     if sorted(ran) != sorted(expected):
@@ -351,6 +404,47 @@ def check(result, ran):
         lines.append(f"- The catch-all shard also ran unplanned {', '.join(sorted(extra_classes))}")
     kind = "selected (partial: not full-suite evidence)" if result.get("partial") else "full suite"
     lines.append(f"- Every planned identifier ran exactly once across {len(expected)} shard(s): {kind}.")
+    return lines + native
+
+
+def check_duo(shard, executed, skipped):
+    """The native Duo shard's summary line: skipped with its reason, or every planned identifier ran once there and
+    nothing else, its known failures included."""
+    number = shard["shard"]
+    if skipped is not None:
+        return f"- Native iPhone Duo shard {number}: skipped, {skipped}"
+    if not executed:
+        raise ValueError(f"native Duo shard {number} has no receipt and no skip reason")
+    counts = {case: executed.count(case) for case in executed}
+    repeated = sorted(case for case, count in counts.items() if count > 1)
+    if repeated:
+        raise ValueError(f"{repeated[0]} ran {counts[repeated[0]]} times in native Duo shard {number}")
+    for identifier in shard["planned"]:
+        if not any(case == identifier or case.startswith(identifier + "/") for case in counts):
+            raise ValueError(f"native Duo shard {number} ran nothing for planned {identifier}")
+    planned = set(shard["planned"])
+    unexpected = sorted(case for case in counts if case not in planned and case.rsplit("/", 1)[0] not in planned
+                        or case in shard["skip"])
+    if unexpected:
+        raise ValueError(f"native Duo shard {number} ran unplanned {', '.join(unexpected[:5])}")
+    left_out = "".join(f"; left out {known} ({ticket})" for known, ticket in shard["known_failures"].items())
+    return f"- Native iPhone Duo shard {number}: {len(counts)} test case(s) for {len(planned)} planned identifier(s){left_out}"
+
+
+def native(shard, results, device):
+    """The native Duo shard's destination proof: the device it ran on and each test case's outcome there, apart from
+    the iPhone 17 shards' skips. `device` is the simulator's `simctl list devices --json` entry with its runtime."""
+    outcomes = {}
+    for case, node in test_cases(results):
+        outcomes.setdefault(node.get("result", "unknown"), []).append(case)
+    lines = [f"### Native iPhone Duo shard {shard['shard']}",
+             f"- Device: {device.get('name')} ({device.get('deviceTypeIdentifier')}), {device.get('runtime')}, "
+             f"{device.get('udid')}"]
+    for outcome in sorted(outcomes):
+        lines.append(f"- {outcome}: {len(outcomes[outcome])}")
+        if outcome != "Passed":
+            lines += [f"  - {case}" for case in sorted(outcomes[outcome])]
+    lines += [f"- Left out: {known}, a known Duo failure ({ticket})" for known, ticket in shard["known_failures"].items()]
     return lines
 
 
@@ -399,25 +493,11 @@ def attempts(path, stopped=False):
     """{case: (completed attempts, first failing attempt or None)} from an xcresulttool test-results JSON. `stopped`: a
     time budget interrupted the run, so a last attempt failed only by that cancellation never completed."""
     found = {}
-
-    def visit(node, target):
-        kind = node.get("nodeType")
-        if kind == "Unit test bundle":
-            target = node.get("name")
-        if kind == "Test Case":
-            match = RESULT.match(node.get("nodeIdentifier", ""))
-            runs = [child for child in node.get("children", []) if child.get("nodeType") == "Repetition"] or [node]
-            if stopped and canceled(runs[-1]):
-                runs = runs[:-1]
-            failing = next((index for index, run in enumerate(runs, start=1) if run.get("result") == "Failed"), None)
-            if match and target:
-                found[f"{target}/{match['class']}/{match['method']}"] = (len(runs), failing)
-            return
-        for child in node.get("children", []):
-            visit(child, target)
-
-    for root in json.loads(Path(path).read_text()).get("testNodes", []):
-        visit(root, None)
+    for case, node in test_cases(json.loads(Path(path).read_text())):
+        runs = repetitions(node) or [node]
+        if stopped and canceled(runs[-1]):
+            runs = runs[:-1]
+        found[case] = (len(runs), next((index for index, run in enumerate(runs, start=1) if run.get("result") == "Failed"), None))
     return found
 
 
@@ -515,7 +595,11 @@ def main(argv):
     elif command == "check":
         result = json.loads(Path(values[0]).read_text())
         ran = {number: path.read_text().split() for number, path in receipts(values[1], ".txt").items()}
-        print("\n".join(check(result, ran)))
+        skipped = {number: path.read_text().strip() for number, path in receipts(values[1], ".skipped").items()}
+        print("\n".join(check(result, ran, skipped)))
+    elif command == "native":
+        print("\n".join(native(json.loads(Path(values[0]).read_text()), json.loads(Path(values[1]).read_text()),
+                               json.loads(Path(values[2]).read_text()))))
     elif command == "filter":
         print(swift_filter(json.loads(Path(values[0]).read_text())))
     elif command == "focus":
