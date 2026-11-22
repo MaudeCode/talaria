@@ -147,3 +147,15 @@ it('restores the shrink backup over an unreadable live meta.json, as the JSON ad
   expect(await store.sessions.repair(issues[0]!)).toBe(true)
   expect(await open().sessions.readMessages('chat', { start: 0, end: Infinity })).toEqual(rows(3))
 })
+
+it('scans a long row by copying its bytes once, not once per chunk read', async () => {
+  const { open } = fixture()
+  const store = open()
+  const long: Message = { role: 'user', content: 'y'.repeat(2 * 1024 * 1024) }
+  await write(store, { kind: 'replace', rows: [long] }, null)
+  const concat = vi.spyOn(Buffer, 'concat')
+  expect(await store.sessions.searchMessages(['chat'], sessionSearchTerms('absent'), 0)).toEqual(new Map())
+  const copied = concat.mock.calls.reduce((sum, [parts]) => sum + parts.reduce((n, part) => n + part.length, 0), 0)
+  concat.mockRestore()
+  expect(copied).toBeLessThanOrEqual(lineBytes([long]))
+})

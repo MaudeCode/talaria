@@ -8,6 +8,7 @@ import { withDocumentQueue } from './document.js'
 import { JsonDocuments } from './json-documents.js'
 import { JsonJournal } from './json-journal.js'
 import { backupIssue, backupStatus, indexIssues } from './json-recovery.js'
+import { withSessionPrefixRead } from './json-files.js'
 import { JsonSessions } from './json.js'
 import { sessionSearchEntry, sessionSearchMatches } from './search-text.js'
 import { nextRevision } from './sqlite-db.js'
@@ -203,25 +204,31 @@ class JsonlSessions implements SessionBackend {
       const offsets = await open(join(path, OFFSETS), 'r')
       try { end = await this.offset(offsets, meta, rows) } finally { await offsets.close() }
     }
-    const handle = await open(join(path, LINES), 'r')
-    try {
-      let carry = Buffer.alloc(0)
-      let idx = 0
-      for (let position = 0; position < end && idx < rows;) {
-        const chunk = await readAt(handle, position, Math.min(SCAN_CHUNK, end - position))
-        position += chunk.length
-        // A newline byte never occurs inside a UTF-8 sequence, so splitting bytes on it keeps every character whole.
-        let buffer = Buffer.concat([carry, chunk])
-        for (let newline = buffer.indexOf(10); newline >= 0 && idx < rows; newline = buffer.indexOf(10)) {
-          const entry = sessionSearchEntry(JSON.parse(buffer.subarray(0, newline).toString('utf8')), idx)
-          if (sessionSearchMatches(entry.text, terms)) return { idx, ...entry }
-          idx += 1
-          buffer = buffer.subarray(newline + 1)
+    return withSessionPrefixRead(async () => {
+      const handle = await open(join(path, LINES), 'r')
+      try {
+        // The current row's pieces, joined once at its newline, so a row longer than a chunk is copied once.
+        let pieces: Buffer[] = []
+        let idx = 0
+        for (let position = 0; position < end && idx < rows;) {
+          const chunk = await readAt(handle, position, Math.min(SCAN_CHUNK, end - position))
+          position += chunk.length
+          // A newline byte never occurs inside a UTF-8 sequence, so splitting bytes on it keeps every character whole.
+          let start = 0
+          for (let newline = chunk.indexOf(10); newline >= 0 && idx < rows; newline = chunk.indexOf(10, start)) {
+            pieces.push(chunk.subarray(start, newline))
+            const line = pieces.length === 1 ? pieces[0]! : Buffer.concat(pieces)
+            pieces = []
+            const entry = sessionSearchEntry(JSON.parse(line.toString('utf8')), idx)
+            if (sessionSearchMatches(entry.text, terms)) return { idx, ...entry }
+            idx += 1
+            start = newline + 1
+          }
+          if (start < chunk.length) pieces.push(chunk.subarray(start))
         }
-        carry = buffer
-      }
-      return null
-    } finally { await handle.close() }
+        return null
+      } finally { await handle.close() }
+    })
   }
 
   async write(sid: string, change: SessionChange, expected: string | null): Promise<string> {
