@@ -15577,6 +15577,99 @@
         }
       }
     },
+    "/api/session/find": {
+      "get": {
+        "operationId": "session.find",
+        "summary": "TAL-2666: find in chat. Case- and accent-insensitive substring matches over the text the transcript shows on its own rows, redacted like it: a user message's `_display_text` or `content`, and a settled turn's answer (`final_answer_display`, else `final_answer`, of the scene its last reply row carries). Folded work never matches: a turn's \"Worked\" rows (prose, reasoning, tools, steers), a running turn, markers, notices, deliveries and background updates. An empty or blank `q` answers no matches; an unknown session 404.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "matches": {
+                      "type": "array",
+                      "maxItems": 1000,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "message_id": {
+                            "type": "string"
+                          },
+                          "range": {
+                            "type": "object",
+                            "properties": {
+                              "start": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "end": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "start",
+                              "end"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "message_id",
+                          "range"
+                        ]
+                      },
+                      "description": "In transcript order, then text order; non-overlapping; the first 1,000."
+                    },
+                    "truncated": {
+                      "type": "boolean",
+                      "description": "Whether more matches exist past the first 1,000, which `matches` leaves out."
+                    }
+                  },
+                  "required": [
+                    "session_id",
+                    "matches",
+                    "truncated"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/new": {
       "post": {
         "operationId": "session.new",

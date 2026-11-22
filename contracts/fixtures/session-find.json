@@ -1,0 +1,22 @@
+{
+  "query": "cafe",
+  "session": {
+    "session_id": "find_fixture",
+    "messages": [
+      { "role": "user", "content": "Where is the café?", "message_id": "u1", "timestamp": 1770000010 },
+      { "role": "assistant", "content": "Checking the cafe list.", "message_id": "a1", "timestamp": 1770000011, "tool_calls": [{ "id": "c1", "type": "function", "function": { "name": "search_files", "arguments": "{\"pattern\": \"cafe\"}" } }] },
+      { "role": "tool", "tool_call_id": "c1", "content": "cafe.txt", "message_id": "t1", "timestamp": 1770000012 },
+      { "role": "assistant", "content": "The CAFÉ is on Main Street; the other cafe closed.", "message_id": "a2", "timestamp": 1770000013 },
+      { "role": "user", "content": "Thanks", "message_id": "u2", "timestamp": 1770000020 }
+    ]
+  },
+  "response": {
+    "session_id": "find_fixture",
+    "matches": [
+      { "message_id": "u1", "range": { "start": 13, "end": 17 } },
+      { "message_id": "a2", "range": { "start": 4, "end": 8 } },
+      { "message_id": "a2", "range": { "start": 38, "end": 42 } }
+    ],
+    "truncated": false
+  }
+}

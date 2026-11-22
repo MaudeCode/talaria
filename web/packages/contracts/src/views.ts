@@ -1614,6 +1614,15 @@ export const SessionOutlineSchema = z.object({ session_id: z.string(), entries: 
   shown: z.boolean().describe('Whether the chat shows its outline: it has enough questions for a jump list to help.'),
   shown_after: z.number().int().describe('How many more questions the user must send before it shows; 0 when `shown`. Questions sent since this read count toward it.') })
 export type SessionOutline = z.infer<typeof SessionOutlineSchema>
+/**
+ * TAL-2666: one find-in-chat match. `message_id` is the transcript row key (as `GET /api/session` keys its rows) of the
+ * message whose shown text holds it; `range` is `[start, end)` in UTF-16 code units of that text.
+ */
+export const SessionFindMatchSchema = z.object({ message_id: z.string(), range: z.object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative() }) })
+export type SessionFindMatch = z.infer<typeof SessionFindMatchSchema>
+export const SessionFindSchema = z.object({ session_id: z.string(), matches: z.array(SessionFindMatchSchema).max(1000).describe('In transcript order, then text order; non-overlapping; the first 1,000.'),
+  truncated: z.boolean().describe('Whether more matches exist past the first 1,000, which `matches` leaves out.') })
+export type SessionFind = z.infer<typeof SessionFindSchema>
 export const SkillsUsageSchema = z.looseObject({ usage: z.record(z.string(), z.looseObject({ use_count: z.number().optional(), view_count: z.number().optional(), patch_count: z.number().optional() })), skill_names: z.array(z.string()).optional(), total_invocations: z.number().optional(), unique_skills_used: z.number().optional() })
 export const MemorySchema = z.looseObject({
   memory: z.string(), user: z.string(), soul: z.string(), project_context: z.string().optional(), memory_path: z.string().optional(), user_path: z.string().optional(), soul_path: z.string().optional(), project_context_path: z.string().optional(),

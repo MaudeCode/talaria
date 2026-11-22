@@ -386,6 +386,11 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       await guardVisibility(ctx, input.session_id)
       return ctx.deps.sessions.outline(input.session_id)
     })),
+    find: os.session.find.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!input.session_id) throw new HttpError(400, 'Missing session_id')
+      await guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.find(input.session_id, input.q ?? '')
+    })),
     usage: os.session.usage.handler(({ input, context: { ctx } }) => run(async () => {
       if (!input.session_id) throw new HttpError(400, 'Missing session_id')
       await guardVisibility(ctx, input.session_id)
