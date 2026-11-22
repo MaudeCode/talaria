@@ -22,10 +22,11 @@ export type ScreenView = z.infer<typeof ScreenViewSchema>
  * TAL-2380: the viewer's raw RFB stream, a WebSocket upgrade of `GET SCREEN_STREAM_PATH?view_id=` for the active profile.
  * Binary frames both ways are RFB (noVNC). The server dials the Agent's display socket with a ticket it mints and never
  * sends to the client; keyboard and pointer reach the screen only while this viewer holds control. A close with
- * `SCREEN_CLOSE.controlTaken` means another viewer took control (reconnect to watch); `desktopGone` that the screen stopped.
+ * `SCREEN_CLOSE.controlTaken` means another viewer took control (reconnect to watch); `desktopGone` that the screen stopped;
+ * `signedOut` that the login it opened with signed out or expired.
  */
 export const SCREEN_STREAM_PATH = '/api/screen/ws'
-export const SCREEN_CLOSE = { controlTaken: 4000, desktopGone: 4001, unavailable: 4503 } as const
+export const SCREEN_CLOSE = { controlTaken: 4000, desktopGone: 4001, signedOut: 4401, unavailable: 4503 } as const
 /** A client-chosen id for one open viewer, which `POST /api/screen/lease` names to take over or hand back. */
 export const ScreenViewIdSchema = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/)
 export const ScreenLeaseInputSchema = z.object({ view_id: ScreenViewIdSchema, action: z.enum(['acquire', 'release']) })

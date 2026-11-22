@@ -215,7 +215,9 @@ server an `rfb_url` that `tools/screen.ts` dials. The ticket and the owner's
 viewer id never reach the browser, which names its viewer by a client-chosen
 `view_id`. Keyboard and pointer input reach the screen only while that viewer
 holds the owner's lease, which the Agent's bridge enforces. Closing a viewer
-hands control back. A private-bridge owner (TAL-1977) or a served profile has no
+hands control back. A viewer lives only as long as the login it opened with:
+it rechecks that session on every frame it sends and every 5 s, and closes
+with 4401 (handing control back) once the login signs out or expires. A private-bridge owner (TAL-1977) or a served profile has no
 reachable display socket, so its screen is unavailable.
 
 **When a new route belongs on the owner-only list.** Add it to

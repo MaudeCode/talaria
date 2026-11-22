@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket, WebSocketServer } from 'ws'
 import { RPC_ERROR_CODES, SCREEN_CLOSE, SCREEN_STREAM_PATH, type ScreenView } from '@maudecode/talaria-web-contracts'
 import { SidecarError } from '../sidecar/client.js'
@@ -190,4 +190,17 @@ describe('screen viewer bridge (TAL-2380)', () => {
     second.ws.close(1000)
     await Promise.all([first.closed, second.closed])
   })
+
+  it('closes a viewer whose login signs out, and hands its control back (TAL-2380)', async () => {
+    const login = cookieHeader((await post(s, '/api/auth/login', { password: PASSWORD })).headers.getSetCookie(), 'hermes_session')!
+    s.deps.screens.loginCheckMs = 20
+    const viewer = open({ cookie: login })
+    await viewer.greeted
+    await s.get('/api/screen/lease', { method: 'POST', body: JSON.stringify({ view_id: 'browser-view-1', action: 'acquire' }), headers: { 'content-type': 'application/json', cookie: login } })
+    expect((await s.get('/api/auth/logout', { method: 'POST', headers: { cookie: login } })).status).toBe(200)
+    await vi.waitFor(() => { expect(viewer.seen.closeCode).toBe(4401) }, { timeout: 2_000 })
+    await ended
+    expect(holder.holder).toBe('agent')
+  })
 })
+

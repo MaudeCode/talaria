@@ -30,6 +30,8 @@ export class ScreenService {
   private readonly reads = new Map<string, { at: number; status: Promise<DisplayStatus | null> }>()
   private readonly viewers = new Map<string, Viewer>()
   private readonly sockets = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024, perMessageDeflate: false })
+  /** How often an open viewer rechecks the login it opened with; a signed-out or expired one closes with 4401. */
+  loginCheckMs = 5_000
 
   constructor(private readonly deps: ScreenDeps) {}
 
@@ -104,11 +106,15 @@ export class ScreenService {
       return
     }
     const viewer: Viewer = { profileHome: ctx.deps.profileHome(activeProfileName(ctx)), viewId: null, viewerHash: null, abort: new AbortController() }
+    // The login the gate admitted (a trusted-header sign-in has one too); the viewer lives only as long as it does.
+    const auth = ctx.deps.auth
+    const login = (await auth.isAuthEnabled()) ? (ctx.authRefreshCookie ?? ctx.authCookie()) : null
+    const signedIn = login === null ? () => true : () => auth.verifySession(login)
     // Registered once the socket opens: a handshake the WebSocket server refuses never holds a viewer slot.
     acceptUpgrade(ctx, upgrade, this.sockets, (ws) => {
       if (this.viewers.has(viewId.data) || this.viewers.size >= MAX_SCREEN_VIEWERS) { ws.close(SCREEN_CLOSE.unavailable); return }
       this.viewers.set(viewId.data, viewer)
-      this.bridge(ws, viewId.data, viewer, sidecar)
+      this.bridge(ws, viewId.data, viewer, sidecar, signedIn)
     })
   }
 
@@ -117,13 +123,16 @@ export class ScreenService {
     for (const ws of this.sockets.clients) ws.close(1001)
   }
 
-  private bridge(ws: WebSocket, id: string, viewer: Viewer, sidecar: SidecarLike): void {
+  private bridge(ws: WebSocket, id: string, viewer: Viewer, sidecar: SidecarLike, signedIn: () => boolean): void {
     let upstream: WebSocket | null = null
     let done = false
     const early: Buffer[] = []
+    const loginCheck = setInterval(() => { if (!signedIn()) finish(SCREEN_CLOSE.signedOut, 'Signed out') }, this.loginCheckMs)
+    loginCheck.unref()
     const finish = (code: number, reason = '') => {
       if (done) return
       done = true
+      clearInterval(loginCheck)
       this.viewers.delete(id)
       this.reads.delete(viewer.profileHome)
       upstream?.close(1000)
@@ -147,6 +156,7 @@ export class ScreenService {
     }
     ws.on('message', (data: RawData, isBinary: boolean) => {
       if (done) return
+      if (!signedIn()) { finish(SCREEN_CLOSE.signedOut, 'Signed out'); return }
       if (!isBinary) { finish(1003, 'RFB is binary'); return }
       const chunk = Buffer.isBuffer(data) ? data : Buffer.concat(Array.isArray(data) ? data : [Buffer.from(data)])
       if (upstream?.readyState === WebSocket.OPEN) upstream.send(chunk)

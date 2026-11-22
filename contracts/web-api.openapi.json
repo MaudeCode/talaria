@@ -174989,7 +174989,7 @@
     },
     "/api/screen/ws": {
       "get": {
-        "summary": "TAL-2380: WebSocket upgrade carrying the active profile's Bot Screen as raw RFB (noVNC) in binary frames. The server dials the Agent owner's display socket with a ticket it never sends; input reaches the screen only while this viewer holds control. Closes 4000 when another viewer takes control, 4001 when the screen stops, 4503 when no screen can be viewed. Closing hands control back.",
+        "summary": "TAL-2380: WebSocket upgrade carrying the active profile's Bot Screen as raw RFB (noVNC) in binary frames. The server dials the Agent owner's display socket with a ticket it never sends; input reaches the screen only while this viewer holds control. Closes 4000 when another viewer takes control, 4001 when the screen stops, 4401 when the login it opened with signs out or expires, 4503 when no screen can be viewed. Closing hands control back.",
         "tags": [
           "tools"
         ],
