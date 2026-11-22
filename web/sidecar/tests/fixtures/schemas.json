@@ -5192,10 +5192,15 @@
           ],
           "additionalProperties": false
         }
+      },
+      "inherit_credentials": {
+        "default": false,
+        "type": "boolean"
       }
     },
     "required": [
-      "profiles"
+      "profiles",
+      "inherit_credentials"
     ],
     "additionalProperties": false
   },
@@ -5323,10 +5328,41 @@
           "canonical_session"
         ],
         "additionalProperties": false
+      },
+      "provisioning": {
+        "default": null,
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "inherited": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "warnings",
+              "inherited"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
-      "profile"
+      "profile",
+      "provisioning"
     ],
     "additionalProperties": false
   },

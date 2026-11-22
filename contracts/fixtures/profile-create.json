@@ -1,0 +1,35 @@
+{
+  "_comment": "TAL-2656: a profile create through the Agent's provision_profile with inherit_credentials. sidecar_provisioning is the sidecar's profiles.create provisioning; response is what POST /api/profile/create answers besides ok and profile (redacted, one line each, at most 5 of at most 300 characters). Pinned by web/packages/server/src/api/settings.test.ts.",
+  "request": {
+    "name": "heir",
+    "inherit_credentials": true
+  },
+  "sidecar_provisioning": {
+    "warnings": [
+      "model inherit: OPENROUTER_API_KEY=synthetic-value-123456 refused",
+      "alias wrapper:\n  disk  full",
+      "voice sections: unreadable",
+      "skill selection: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+      "MCP servers: none",
+      "default plugins: catalog offline"
+    ],
+    "inherited": [
+      "keys",
+      "logins",
+      "unknown-future-item"
+    ]
+  },
+  "response": {
+    "warnings": [
+      "model inherit: OPENROUTER_API_KEY=*** refused",
+      "alias wrapper: disk full",
+      "voice sections: unreadable",
+      "skill selection: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy…",
+      "MCP servers: none"
+    ],
+    "inherited": [
+      "keys",
+      "logins"
+    ]
+  }
+}

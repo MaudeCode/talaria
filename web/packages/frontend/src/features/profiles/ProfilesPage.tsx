@@ -2,7 +2,7 @@ import { useBootstrap } from '../../app/bootstrap'
 import { AgentImportDialog } from './AgentImportDialog'
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX, type GatewayMode, type Profiles } from '@maudecode/talaria-web-contracts'
+import { PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX, type GatewayMode, type ProfileInherited, type Profiles } from '@maudecode/talaria-web-contracts'
 import { ArrowLeftRight, ArrowUpRight, ChevronRight, Download, Pencil, Plus, Trash2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -13,7 +13,7 @@ import { catalogModelOptgroups } from '../../lib/modelOptgroups'
 import { HubPage } from '../../shell/AppShell'
 import { Mark, StatusDot } from '../../ui/Badge'
 import { BackButton, Button, IconButton } from '../../ui/Button'
-import { FieldRow, TextInput } from '../../ui/Field'
+import { FieldRow, Switch, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog, Dialog, DialogFooter } from '../../ui/Dialog'
 import { Row, RowList } from '../../ui/List'
@@ -21,7 +21,8 @@ import { Monogram } from '../../ui/Monogram'
 import { RowContextMenu, type RowAction } from '../../ui/Menu'
 import { RowActionButtons, RowActionsMenu } from '../../ui/RowActionsMenu'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
-import { showToast } from '../toast/toast'
+import { showRichToast, showToast } from '../toast/toast'
+import { currentLocale } from '../../i18n/runtime'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
@@ -37,6 +38,18 @@ type Profile = Profiles['profiles'][number]
 const modelLine = (p: Profile): string => p.uses_default_model ? m.profile_uses_default_model() : [p.model, p.provider].filter(Boolean).join(' · ')
 
 const gatewayLabel = (p: Profile): string | undefined => p.gateway_mode ? GATEWAY_MODE_LABEL[p.gateway_mode]() : undefined
+
+const INHERITED_LABEL: Record<ProfileInherited, () => string> = {
+  keys: m.profile_inherited_keys, logins: m.profile_inherited_logins, model: m.profile_inherited_model, voice: m.profile_inherited_voice,
+}
+
+/** TAL-2656: what the server says the create carried over from the main profile, then any setup step that failed after it. */
+function announceCreated({ warnings = [], inherited = [] }: { warnings?: string[] | undefined; inherited?: ProfileInherited[] | undefined }) {
+  showToast(inherited.length
+    ? m.profile_created_inherited_toast({ items: new Intl.ListFormat(currentLocale(), { type: 'conjunction' }).format(inherited.map((item) => INHERITED_LABEL[item]())) })
+    : m.profile_created_toast())
+  if (warnings.length) showRichToast({ id: 'profile-create-warnings', title: m.profile_created_warnings_title(), text: warnings.join(' · '), ttl: 0, kind: 'warning', dismissible: true, actions: [] })
+}
 
 type NewProfile = Record<string, unknown> & { name: string; default_model?: string | undefined }
 interface ProfileEdit { name: string; display_name?: string; description?: string }
@@ -58,7 +71,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
   const create = useResourceMutation({
     resource: ({ name }: NewProfile) => `profile:new:${name}`, queryKey: keys.profiles, exclusive: true,
     effect: ({ name, default_model }) => ({ fields: { name, model: default_model } }),
-    mutationFn: (body) => api.createProfile(body), onSuccess: () => showToast(m.profile_created_toast()), onError,
+    mutationFn: (body) => api.createProfile(body), onSuccess: announceCreated, onError,
   })
   // TAL-2093: the new name and description show at once; a refused save restores the server's values.
   const update = useResourceMutation({
@@ -148,7 +161,7 @@ export function ProfilesPage({ name }: { name?: string | undefined } = {}) {
           )
         })}
       </RowList>
-      {creating && <CreateProfileDialog existing={list.map((p) => p.name)} onClose={() => setCreating(false)} onSubmit={(body) => { setCreating(false); create.mutate(body) }} />}
+      {creating && <CreateProfileDialog existing={list.map((p) => p.name)} canInherit={profiles.data?.inherit_credentials_available === true} onClose={() => setCreating(false)} onSubmit={(body) => { setCreating(false); create.mutate(body) }} />}
       {confirmDelete}
       {editDialog}
     </HubPage>
@@ -262,18 +275,20 @@ function EditProfileDialog({ profile, onClose, onSubmit }: { profile: Profile; o
  * Closes on Create: the profile shows at once while the server creates it. The dialog unmounts on close, so the
  * API key leaves component state with it; only the request body carries it.
  */
-function CreateProfileDialog({ existing, onClose, onSubmit }: { existing: string[]; onClose: () => void; onSubmit: (body: NewProfile) => void }) {
+function CreateProfileDialog({ existing, canInherit, onClose, onSubmit }: { existing: string[]; canInherit: boolean; onClose: () => void; onSubmit: (body: NewProfile) => void }) {
   const models = useModelsQuery()
   const [name, setName] = useState('')
   const [cloneFrom, setCloneFrom] = useState('')
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
+  // TAL-2656: off unless chosen; an Agent that cannot share them offers no switch.
+  const [inherit, setInherit] = useState(false)
   const valid = /^[a-z0-9][a-z0-9-]{0,63}$/.test(name.trim())
   const submit = () => onSubmit({
     name: name.trim(), clone_from: cloneFrom || undefined, clone_config: !!cloneFrom,
     default_model: model || undefined, model_provider: catalogEntryById(models.data, model)?.provider_id || undefined,
-    api_key: apiKey || undefined, base_url: baseUrl || undefined,
+    api_key: apiKey || undefined, base_url: baseUrl || undefined, ...(canInherit && inherit ? { inherit_credentials: true } : {}),
   })
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.profile_create()}>
@@ -285,6 +300,7 @@ function CreateProfileDialog({ existing, onClose, onSubmit }: { existing: string
             {existing.map((n) => <option key={n} value={n}>{n}</option>)}
           </Select>
         </FieldRow>
+        {canInherit && <FieldRow label={m.profile_inherit_credentials_label()} htmlFor="profileInherit" inline><Switch id="profileInherit" checked={inherit} onCheckedChange={setInherit} /></FieldRow>}
         <FieldRow label={m.profile_default_model_label()} htmlFor="profileModel">
           <Select id="profileModel" value={model} onValueChange={setModel} className="w-full">
             <option value="">{m.profile_no_default_model()}</option>

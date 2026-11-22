@@ -28,6 +28,7 @@ vi.mock(import('../toast/errorToast'), () => ({ showErrorToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { showErrorToast } from '../toast/errorToast'
 import { ProfilesPage } from './ProfilesPage'
+import { Toaster } from '../toast/Toaster'
 
 /** The page at Settings > Profiles, `?name=` included, under a router that also holds the pages its links open. */
 async function renderPage(bootstrap = DEFAULT_BOOTSTRAP, path = '/settings/profiles') {
@@ -296,6 +297,31 @@ describe('profile writes show their result at once (TAL-1179)', () => {
     // A reopened dialog starts with an empty key.
     await userEvent.click(screen.getByRole('button', { name: 'Create profile' }))
     expect(screen.getByLabelText('API key')).toHaveValue('')
+  })
+
+  it('TAL-2656: offers sharing keys only where the Agent can, off by default, then shows what the create inherited and its warnings', async () => {
+    vi.mocked(api.createProfile).mockReturnValue(new Promise(() => undefined))
+    await renderPage()
+    await screen.findByText('scout')
+    await userEvent.click(screen.getByRole('button', { name: 'Create profile' }))
+    expect(screen.queryByRole('switch', { name: 'Share keys and accounts with the main profile' })).toBeNull()
+    cleanup()
+    const listed = await api.fetchProfiles()
+    vi.mocked(api.fetchProfiles).mockResolvedValue({ ...listed, inherit_credentials_available: true })
+    vi.mocked(api.createProfile).mockResolvedValue({ ok: true, profile: { name: 'heir' }, inherited: ['keys', 'logins'], warnings: ['bundled skills: catalog offline'] })
+    render(<Toaster />)
+    await renderPage()
+    await screen.findByText('scout')
+    await userEvent.click(screen.getByRole('button', { name: 'Create profile' }))
+    const share = screen.getByRole('switch', { name: 'Share keys and accounts with the main profile' })
+    expect(share).not.toBeChecked()
+    await userEvent.click(share)
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'heir{Enter}')
+    expect(api.createProfile).toHaveBeenLastCalledWith({ name: 'heir', clone_config: false, inherit_credentials: true })
+    expect(await screen.findByText("Profile created with the main profile's API keys and logins")).toBeInTheDocument()
+    expect(screen.getByText('Profile created with warnings')).toBeInTheDocument()
+    expect(screen.getByText('bundled skills: catalog offline')).toBeInTheDocument()
+    vi.mocked(api.fetchProfiles).mockResolvedValue(listed)
   })
 
   it('TAL-2084: removes a refused new profile and shows the server error', async () => {
