@@ -12066,6 +12066,40 @@
           "rejected"
         ]
       },
+      "completion": {
+        "description": "`complete_path`: the owner's listing for `word` in the session's frozen workspace, as it answered.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "display": {
+                  "type": "string"
+                },
+                "meta": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text",
+                "display",
+                "meta"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
       "lock": {
         "description": "`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.",
         "type": "object",
@@ -13480,6 +13514,40 @@
           "queued",
           "rejected"
         ]
+      },
+      "completion": {
+        "description": "`complete_path`: the owner's listing for `word` in the session's frozen workspace, as it answered.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "display": {
+                  "type": "string"
+                },
+                "meta": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text",
+                "display",
+                "meta"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
       },
       "lock": {
         "description": "`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.",
