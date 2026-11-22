@@ -84,6 +84,14 @@ describe('chat phone numbers follow each session\'s own profile policy (TAL-2651
     expect(await reply('work-chat')).not.toContain(PHONE)
   })
 
+  it('keeps the number when the administrator pins the opt-out over a profile that sets nothing or true', async () => {
+    for (const config of [{}, { security: { redact_phone_numbers: true } }]) {
+      policy({ config: {} }, { config, managed: OPT_OUT })
+      expect(await reply('work-chat'), JSON.stringify(config)).toContain(PHONE)
+      expect(await reply('root-chat')).not.toContain(PHONE)
+    }
+  })
+
   it('masks the number on an Agent without the opt-out', async () => {
     policy({ config: {} }, { config: OPT_OUT })
     sidecar.respond('config.declares_key', () => ({ declared: false }))

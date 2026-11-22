@@ -687,15 +687,19 @@ export function managedPhoneRedaction(managed: Config): boolean | undefined {
   return 'redact_phone_numbers' in dict(managed.security) ? redactsPhoneNumbers(managed) : undefined
 }
 
+/** TAL-2651: the effective `security.redact_phone_numbers`: the Agent lays administrator policy over the profile file. Throws when either is unreadable. */
+async function effectivePhoneRedaction(store: AgentConfig, home: string): Promise<boolean> {
+  const { config, managed } = await store.readWithManaged(home)
+  return managedPhoneRedaction(managed) ?? redactsPhoneNumbers(config)
+}
+
 /**
- * TAL-2651: the profile opted out of masking phone numbers in assistant replies, on an Agent that offers it, with no
- * administrator pin overriding it. Every transcript read asks, so a profile on the default costs only the cached config read.
+ * TAL-2651: the profile, or an administrator pin over it, opted out of masking phone numbers in assistant replies, on
+ * an Agent that offers it. Anything unknown keeps the mask.
  */
 export async function chatKeepsPhoneNumbers(store: AgentConfig, home: string): Promise<boolean> {
   try {
-    if (redactsPhoneNumbers(await store.read(home)) || !(await store.declaresKey(REDACT_PHONE_NUMBERS_KEY))) return false
-    const { config, managed } = await store.readWithManaged(home)
-    return !(managedPhoneRedaction(managed) ?? redactsPhoneNumbers(config))
+    return !(await effectivePhoneRedaction(store, home)) && await store.declaresKey(REDACT_PHONE_NUMBERS_KEY)
   } catch {
     return false
   }
@@ -704,8 +708,11 @@ export async function chatKeepsPhoneNumbers(store: AgentConfig, home: string): P
 /** TAL-2651: the Settings value: whether assistant replies mask phone numbers; null when the Agent does not offer the opt-out or the config cannot be read. */
 export async function phoneRedaction(store: AgentConfig, home: string): Promise<boolean | null> {
   if (!(await store.declaresKey(REDACT_PHONE_NUMBERS_KEY))) return null
-  try { await store.read(home) } catch { return null }
-  return !(await chatKeepsPhoneNumbers(store, home))
+  try {
+    return await effectivePhoneRedaction(store, home)
+  } catch {
+    return null
+  }
 }
 
 export async function setPhoneRedaction(store: AgentConfig, home: string, enabled: boolean): Promise<void> {
