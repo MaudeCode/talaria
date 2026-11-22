@@ -4,7 +4,7 @@ import { implement } from '@orpc/server'
 import { kanbanCall } from './automation-router.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { toolsContract, type GatewayLifecycle, type GatewayMode, type GatewayStatus, type PluginAutoUpdateView, type PluginOAuthClientView, type PluginSettingField, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { toolsContract, type GatewayLifecycle, type GatewayMode, type GatewayStatus, type PluginAutoUpdateView, type PluginIdleTaskView, type PluginOAuthClientView, type PluginSettingField, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -170,11 +170,39 @@ async function pluginOAuthClients(ctx: RequestContext) {
   return new Map(result.supported ? result.plugins.map((entry) => [entry.key, entry.clients.map((client) => ({ ...client, can_sign_out: client.state !== 'logged_out' }))]) : [])
 }
 
+/** TAL-2664: an ISO time the Agent wrote, as UTC; null when it does not parse. */
+const isoOrNull = (value: string | null): string | null => {
+  const time = value ? Date.parse(value) : Number.NaN
+  return Number.isNaN(time) ? null : new Date(time).toISOString()
+}
+
+/** TAL-2664: one idle task as Settings shows it; the server decides its status, its next due time and whether it can be paused. */
+function pluginIdleTaskView(state: SidecarResult<'plugins.idle_task_set_paused'>, editable: boolean): PluginIdleTaskView {
+  return {
+    name: state.task, status: state.paused ? 'paused' : !state.seeded ? 'not_seeded' : state.last_status ?? 'waiting', paused: state.paused,
+    run_count: state.run_count, last_run_at: isoOrNull(state.last_run_at), next_due_at: state.paused || !state.seeded ? null : isoOrNull(state.next_due_at),
+    interval_hours: state.interval_hours, last_result: state.last_result, can_pause: editable && state.seeded,
+  }
+}
+
+/** TAL-2664: each plugin's idle tasks by key, and who runs them: the gateway's housekeeping, or nothing. An unreadable gateway reads as none. */
+async function pluginIdleTasks(ctx: RequestContext, editable: boolean) {
+  const result = await runningSidecar(ctx).call('plugins.idle_tasks', { profile_home: home(ctx) })
+  const byKey = new Map<string, PluginIdleTaskView[]>()
+  if (!result.supported) return { runner: 'unsupported' as const, byKey }
+  for (const state of result.tasks) byKey.set(state.plugin, [...byKey.get(state.plugin) ?? [], pluginIdleTaskView(state, editable)])
+  const running = await currentGatewayStatus(ctx).then((status) => status.running, () => false)
+  return { runner: running ? 'gateway' as const : 'none' as const, byKey }
+}
+
 /** TAL-1914: the switch's state and why it has no effect. An unreadable gateway reads as none. */
 async function pluginAutoUpdateView(ctx: RequestContext, state: { auto_apply: boolean; check_hours: number }): Promise<PluginAutoUpdateView> {
   const running = await currentGatewayStatus(ctx).then((status) => status.running, () => false)
   return { auto_apply: state.auto_apply, check_hours: state.check_hours, inactive_reason: !running ? 'no_gateway' : state.check_hours === 0 ? 'checks_off' : null }
 }
+
+/** TAL-2664: a pause or resume the Agent refused, as the HTTP status the route names. */
+const IDLE_TASK_STATUS: Record<string, number> = { idle_task_not_found: 404, idle_task_not_saved: 409, idle_tasks_unsupported: 503 }
 
 /** TAL-1914: the Agent's refusal on any plugin update route. */
 function throwPluginUpdateError(error: unknown): never {
@@ -918,13 +946,14 @@ export const toolsRouter = os.router({
       const selected: Record<string, string> = {}
       for (const [k, v] of Object.entries(config)) if (v && typeof v === 'object' && !Array.isArray(v) && typeof (v as Dict).provider === 'string') selected[k] = str((v as Dict).provider).trim().toLowerCase()
       // Independent reads, and each failure but the list's own leaves the list readable.
-      const [result, declared, oauth, advisory, autoUpdate] = await Promise.all([
+      const [result, declared, oauth, advisory, autoUpdate, idle] = await Promise.all([
         sidecar.call('plugins.list', { profile_home: home(ctx), selected_providers: selected }),
         pluginSettingsList(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] settings fields failed: ${str((error as Error).message)}`); return [] }),
         pluginOAuthClients(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] oauth status failed: ${str((error as Error).message)}`); return new Map<string, PluginOAuthClientView[]>() }),
         pluginIsolationAdvisory(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] isolation advisory failed: ${str((error as Error).message)}`); return false }),
         // Only hides the switch and Update all.
         sidecar.call('plugins.auto_update', { profile_home: home(ctx) }).catch((error: unknown) => { ctx.deps.log(`[plugins] auto-update state failed: ${str((error as Error).message)}`); return null }),
+        pluginIdleTasks(ctx, editable).catch((error: unknown) => { ctx.deps.log(`[plugins] idle tasks failed: ${str((error as Error).message)}`); return null }),
       ])
       const settings = new Map(declared.map((entry) => [entry.key, entry.fields]))
       const plugins = result.plugins.map(({ update_available, latest_revision, disabled_reason, ...plugin }) => ({
@@ -935,8 +964,9 @@ export const toolsRouter = os.router({
         ...(update_available === undefined ? {} : { update: { available: update_available, ...(latest_revision ? { latest_revision } : {}) } }),
         ...(settings.has(plugin.key) ? { settings: settings.get(plugin.key) } : {}),
         ...(oauth.has(plugin.key) ? { oauth_clients: oauth.get(plugin.key) } : {}),
+        ...(idle?.byKey.has(plugin.key) ? { idle_tasks: idle.byKey.get(plugin.key) } : {}),
       }))
-      return { ...pluginListing(plugins, input.q), supported_hooks: result.supported_hooks, read_only: !editable, plugin_isolation_advisory: advisory, ...(autoUpdate?.supported ? { auto_update: await pluginAutoUpdateView(ctx, autoUpdate) } : {}) }
+      return { ...pluginListing(plugins, input.q), supported_hooks: result.supported_hooks, read_only: !editable, plugin_isolation_advisory: advisory, ...(autoUpdate?.supported ? { auto_update: await pluginAutoUpdateView(ctx, autoUpdate) } : {}), ...(idle ? { idle_task_runner: idle.runner } : {}) }
     } catch (error) {
       ctx.deps.log(`[plugins] visibility payload failed: ${str((error as Error).message)}`)
       return { plugins: [], total: 0, empty: true, supported_hooks: hooks, read_only: true, unavailable: true }
@@ -1027,6 +1057,14 @@ export const toolsRouter = os.router({
     if (verdict === 'unknown') throw new HttpError(404, 'Unknown or expired sign-in.', { condition: 'oauth_flow_not_found' })
     if (verdict === 'invalid') throw new HttpError(400, 'That is not the address this sign-in sends the browser back to.', { condition: 'oauth_redirect_invalid' })
     return oauthView(await oauthCall(ctx, 'oauth.submit_redirect', { profile_home: home(ctx), flow_id: input.flow_id, url: input.url }))
+  })),
+  pluginIdleTask: os.pluginIdleTask.handler(({ input, context: { ctx } }) => run(async () => {
+    try {
+      return pluginIdleTaskView(await runningSidecar(ctx).call('plugins.idle_task_set_paused', { profile_home: home(ctx), key: input.key, task: input.task, paused: input.paused }), true)
+    } catch (error) {
+      const status = error instanceof SidecarError ? IDLE_TASK_STATUS[error.condition] : undefined
+      throw status ? new HttpError(status, (error as Error).message, { condition: (error as SidecarError).condition }) : error
+    }
   })),
   pluginOAuthLogout: os.pluginOAuthLogout.handler(({ input, context: { ctx } }) => run(async () => {
     try {

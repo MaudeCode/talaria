@@ -38,6 +38,13 @@ export const PluginRuntimeApplicationSchema = z.enum(['applied', 'restart_requir
 export const PluginOAuthStateSchema = z.enum(['signed_in', 'sign_in_needed', 'revoked', 'logged_out'])
 export const PluginOAuthClientSchema = z.object({ id: z.string(), state: PluginOAuthStateSchema, authorize_host: z.string(), token_host: z.string() })
 export type PluginOAuthClient = z.infer<typeof PluginOAuthClientSchema>
+/**
+ * TAL-2664: one plugin idle task of the profile as the Agent's `hermes plugins idle-tasks` enumeration holds it (Agent v0.23.2+).
+ * `seeded` is false for a task a loaded plugin registered that no owner has observed yet, so it has no state file to pause.
+ * `next_due_at` is the Agent's `next_due`; `last_result` is the last error, else the last summary, key-masked and bounded.
+ */
+export const PluginIdleTaskStateSchema = z.object({ plugin: z.string(), task: z.string(), seeded: z.boolean(), paused: z.boolean(), run_count: z.number().int().nonnegative(), last_run_at: z.string().nullable(), next_due_at: z.string().nullable(), interval_hours: z.number().nullable(), last_status: z.enum(['ok', 'error']).nullable(), last_result: z.string().nullable() })
+export type PluginIdleTaskState = z.infer<typeof PluginIdleTaskStateSchema>
 /** TAL-1829: why the plugin is off when something other than the user turned it off; `update` comes from the Agent's `plugins.disabled_by_update` record (v0.22.6+). */
 export const PluginDisabledReasonSchema = z.object({ kind: z.literal('update'), reason: z.string() })
 export const PluginUpdateResultSchema = z.discriminatedUnion('status', [

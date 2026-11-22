@@ -18,6 +18,7 @@ vi.mock('../../api/endpoints', () => ({
   pluginOauthLogout: vi.fn((_key: string, id: string) => { Object.assign(clients.find((c) => c.id === id)!, { state: 'logged_out', can_sign_out: false }); return Promise.resolve({ ok: true, removed: true }) }),
   savePluginSettings: vi.fn(),
   setPluginEnabled: vi.fn(),
+  setPluginIdleTaskPaused: vi.fn(),
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
@@ -279,4 +280,75 @@ it('TAL-2133: a read-only session sees "Off" and no switch', async () => {
   renderPlugins()
   expect((await screen.findByText('team-notes')).closest('li')).toHaveTextContent('Off')
   expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+})
+
+describe('TAL-2664: plugin idle tasks', () => {
+  const task = { status: 'ok' as const, paused: false, run_count: 3, last_run_at: '2026-11-20T08:00:00.000Z', next_due_at: '2026-11-21T08:00:00.000Z', interval_hours: 24, last_result: 'Compacted 12 notes', can_pause: true }
+  /** A stand-in server: `team-notes` holds three tasks; a pause holds until `finish()`, which applies it to the next GET. */
+  const renderTasks = async (runner: 'gateway' | 'none' = 'gateway') => {
+    const paused: Record<string, boolean> = { compact: false }
+    vi.mocked(showToast).mockClear()
+    vi.mocked(api.fetchPlugins).mockImplementation(() => Promise.resolve({ read_only: false, total: 1, idle_task_runner: runner, plugins: [{ key: 'team-notes', name: 'team-notes', enabled: true, idle_tasks: [
+      { ...task, name: 'compact', paused: paused.compact!, status: paused.compact ? 'paused' as const : 'ok' as const, next_due_at: paused.compact ? null : task.next_due_at },
+      { ...task, name: 'broken', status: 'error' as const, last_result: 'RuntimeError: boom' },
+      { ...task, name: 'unseen', status: 'not_seeded' as const, run_count: 0, last_run_at: null, next_due_at: null, last_result: null, can_pause: false },
+    ] }] }))
+    let finish: (() => void) | undefined
+    vi.mocked(api.setPluginIdleTaskPaused).mockImplementation((_key, name, value) => new Promise((resolve) => {
+      finish = () => { paused[name] = value; resolve({ ...task, name, paused: value, status: value ? 'paused' : 'ok', next_due_at: value ? null : task.next_due_at }) }
+    }))
+    renderPlugins()
+    const compact = await screen.findByRole('switch', { name: 'Run compact when idle' })
+    return { compact, row: (name: string) => document.querySelector(`[data-idle-task="${name}"]`)!, finish: () => { finish!() } }
+  }
+  afterEach(() => { vi.mocked(api.fetchPlugins).mockReset() })
+
+  it('shows each task\'s server status, times and last result, and a switch only where the server offers the pause', async () => {
+    const { compact, row } = await renderTasks()
+    expect(compact).toBeChecked()
+    expect(row('compact')).toHaveTextContent('Last run OK')
+    expect(row('compact').querySelector('[data-run="next"]')).not.toBeNull()
+    expect(row('compact').querySelector('[data-run="last"]')).not.toBeNull()
+    expect(row('broken')).toHaveTextContent('Last run failed')
+    expect(row('broken')).toHaveTextContent('RuntimeError: boom')
+    expect(row('unseen')).toHaveTextContent('Not started yet')
+    expect(row('unseen').querySelector('[role="switch"]')).toBeNull()
+    expect(screen.queryByText('Gateway not running')).not.toBeInTheDocument()
+  })
+
+  it('says nothing runs the tasks while the profile has no gateway', async () => {
+    await renderTasks('none')
+    expect(screen.getByText('Gateway not running')).toBeInTheDocument()
+  })
+
+  it('pauses a task at once, then shows the server\'s answer', async () => {
+    const { compact, row, finish } = await renderTasks()
+    await userEvent.click(compact)
+    // Before the server answers.
+    expect(compact).not.toBeChecked()
+    expect(row('compact')).toHaveTextContent('Paused')
+    expect(row('compact').querySelector('[data-run="next"]')).toBeNull()
+    expect(api.setPluginIdleTaskPaused).toHaveBeenLastCalledWith('team-notes', 'compact', true)
+    finish()
+    await waitFor(() => expect(api.fetchPlugins).toHaveBeenCalledTimes(2))
+    expect(compact).not.toBeChecked()
+    expect(row('compact')).toHaveTextContent('Paused')
+  })
+
+  it('rolls a refused pause back to the server value and shows its reason', async () => {
+    const { compact, row } = await renderTasks()
+    vi.mocked(api.setPluginIdleTaskPaused).mockRejectedValueOnce(new ApiError({ kind: 'http', status: 409, path: '/api/plugins/idle-task', message: "The idle task 'compact' could not be paused" }))
+    await userEvent.click(compact)
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith("The idle task 'compact' could not be paused", 5000, 'error'))
+    await waitFor(() => expect(compact).toBeChecked())
+    expect(row('compact')).toHaveTextContent('Last run OK')
+  })
+
+  it('offers the pause from the task\'s row menu, through the same write', async () => {
+    const { compact, row } = await renderTasks()
+    fireEvent.contextMenu(row('compact'))
+    await userEvent.click(within(await screen.findByRole('menu', { name: 'Plugin actions' })).getByRole('menuitem', { name: 'Pause' }))
+    expect(compact).not.toBeChecked()
+    expect(api.setPluginIdleTaskPaused).toHaveBeenLastCalledWith('team-notes', 'compact', true)
+  })
 })

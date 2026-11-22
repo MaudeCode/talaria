@@ -187,6 +187,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("plugins.settings", {"profile_home": "{home}"}),
     ("plugins.settings_save", {"profile_home": "{home}", "key": "fake-settings", "values": {"limit": 9, "mode": "careful"}}),
     ("plugins.oauth_status", {"profile_home": "{home}"}),
+    ("plugins.idle_tasks", {"profile_home": "{home}"}),
 ]
 
 # Methods deliberately not exercised here: they need credentials, the
@@ -203,6 +204,8 @@ UNEXERCISED = {"plugins.catalog", "plugins.install", "plugins.update", "plugins.
 UNEXERCISED.add("plugins.dashboard_toggle")
 # Turning a plugin on and off is covered with a synthetic profile plugin by test_plugin_set_enabled.py.
 UNEXERCISED.add("plugins.set_enabled")
+# Pausing an idle task needs a seeded task state; test_plugin_idle_tasks.py covers it with synthetic profiles.
+UNEXERCISED.add("plugins.idle_task_set_paused")
 
 # A replay case sends a provider request; test_skill_replay.py covers it with a fake transport.
 UNEXERCISED.add("skills.replay_case")

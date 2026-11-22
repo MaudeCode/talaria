@@ -1937,6 +1937,19 @@ export type PluginSettingView = z.infer<typeof PluginSettingViewSchema>
 /** TAL-1276: a plugin OAuth client as Settings shows it; `can_sign_out` is true while the profile stores a grant for it (any state but `logged_out`). */
 export const PluginOAuthClientViewSchema = PluginOAuthClientSchema.extend({ can_sign_out: z.boolean() })
 export type PluginOAuthClientView = z.infer<typeof PluginOAuthClientViewSchema>
+/**
+ * TAL-2664: one plugin idle task as Settings shows it. `status`: `paused`; `ok` or `error` from its last run; `waiting` when an
+ * owner seeded it and it has not run; `not_seeded` when a loaded plugin registered it and no owner has observed it yet.
+ * `next_due_at` is null while paused or unseeded. `can_pause`: this session may pause or resume it (owner, seeded task).
+ */
+export const PluginIdleTaskStatusSchema = z.enum(['paused', 'ok', 'error', 'waiting', 'not_seeded'])
+export const PluginIdleTaskViewSchema = z.object({ name: z.string(), status: PluginIdleTaskStatusSchema, paused: z.boolean(), run_count: z.number().int().nonnegative(), last_run_at: z.iso.datetime().nullable(), next_due_at: z.iso.datetime().nullable(), interval_hours: z.number().nullable(), last_result: z.string().nullable(), can_pause: z.boolean() })
+export type PluginIdleTaskView = z.infer<typeof PluginIdleTaskViewSchema>
+/**
+ * TAL-2664: who runs the profile's plugin idle tasks. `gateway`: its gateway is running and polls them. `none`: no gateway, so
+ * Talaria only shows them (nothing here runs a task). `unsupported`: the Agent has no idle tasks (before v0.23.2).
+ */
+export const PluginIdleTaskRunnerSchema = z.enum(['gateway', 'none', 'unsupported'])
 export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().optional(), kind: z.string().optional(), enabled: z.boolean().optional(), description: z.string().optional(), version: z.string().optional(), activation: z.string().optional(), is_active_provider: z.boolean().optional(), hooks: z.array(Json).optional(),
   /** TAL-2132: the key's first path segment (`image_gen` for `image_gen/fal`), `""` when it has none. */
   category: z.string().optional(),
@@ -1955,7 +1968,9 @@ export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().op
    * sign-in sends the code to. Sign in through `/api/onboarding/oauth/start` with provider `plugin:<key>:<id>`; absent
    * when the plugin declares none or the Agent cannot sign in to plugin clients.
    */
-  oauth_clients: z.array(PluginOAuthClientViewSchema).optional() })
+  oauth_clients: z.array(PluginOAuthClientViewSchema).optional(),
+  /** TAL-2664: the plugin's idle tasks in this profile, by name; absent when it has none or the Agent has none. */
+  idle_tasks: z.array(PluginIdleTaskViewSchema).optional() })
 /**
  * TAL-1914: the active profile's `plugins.auto_apply` and `plugins.auto_update_check_hours`. `inactive_reason` says why the switch
  * has no effect: the apply tick runs only in a gateway (`no_gateway`), and a zero interval never runs it (`checks_off`).
@@ -1979,7 +1994,7 @@ export type PluginGroupId = z.infer<typeof PluginGroupIdSchema>
 export const PluginGroupSchema = z.object({ id: PluginGroupIdSchema, plugin_keys: z.array(z.string()), enabled_count: z.number().int(), total_count: z.number().int(), enabled_percent: z.number().min(0).max(100) })
 /** TAL-2132: the install's figures, regardless of `q`; `updates_tone` is `warning` while a plugin has an update waiting. */
 export const PluginsSummarySchema = z.object({ installed: z.number().int(), bundled: z.number().int(), enabled: z.number().int(), total: z.number().int(), updates: z.number().int(), updates_tone: z.enum(['warning']).nullable() })
-export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), total: z.number().int().optional().describe('Installed plugins before the `q` filter (TAL-2129).'), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional(), plugin_isolation_advisory: z.boolean().optional(), auto_update: PluginAutoUpdateViewSchema.optional(), groups: z.array(PluginGroupSchema).optional(), summary: PluginsSummarySchema.optional() })
+export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), total: z.number().int().optional().describe('Installed plugins before the `q` filter (TAL-2129).'), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional(), plugin_isolation_advisory: z.boolean().optional(), auto_update: PluginAutoUpdateViewSchema.optional(), idle_task_runner: PluginIdleTaskRunnerSchema.optional(), groups: z.array(PluginGroupSchema).optional(), summary: PluginsSummarySchema.optional() })
 /** `active`: the Agent holds the server connected. `failed` (TAL-1845): it reports a failed connect or a parked connection. */
 export const McpServerStatusSchema = z.enum(['active', 'configured', 'disabled', 'failed', 'invalid_config'])
 export const McpServerSchema = z.looseObject({ cost_policy: McpCostPolicySchema.nullable().optional(), events: McpEventsSchema.optional(), name: z.string(), id: z.string().optional(), transport: z.string().optional(), enabled: z.boolean().optional(), can_toggle: z.boolean().optional().describe('Whether PATCH can enable or disable this server; false for invalid config.'), active: z.boolean().optional(), status: McpServerStatusSchema.optional(), tools: z.number().optional(), tool_count: z.number().int().nullable().optional(), health: z.string().optional(), health_detail: z.string().optional(), health_checked_at: Json.optional(), health_pending: z.boolean().optional() })

@@ -584,7 +584,7 @@ describe('trusted-header auth', () => {
       expect(refused.status, JSON.stringify(patch)).toBe(403)
       expect(await s.deps.settings.load()).toMatchObject({ sync_to_insights: false, ignore_agent_updates: false })
     }
-    for (const path of ['/api/plugins/update-all', '/api/plugins/auto-update', '/api/plugins/enabled']) {
+    for (const path of ['/api/plugins/update-all', '/api/plugins/auto-update', '/api/plugins/enabled', '/api/plugins/idle-task']) {
       const pluginWrite = await s.get(path, { method: 'POST', headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops', 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true }) })
       expect(pluginWrite.status).toBe(403)
     }

@@ -11,7 +11,7 @@ import { ProviderPhaseSchema } from '../run-status.js'
 import { SpeedTierSchema } from '../speed.js'
 import { GatewayClarifyBatchSchema, GatewayCreateParamsSchema, GatewaySessionParamsSchema, GatewaySessionResultSchema } from '../gateway-session.js'
 import { ConnectorOperationSnapshotSchema } from '../connector-operation.js'
-import { CanonicalBotChatSchema, CommandBundleInvocationSchema, CommandBundleSchema, CronBlueprintFillInputSchema, CronBlueprintFillSchema, CronBlueprintsSchema, GatewayModeSchema, KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanInspectionSnapshotSchema, KanbanRunStartShape, KanbanTaskLinksShape, KanbanTaskSchema, ModelSelectionWarningSchema, NousAccountSchema, PendingWriteRefSchema, PendingWriteSchema, PluginCatalogQuerySchema, PluginCatalogSchema, PluginDisabledReasonSchema, PluginInstallInputSchema, PluginInstallResultSchema, PluginOAuthClientSchema, PluginRuntimeApplicationSchema, PluginSettingFieldSchema, PluginUpdateAllResultSchema, PluginUpdateResultSchema, SessionDeleteRefusedSchema, SkillCatalogIdentitySchema, SkillReplayCaseResultSchema, SkillReplayPlanInputSchema, SkillReplayPlanSidecarSchema, SkillReplayRouteSchema, SkillRevisionIdSchema, SkillRevisionsInputSchema, SkillRevisionsSchema, ToolsetsCatalogSchema } from '../sidecar-shared.js'
+import { CanonicalBotChatSchema, CommandBundleInvocationSchema, CommandBundleSchema, CronBlueprintFillInputSchema, CronBlueprintFillSchema, CronBlueprintsSchema, GatewayModeSchema, KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanInspectionSnapshotSchema, KanbanRunStartShape, KanbanTaskLinksShape, KanbanTaskSchema, ModelSelectionWarningSchema, NousAccountSchema, PendingWriteRefSchema, PendingWriteSchema, PluginCatalogQuerySchema, PluginCatalogSchema, PluginDisabledReasonSchema, PluginInstallInputSchema, PluginInstallResultSchema, PluginIdleTaskStateSchema, PluginOAuthClientSchema, PluginRuntimeApplicationSchema, PluginSettingFieldSchema, PluginUpdateAllResultSchema, PluginUpdateResultSchema, SessionDeleteRefusedSchema, SkillCatalogIdentitySchema, SkillReplayCaseResultSchema, SkillReplayPlanInputSchema, SkillReplayPlanSidecarSchema, SkillReplayRouteSchema, SkillRevisionIdSchema, SkillRevisionsInputSchema, SkillRevisionsSchema, ToolsetsCatalogSchema } from '../sidecar-shared.js'
 
 /** Shared param shapes. */
 export const ProfileHomeParams = z.object({ profile_home: z.string().min(1) })
@@ -152,6 +152,14 @@ export const COMMANDS_METHODS = {
   'plugins.oauth_status': { params: ProfileHomeParams, result: z.object({ supported: z.boolean(), plugins: z.array(z.object({ key: z.string(), clients: z.array(PluginOAuthClientSchema) })) }) },
   /** TAL-1276: `hermes auth logout <plugin>:<id>`; `removed` is false when no grant was stored. Errors `oauth_unsupported` on older Agents. */
   'plugins.oauth_logout': { params: ProfileHomeParams.extend({ key: z.string().min(1), id: z.string().min(1) }), result: z.object({ key: z.string(), id: z.string(), removed: z.boolean() }) },
+  /** TAL-2664: the profile's plugin idle tasks (persisted, then registered but unseeded); `supported` is false on an Agent before v0.23.2. Runs nothing. */
+  'plugins.idle_tasks': { params: ProfileHomeParams, result: z.object({ supported: z.boolean(), tasks: z.array(PluginIdleTaskStateSchema) }) },
+  /**
+   * TAL-2664: the Agent's `set_paused` on the task its own enumeration finds for `key` and `task`, confirmed by reading the state
+   * back. Errors `idle_tasks_unsupported` (Agent before v0.23.2), `idle_task_not_found` (not seeded in this profile) or
+   * `idle_task_not_saved` (the read-back value differs). Runs nothing.
+   */
+  'plugins.idle_task_set_paused': { params: ProfileHomeParams.extend({ key: z.string().min(1), task: z.string().min(1), paused: z.boolean() }), result: PluginIdleTaskStateSchema },
   /**
    * TAL-806: write non-secret `values` through the Agent's locked plugin-state writer and return the refreshed fields.
    * An undeclared key, a secret or a type mismatch is invalid params; a managed install or key errors `plugin_settings_managed`.
