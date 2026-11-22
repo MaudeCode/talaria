@@ -680,7 +680,7 @@ export function toolRowsView(name: unknown, data: Record<string, unknown>, args:
     case 'skills_list': return Array.isArray(data.skills) ? { title: 'Skills', rows: dicts(data.skills).map((skill) => row(str(skill.name), str(skill.description), undefined, skillLink(skill.name))) } : undefined
     case 'skill_view': return skillViewRows(data, a)
     case 'skill_manage': return skillManageRows(data, a)
-    case 'session_search': return sessionSearchRows(data)
+    case 'session_search': return sessionSearchRows(data, a)
     case 'cronjob_manage': return cronRows(data, a)
     case 'manage_connections': return connectionRows(data)
     case 'clarify': return clarifyRows(data)
@@ -754,11 +754,34 @@ function skillManageRows(data: Record<string, unknown>, a: Record<string, unknow
   return { rows: skillWriteRows(str(a.action), str(a.name), str(a.file_path) || str(data.path), data.lint_warnings) }
 }
 
-const sessionLink = (id: unknown): ToolRow['link'] => (str(id).trim() ? { kind: 'session', id: str(id).trim() } : undefined)
+/** TAL-1171: the most chats one past-chat search links, in the Agent's order. */
+const SESSION_LINKS_MAX = 5
+/**
+ * TAL-1171: the profile a past-chat search read when the call named one (`profile`, or the profile of a
+ * `@session:<profile>/<id>` session id), which a chat it found opens after switching to; empty for the chat's own profile.
+ */
+function searchedProfile(a: Record<string, unknown>): string {
+  const named = str(a.profile).trim()
+  if (named) return named
+  const sid = str(a.session_id).trim().replace(/^@session:/, '')
+  return sid.includes('/') ? sid.slice(0, sid.indexOf('/')).trim() : ''
+}
+/** TAL-1171: each row's link to the chat it names: the first `SESSION_LINKS_MAX` distinct chats, on the profile the call read. */
+function sessionLinks(a: Record<string, unknown>): (id: unknown) => ToolRow['link'] {
+  const profile = searchedProfile(a)
+  const linked = new Set<string>()
+  return (id) => {
+    const sid = str(id).trim()
+    if (!sid || (!linked.has(sid) && linked.size >= SESSION_LINKS_MAX)) return undefined
+    linked.add(sid)
+    return { kind: 'session', id: sid, ...(profile ? { profile } : {}) }
+  }
+}
 const UNTITLED = 'Untitled chat'
 /** A past-chat search: each chat it found or listed, or the messages it read from one, each opening that chat. */
-function sessionSearchRows(data: Record<string, unknown>): ToolRows | undefined {
+function sessionSearchRows(data: Record<string, unknown>, a: Record<string, unknown>): ToolRows | undefined {
   const results = dicts(data.results)
+  const sessionLink = sessionLinks(a)
   if (data.mode === 'discover') return { ...(str(data.query).trim() ? { title: str(data.query).trim() } : {}), rows: results.map((r) => row(str(r.title) || UNTITLED, joined(str(r.when), firstLine(r.snippet)), undefined, sessionLink(r.session_id))) }
   if (data.mode === 'browse') return { title: 'Recent chats', rows: results.map((r) => row(str(r.title) || UNTITLED, firstLine(r.preview), undefined, sessionLink(r.session_id))) }
   if (data.mode !== 'read' && data.mode !== 'scroll') return undefined
@@ -768,14 +791,17 @@ function sessionSearchRows(data: Record<string, unknown>): ToolRows | undefined 
 }
 
 const CRON_TITLES: Record<string, string> = { create: 'Created', list: 'Scheduled jobs', update: 'Updated', pause: 'Paused', resume: 'Resumed', remove: 'Removed', run: 'Started', cancel: 'Cancelled' }
-/** A scheduled job's row: its name, schedule, next run and last outcome, opening it on the scheduled jobs page. */
+/**
+ * A scheduled job's row: its name, schedule, next run and last outcome, opening it on the scheduled jobs page. TAL-1171: a
+ * removed job, or one without an id, opens nothing.
+ */
 function cronRow(job: Record<string, unknown>, exists = true): ToolRow {
   const last = str(job.last_status).toLowerCase()
   const next = str(job.next_run_at).trim()
   const detail = joined(str(job.schedule), job.enabled === false || job.state === 'paused' ? 'paused' : '', next ? `next ${next.slice(0, 16).replace('T', ' ')}` : '', last ? `last ${last}` : '')
   const status = last === 'ok' || last === 'success' ? 'ok' : last === 'error' || last === 'failed' ? 'error' : undefined
   const id = str(job.job_id) || str(job.id)
-  return row(str(job.name) || id || 'Scheduled job', detail, status, { kind: 'crons', ...(exists && id ? { id } : {}) })
+  return row(str(job.name) || id || 'Scheduled job', detail, status, exists && id ? { kind: 'crons', id } : undefined)
 }
 /** A scheduled-job action: the jobs it listed or the one it acted on, under what it did. */
 function cronRows(data: Record<string, unknown>, a: Record<string, unknown>): ToolRows | undefined {

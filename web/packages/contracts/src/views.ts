@@ -259,9 +259,14 @@ export type ResultPage = z.infer<typeof ResultPageSchema>
 /**
  * TAL-2326: where a result row opens in the client: a Talaria `session` (`id` its session id), the scheduled jobs page
  * (`crons`, `id` the job), connected apps (`connectors`) or a `skill` (`id` its name). TAL-2327: a Kanban task
- * (`kanban_task`, `id` the task, on `board`).
+ * (`kanban_task`, `id` the task, on `board`). TAL-1171: a session on another `profile` opens after switching to it; a
+ * `crons` link always names its job, and a row whose result named no target has no link.
  */
-export const ToolRowLinkSchema = z.object({ kind: z.enum(['session', 'crons', 'connectors', 'skill', 'kanban_task']), id: z.string().optional(), /** TAL-2327: a `kanban_task`'s board slug, absent for the current board. */ board: z.string().optional() })
+export const ToolRowLinkSchema = z.object({
+  kind: z.enum(['session', 'crons', 'connectors', 'skill', 'kanban_task']), id: z.string().optional(),
+  /** TAL-2327: a `kanban_task`'s board slug, absent for the current board. */ board: z.string().optional(),
+  profile: z.string().optional().describe('TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat\'s own profile, and on an older server.'),
+})
 export type ToolRowLink = z.infer<typeof ToolRowLinkSchema>
 /** TAL-2326: one row of a result: its label, a muted `detail` line, a status dot (`pending` waits for approval) and where it opens. */
 export const ToolRowSchema = z.object({ label: z.string(), detail: z.string().optional(), status: z.enum(['ok', 'warn', 'error', 'pending']).optional(), link: ToolRowLinkSchema.optional() })

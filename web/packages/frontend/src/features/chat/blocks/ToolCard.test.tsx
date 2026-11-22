@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ToolKindSchema, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { ToolCard, toolCardLabel, type ToolCardData } from './ToolCard'
@@ -7,9 +7,14 @@ import { sceneItems } from '../turnActivity'
 import { requestOpenFile } from '../../workspace/openFileRequest'
 import { toolText } from '../../../i18n/toolText'
 import { renderRouted } from '../../../test/router'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { switchProfile } from '../../../api/endpoints'
 
 vi.mock('../../workspace/openFileRequest', () => ({ requestOpenFile: vi.fn() }))
 vi.mock('../../background/openAgentRequest', () => ({ requestOpenAgent: vi.fn() }))
+vi.mock('../../../api/endpoints', async (actual) => ({ ...(await actual<typeof import('../../../api/endpoints')>()), switchProfile: vi.fn(() => Promise.resolve({ profiles: [] })), fetchBootstrap: vi.fn(async () => (await import('../../../contracts/adapters/memory')).DEFAULT_BOOTSTRAP) }))
 import { requestOpenAgent } from '../../background/openAgentRequest'
 
 const call: ToolCardData = { id: 'c1', name: 'terminal', kind: 'shell', target: 'make', args: {}, preview: 'flat preview', done: true, isError: false, duration: null, costUsd: null, resultView: null }
@@ -271,6 +276,37 @@ describe('memory, skill, session, scheduled job, connection and clarify rows (TA
       view.unmount()
     }
     expect(['session', 'schedule', 'connection', 'question'].map((kind) => toolText('en').actionLabel(kind, 'done', '', 'tool'))).toEqual(['Searched past chats', 'Managed scheduled jobs', 'Managed connections', 'Asked a question'])
+  })
+})
+
+// TAL-1171: each tool row of the shared fixture opens what its call named: the job on Tasks, the card on its board, and a chat
+// another profile holds once Talaria has switched to that profile.
+describe('tool rows that open the job, card or chat their call named (TAL-1171)', () => {
+  const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../../contracts/fixtures/tool-row-links.json'), 'utf8')) as Record<string, { row: unknown }>
+  beforeEach(() => { vi.mocked(switchProfile).mockClear() })
+  const follow = async (name: string, label: string) => {
+    const [item] = sceneItems([fixture[name]!.row])
+    const view = await renderRouted(<QueryClientProvider client={new QueryClient()}><ToolCard call={(item as { call: ToolCardData }).call} sessionId="s1" /></QueryClientProvider>)
+    await userEvent.click(within(view.container).getAllByRole('button')[0]!)
+    await userEvent.click(within(view.container.querySelector<HTMLElement>('.tool-card-result')!).getByRole('link', { name: label }))
+    return view.router
+  }
+
+  it('opens a created job selected on Tasks and a shown card on its board', async () => {
+    const job = await follow('cronjob_manage', 'Digest')
+    await vi.waitFor(() => expect(job.state.location.href).toBe('/tasks?job=j7'))
+    cleanup()
+    const card = await follow('kanban_show', 'Fix login')
+    await vi.waitFor(() => expect(card.state.location.href).toBe('/kanban?board=ops&task=t_7'))
+    expect(switchProfile).not.toHaveBeenCalled()
+  })
+
+  it('switches to the profile a found chat belongs to, then opens it; a chat past the first five opens nothing', async () => {
+    const router = await follow('session_search', 'Rollback')
+    expect(switchProfile).toHaveBeenCalledWith('work')
+    await vi.waitFor(() => expect(router.state.location.href).toBe('/session/w2'))
+    expect(screen.queryByRole('link', { name: 'Canary' })).toBeNull()
+    expect(screen.getByText('Canary')).toBeVisible()
   })
 })
 

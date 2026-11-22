@@ -9027,7 +9027,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -11836,6 +11837,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -16823,7 +16828,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -19632,6 +19638,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -23272,7 +23282,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -26081,6 +26092,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -33005,7 +33020,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -35814,6 +35830,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -42073,7 +42093,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -44882,6 +44903,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -51698,7 +51723,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -54507,6 +54533,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -58091,7 +58121,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -60900,6 +60931,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -64546,7 +64581,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -67355,6 +67391,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -70999,7 +71039,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -73808,6 +73849,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -77244,6 +77289,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -78802,6 +78851,10 @@
                                       },
                                       "board": {
                                         "type": "string"
+                                      },
+                                      "profile": {
+                                        "type": "string",
+                                        "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                       }
                                     },
                                     "required": [
@@ -90753,7 +90806,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -93562,6 +93616,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -97198,7 +97256,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -100007,6 +100066,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -104350,7 +104413,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },
@@ -107159,6 +107223,10 @@
                                                     },
                                                     "board": {
                                                       "type": "string"
+                                                    },
+                                                    "profile": {
+                                                      "type": "string",
+                                                      "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                     }
                                                   },
                                                   "required": [
@@ -113757,6 +113825,10 @@
                                                         },
                                                         "board": {
                                                           "type": "string"
+                                                        },
+                                                        "profile": {
+                                                          "type": "string",
+                                                          "description": "TAL-1171: the profile a `session` belongs to when the call searched another profile; clients switch to it before opening the chat. Absent for the chat's own profile, and on an older server."
                                                         }
                                                       },
                                                       "required": [
@@ -164684,7 +164756,8 @@
                                                         "properties": {
                                                           "kind": {},
                                                           "id": {},
-                                                          "board": {}
+                                                          "board": {},
+                                                          "profile": {}
                                                         }
                                                       }
                                                     },

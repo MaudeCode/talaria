@@ -660,7 +660,24 @@ describe('memory, skills, session search, scheduled job, connection and clarify 
       expect(view('cronjob_manage', { success: true, job: { ...job, last_status: null } }, { action }).rows).toEqual({ title, rows: [{ label: 'Digest', detail: 'every day at 09:00 · next 2026-11-18 09:00', link: { kind: 'crons', id: 'j1' } }] })
     }
     expect(view('cronjob_manage', { success: true, message: "Cron job 'Digest' removed.", removed_job: { id: 'j1', name: 'Digest', schedule: 'every day at 09:00' } }, { action: 'remove' }).rows)
-      .toEqual({ title: 'Removed', rows: [{ label: 'Digest', detail: 'every day at 09:00', link: { kind: 'crons' } }] })
+      .toEqual({ title: 'Removed', rows: [{ label: 'Digest', detail: 'every day at 09:00' }] })
+  })
+
+  // TAL-1171: the job, card or chat a call names, each row opening it; the shared fixture's rows are this projection's output.
+  it('ships the shared tool-row-links rows: a created job, a shown card and the first five chats another profile holds', () => {
+    interface Case { result: Record<string, unknown>; row: { tool: { name: string; args: unknown; kind: string; target: string; verb?: string; result_view: ToolResultView } } }
+    const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/tool-row-links.json'), 'utf8')) as Record<string, Case>
+    expect(Object.keys(fixture)).toEqual(['session_search', 'cronjob_manage', 'kanban_show'])
+    for (const { result, row: { tool } } of Object.values(fixture)) {
+      expect(toolDisplay(tool.name, tool.args), tool.name).toMatchObject({ kind: tool.kind, target: tool.target, ...(tool.verb ? { verb: tool.verb } : {}) })
+      expect(toolOutcome(JSON.stringify(result), tool.name, false, tool.args).result_view.rows, tool.name).toEqual(tool.result_view.rows)
+    }
+  })
+
+  it('opens a chat read through its @session link on that link\'s profile, each chat once', () => {
+    const read = { success: true, mode: 'read', session_id: 'w1', session_meta: { title: 'Deploy fix', when: 'November 20' }, messages: [{ id: 1, role: 'user', content: 'Why?' }, { id: 2, role: 'assistant', content: 'Disk.' }] }
+    const link = { kind: 'session', id: 'w1', profile: 'work' }
+    expect(view('session_search', read, { session_id: '@session:work/w1' }).rows?.rows).toEqual([{ label: 'Why?', detail: 'user', link }, { label: 'Disk.', detail: 'assistant', link }])
   })
 
   it('shows connected apps and a connect operation without its connect URL, each opening connections', () => {
