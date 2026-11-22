@@ -3,7 +3,7 @@ import { useSessionPin } from './useSessionPin'
 import { discardSession } from '../../stream/connection'
 import { discardStagedFiles } from '../composer/useDraft'
 import { createContext, useContext, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { MoreHorizontal } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -32,6 +32,14 @@ const allowed: Record<ActionKind, (row: SessionRow) => boolean> = {
   delete: (row) => row.can_delete,
   worktree: (row) => !!row.worktree_branch && !row.read_only,
   revoke: (row) => !!row.share_url,
+}
+
+/** Drops sessions the server deleted from this tab: their stream, staged files, list and search rows, and detail reads. */
+export function forgetDeletedSessions(qc: QueryClient, ids: readonly string[]) {
+  const gone = new Set(ids)
+  for (const sid of ids) { discardSession(sid); discardStagedFiles(sid) }
+  qc.setQueriesData<SessionsList>({ predicate: (query) => query.queryKey[0] === 'sessions' && (query.queryKey[1] === 'list' || query.queryKey[1] === 'search') }, (data) => data ? { ...data, sessions: data.sessions.filter((item) => !gone.has(item.session_id)) } : data)
+  qc.removeQueries({ predicate: (query) => query.queryKey[0] === 'sessions' && query.queryKey[1] !== 'list' && query.queryKey[1] !== 'search' && gone.has(query.queryKey[2] as string) })
 }
 
 const OpenAction = createContext<((action: PendingAction) => void) | null>(null)
@@ -71,10 +79,7 @@ function SessionActionDialogs({ pending, row, onChange }: { pending: PendingActi
     effect: () => ({ remove: true }),
     mutationFn: (sid) => api.deleteSession(sid),
     onSuccess: (_, sid) => {
-      discardSession(sid)
-      discardStagedFiles(sid)
-      qc.setQueriesData<SessionsList>({ predicate: (query) => query.queryKey[0] === 'sessions' && (query.queryKey[1] === 'list' || query.queryKey[1] === 'search') }, (data) => data ? { ...data, sessions: data.sessions.filter((item) => item.session_id !== sid) } : data)
-      qc.removeQueries({ predicate: (query) => query.queryKey[0] === 'sessions' && query.queryKey[1] !== 'list' && query.queryKey[1] !== 'search' && query.queryKey[2] === sid })
+      forgetDeletedSessions(qc, [sid])
       showToast(m.session_deleted())
     },
     onError: fail,

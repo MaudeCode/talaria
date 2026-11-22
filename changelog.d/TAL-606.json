@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Select several chats in the Web chat list and archive, unarchive or delete them together.",
+      "highlight": true,
+      "components": ["web"],
+      "announcement": {
+        "title": "Select several chats",
+        "description": "Archive, unarchive or delete many chats at once from the chat list.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

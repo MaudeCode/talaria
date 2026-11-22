@@ -138,6 +138,8 @@ export const newSession = (body: z.infer<typeof SessionNewRequestSchema>) => orp
 export const fetchExecutionModes = () => orpc().session.executionModes({})
 export const renameSession = (session_id: SessionId, title: string) => orpc().session.rename({ session_id, title })
 export const deleteSession = (session_id: SessionId) => orpc().session.delete({ session_id })
+/** TAL-627: one server call for many sessions; the result carries each id's outcome in input order. */
+export const bulkSessions = (action: 'archive' | 'unarchive' | 'delete', session_ids: SessionId[]) => orpc().sessions.bulk({ action, session_ids })
 export const pinSession = (session_id: SessionId, pinned: boolean) => orpc().session.pin({ session_id, pinned })
 export const archiveSession = (session_id: SessionId, archived: boolean) => orpc().session.archive({ session_id, archived })
 export const moveSession = (session_id: SessionId, project_id: string | null) => orpc().session.move({ session_id, project_id })
