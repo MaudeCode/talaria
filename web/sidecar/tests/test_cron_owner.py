@@ -173,7 +173,7 @@ main()
             sidecar = SidecarProcess(home, env={"OPENAI_API_KEY": "loopback-only", "OPENAI_BASE_URL": origin})
             job = sidecar.result("cron.create", {"profile_home": str(home), "job": {
                 "schedule": "0 0 1 1 *", "prompt": "CRON_CANCEL_SENTINEL", "model": "cron-loopback-model",
-                "provider": "custom", "base_url": origin, "enabled_toolsets": [], "deliver": "local",
+                "provider": "custom", "deliver": "local",
             }})["job"]
             yield home, model, sidecar, job
         finally:

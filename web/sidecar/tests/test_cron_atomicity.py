@@ -11,7 +11,7 @@ from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
 
 @requires_agent
-@pytest.mark.parametrize("boundary", ["create", "resume"])
+@pytest.mark.parametrize("boundary", ["create", "resume", "update"])
 def test_store_transaction_publishes_one_complete_job_state(tmp_path: pathlib.Path, boundary: str) -> None:
     probe = pathlib.Path(__file__).with_name("probe_cron_atomicity.py")
     result = subprocess.run([AGENT_PYTHON, str(probe), str(AGENT_DIR), boundary],

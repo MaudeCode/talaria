@@ -26,6 +26,12 @@
       "tests": ["web/sidecar/tests/test_config_write.py"]
     },
     {
+      "id": "cron-guard-modules",
+      "lastRequired": "0.23.1",
+      "summary": "The cron prompt and job-argument checks moved to cron.prompt_scan and cron.job_args in 0.23.2; older Agents keep them in tools.cronjob_*.",
+      "tests": ["web/sidecar/tests/test_cron_parity.py"]
+    },
+    {
       "id": "dashboard-credential-binding",
       "lastRequired": "0.23.1",
       "summary": "BasicAuthProvider(credential_id=) is new in 0.23.2; older Agents sign dashboard sessions with the secret alone.",

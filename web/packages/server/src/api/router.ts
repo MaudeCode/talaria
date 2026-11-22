@@ -61,7 +61,8 @@ export function errorResponseBody(error: ORPCError<string, unknown>): Record<str
     if (missing.length && missing.length === issues.length) return { error: `Missing required field(s): ${missing.join(', ')}`, issues: mapped }
     const first = issues[0]
     const field = first?.path?.map(String).join('.') ?? ''
-    return { error: field ? `Invalid ${field}` : 'Invalid request', issues: mapped }
+    // A whole-body issue, such as a field the route does not take (TAL-2297), names itself.
+    return { error: field ? `Invalid ${field}` : first?.message || 'Invalid request', issues: mapped }
   }
   return { error: error.message, ...extra }
 }

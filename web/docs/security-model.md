@@ -185,6 +185,13 @@ Some routes stay open but refuse owner-only fields inside the handler:
 - Cron create and update refuse `script`, `no_agent`, a new monitor script and
   Group Chat (`room:`) delivery from a non-owner (`tools/crons.ts`
   `CronService.requireOwnerFields`, `requireRoomDeliveryAuthority`).
+- Cron create and update, for every caller, take only the fields the route
+  contract lists (`CronCreateInputSchema`, `CronUpdateInputSchema`) and refuse
+  the scheduler's own bookkeeping such as `fire_claim` and `manual_run_prompt`.
+  The sidecar repeats that allowlist and runs the installed Agent's prompt
+  scan, provider/`base_url` origin check and Bot Chat profile check under the
+  owning profile, on the effective stored pair (`methods/cron.py` `_admit_job`,
+  TAL-2297).
 - Answering an agent's secret request (`api/chat-router.ts` `clarify.respond`),
   deciding a proposal (`api/proposals-router.ts`), server logs
   (`api/tools-router.ts` `logs`) and passkey management (`api/router.ts`) are

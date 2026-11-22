@@ -135,6 +135,27 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(listed).toMatchObject({ model: 'm', provider: 'custom:localhost:8080' })
   })
 
+  it('cron create/update refuse scheduler bookkeeping fields before any cron write, and forward the editable ones (TAL-2297)', async () => {
+    const jobs = new Map<string, Json>([['b1', { id: 'b1', name: 'Synthetic', profile: null, schedule: 'every 1h', prompt: 'say hi', toast_notifications: true, monitor: '', continuity: false, context_from: [] }]])
+    sidecar.respond('cron.list', () => ({ jobs: [...jobs.values()] as never[] }))
+    sidecar.respond('cron.update', (params) => { const job = jobs.get(params.job_id)!; Object.assign(job, params.updates); return { job: job as never } })
+    const writes = () => sidecar.calls.filter((call) => call.method === 'cron.create' || call.method === 'cron.update').length
+    const before = writes()
+    for (const [path, body, field] of [
+      ['/api/crons/update', { job_id: 'b1', manual_run_prompt: 'unscanned extra input' }, 'manual_run_prompt'],
+      ['/api/crons/update', { job_id: 'b1', fire_claim: { by: 'synthetic-claim' } }, 'fire_claim'],
+      ['/api/crons/update', { job_id: 'b1', owner_profile: 'other' }, 'owner_profile'],
+      ['/api/crons/create', { schedule: 'every 1h', prompt: 'say hi', last_run_at: null }, 'last_run_at'],
+    ] as const) {
+      const res = await post(s, path, body)
+      expect(res.status, field).toBe(400)
+      expect(String((await json(res)).error), field).toContain(field)
+    }
+    expect(writes()).toBe(before)
+    expect((await post(s, '/api/crons/update', { job_id: 'b1', enabled_toolsets: [], wrap_response: false, toast_notifications: false })).status).toBe(200)
+    expect(jobs.get('b1')).toMatchObject({ enabled_toolsets: [], wrap_response: false, toast_notifications: false })
+  })
+
   it('refuses manual cron admission during an update before reading or dispatching cron state', async () => {
     const job = { id: 'update-guard-job', name: 'Synthetic task', profile: null, toast_notifications: true, monitor: '', continuity: false }
     sidecar.respond('cron.list', (params) => ({ jobs: params.profile_home === s.deps.config.hermesHome ? [job] : [] }))
