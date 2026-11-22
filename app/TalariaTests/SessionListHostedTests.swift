@@ -2558,14 +2558,20 @@ extension RegularSplitHostedTests {
             return samples.map { (edge($0) - first) / (last - first) }
         }
 
-        /// The panels move in the same frames: each frame finds them the same way along their moves, a slide through
-        /// frames between its ends and a jump in none. The slow host commits few frames, so the test compares progress
-        /// rather than counting moving frames.
+        /// Whether some committed frame drew `edge` strictly between where it started and where it ended. A loaded runner
+        /// can commit a single frame inside a slide, near either end, so any such frame tells a slide from a jump.
+        private func drawsBetweenEnds(_ edge: (Sample) -> CGFloat) -> Bool {
+            guard let first = samples.first.map(edge), let last = samples.last.map(edge) else { return false }
+            return samples.map(edge).contains { abs($0 - first) > 0.5 && abs($0 - last) > 0.5 }
+        }
+
+        /// The panels move in the same frames: each frame finds them the same way along their moves, a slide drawing a
+        /// frame between its ends and a jump none. The slow host commits few frames, so the test compares progress rather
+        /// than counting moving frames.
         func assertCoordinated(_ moment: String, reducesMotion: Bool, file: StaticString = #filePath, line: UInt = #line) {
             let moment = "\(moment) (frames column/page/chat: \(trace))"
             let column = progress(\.column)
             let page = progress(\.page)
-            let midway = { (value: CGFloat) in value > 0.05 && value < 0.95 }
             XCTAssertGreaterThan(abs((samples.last?.column ?? 0) - (samples.first?.column ?? 0)), 1,
                                  "The column did not move while \(moment)", file: file, line: line)
             XCTAssertGreaterThan(abs((samples.last?.page ?? 0) - (samples.first?.page ?? 0)), 1,
@@ -2575,10 +2581,10 @@ extension RegularSplitHostedTests {
                         + "along while \(moment)", file: file, line: line)
             }
             if reducesMotion {
-                XCTAssertFalse(column.contains(where: midway) || page.contains(where: midway),
+                XCTAssertFalse(drawsBetweenEnds(\.column) || drawsBetweenEnds(\.page),
                                "Under Reduce Motion a panel slid while \(moment)", file: file, line: line)
             } else {
-                XCTAssertTrue(column.contains(where: midway) && page.contains(where: midway),
+                XCTAssertTrue(drawsBetweenEnds(\.column) && drawsBetweenEnds(\.page),
                               "A panel jumped while \(moment)", file: file, line: line)
             }
 
