@@ -2124,14 +2124,20 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     })
 
     it('TAL-2656: a create whose answer was lost after the home was made keeps the profile and warns, without a second create', async () => {
-      sidecar.respond('profiles.create', (params) => { mkdirSync(home(params.name), { recursive: true }); throw new Error('sidecar exited') })
+      const call = vi.spyOn(sidecar, 'call')
+      sidecar.respond('profiles.create', (params) => { mkdirSync(home(params.name), { recursive: true }); throw new SidecarError('sidecar exited', { condition: 'sidecar_unavailable' }) })
       const before = sidecar.calls.filter((c) => c.method === 'profiles.create').length
       const res = await post(s, '/api/profile/create', { name: 'lost' })
+      expect(call.mock.calls.find(([method]) => method === 'profiles.create')?.[2], 'no client timeout cuts a create that is still provisioning short').toEqual({ timeoutMs: 0 })
+      call.mockRestore()
       expect(res.status).toBe(200)
       const body = await json(res)
       expect((body.profile as Json).name).toBe('lost')
       expect(body.warnings).toEqual(['The profile was created, but its setup did not report back: sidecar exited'])
       expect(sidecar.calls.filter((c) => c.method === 'profiles.create').length - before).toBe(1)
+      // Any other failure is the sidecar's answer, never a lost one, even with the home on disk.
+      sidecar.respond('profiles.create', (params) => { mkdirSync(home(params.name), { recursive: true }); throw new SidecarError('disk full', { condition: 'sidecar_error' }) })
+      expect((await post(s, '/api/profile/create', { name: 'answered' })).status).toBe(400)
       // A refused create that made nothing stays a refusal.
       sidecar.respond('profiles.create', () => { throw new Error('This Hermes Agent cannot share keys and accounts with a new profile.') })
       expect((await post(s, '/api/profile/create', { name: 'refused', inherit_credentials: true })).status).toBe(400)

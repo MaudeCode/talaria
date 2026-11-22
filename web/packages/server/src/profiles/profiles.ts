@@ -301,14 +301,17 @@ export class ProfileService {
       } else {
         const existed = isDir(home)
         try {
-          const result = await this.sidecar().call('profiles.create', params)
+          // No client timeout: a timed-out call leaves the sidecar provisioning, so the home's existence would not mean the
+          // create had settled. Only a sidecar that exited loses the answer, and then provisioning has stopped with it.
+          const result = await this.sidecar().call('profiles.create', params, { timeoutMs: 0 })
           row = result.profile
           warnings.push(...(result.provisioning?.warnings ?? []))
           for (const item of result.provisioning?.inherited ?? []) { const parsed = ProfileInheritedSchema.safeParse(item); if (parsed.success) inherited.push(parsed.data) }
         } catch (error) {
-          // A create whose answer was lost (the sidecar died or timed out after making the home) still made the profile:
+          // A create whose answer was lost because the sidecar exited after making the home still made the profile:
           // carry on configuring it and say so, rather than answering a failure a retry would turn into a duplicate.
-          if (existed || !isDir(home)) throw new ProfileError(str((error as Error).message), 400)
+          const lost = error instanceof SidecarError && error.condition === 'sidecar_unavailable'
+          if (!lost || existed || !isDir(home)) throw new ProfileError(str((error as Error).message), 400)
           row = { name: opts.name, path: home }
           warnings.push(`The profile was created, but its setup did not report back: ${str((error as Error).message)}`)
         }
