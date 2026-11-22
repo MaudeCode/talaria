@@ -1,7 +1,7 @@
 /** TAL-2661: System › Server's Agent-home backup row renders the server's backup status and acts on it. */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -22,6 +22,9 @@ function renderRow(status: AgentBackupStatus) {
 const row = async (state: string) => { await waitFor(() => { expect(document.querySelector(`[data-agent-backup="${state}"]`)).not.toBeNull() }); return document.querySelector<HTMLElement>(`[data-agent-backup="${state}"]`)! }
 
 describe('Agent-home backup row (TAL-2661)', () => {
+  // The download spy and the expiry test's fake clock end with their test, whatever it asserted.
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
   it('names the server and profile before starting a backup', async () => {
     vi.mocked(api.createAgentBackup).mockResolvedValue(fixture.running)
     renderRow(fixture.idle)
@@ -44,13 +47,27 @@ describe('Agent-home backup row (TAL-2661)', () => {
     expect(await row('none')).toBeInTheDocument()
   })
 
-  it('offers the ready archive by its server URL and deletes it', async () => {
+  it('downloads the ready archive from its server URL and deletes it from the row menu', async () => {
+    const saved: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { saved.push(this.href) })
     vi.mocked(api.discardAgentBackup).mockResolvedValue(fixture.idle)
     renderRow(fixture.ready)
     const ready = await row('ready')
-    expect(within(ready).getByRole('link', { name: 'Download backup' }).getAttribute('href')).toMatch(/\/api\/agent-backup\/download\?id=0f3c9a1e5b7d4c2a8e6f1b3d5a7c9e0f$/)
     expect(screen.getByText(/^Ready · 46\.\d MB · until /)).toBeInTheDocument()
-    await userEvent.click(within(ready).getByRole('button', { name: 'Delete backup' }))
+    await userEvent.click(within(ready).getByRole('button', { name: 'Download backup' }))
+    expect(saved).toEqual([expect.stringMatching(/\/api\/agent-backup\/download\?id=0f3c9a1e5b7d4c2a8e6f1b3d5a7c9e0f$/)])
+    await userEvent.pointer({ keys: '[MouseRight]', target: ready })
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete backup' }))
+    expect(await row('none')).toBeInTheDocument()
+  })
+
+  it('reads the status again when the ready archive expires', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const expiring = { ...fixture.ready, job: { ...fixture.ready.job!, expires_at: Date.now() / 1000 + 60 } }
+    renderRow(expiring)
+    await row('ready')
+    vi.mocked(api.fetchAgentBackup).mockResolvedValue(fixture.idle)
+    await vi.advanceTimersByTimeAsync(60_000)
     expect(await row('none')).toBeInTheDocument()
   })
 

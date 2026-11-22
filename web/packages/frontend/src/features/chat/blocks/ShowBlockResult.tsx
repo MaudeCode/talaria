@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { ShowBlock, ShowBlockRef } from '@maudecode/talaria-web-contracts'
 import * as api from '../../../api/endpoints'
 import { keys } from '../../../api/queryKeys'
-import { appUrl } from '../../../lib/appRoot'
+import { appUrl, downloadFromApp } from '../../../lib/appRoot'
 import { copyWithToast } from '../../../lib/clipboard'
 import { m } from '../../../paraglide/messages.js'
 import { Button } from '../../../ui/Button'
@@ -17,13 +17,7 @@ import { ResultSection } from './OutboundDraftResult'
 const href = (url: string): string => appUrl(url.replace(/^\.\//, '')).href
 
 /** TAL-1971: save a delivered file through a download link, as the session export does. */
-function download(url: string): void {
-  const a = document.createElement('a')
-  a.href = href(url)
-  a.download = ''
-  a.rel = 'noopener'
-  a.click()
-}
+const download = (url: string): void => { downloadFromApp(url.replace(/^\.\//, '')) }
 
 /** The block's Download, Open and Copy, for its visible controls and its right-click and long-press menu alike. */
 function blockActions(block: ShowBlock): RowAction[] {
