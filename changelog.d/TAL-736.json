@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The context window popover shows token counts with your region's decimal separator.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
