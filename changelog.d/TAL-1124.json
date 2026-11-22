@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On a phone or tablet, the Web composer's attach button offers Take photo, which opens the rear camera, and Choose files.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Take a photo to attach",
+        "description": "On a phone or tablet, the attach button opens the camera or your files.",
+        "icon": "attachment"
+      }
+    }
+  ]
+}

@@ -69,6 +69,30 @@ test('picked images show as chips in an existing chat and send without text', as
   await expect(chips(page)).toHaveCount(0)
 })
 
+test('Attach opens the file picker under a mouse and offers Take photo with the rear camera on touch (TAL-1124)', async ({ page }, info) => {
+  await mockSession(page, 'camera')
+  await page.goto('/session/camera')
+  const attach = page.getByRole('button', { name: 'Attach files' })
+  if (!info.project.use.hasTouch) {
+    const chooser = page.waitForEvent('filechooser')
+    await attach.click()
+    expect((await chooser).isMultiple()).toBe(true)
+    await expect(page.getByRole('menu')).toHaveCount(0)
+    return
+  }
+  // A phone's idle composer is folded; a tap on the box unfolds its tools.
+  await page.locator('#msg').tap()
+  await attach.tap()
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('menuitem', { name: 'Take photo' }).tap()
+  const camera = await chooser
+  expect(camera.isMultiple()).toBe(false)
+  expect(await camera.element().evaluate((input: HTMLInputElement) => [input.accept, input.getAttribute('capture')])).toEqual(['image/*', 'environment'])
+  await camera.setFiles([image('image.png')])
+  await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveCount(1)
+  await expect(page.getByRole('menu')).toHaveCount(0)
+})
+
 test('a picked image shows its picture in a strip on the card\'s top edge; a file stays in the card (TAL-1552)', async ({ page }) => {
   await mockSession(page, 'thumbs')
   await page.goto('/session/thumbs')
