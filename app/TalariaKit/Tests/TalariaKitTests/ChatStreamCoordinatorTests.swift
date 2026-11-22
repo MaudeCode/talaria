@@ -1522,6 +1522,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
         XCTAssertEqual(queryItems.first(where: { $0.name == "replay" })?.value, "1")
         XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "0")
+        XCTAssertNil(queryItems.first(where: { $0.name == "tail" }), "A cursor resume never attaches at the live tail")
         XCTAssertTrue(coordinator.isReplayConnection)
         // The load holds none of the run's output, so the replay opens a new streaming message
         // instead of continuing the previous turn's answer.
@@ -1529,14 +1530,15 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
-    func testColdRelaunchWithoutTranscriptCursorAttachesLiveWithoutReplay() async throws {
-        // No journal: the transcript already holds the persisted segments.
+    func testColdRelaunchWithoutTranscriptCursorAttachesAtLiveTailWithoutReplay() async throws {
+        // No journal: the transcript already holds the persisted segments the run buffered.
         let (streamClient, delegate, coordinator) = try await coldRelaunch(transcriptSeq: nil)
 
         let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
         let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
         XCTAssertNil(queryItems.first(where: { $0.name == "replay" }))
         XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }))
+        XCTAssertEqual(queryItems.first(where: { $0.name == "tail" })?.value, "1")
         XCTAssertFalse(coordinator.isReplayConnection)
         XCTAssertEqual(delegate.streamCoordinatorStreamingAssistantMessageID, "assistant-latest")
     }

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reopening a running chat in the app no longer repeats output the chat already shows when the run has no replay journal.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

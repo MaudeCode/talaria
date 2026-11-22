@@ -246,6 +246,7 @@ public final class ChatStreamCoordinator {
     public func start(
         streamID: String,
         replayAfterSeq: Int? = nil,
+        attachesAtLiveTail: Bool = false,
         recoveryState: ActiveStreamRecoveryState = .idle,
         armsAggregateForLocalWork: Bool = false,
         publishesLiveActivity: Bool = true,
@@ -280,7 +281,8 @@ public final class ChatStreamCoordinator {
         streamClient.start(
             url: client.chatStreamURL(
                 streamID: streamID,
-                replayAfterSeq: replayAfterSeq
+                replayAfterSeq: replayAfterSeq,
+                liveTail: attachesAtLiveTail
             )
         ) { [weak self] event in
             self?.handle(event)
@@ -480,7 +482,9 @@ public final class ChatStreamCoordinator {
                     adoptLoadedStreamingAssistantMessage(streamID: streamIDToResume)
                 }
                 isConnectionSuspended = false
-                start(streamID: streamIDToResume, replayAfterSeq: resumeAfterSeq(streamID: streamIDToResume))
+                // Without a cursor the reloaded transcript holds what the run buffered meanwhile (TAL-361).
+                let replayAfterSeq = resumeAfterSeq(streamID: streamIDToResume)
+                start(streamID: streamIDToResume, replayAfterSeq: replayAfterSeq, attachesAtLiveTail: replayAfterSeq == nil)
             } else if response.replayAvailable == true {
                 let replayAfterSeq = Self.runJournalReplayAfterSeq(from: lastEventID, streamID: activeStreamID) ?? 0
                 // Replaying a finished journal restores the transcript, not a running card.
@@ -716,8 +720,9 @@ public final class ChatStreamCoordinator {
     }
 
     /// Where to resume `streamID` (TAL-316): after this process's own cursor for
-    /// that stream, else after the loaded transcript's cursor for it, else live
-    /// without replay. Replay idempotence comes only from these cursors.
+    /// that stream, else after the loaded transcript's cursor for it, else nil:
+    /// attach at the live tail without replay (TAL-361). Replay idempotence comes
+    /// only from these cursors.
     private func resumeAfterSeq(streamID: String) -> Int? {
         if let ownSeq = Self.runJournalReplayAfterSeq(from: lastEventID, streamID: streamID) {
             return ownSeq

@@ -55,9 +55,11 @@ extension APIClient {
         ))
     }
 
-    public nonisolated func chatStreamURL(streamID: String, replayAfterSeq: Int? = nil) -> URL {
+    /// `liveTail` attaches at the run's live tail (TAL-361): the server skips the output it buffered while no client
+    /// listened, which the loaded transcript already holds. A replay cursor outranks it; the two are never sent together.
+    public nonisolated func chatStreamURL(streamID: String, replayAfterSeq: Int? = nil, liveTail: Bool = false) -> URL {
         let url = Endpoint.chatStream(streamID: streamID).url(relativeTo: baseURL)
-        guard let replayAfterSeq,
+        guard replayAfterSeq != nil || liveTail,
               var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else {
             return url
@@ -65,8 +67,12 @@ extension APIClient {
 
         // Percent-encoded items keep the endpoint's `%2B` escapes intact.
         var queryItems = components.percentEncodedQueryItems ?? []
-        queryItems.append(URLQueryItem(name: "replay", value: "1"))
-        queryItems.append(URLQueryItem(name: "after_seq", value: "\(max(0, replayAfterSeq))"))
+        if let replayAfterSeq {
+            queryItems.append(URLQueryItem(name: "replay", value: "1"))
+            queryItems.append(URLQueryItem(name: "after_seq", value: "\(max(0, replayAfterSeq))"))
+        } else {
+            queryItems.append(URLQueryItem(name: "tail", value: "1"))
+        }
         components.percentEncodedQueryItems = queryItems
         return components.url ?? url
     }
