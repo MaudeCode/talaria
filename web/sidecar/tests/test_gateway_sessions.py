@@ -455,7 +455,11 @@ def test_native_command_turn_directive_is_never_forwarded(native_owner_stub, rep
     assert not any(method == "prompt.submit" for method, _ in native_owner_stub.calls)
 
 
-@pytest.mark.parametrize("text,bounded", [("x" * 70000, "x" * 64000), ("😀" * 40000, "😀" * 32000), ("x" + "😀" * 40000, "x" + "😀" * 31999)])
+@pytest.mark.parametrize("text,bounded", [
+    pytest.param("x" * 70000, "x" * 64000, id="ascii"),
+    pytest.param("😀" * 40000, "😀" * 32000, id="emoji"),
+    pytest.param("x" + "😀" * 40000, "x" + "😀" * 31999, id="split-pair"),
+])
 def test_native_command_output_is_bounded_in_utf16_units(native_owner_stub, text, bounded):
     """The contract bounds JavaScript string length: an emoji is two units, and a split pair is dropped."""
     native_owner_stub.command = {"type": "exec", "output": text}
