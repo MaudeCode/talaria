@@ -286,6 +286,21 @@ function relationships(format: OfficeFormat, parts: Map<string, Buffer>, relsPat
 /** The relationship id attribute (`r:id`) under whatever prefix the part binds. */
 const relId = (node: XNode): string | undefined => Object.entries(attrsOf(node)).find(([key]) => key.includes(':') && localName(key) === 'id')?.[1]
 
+/**
+ * The part each entry (`sheet`, `sldId`) names through its relationship id, in entry order. Unknown ids and parts an
+ * earlier entry already named are skipped, so each part is parsed at most once and parsing stays within the
+ * preflight's uncompressed total however many entries repeat a part.
+ */
+function listedParts(entries: XNode[], targets: Map<string, string>): { entry: XNode; part: string }[] {
+  const seen = new Set<string>()
+  return entries.flatMap((entry) => {
+    const part = targets.get(relId(entry) ?? '')
+    if (!part || seen.has(part)) return []
+    seen.add(part)
+    return [{ entry, part }]
+  })
+}
+
 /** openpyxl `is_date_format`: the first section, without literals, escapes and `[...]` codes, still names a date or time part. */
 export function isDateFormat(code: string): boolean {
   const section = code.split(';')[0] ?? ''
@@ -315,10 +330,7 @@ function readWorkbook(parts: Map<string, Buffer>): Workbook {
   const workbook = rootOf(parseXml('xlsx', parts.get('xl/workbook.xml')))
   if (!workbook) throw readError('xlsx')
   const targets = relationships('xlsx', parts, 'xl/_rels/workbook.xml.rels', 'xl', '/worksheet')
-  const sheets = named(first(workbook, 'sheets') ?? {}, 'sheet').flatMap((sheet) => {
-    const part = targets.get(relId(sheet) ?? '')
-    return part ? [{ name: attr(sheet, 'name') ?? '', part }] : []
-  })
+  const sheets = listedParts(named(first(workbook, 'sheets') ?? {}, 'sheet'), targets).map(({ entry, part }) => ({ name: attr(entry, 'name') ?? '', part }))
   const date1904 = ['1', 'true'].includes(attr(first(workbook, 'workbookPr') ?? {}, 'date1904') ?? '')
   const sst = parts.has('xl/sharedStrings.xml') ? rootOf(parseXml('xlsx', parts.get('xl/sharedStrings.xml'))) : undefined
   // Rich-text runs concatenate; phonetic guides (`rPh`) are not part of the value.
@@ -412,7 +424,7 @@ function pptxPreviewText(parts: Map<string, Buffer>): { content: string; truncat
   const presentation = rootOf(parseXml('pptx', parts.get('ppt/presentation.xml')))
   if (!presentation) throw readError('pptx')
   const targets = relationships('pptx', parts, 'ppt/_rels/presentation.xml.rels', 'ppt', '/slide')
-  const slides = named(first(presentation, 'sldIdLst') ?? {}, 'sldId').flatMap((id) => { const part = targets.get(relId(id) ?? ''); return part ? [part] : [] })
+  const slides = listedParts(named(first(presentation, 'sldIdLst') ?? {}, 'sldId'), targets).map(({ part }) => part)
   const b = new PreviewBuilder()
   for (const [index, part] of slides.entries()) {
     if (index >= MAX_PPTX_PREVIEW_SLIDES) { b.truncated = true; break }

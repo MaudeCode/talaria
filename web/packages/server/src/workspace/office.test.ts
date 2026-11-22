@@ -107,6 +107,29 @@ describe('pptx preview', () => {
   })
 })
 
+describe('repeated part references', () => {
+  /** The package with each listed part's text replaced (`[from, to]` pairs). */
+  async function rewritten(bytes: Buffer, edits: Record<string, [string, string]>): Promise<Buffer> {
+    const out = await parts(bytes)
+    for (const [name, [from, to]] of Object.entries(edits)) out.set(name, Buffer.from((out.get(name)?.toString() ?? '').replace(from, to)))
+    return zipBuffer(out)
+  }
+
+  it('parses a slide or worksheet part once however many entries name it', async () => {
+    const rel = (id: string, target: string, type: string) => `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}" Target="${target}"/>`
+    const deck = await rewritten(await pptx([['Hello']]), {
+      'ppt/presentation.xml': ['<p:sldId id="256" r:id="rId1"/>', '<p:sldId id="256" r:id="rId1"/><p:sldId id="257" r:id="rId2"/><p:sldId id="258" r:id="rId3"/>'],
+      'ppt/_rels/presentation.xml.rels': ['</Relationships>', `${rel('rId2', 'slides/slide1.xml', 'slide')}${rel('rId3', '/ppt/slides/slide1.xml', 'slide')}</Relationships>`],
+    })
+    expect(previewOffice('d.pptx', deck).content).toBe('Slide 1\nHello')
+    const book = await rewritten(await xlsx([{ name: 'S', rows: [{ A1: { v: '1' } }] }]), {
+      'xl/workbook.xml': ['</sheets>', '<sheet name="Again" sheetId="2" r:id="rId2"/></sheets>'],
+      'xl/_rels/workbook.xml.rels': ['</Relationships>', `${rel('rId2', 'worksheets/sheet1.xml', 'worksheet')}</Relationships>`],
+    })
+    expect(previewOffice('b.xlsx', book).content).toBe('Sheet: S\n1')
+  })
+})
+
 describe('saveDocx', () => {
   it('round-trips an unedited preview and keeps every other part byte for byte', async () => {
     const original = await docx('', 'Title', '', 'Body\ttext  ', '')
