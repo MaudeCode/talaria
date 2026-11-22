@@ -968,6 +968,10 @@
                             "workspace_todos_tab": {
                               "type": "boolean",
                               "description": "TAL-2154: show a Todos page for the current chat in the Web chat workspace panel."
+                            },
+                            "chat_task_list": {
+                              "type": "boolean",
+                              "description": "TAL-1122: show the current chat's `todo_state` as a collapsible strip at the top of the Web chat. Default false."
                             }
                           },
                           "additionalProperties": {}
@@ -119091,6 +119095,10 @@
                     "workspace_todos_tab": {
                       "type": "boolean",
                       "description": "TAL-2154: show a Todos page for the current chat in the Web chat workspace panel."
+                    },
+                    "chat_task_list": {
+                      "type": "boolean",
+                      "description": "TAL-1122: show the current chat's `todo_state` as a collapsible strip at the top of the Web chat. Default false."
                     }
                   },
                   "additionalProperties": {}
@@ -119626,6 +119634,10 @@
                     "workspace_todos_tab": {
                       "type": "boolean",
                       "description": "TAL-2154: show a Todos page for the current chat in the Web chat workspace panel."
+                    },
+                    "chat_task_list": {
+                      "type": "boolean",
+                      "description": "TAL-1122: show the current chat's `todo_state` as a collapsible strip at the top of the Web chat. Default false."
                     }
                   },
                   "additionalProperties": {}

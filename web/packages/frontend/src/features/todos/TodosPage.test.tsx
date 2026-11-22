@@ -1,7 +1,9 @@
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 import fixture from '../../../../../../contracts/fixtures/web-native-todos.json'
-import { TodosPage } from './TodosPage'
+import { ChatTaskList, TodosPage } from './TodosPage'
+import { TodoStateSchema } from '../../contracts'
 import { useTranscript } from '../chat/useTranscript'
 
 vi.mock('../chat/useTranscript', () => ({ useTranscript: vi.fn() }))
@@ -36,4 +38,19 @@ it('points to the chat page when no chat is stored', () => {
   vi.mocked(useTranscript).mockReturnValue({ session: undefined, query: { isError: false, isPending: true } } as unknown as ReturnType<typeof useTranscript>)
   render(<TodosPage sessionId={null} />)
   expect(screen.getByRole('link', { name: 'Open a chat to see its task list.' })).toHaveAttribute('href', '/')
+})
+
+// TAL-1122: the chat strip names the server's progress, opens its rows from the keyboard, and goes when the list is cleared.
+it('shows the chat strip closed with the server progress, opens it from the keyboard, and drops it when the list empties', async () => {
+  const state = TodoStateSchema.parse(fixture.public)
+  const { rerender } = render(<ChatTaskList state={state} />)
+  const header = screen.getByRole('button', { name: 'Todos 1 of 2 done' })
+  expect(header).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.queryByRole('list')).not.toBeInTheDocument()
+  header.focus()
+  await userEvent.keyboard('{Enter}')
+  expect(header).toHaveAttribute('aria-expanded', 'true')
+  expect(within(screen.getByRole('list', { name: 'Current task list' })).getAllByRole('listitem').map((r) => r.textContent)).toEqual(['Owner taskWorking', '✓Finished taskDone'])
+  rerender(<ChatTaskList state={{ ...state, display_items: [], total_count: 0 }} />)
+  expect(screen.queryByRole('button')).not.toBeInTheDocument()
 })

@@ -2740,6 +2740,7 @@
 	"settings_label_auto_title_refresh": "Refresh chat titles",
 	"settings_label_busy_placeholder_hint": "Name the busy action in the composer",
 	"settings_label_chat_activity_display_mode": "Activity display",
+	"settings_label_chat_task_list": "Task list in chat",
 	"settings_label_chat_width": "Chat width",
 	"settings_label_check_updates": "Check for updates",
 	"settings_label_claude_code_sessions": "Claude Code",

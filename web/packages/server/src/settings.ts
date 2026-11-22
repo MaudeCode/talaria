@@ -149,6 +149,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     screen_reader_mode: false,
     workspace_panel_open: false,
     workspace_todos_tab: false,
+    chat_task_list: false,
     api_redact_enabled: true,
     dashboard_plugins: {},
     sidebar_density: 'compact',

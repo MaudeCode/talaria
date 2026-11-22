@@ -77,7 +77,7 @@ const PLACEMENT: Record<string, string> = {
   worklog_details_expanded_default: 'chat', show_tool_lookups: 'chat/tool-calls', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat/advanced', virtualize_transcript: 'chat/advanced',
   show_busy_placeholder_hint: 'chat/advanced', show_token_usage: 'chat', show_tps: 'chat/advanced',
   max_tokens: 'models', compression_prepare_ahead: 'models', group_discussion_max_rounds: 'system', group_discussion_max_messages: 'system', auto_title_refresh_every: 'chat/advanced',
-  sidebar_density: 'navigation', pinned_sessions_limit: 'navigation', session_endless_scroll: 'chat/advanced', session_jump_buttons: 'chat', show_conversation_outline: 'chat', project_quick_create_buttons: 'navigation',
+  sidebar_density: 'navigation', pinned_sessions_limit: 'navigation', session_endless_scroll: 'chat/advanced', session_jump_buttons: 'chat', show_conversation_outline: 'chat', chat_task_list: 'chat', project_quick_create_buttons: 'navigation',
   show_cli_sessions: 'navigation', show_claude_code_sessions: 'navigation', show_messaging_sessions: 'navigation', show_cron_sessions: 'navigation', show_webhook_sessions: 'navigation', show_kanban_sessions: 'navigation',
   show_previous_messaging_sessions: 'navigation', hidden_tabs: 'navigation', show_titlebar_profile: 'navigation', show_sidebar_feedback: 'navigation', show_quota_chip: 'chat',
   hide_composer_model: 'chat', hide_composer_reasoning: 'chat', hide_composer_profile: 'chat', hide_composer_workspace: 'chat', hide_composer_toolsets: 'chat',
@@ -124,7 +124,7 @@ const GROUPS: Record<string, [string, string][]> = {
   chat: [
     ['Send with', 'composer'], ['While the agent is working', 'composer'], ['Attach long pasted text as a file', 'composer'],
     ['Activity display', 'transcript'], ['Open worklog details automatically', 'transcript'], ['Format Markdown in my messages', 'transcript'], ['Show token usage', 'transcript'],
-    ['Follow new content', 'transcript'], ['Conversation outline', 'transcript'], ['Jump buttons', 'transcript'],
+    ['Follow new content', 'transcript'], ['Conversation outline', 'transcript'], ['Task list in chat', 'transcript'], ['Jump buttons', 'transcript'],
   ],
   'chat/workspace-panel': [
     ['Keep workspace panel open by default', 'panel'], ['Show Todos tab in workspace panel', 'panel'], ['Start a new chat when switching workspace', 'panel'],

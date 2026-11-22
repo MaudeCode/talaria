@@ -1470,6 +1470,7 @@
 	"settings_label_auto_title_refresh": "Atualizar títulos dos chats",
 	"settings_label_busy_placeholder_hint": "Indicar a ação em curso no compositor",
 	"settings_label_chat_activity_display_mode": "Activity display",
+	"settings_label_chat_task_list": "Lista de tarefas no chat",
 	"settings_label_check_updates": "Verificar atualizações",
 	"settings_label_claude_code_sessions": "Claude Code",
 	"settings_label_composer_attach": "Botão de anexar",

@@ -1531,6 +1531,7 @@
 	"settings_label_auto_title_refresh": "刷新聊天标题",
 	"settings_label_busy_placeholder_hint": "在输入框中显示当前操作",
 	"settings_label_chat_activity_display_mode": "活动显示",
+	"settings_label_chat_task_list": "聊天中的任务列表",
 	"settings_label_check_updates": "检查更新",
 	"settings_label_claude_code_sessions": "Claude Code",
 	"settings_label_composer_attach": "附件按钮",

@@ -39,6 +39,7 @@ import { setWatchingRun } from '../presence/presence'
 import { TerminalPanelFrame } from '../terminal/TerminalPanelFrame'
 import { onOpenTerminalRequest, peekOpenTerminalRequest } from '../terminal/openTerminalRequest'
 import { ChatSidePanel } from './ChatSidePanel'
+import { ChatTaskList } from '../todos/TodosPage'
 import { setSidePanelOpen, toggleSidePanel, useShellState } from '../../shell/useShellState'
 import { useRuntimeNotices } from '../notices/useRuntimeNotices'
 import { decisionReviewNotice } from '../decisions/reviewStatus'
@@ -546,6 +547,8 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
         {otherProfile && <div className="p-4"><ErrorState error={new Error(m.transcript_other_profile({ profile: ((query.error as { body?: { profile?: string } }).body?.profile ?? '') }))} /></div>}
         {query.isError && !notFound && !otherProfile && <div className="p-4"><ErrorState error={query.error} onRetry={() => { void refresh() }} /></div>}
         <div ref={stage} className="chat-stage relative flex flex-1 min-h-0 flex-col">
+        {/* TAL-1122: off unless chosen in Settings › Chat; keyed so each chat opens with it closed. */}
+        {settings.data?.chat_task_list === true && !query.isError && <ChatTaskList key={sessionId} state={session?.todo_state} />}
         {!query.isError && (
           <Transcript
             switching={fromTitle !== null}
