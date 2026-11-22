@@ -182,6 +182,17 @@ describe('stream attach cursor (TAL-316)', () => {
     expect(getStreamState().turns[SID]?.claimsPersistedRows).toBe(false)
   })
 
+  // Rows the server saved between the detail read and the subscription are not in the cached detail.
+  it.each([[undefined, true], [{ stream_id: 'run-a', seq: 0 }, false]] as const)('with transcript_seq %j, an opened attach rereads the session detail: %s', async (transcriptSeq, reread) => {
+    const qc = new QueryClient()
+    configureStream({ queryClient: qc })
+    qc.setQueryData(keys.sessions.detail(SID), { session: sessionFixture({ session_id: SID }) })
+    await attachToStream(SID, 'run-a', transcriptSeq ? { transcript_seq: transcriptSeq } : {})
+    opened[0]!.onOpen()
+    expect(qc.getQueryState(keys.sessions.detail(SID))?.isInvalidated).toBe(reread)
+    qc.clear()
+  })
+
   it('replays a finished run\'s journal without a cursor, never at its tail', async () => {
     vi.mocked(api.fetchStreamStatus).mockResolvedValueOnce({ active: false, replay_available: true, stream_id: 'run-a', blocking_stream_id: null })
     await attachToStream(SID, 'run-a')

@@ -19,7 +19,7 @@ import type { SessionService, TitleProvenance } from './service.js'
 import type { StateDbRead, StateDbSettlementRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated, UNSAVED_REPLY } from './service.js'
 import type { SessionEventBus } from './events.js'
-import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
+import { CONTENT_EVENTS, StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
 import { TRANSCRIPT_WINDOW, ChatUsageSchema, type TurnUsage, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ApprovalAnswerer, type ApprovalInstructionOutcome, type ClarifyAnswers, type VaultPrompt, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
 import { connectorLogoUnread, startedProcessId, toolProgress } from './tool-display.js'
 import { catalogNames, connectorOperation, rememberCatalogNames } from '../tools/connectors.js'
@@ -60,8 +60,6 @@ export const CHAT_LOCK_WAIT_SECONDS = 2
 const IMAGE_MODE_TIMEOUT_MS = 15_000
 /** TAL-397: streamed text reports the live meter at most this often (seconds); a counter change reports at once. */
 const METERING_INTERVAL_S = 1
-/** The Agent's content frames, which end a rate-limit wait (TAL-821) and a compression span (TAL-1006). A terminal frame ends the run, its wait, and its span. */
-const CONTENT_EVENTS = new Set(['token', 'reasoning', 'interim_assistant', 'tool', 'tool_complete'])
 /** The frames that carry a turn's outcome; a stream publishes one (TAL-2313). `stream_end` only closes it. */
 const OUTCOME_EVENTS = new Set(['done', 'cancel', 'apperror', 'error'])
 /** How long a user's message waits for a stopped background turn to unwind before its own turn is admitted. */

@@ -69,6 +69,18 @@ it('preserves distinct payloads, intervening events, profile isolation and the q
   channels.unsubscribe('chat', sub)
 })
 
+// TAL-2644: a reload's persisted rows hold the run's output, never its pending prompts or its outcome.
+it('a live-tail attach skips the buffered output, keeps the prompts and outcome, and consumes the buffer', () => {
+  const channel = new StreamChannel()
+  for (const [event, data] of [['token', { text: 'before' }], ['tool', { id: 't' }], ['approval', { approval_id: 'a1' }], ['tool_complete', { id: 't' }], ['clarify', { clarify_id: 'q1' }], ['done', {}]] as const) channel.put([event, data, null])
+  const [tail] = channel.subscribeWithSnapshot({ tail: true })
+  expect(tail.queue.map(([event]) => event)).toEqual(['approval', 'clarify', 'done'])
+  channel.unsubscribe(tail)
+  // A reconnect before the next frame must not deliver the output the tail attach skipped.
+  const [reconnect] = channel.subscribeWithSnapshot()
+  expect(reconnect.queue).toEqual([])
+})
+
 describe('ephemeral MCP progress snapshots', () => {
   it('broadcasts a cleared progress value without retaining it for the next attach', () => {
     const channel = new StreamChannel()

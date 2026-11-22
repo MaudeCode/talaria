@@ -153,6 +153,8 @@ function open(sessionId: string, streamId: string, replay: Replay | 'tail' | nul
       if (live.get(sessionId) !== entry) return
       entry.reconnectAttempts = 0
       dispatch({ type: 'connection', sessionId, streamId, status: 'open' })
+      // A live-tail attach skipped the run's buffered output: reread the persisted rows the server saved since the detail it attached from.
+      if (replay === 'tail') void queryClient?.invalidateQueries({ queryKey: keys.sessions.detail(sessionId), exact: true })
     },
     onEvent: (event, lastEventId) => {
       if (live.get(sessionId) !== entry) return
