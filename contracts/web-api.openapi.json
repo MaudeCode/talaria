@@ -927,6 +927,17 @@
                               ],
                               "description": "TAL-1825: the profile's `compression.prepare_ahead`; null when the Agent does not offer it."
                             },
+                            "redact_phone_numbers": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-2651: the active profile's `security.redact_phone_numbers` (default true): false keeps phone numbers readable in assistant replies, while tool calls, exports and every other secret stay masked. Null when the Agent does not offer it or the config cannot be read. Changing it needs an owner session."
+                            },
                             "group_discussion_max_rounds": {
                               "anyOf": [
                                 {
@@ -2702,6 +2713,19 @@
                               "can_attach": {
                                 "type": "boolean"
                               },
+                              "attachment_mimes": {
+                                "type": "array",
+                                "items": {
+                                  "enum": [
+                                    "image/png",
+                                    "image/jpeg",
+                                    "image/gif",
+                                    "image/webp"
+                                  ],
+                                  "type": "string"
+                                },
+                                "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                              },
                               "restarting": {
                                 "type": "boolean",
                                 "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -3930,6 +3954,19 @@
                               "can_attach": {
                                 "type": "boolean"
                               },
+                              "attachment_mimes": {
+                                "type": "array",
+                                "items": {
+                                  "enum": [
+                                    "image/png",
+                                    "image/jpeg",
+                                    "image/gif",
+                                    "image/webp"
+                                  ],
+                                  "type": "string"
+                                },
+                                "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                              },
                               "restarting": {
                                 "type": "boolean",
                                 "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -4986,6 +5023,19 @@
                               },
                               "can_attach": {
                                 "type": "boolean"
+                              },
+                              "attachment_mimes": {
+                                "type": "array",
+                                "items": {
+                                  "enum": [
+                                    "image/png",
+                                    "image/jpeg",
+                                    "image/gif",
+                                    "image/webp"
+                                  ],
+                                  "type": "string"
+                                },
+                                "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                               },
                               "restarting": {
                                 "type": "boolean",
@@ -6350,6 +6400,19 @@
                               },
                               "can_attach": {
                                 "type": "boolean"
+                              },
+                              "attachment_mimes": {
+                                "type": "array",
+                                "items": {
+                                  "enum": [
+                                    "image/png",
+                                    "image/jpeg",
+                                    "image/gif",
+                                    "image/webp"
+                                  ],
+                                  "type": "string"
+                                },
+                                "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                               },
                               "restarting": {
                                 "type": "boolean",
@@ -13068,6 +13131,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -14089,6 +14165,19 @@
                         },
                         "can_attach": {
                           "type": "boolean"
+                        },
+                        "attachment_mimes": {
+                          "type": "array",
+                          "items": {
+                            "enum": [
+                              "image/png",
+                              "image/jpeg",
+                              "image/gif",
+                              "image/webp"
+                            ],
+                            "type": "string"
+                          },
+                          "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                         },
                         "restarting": {
                           "type": "boolean",
@@ -21134,6 +21223,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -27669,6 +27771,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -28803,6 +28918,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -29907,6 +30035,19 @@
                             },
                             "can_attach": {
                               "type": "boolean"
+                            },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                             },
                             "restarting": {
                               "type": "boolean",
@@ -31019,6 +31160,19 @@
                             },
                             "can_attach": {
                               "type": "boolean"
+                            },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                             },
                             "restarting": {
                               "type": "boolean",
@@ -37488,6 +37642,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -38654,6 +38821,19 @@
                                 },
                                 "can_attach": {
                                   "type": "boolean"
+                                },
+                                "attachment_mimes": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "image/png",
+                                      "image/jpeg",
+                                      "image/gif",
+                                      "image/webp"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                                 },
                                 "restarting": {
                                   "type": "boolean",
@@ -39840,6 +40020,19 @@
                             },
                             "can_attach": {
                               "type": "boolean"
+                            },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                             },
                             "restarting": {
                               "type": "boolean",
@@ -46642,6 +46835,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -47991,6 +48197,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -49093,6 +49312,19 @@
                             },
                             "can_attach": {
                               "type": "boolean"
+                            },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                             },
                             "restarting": {
                               "type": "boolean",
@@ -56353,6 +56585,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -62831,6 +63076,19 @@
                             },
                             "can_attach": {
                               "type": "boolean"
+                            },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                             },
                             "restarting": {
                               "type": "boolean",
@@ -69373,6 +69631,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -75912,6 +76183,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -80800,6 +81084,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -81901,6 +82198,19 @@
                             },
                             "can_attach": {
                               "type": "boolean"
+                            },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                             },
                             "restarting": {
                               "type": "boolean",
@@ -83397,6 +83707,10 @@
                                 },
                                 "notify_on_failure": {
                                   "type": "boolean"
+                                },
+                                "notify_on_update_available": {
+                                  "type": "boolean",
+                                  "default": false
                                 }
                               },
                               "required": [
@@ -83477,6 +83791,10 @@
                       },
                       "notify_on_failure": {
                         "type": "boolean"
+                      },
+                      "notify_on_update_available": {
+                        "type": "boolean",
+                        "default": false
                       }
                     },
                     "required": [
@@ -83520,6 +83838,10 @@
                         },
                         "notify_on_failure": {
                           "type": "boolean"
+                        },
+                        "notify_on_update_available": {
+                          "type": "boolean",
+                          "default": false
                         }
                       },
                       "required": [
@@ -83571,6 +83893,10 @@
                       },
                       "notify_on_failure": {
                         "type": "boolean"
+                      },
+                      "notify_on_update_available": {
+                        "type": "boolean",
+                        "default": false
                       }
                     },
                     "required": [
@@ -83614,6 +83940,10 @@
                         },
                         "notify_on_failure": {
                           "type": "boolean"
+                        },
+                        "notify_on_update_available": {
+                          "type": "boolean",
+                          "default": false
                         }
                       },
                       "required": [
@@ -95777,6 +96107,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -102431,6 +102774,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -103541,6 +103897,19 @@
                         },
                         "can_attach": {
                           "type": "boolean"
+                        },
+                        "attachment_mimes": {
+                          "type": "array",
+                          "items": {
+                            "enum": [
+                              "image/png",
+                              "image/jpeg",
+                              "image/gif",
+                              "image/webp"
+                            ],
+                            "type": "string"
+                          },
+                          "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                         },
                         "restarting": {
                           "type": "boolean",
@@ -109669,6 +110038,19 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                            },
                             "restarting": {
                               "type": "boolean",
                               "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -110660,6 +111042,19 @@
                             },
                             "can_attach": {
                               "type": "boolean"
+                            },
+                            "attachment_mimes": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/gif",
+                                  "image/webp"
+                                ],
+                                "type": "string"
+                              },
+                              "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
                             },
                             "restarting": {
                               "type": "boolean",
@@ -116345,6 +116740,19 @@
                                 "can_attach": {
                                   "type": "boolean"
                                 },
+                                "attachment_mimes": {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "image/png",
+                                      "image/jpeg",
+                                      "image/gif",
+                                      "image/webp"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "description": "TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach."
+                                },
                                 "restarting": {
                                   "type": "boolean",
                                   "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
@@ -120506,6 +120914,17 @@
                       ],
                       "description": "TAL-1825: the profile's `compression.prepare_ahead`; null when the Agent does not offer it."
                     },
+                    "redact_phone_numbers": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-2651: the active profile's `security.redact_phone_numbers` (default true): false keeps phone numbers readable in assistant replies, while tool calls, exports and every other secret stay masked. Null when the Agent does not offer it or the config cannot be read. Changing it needs an owner session."
+                    },
                     "group_discussion_max_rounds": {
                       "anyOf": [
                         {
@@ -121053,6 +121472,17 @@
                         }
                       ],
                       "description": "TAL-1825: the profile's `compression.prepare_ahead`; null when the Agent does not offer it."
+                    },
+                    "redact_phone_numbers": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-2651: the active profile's `security.redact_phone_numbers` (default true): false keeps phone numbers readable in assistant replies, while tool calls, exports and every other secret stay masked. Null when the Agent does not offer it or the config cannot be read. Changing it needs an owner session."
                     },
                     "group_discussion_max_rounds": {
                       "anyOf": [
@@ -127670,6 +128100,103 @@
                     "tasks"
                   ],
                   "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/model/fallback": {
+      "get": {
+        "operationId": "models.fallback",
+        "summary": "TAL-2655: the active profile's fallback models in chain order, each with the Agent's static readiness verdict. Sends no inference request, moves no credential pool and installs no plugin.",
+        "tags": [
+          "settings"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean",
+                      "description": "False when the Agent cannot check its fallback chain; nothing is known about readiness and `entries` is empty."
+                    },
+                    "entries": {
+                      "type": "array",
+                      "maxItems": 32,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "position": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0,
+                            "description": "1-based place in the effective chain (`fallback_providers`, then legacy `fallback_model`)."
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "provider_label": {
+                            "type": "string",
+                            "description": "The provider as the catalog names it; the configured id when the Agent does not know the provider."
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "configured": {
+                            "type": "boolean",
+                            "description": "The Agent resolved a route for the entry."
+                          },
+                          "auth_ready": {
+                            "type": "boolean",
+                            "description": "The resolved route has usable credentials. Always false when `configured` is false."
+                          },
+                          "status": {
+                            "enum": [
+                              "ready",
+                              "auth",
+                              "config"
+                            ],
+                            "type": "string",
+                            "description": "`ready`: configured with usable credentials (static; no request was sent). `auth`: configured, credentials missing or unusable. `config`: unknown provider or a route the Agent cannot build."
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 300
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The Agent's reason, redacted by the server; null when `status` is `ready`."
+                          }
+                        },
+                        "required": [
+                          "position",
+                          "provider",
+                          "provider_label",
+                          "model",
+                          "configured",
+                          "auth_ready",
+                          "status",
+                          "error"
+                        ]
+                      },
+                      "description": "Empty while available: the profile has no fallback chain."
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "entries"
+                  ]
                 }
               }
             }
@@ -156269,6 +156796,19 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "wrap_response_supported": {
+                            "type": "boolean"
+                          },
+                          "wrap_response": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -156284,7 +156824,9 @@
                           "delivery_unconfirmed_platforms",
                           "timezone",
                           "catch_up",
-                          "grace_minutes"
+                          "grace_minutes",
+                          "wrap_response_supported",
+                          "wrap_response"
                         ],
                         "additionalProperties": {}
                       }
@@ -156340,11 +156882,15 @@
                           "since"
                         ]
                       }
+                    },
+                    "wrap_response_supported": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "jobs",
-                    "unwritable_stores"
+                    "unwritable_stores",
+                    "wrap_response_supported"
                   ],
                   "additionalProperties": {}
                 }
@@ -157152,6 +157698,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -157167,7 +157726,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -157496,6 +158057,7 @@
                   "timezone": {},
                   "catch_up": {},
                   "grace_minutes": {},
+                  "wrap_response": {},
                   "repeat": {}
                 },
                 "additionalProperties": false
@@ -157971,6 +158533,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -157986,7 +158561,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -158042,6 +158619,7 @@
                   "timezone": {},
                   "catch_up": {},
                   "grace_minutes": {},
+                  "wrap_response": {},
                   "job_id": {},
                   "failure_deliver": {},
                   "skill": {},
@@ -158053,8 +158631,7 @@
                   "interpreter": {},
                   "enabled_toolsets": {},
                   "attach_to_session": {},
-                  "workdir": {},
-                  "wrap_response": {}
+                  "workdir": {}
                 },
                 "additionalProperties": false
               }
@@ -158529,6 +159106,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -158544,7 +159134,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -159058,6 +159650,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -159073,7 +159678,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -159588,6 +160195,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -159603,7 +160223,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -160127,6 +160749,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -160142,7 +160777,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -160656,6 +161293,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -160671,7 +161321,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -177197,6 +177849,12 @@
               "application/json": {}
             }
           },
+          "404": {
+            "description": "Unknown session or another profile's session.",
+            "content": {
+              "application/json": {}
+            }
+          },
           "409": {
             "description": "Destination already exists.",
             "content": {
@@ -177205,6 +177863,12 @@
           },
           "413": {
             "description": "Body exceeds the upload cap.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "415": {
+            "description": "`{error, code: \"owner_attachment_unsupported\", reason}`: a canonical owner chat takes only one complete PNG, JPEG, GIF or WebP image of at most `OWNER_IMAGE_MAX_BYTES`, named for its kind (TAL-1344).",
             "content": {
               "application/json": {}
             }

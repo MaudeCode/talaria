@@ -29,6 +29,12 @@ export function isRasterDataUri(value: unknown): boolean {
   return verdict
 }
 
+/** Whether `raw` is one complete raster image of `mime`, the same check `isRasterDataUri` makes of its payload. */
+export function isCompleteRaster(mime: string, raw: Buffer): boolean {
+  const match = RASTER_PREFIXES.find(([prefix]) => prefix === `data:${mime};base64,`)
+  return Boolean(match?.[1](raw))
+}
+
 /** Least recently used first. The keys are whole images, so the entry cap alone could pin gigabytes of evicted sessions. */
 const verdicts = new Map<string, boolean>()
 const VERDICTS_MAX = 256

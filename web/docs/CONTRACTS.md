@@ -682,6 +682,25 @@ active profile; a foreign job is 404. The server projects state, per-case runs,
 summaries and reported cost; clients render them. Shared fixtures are
 `contracts/fixtures/skill-replay-plan.json` and `skill-replay-job.json`.
 
+## Fallback model readiness
+
+`GET /api/model/fallback` (TAL-2655) lists the active profile's effective fallback
+chain (`fallback_providers`, then legacy `fallback_model`, deduplicated by the
+Agent) in order. The sidecar's `providers.fallback_check` runs the Agent's static
+`hermes fallback check` (`hermes_cli.fallback_check.run_checks(live=False)`) under
+the profile's scope: it resolves each entry with the real runtime resolver and
+credential predicate, holds left-core plugin installs, and sends no request. The
+Agent's static path picks credentials with `CredentialPool.select`, which counts
+and rotates a `round_robin` pool; for this read only, a context-scoped sidecar
+guard answers `select` with the Agent's own `choose` (the same pick, never counted,
+rotated or saved). The server sets `status` (`ready`, `auth`, `config`), keeps
+`auth_ready` false for an unresolved entry, labels providers from the catalog,
+and redacts and bounds each reason to 300 characters. An Agent without the check
+(before v0.23.2) answers `available: false` with no entries, never a ready chain.
+Clients render the fields as shipped; Web shows them under Settings › Models. The
+live probe (`--live`) is not exposed. The shared fixture is
+`contracts/fixtures/fallback-check.json`. This uses sidecar RPC version 105.
+
 ## Persistent delegation settings
 
 `GET /api/model/auxiliary` includes optional `delegation` settings. The native

@@ -808,9 +808,13 @@ under the store home's own `scoped_home`: a `pinned` update locks that
 profile's main model and provider, `${VAR}` references expand from its secret
 scope, and schedule times use its timezone. Reads keep the bare store override.
 
-`cron.create` and `cron.update` pass a job's `timezone`, `catch_up` and
-`grace_minutes` to the Agent, which validates them; a null clears one, and `''`
-also clears the zone. Every supported Agent's `create_job` takes these fields.
+`cron.create` and `cron.update` pass a job's `timezone`, `catch_up`,
+`grace_minutes` and `wrap_response` to the Agent, which validates them; a null
+clears one, and `''` also clears the zone. Every supported Agent's `create_job`
+takes the first three. `wrap_response` (a task's own output wrapping, ahead of
+the profile's `cron.wrap_response`) is new in Agent 0.23.2: each job and
+`cron.list` report `wrap_response_supported`, and an older Agent drops a null
+and refuses a true or false rather than storing a key it never reads.
 
 `cron.cancel` writes the Agent's per-attempt cancel marker in the store home's
 scope, so it reaches a run whoever started it. The Agent's scheduler polls that
@@ -1290,7 +1294,7 @@ so clients reread; nothing opens an observation for Background Work.
 
 ### Native owner path completion
 
-RPC v105 adds the closed `gateway.session` action `complete_path` (TAL-1342). It takes
+RPC v106 adds the closed `gateway.session` action `complete_path` (TAL-1342). It takes
 one `word` (at most 512 characters) and nothing else: no `cwd` or root travels, and an
 extra field is `invalid_params`. The adapter sends the owner's `complete.path` with the
 session id and the word, without resuming the session; the owner lists the session's

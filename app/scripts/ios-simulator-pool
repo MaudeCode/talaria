@@ -9,6 +9,7 @@ lease_file=""
 simulator_id=""
 simulator_disposable=false
 pool_lock_held=false
+pool_device_name='^iOS Test [1-9][0-9]*$'
 
 ios_pool_lock() {
     mkdir -p "$lease_dir"
@@ -23,23 +24,61 @@ ios_pool_lock() {
     return 75
 }
 
-ios_pool_release() {
-    if [[ -n "$simulator_id" ]]; then
-        # Keep a failed shutdown out of circulation: acquisition rejects booted devices.
-        xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
-        # Test hosts leak state into the device; the next lease starts clean.
-        # Only pool devices are disposable: an explicit ID may name a personal simulator.
-        if [[ "$simulator_disposable" == true ]]; then
-            if xcrun simctl erase "$simulator_id" >/dev/null 2>&1; then
-                rm -f "$lease_dir/$simulator_id.dirty"
-            else
-                # Quarantine: acquisition must erase the device before reusing it.
-                : > "$lease_dir/$simulator_id.dirty"
-                echo "Could not erase $simulator_id; it stays out of the pool until an erase succeeds." >&2
-            fi
+# Shut a leased device down; erase it too when it is disposable (udid, disposable).
+ios_pool_retire() {
+    # Keep a failed shutdown out of circulation: acquisition rejects booted devices.
+    xcrun simctl shutdown "$1" >/dev/null 2>&1 || true
+    # Test hosts leak state into the device; the next lease starts clean.
+    # Only pool devices are disposable: an explicit ID may name a personal simulator.
+    if [[ "$2" == true ]]; then
+        if xcrun simctl erase "$1" >/dev/null 2>&1; then
+            rm -f "$lease_dir/$1.dirty"
+        else
+            # Quarantine: acquisition must erase the device before reusing it.
+            : > "$lease_dir/$1.dirty"
+            echo "Could not erase $1; it stays out of the pool until an erase succeeds." >&2
         fi
     fi
-    [[ -z "$lease_file" ]] || unlink "$lease_file" 2>/dev/null || true
+}
+
+# The .pgid goes first: once the lease is gone, another caller may write its own.
+ios_pool_unlease() {
+    rm -f "${1%.lock}.pgid"
+    unlink "$1" 2>/dev/null || true
+}
+
+# A SIGKILLed owner never runs its EXIT trap, leaving its device booted under a dead lease. Reclaim such a
+# device only when nothing in the owner's process group survives; a lease without its own .pgid (from an older
+# copy of this script) may still have a workload, so it stays. Returns 0 when it reclaimed a device.
+ios_pool_reclaim() {
+    local booted lease udid owner group disposable reclaimed=1
+    booted=$(printf '%s\n' "$1" | /usr/bin/jq -r --arg pool "$pool_device_name" '
+        .devices[][] | select(.state == "Booted") | [.udid, (.name | test($pool))] | @tsv') || return 1
+    for lease in "$lease_dir"/*.lock; do
+        udid=${lease##*/}
+        udid=${udid%.lock}
+        disposable=$(printf '%s\n' "$booted" | /usr/bin/awk -F '\t' -v id="$udid" '$1 == id { print $2 }')
+        # shlock rewrites a lease it takes over, so a .pgid older than its lease belongs to an earlier owner.
+        [[ -n "$disposable" && -f "${lease%.lock}.pgid" && ! "${lease%.lock}.pgid" -ot "$lease" ]] || continue
+        # The owner may release while this runs; a vanished file reads as empty and is skipped.
+        owner=$(cat "$lease" 2>/dev/null)
+        group=$(cat "${lease%.lock}.pgid" 2>/dev/null)
+        [[ "$owner" =~ ^[0-9]+$ && "$group" =~ ^[1-9][0-9]*$ ]] || continue
+        ! kill -0 "$owner" 2>/dev/null || continue
+        # -a: an acquiring caller inside that group is a survivor too.
+        ! /usr/bin/pgrep -a -g "$group" >/dev/null || continue
+        /usr/bin/shlock -f "$lease" -p $$ || continue
+        ios_pool_retire "$udid" "$disposable"
+        ios_pool_unlease "$lease"
+        echo "Reclaimed iOS simulator $udid from lease owner $owner, whose process group is gone." >&2
+        reclaimed=0
+    done
+    return "$reclaimed"
+}
+
+ios_pool_release() {
+    [[ -z "$simulator_id" ]] || ios_pool_retire "$simulator_id" "$simulator_disposable"
+    [[ -z "$lease_file" ]] || ios_pool_unlease "$lease_file"
     simulator_id=""
     simulator_disposable=false
     lease_file=""
@@ -62,17 +101,20 @@ ios_pool_try_acquire() {
     ios_pool_lock || return $?
     local devices_json candidates candidate_id candidate_state candidate_disposable candidate_lease candidate
     devices_json=$(xcrun simctl list devices available --json) || return $?
+    if ios_pool_reclaim "$devices_json"; then
+        devices_json=$(xcrun simctl list devices available --json) || return $?
+    fi
     candidates=$(printf '%s\n' "$devices_json" | /usr/bin/jq -r \
         --arg id "${IOS_SIMULATOR_ID:-}" --arg runtime "${IOS_SIMULATOR_RUNTIME:-}" \
-        --arg type "${IOS_SIMULATOR_DEVICE_TYPE:-}" '
+        --arg type "${IOS_SIMULATOR_DEVICE_TYPE:-}" --arg pool "$pool_device_name" '
         [.devices | to_entries[] |
          select(.key | startswith("com.apple.CoreSimulator.SimRuntime.iOS-")) |
          select($runtime == "" or .key == $runtime) | .value[] |
          # A device type (an iPhone Duo for layout tests) may name a model outside the pool.
          select(if $id != "" then .udid == $id
                 elif $type != "" then .deviceTypeIdentifier == $type
-                else (.name | test("^iOS Test [1-9][0-9]*$")) end)] |
-        sort_by(.name) | .[] | [.udid, .state, (.name | test("^iOS Test [1-9][0-9]*$"))] | @tsv
+                else (.name | test($pool)) end)] |
+        sort_by(.name) | .[] | [.udid, .state, (.name | test($pool))] | @tsv
     ') || return $?
     if [[ -z "$candidates" ]]; then
         echo "No idle compatible iOS pool device is available. Run scripts/setup-ios-test-pool or inspect booted devices." >&2
@@ -81,7 +123,7 @@ ios_pool_try_acquire() {
     # fd 3, so no command in the loop can consume the candidate list; bash 3.2 has no mapfile.
     while IFS= read -r candidate <&3; do
         IFS=$'\t' read -r candidate_id candidate_state candidate_disposable <<< "$candidate"
-        # A crashed owner may leave children running. Never reuse its booted device.
+        # Booted here means a live lease, a surviving workload, or no lease at all: never take it.
         [[ "$candidate_state" == Shutdown ]] || continue
         candidate_lease="$lease_dir/$candidate_id.lock"
         if /usr/bin/shlock -f "$candidate_lease" -p $$; then
@@ -96,6 +138,8 @@ ios_pool_try_acquire() {
                     continue
                 fi
             fi
+            # Executed, this script's command shares its process group; a sourced caller records its own.
+            /bin/ps -o pgid= -p $$ | tr -d ' ' > "$lease_dir/$candidate_id.pgid"
             simulator_id="$candidate_id"
             simulator_disposable="$candidate_disposable"
             lease_file="$candidate_lease"

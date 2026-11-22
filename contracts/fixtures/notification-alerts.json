@@ -580,5 +580,37 @@
       "alertEligible": true,
       "expected": []
     }
+  ],
+  "serverNotice": [
+    {
+      "name": "an owner who opted in is alerted",
+      "owner": true,
+      "preferences": {
+        "notify_on_update_available": true
+      },
+      "expected": true
+    },
+    {
+      "name": "an owner who left it off is not",
+      "owner": true,
+      "preferences": {
+        "notify_on_update_available": false
+      },
+      "expected": false
+    },
+    {
+      "name": "an owner whose subscription or device predates the switch is not",
+      "owner": true,
+      "preferences": {},
+      "expected": false
+    },
+    {
+      "name": "a non-owner who turned it on is not",
+      "owner": false,
+      "preferences": {
+        "notify_on_update_available": true
+      },
+      "expected": false
+    }
   ]
 }

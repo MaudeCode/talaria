@@ -1229,6 +1229,7 @@ export const SettingsSchema = z.looseObject({
   provider_quota_thresholds: QuotaThresholdsSchema.optional(),
   agent_approvals: z.boolean().nullable().optional().describe('TAL-1169: the profile\'s `talaria.agent_approvals` (default false): whether an agent with the talaria toolset may approve once or deny another session\'s pending command. Null when the profile config cannot be read.'),
   compression_prepare_ahead: z.boolean().nullable().optional().describe('TAL-1825: the profile\'s `compression.prepare_ahead`; null when the Agent does not offer it.'),
+  redact_phone_numbers: z.boolean().nullable().optional().describe('TAL-2651: the active profile\'s `security.redact_phone_numbers` (default true): false keeps phone numbers readable in assistant replies, while tool calls, exports and every other secret stay masked. Null when the Agent does not offer it or the config cannot be read. Changing it needs an owner session.'),
   group_discussion_max_rounds: z.number().int().positive().nullable().optional().describe('TAL-1828: the root config\'s `hosted_rooms.discussion.max_rounds`, as a gateway loads it (default 3). Null when the session cannot manage the server or this server cannot offer it.'),
   group_discussion_max_messages: z.number().int().positive().nullable().optional().describe('TAL-1828: the root config\'s `hosted_rooms.discussion.max_messages`, as a gateway loads it (default 10). Null as `group_discussion_max_rounds`.'),
   group_discussion_restart_required: z.boolean().nullable().optional().describe('TAL-1828: the running gateway loaded other limits at startup, so a saved change applies after a gateway restart. Null as `group_discussion_max_rounds`.'),
@@ -2111,6 +2112,8 @@ export const CronJobViewSchema = z.looseObject({
   delivery_unconfirmed_platforms: z.array(z.string()),
   /** Server-normalized (TAL-1820): the job's schedule policy, null when unset. `timezone` is the IANA zone the schedule runs in, also named in `schedule_display`, else the profile's zone. `catch_up` is true to run once for missed runs, false to skip them, else the Agent's default. `grace_minutes` overrides the catch-up window; 0 never catches up. */
   timezone: z.string().nullable(), catch_up: z.boolean().nullable(), grace_minutes: z.number().nullable(),
+  /** Server-normalized (TAL-2634): whether the installed Agent reads a task's own output wrapping (0.23.2 and later), and the task's override: true wraps delivered output in the task header and footer, false delivers it as written, null follows the profile's `cron.wrap_response`. Always null where unsupported; clients offer the control only when supported. */
+  wrap_response_supported: z.boolean(), wrap_response: z.boolean().nullable(),
 })
 export type CronJob = z.infer<typeof CronJobViewSchema>
 /** TAL-810: a listed profile's cron store whose writes fail (full disk, read-only mount, permissions), so its scheduler skips every run. `error` and `fix` are the Agent's text; `since` is the last write that landed (epoch seconds), null when unknown. */
@@ -2122,6 +2125,8 @@ export const CronsSchema = z.looseObject({
   ordered: z.boolean().optional(),
   active_profile: z.string().optional(), all_profiles: z.boolean().optional(), other_profile_count: z.number().optional(), cron_unavailable: z.boolean().optional(),
   unwritable_stores: z.array(CronStoreHealthSchema),
+  /** TAL-2634: whether the installed Agent reads a task's own `wrap_response`, so a new task's editor offers it. */
+  wrap_response_supported: z.boolean(),
 })
 export type Crons = z.infer<typeof CronsSchema>
 export const CronContextSourcesSchema = z.object({ profile: z.string(), sources: z.array(z.object({ job_id: z.string(), label: z.string(), selectable: z.boolean() })) })

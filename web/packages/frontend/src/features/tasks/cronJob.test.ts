@@ -6,7 +6,7 @@ import { usageStrip } from './cronJob'
 const recurring: CronJob = {
   id: 'ab12cd34ef56', name: 'Digest', prompt: 'Summarise the inbox', schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', attention_hint: null, last_failure: null, delivery_unconfirmed_platforms: [], can_stop: false, stopping: false, last_outcome: 'succeeded',
   repeat: { times: null, completed: 12 }, enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00',
-  last_status: 'ok', last_error: null, last_delivery_error: null, deliver: 'local', timezone: null, catch_up: null, grace_minutes: null, shown_state: 'active', diagnostics: '{}',
+  last_status: 'ok', last_error: null, last_delivery_error: null, deliver: 'local', timezone: null, catch_up: null, grace_minutes: null, shown_state: 'active', diagnostics: '{}', wrap_response_supported: false, wrap_response: null,
 }
 
 describe('CronJobSchema', () => {

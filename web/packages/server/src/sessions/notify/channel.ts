@@ -25,7 +25,15 @@ export interface NotificationChannel {
   clearDeleted?(sid: string, profile: string | null): Promise<void>
   /** TAL-1970: whether an agent notice about a session in `profile` owned by `owner` reaches any device through this channel. */
   noticeReach?(profile: string | null, owner: string | null): Promise<boolean>
+  /** TAL-2665: alert each server owner's opted-in subscription or device once per notice id; never throws. */
+  serverNotice?(notice: ServerNotice): Promise<void>
 }
+
+/**
+ * TAL-2665: a server-level notice, tied to no session. `kind` names the preference that opts in to it; `id` is stable, so
+ * a channel alerts each subscription or device about it at most once.
+ */
+export interface ServerNotice { kind: 'update_available'; id: string; title: string; body: string; url: string }
 
 /** TAL-1970: the session an agent notice is about. */
 export interface NoticeSession { session_id: string; profile: string | null; owner_person_id: string | null }
@@ -75,6 +83,11 @@ export class NotificationHub {
     }
     if (!muted) this.changed()
     return { status: 'sent', notice_id: noted.notice.id, level, url, channels, retry_after_seconds: null }
+  }
+
+  /** TAL-2665: a server notice goes to every channel; each one decides who receives it. */
+  async serverNotice(notice: ServerNotice): Promise<void> {
+    await Promise.all(this.channels.flatMap((channel) => channel.serverNotice ? [channel.serverNotice(notice)] : []))
   }
 
   async markViewed(sid: string): Promise<void> { for (const channel of this.channels) await channel.markViewed?.(sid) }

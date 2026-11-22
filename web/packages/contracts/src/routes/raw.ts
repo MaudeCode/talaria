@@ -167,7 +167,7 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     method: 'POST', path: '/api/upload', summary: 'Store one chat attachment in the session inbox and return a rollback receipt.', tags: ['files'],
     query: { session_id: { description: 'Target session (the multipart `session_id` field wins when present).' } },
     requestBody: { contentType: 'multipart/form-data', description: 'Fields `session_id` and `file`.' },
-    responses: { 200: { description: 'Upload metadata.', contentType: 'application/json' }, 400: { description: 'No file or invalid name.', contentType: 'application/json' }, 409: { description: 'Destination already exists.', contentType: 'application/json' }, 413: { description: 'Body exceeds the upload cap.', contentType: 'application/json' } },
+    responses: { 200: { description: 'Upload metadata.', contentType: 'application/json' }, 400: { description: 'No file or invalid name.', contentType: 'application/json' }, 404: { description: 'Unknown session or another profile\'s session.', contentType: 'application/json' }, 409: { description: 'Destination already exists.', contentType: 'application/json' }, 413: { description: 'Body exceeds the upload cap.', contentType: 'application/json' }, 415: { description: '`{error, code: "owner_attachment_unsupported", reason}`: a canonical owner chat takes only one complete PNG, JPEG, GIF or WebP image of at most `OWNER_IMAGE_MAX_BYTES`, named for its kind (TAL-1344).', contentType: 'application/json' } },
   },
   {
     method: 'POST', path: '/api/upload/extract', summary: 'Extract one archive (.zip, .tar, .tar.gz/.tgz, .tar.bz2/.tbz2, .tar.xz/.txz) into `<session inbox>/<stem>` and return a directory rollback receipt.', tags: ['files'],

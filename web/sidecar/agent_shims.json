@@ -32,6 +32,12 @@
       "tests": ["web/sidecar/tests/test_cron_parity.py"]
     },
     {
+      "id": "cron-wrap-response",
+      "lastRequired": "0.23.1",
+      "summary": "A per-task cron wrap_response is new in 0.23.2; older Agents read only the global cron.wrap_response, so the sidecar reports no capability and refuses an explicit value.",
+      "tests": ["web/sidecar/tests/test_cron_parity.py"]
+    },
+    {
       "id": "dashboard-credential-binding",
       "lastRequired": "0.23.1",
       "summary": "BasicAuthProvider(credential_id=) is new in 0.23.2; older Agents sign dashboard sessions with the secret alone.",

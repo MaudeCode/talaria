@@ -48,7 +48,7 @@ describe('Web Push channel', () => {
     expect(status.subscription).toBeNull()
     const publicKey = String(status.public_key)
     expect(Buffer.from(publicKey, 'base64url')).toHaveLength(65)
-    expect(await json(await send(s, 'POST', PUSH_PATH, { endpoint: ENDPOINT, keys: { p256dh: keys.p256dh, auth: keys.auth } }))).toEqual({ ok: true, preferences: { notify_on_approval: true, notify_on_input: true, notify_on_completion: true, notify_on_failure: true } })
+    expect(await json(await send(s, 'POST', PUSH_PATH, { endpoint: ENDPOINT, keys: { p256dh: keys.p256dh, auth: keys.auth } }))).toEqual({ ok: true, preferences: { notify_on_approval: true, notify_on_input: true, notify_on_completion: true, notify_on_failure: true, notify_on_update_available: false } })
 
     const sid = String(((await json(await send(s, 'POST', '/api/session/new', {}))).session as Json).session_id)
     ;(await s.deps.sessionStore.get(sid)).title = 'Deploy review'
@@ -84,7 +84,7 @@ describe('Web Push channel', () => {
     await settle()
 
     // A disabled preference sends nothing; the kinds left on still alert.
-    const off = { notify_on_approval: true, notify_on_input: true, notify_on_completion: false, notify_on_failure: true }
+    const off = { notify_on_approval: true, notify_on_input: true, notify_on_completion: false, notify_on_failure: true, notify_on_update_available: false }
     expect(await json(await send(s, 'PATCH', PUSH_PATH, { endpoint: ENDPOINT, preferences: off }))).toEqual({ ok: true, preferences: off })
     expect((await json(await s.get(`/api/notifications/web-push?endpoint=${encodeURIComponent(ENDPOINT)}`))).subscription).toEqual({ preferences: off })
     s.deps.notifications.noteTerminal('stream-push', 'completed')
@@ -240,6 +240,39 @@ describe('Web Push and login sessions', () => {
     expect((await send(s, 'POST', '/api/auth/logout', undefined, { cookie })).status).toBe(200)
     await s.deps.webPush.idle()
     expect(push.pushes.filter((p) => p.url === endpoint)).toHaveLength(1)
+  })
+
+  // TAL-2665: an update-available notice pushes once to each server owner's subscription that opted in.
+  it('pushes a server notice once to each opted-in owner subscription, opening Settings › System', async () => {
+    const keys = browserKeys()
+    const push = stubPushService(s)
+    const headers = (cookie: string) => ({ cookie: `${s.deps.auth.cookieName()}=${cookie}`, origin: s.base, 'X-Hermes-CSRF-Token': s.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' })
+    const owner = headers(s.deps.auth.createSession({ authType: 'password' }))
+    // A login bound to one profile cannot manage the server, so its switch changes nothing.
+    const member = headers(s.deps.auth.createSession({ authType: 'password', boundProfile: 'default' }))
+    const on = { notify_on_approval: true, notify_on_input: true, notify_on_completion: true, notify_on_failure: true, notify_on_update_available: true }
+    for (const [h, endpoint, preferences] of [
+      [owner, 'https://push.example/send/owner-on', on],
+      [owner, 'https://push.example/send/owner-off', { ...on, notify_on_update_available: false }],
+      [member, 'https://push.example/send/member-on', on],
+    ] as const) {
+      const res = await s.get(PUSH_PATH, { method: 'POST', headers: h, body: JSON.stringify({ endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, preferences }) })
+      expect(res.status, endpoint).toBe(200)
+      expect(((await json(res)).preferences as Json).notify_on_update_available).toBe(preferences.notify_on_update_available)
+    }
+    const notice = { kind: 'update_available' as const, id: 'update_available:webui:web-v2.1.0', title: 'Talaria Web update available', body: 'Talaria Web 2.1.0 is available.', url: '/settings/system' }
+    const sent = async () => { await s.deps.webPush.idle(); return push.pushes.filter((p) => p.url.includes('-on') || p.url.includes('-off')) }
+
+    await s.deps.notifications.serverNotice(notice)
+    expect((await sent()).map((p) => p.url)).toEqual(['https://push.example/send/owner-on'])
+    expect(keys.decrypt(Buffer.from((await sent())[0]!.init.body as Uint8Array))).toEqual({ title: notice.title, body: notice.body, tag: notice.id, url: '/settings/system' })
+    expect((await sent())[0]!.init.headers).toMatchObject({ Urgency: 'normal' })
+
+    // The subscription remembers the notice, so a repeat never alerts it again; a newer version alerts once more.
+    await s.deps.notifications.serverNotice(notice)
+    expect(await sent()).toHaveLength(1)
+    await s.deps.notifications.serverNotice({ ...notice, id: 'update_available:webui:web-v2.2.0' })
+    expect((await sent()).map((p) => p.url)).toEqual(['https://push.example/send/owner-on', 'https://push.example/send/owner-on'])
   })
 })
 

@@ -228,6 +228,40 @@ Each accepted event queues one silent APNs push to every enrolled device of each
 
 Delivery is best effort: APNs may throttle or drop a background push, retries and token pruning follow the other device pushes, and the App's periodic refresh still finds the chat.
 
+## Send a server notice
+
+`PUT /v1/publishers/{publisherId}/profiles/{profileId}/notices/{noticeId}`
+
+```json
+{
+  "version": 1,
+  "kind": "update_available",
+  "noticeId": "update_available:webui:web-v2.1.0",
+  "publisherId": "https://hermes.example.com",
+  "profileId": "opaque-server-generated-profile-scope",
+  "title": "Talaria Web update available",
+  "body": "Talaria Web 2.1.0 is available.",
+  "deepLink": "/settings/system"
+}
+```
+
+A server-level notice that belongs to no session. Talaria Web sends one when a new Talaria Web or Hermes Agent version becomes available, to every profile it enrolled, with a `noticeId` that names the target and version (`contracts/fixtures/publisher-server-notice.json`). `kind` is `update_available`, the only kind; it names the device preference that opts in. The body carries exactly these fields: an unknown field, another `kind` or `version`, a `noticeId` that differs from the path, a `noticeId` past 200, a `title` past 80 or a `body` past 300 characters, or a `deepLink` that is not a relative path answers 400. A `publisherId` or `profileId` that differs from the path answers 403, and a profile this publisher has not enrolled answers 409 with `status: "unauthorized"`. The relay acknowledges the notice before delivering anything.
+
+Each accepted notice queues one alert to every signed-in device of the user who owns the publisher whose `notificationsEnabled` and `notifyOnUpdateAvailable` are on and that has not excluded the publisher, when that user's grant names this profile. Other users the profile is shared with receive nothing. The relay sends it at most once per `noticeId` and device, whichever profile carried it, so a repeat queues nothing. Before each attempt the relay rechecks both preferences, the exclusion and the device user's ownership. The alert uses `interruption-level: active` and a `thread-id` of its own per publisher, so it never groups with a chat's alerts, and opens `deepLink` (`contracts/fixtures/relay-server-notice-push.json`):
+
+```json
+{
+  "aps": {
+    "alert": { "title": "Talaria Web update available", "body": "Talaria Web 2.1.0 is available." },
+    "sound": "default",
+    "thread-id": "per-publisher server notice thread",
+    "interruption-level": "active"
+  },
+  "publisherId": "https://hermes.example.com",
+  "deepLink": "/settings/system"
+}
+```
+
 ## Device and Live Activity routes
 
 `PUT /v1/devices/{deviceId}` upserts the signed-in user's device:
@@ -246,12 +280,15 @@ Delivery is best effort: APNs may throttle or drop a background push, retries an
     "notifyOnInput": true,
     "notifyOnCompletion": true,
     "notifyOnFailure": true,
-    "notifyOnBackground": false
+    "notifyOnBackground": false,
+    "notifyOnUpdateAvailable": false
   }
 }
 ```
 
 `notifyOnBackground` is optional and defaults to `false`: completion alerts for turns a finished sub-agent or background process started (a state's `origin: "background"`) reach the device only while it is `true` and `notifyOnCompletion` is on.
+
+`notifyOnUpdateAvailable` is optional and defaults to `false`: a server notice that an update is available reaches the device only while it is `true` and the device's user owns the publisher (see [Send a server notice](#send-a-server-notice)).
 
 Every APNs token field (`pushToken`, `pushToStartToken`, and `activityPushToken` below) is 64 to 200 hexadecimal characters. The relay stores it lower-cased; any other value, including one with whitespace or a `/`, answers 400 `invalid_device`. Send either device token field as `null` to clear the stored token. The relay uses `pushToStartToken` to start the aggregate Live Activity when work begins while no aggregate activity is registered.
 

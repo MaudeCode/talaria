@@ -245,6 +245,12 @@ export function alertForState(
   }
 }
 
+// TAL-2665: a server notice (an update is available) alerts only the publisher owner's devices that opted in.
+// Talaria Web applies the same rule to Web Push (contracts/fixtures/notification-alerts.json `serverNotice`).
+export function serverNoticeAllowed(preferences: NotificationPreferences, owner: boolean): boolean {
+  return owner && preferences.notifyOnUpdateAvailable === true;
+}
+
 export function shouldUpdateAggregate(
   previous: ActivityAggregate | null,
   next: ActivityAggregate,

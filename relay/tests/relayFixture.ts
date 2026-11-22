@@ -50,7 +50,8 @@ export type Backend = Awaited<ReturnType<typeof seed>>;
 
 const processed = new WeakMap<Backend, Set<string>>();
 
-// Runs each delivery mutation the relay scheduled since the last call, once: recomputes, and session-started pushes.
+// Runs each delivery mutation the relay scheduled since the last call, once: recomputes, session-started pushes and
+// server notices.
 export async function runScheduledRecomputes(backend: Backend) {
   const seen = processed.get(backend) ?? new Set<string>();
   processed.set(backend, seen);
@@ -60,6 +61,7 @@ export async function runScheduledRecomputes(backend: Backend) {
     const args = (job.args as [never])[0];
     if (job.name === "delivery:recompute") await backend.mutation(internal.delivery.recompute, args);
     else if (job.name === "delivery:enqueueSessionStarted") await backend.mutation(internal.delivery.enqueueSessionStarted, args);
+    else if (job.name === "delivery:enqueueServerNotice") await backend.mutation(internal.delivery.enqueueServerNotice, args);
     else continue;
     seen.add(job._id);
   }

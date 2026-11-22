@@ -11,9 +11,9 @@ export const TOUCH_QUERY = '(pointer: coarse)'
 /**
  * The composer's attach control. Both pickers hand their files to `onFiles`, the composer's one attach path. `owner` names
  * whose draft the files join (chat, profile, clarification); a new owner closes the menu. `fallbackFocus` takes focus when
- * the open menu goes away with the control.
+ * the open menu goes away with the control. `kinds`: the only file types the server lets this chat take, when it limits them.
  */
-export function AttachControl({ owner, onFiles, fallbackFocus }: { owner: string; onFiles: (files: FileList) => void; fallbackFocus: RefObject<HTMLElement | null> }) {
+export function AttachControl({ owner, onFiles, fallbackFocus, kinds }: { owner: string; onFiles: (files: FileList) => void; fallbackFocus: RefObject<HTMLElement | null>; kinds?: readonly string[] | undefined }) {
   const touch = useMediaQuery(TOUCH_QUERY)
   const files = useRef<HTMLInputElement>(null)
   const camera = useRef<HTMLInputElement>(null)
@@ -36,8 +36,8 @@ export function AttachControl({ owner, onFiles, fallbackFocus }: { owner: string
   const button = <button type="button" className="icon-btn has-tooltip data-[popup-open]:after:hidden" id="btnAttach" data-tooltip={label} aria-label={label} {...(touch ? {} : { onClick: () => files.current?.click() })}><Paperclip size={16} aria-hidden="true" /></button>
   return (
     <>
-      <input ref={files} type="file" id="fileInput" multiple className="file-input-visually-hidden" onChange={pick} accept="image/*,text/*,application/pdf,application/json,.csv,.md" />
-      {touch && <input ref={camera} type="file" id="cameraInput" className="file-input-visually-hidden" onChange={pick} accept="image/*" capture="environment" />}
+      <input ref={files} type="file" id="fileInput" multiple className="file-input-visually-hidden" onChange={pick} accept={kinds?.join(',') ?? 'image/*,text/*,application/pdf,application/json,.csv,.md'} />
+      {touch && <input ref={camera} type="file" id="cameraInput" className="file-input-visually-hidden" onChange={pick} accept={kinds?.join(',') ?? 'image/*'} capture="environment" />}
       {touch ? (
         <ComposerMenu label={label} open={open} onOpenChange={(next) => { setOpenFor(next ? owner : null) }} trigger={button}>
           <MenuItem onClick={() => camera.current?.click()}><Camera size={14} aria-hidden="true" />{m.composer_attach_camera()}</MenuItem>

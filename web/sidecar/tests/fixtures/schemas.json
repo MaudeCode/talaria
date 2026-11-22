@@ -8167,6 +8167,9 @@
                   "type": "null"
                 }
               ]
+            },
+            "wrap_response_supported": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -8178,6 +8181,9 @@
           ],
           "additionalProperties": {}
         }
+      },
+      "wrap_response_supported": {
+        "type": "boolean"
       },
       "store_health": {
         "anyOf": [
@@ -8277,6 +8283,9 @@
                     "type": "null"
                   }
                 ]
+              },
+              "wrap_response_supported": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -8358,6 +8367,9 @@
                 "type": "null"
               }
             ]
+          },
+          "wrap_response_supported": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -8434,6 +8446,9 @@
                 "type": "null"
               }
             ]
+          },
+          "wrap_response_supported": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -9295,6 +9310,60 @@
     "required": [
       "available",
       "strategy",
+      "entries"
+    ],
+    "additionalProperties": false
+  },
+  "providers.fallback_check": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "available": {
+        "type": "boolean",
+        "description": "False when the Agent has no static fallback check; `entries` is then empty."
+      },
+      "entries": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "configured": {
+              "type": "boolean"
+            },
+            "auth_ready": {
+              "type": "boolean"
+            },
+            "ready": {
+              "type": "boolean"
+            },
+            "error_class": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "model",
+            "configured",
+            "auth_ready",
+            "ready",
+            "error_class",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "available",
       "entries"
     ],
     "additionalProperties": false
@@ -11324,6 +11393,10 @@
               "reactions_supported": {
                 "type": "boolean"
               },
+              "image_attachments": {
+                "description": "TAL-1344: the owner stages images (`image-attach-v1`). Absent from older sidecars.",
+                "type": "boolean"
+              },
               "transcripts": {
                 "description": "TAL-2072: the owner serves `transcript`, its stored history read. Absent on older owners.",
                 "type": "boolean"
@@ -13020,6 +13093,10 @@
                 "maximum": 9007199254740991
               },
               "reactions_supported": {
+                "type": "boolean"
+              },
+              "image_attachments": {
+                "description": "TAL-1344: the owner stages images (`image-attach-v1`). Absent from older sidecars.",
                 "type": "boolean"
               },
               "transcripts": {

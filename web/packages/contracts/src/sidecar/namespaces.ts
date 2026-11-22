@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { AGENT_IMPORT_EXPORT_MAX_CHARS, AgentImportSourceSchema, AgentImportResultSchema } from '../agent-imports.js'
 import { ProviderPhaseSchema } from '../run-status.js'
 import { SpeedTierSchema } from '../speed.js'
+import { FallbackCheckSidecarSchema } from '../fallback-check.js'
 import { GatewayClarifyBatchSchema, GatewayCreateParamsSchema, GatewaySessionParamsSchema, GatewaySessionResultSchema } from '../gateway-session.js'
 import { ConnectorOperationSnapshotSchema } from '../connector-operation.js'
 import { CanonicalBotChatSchema, CommandBundleInvocationSchema, CommandBundleSchema, CronBlueprintFillInputSchema, CronBlueprintFillSchema, CronBlueprintsSchema, GatewayModeSchema, KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanInspectionSnapshotSchema, KanbanRunStartShape, KanbanTaskLinksShape, KanbanTaskSchema, ModelSelectionWarningSchema, NousAccountSchema, PendingWriteRefSchema, PendingWriteSchema, PluginCatalogQuerySchema, PluginCatalogSchema, PluginDisabledReasonSchema, PluginInstallInputSchema, PluginInstallResultSchema, PluginOAuthClientSchema, PluginRuntimeApplicationSchema, PluginSettingFieldSchema, PluginUpdateAllResultSchema, PluginUpdateResultSchema, SessionDeleteRefusedSchema, SkillCatalogIdentitySchema, SkillReplayCaseResultSchema, SkillReplayPlanInputSchema, SkillReplayPlanSidecarSchema, SkillReplayRouteSchema, SkillRevisionIdSchema, SkillRevisionsInputSchema, SkillRevisionsSchema, ToolsetsCatalogSchema } from '../sidecar-shared.js'
@@ -357,7 +358,7 @@ export const STT_METHODS = {
 
 // ── cron ───────────────────────────────────────────────────────────────
 /** `running_elsewhere`: a live execution owner. `recovery_only`: a retained snapshot, not a source for new task context. */
-export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullable().optional(), profile: z.string().nullable(), toast_notifications: z.boolean(), monitor: z.string(), continuity: z.boolean(), running_elsewhere: z.boolean().optional(), recovery_only: z.boolean().optional(), live_execution: z.object({ id: z.string(), stopping: z.boolean() }).nullable().optional() }).catchall(Json)
+export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullable().optional(), profile: z.string().nullable(), toast_notifications: z.boolean(), monitor: z.string(), continuity: z.boolean(), running_elsewhere: z.boolean().optional(), recovery_only: z.boolean().optional(), live_execution: z.object({ id: z.string(), stopping: z.boolean() }).nullable().optional(), wrap_response_supported: z.boolean().optional() }).catchall(Json)
 const CronJob = ProfileHomeParams.extend({ job_id: z.string().min(1) })
 const JobEnvelope = z.object({ job: CronJobSchema })
 export const CronUsageSchema = z.object({ model: z.string().optional(), provider: z.string().optional(), estimated_cost_usd: z.number().optional(), duration_seconds: z.number().optional(), input_tokens: z.number().int().nullable().optional(), output_tokens: z.number().int().nullable().optional(), total_tokens: z.number().int().nullable().optional() })
@@ -365,7 +366,7 @@ export const CRON_METHODS = {
   'cron.blueprints': { params: ProfileHomeParams, result: CronBlueprintsSchema },
   'cron.blueprint_fill': { params: CronBlueprintFillInputSchema.extend({ profile_home: z.string().optional() }), result: CronBlueprintFillSchema },
   /** `probe_store` adds the store's write probe (TAL-810): null when writes land. */
-  'cron.list': { params: ProfileHomeParams.extend({ probe_store: z.boolean().optional() }), result: z.object({ jobs: z.array(CronJobSchema), store_health: z.object({ store: z.string(), error: z.string(), since: z.string(), fix: z.string() }).nullable().optional() }) },
+  'cron.list': { params: ProfileHomeParams.extend({ probe_store: z.boolean().optional() }), result: z.object({ jobs: z.array(CronJobSchema), wrap_response_supported: z.boolean().optional(), store_health: z.object({ store: z.string(), error: z.string(), since: z.string(), fix: z.string() }).nullable().optional() }) },
   'cron.get': { params: CronJob, result: z.object({ job: CronJobSchema.nullable() }) },
   'cron.create': { params: ProfileHomeParams.extend({ job: Loose, execution_home: z.string().nullable().optional() }), result: JobEnvelope },
   'cron.update': { params: CronJob.extend({ updates: Loose }), result: JobEnvelope },
@@ -400,6 +401,8 @@ export const PROVIDERS_METHODS = {
   'providers.local_models': { params: ProfileHomeParams, result: z.object({ provider_id: z.string(), models: z.array(z.string()), current_endpoint: z.string().nullable() }) },
   'providers.resolve_runtime': { params: ProfileHomeParams.extend({ requested: z.string().nullable().optional(), api_key: z.string().nullable().optional(), base_url: z.string().nullable().optional(), target_model: z.string().nullable().optional() }), result: z.object({ runtime: Loose }) },
   'providers.credential_pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ available: z.boolean(), strategy: z.string(), entries: z.array(Loose) }) },
+  /** TAL-2655: the profile's effective fallback chain through the Agent's static `hermes fallback check`, in chain order; no session, request, pool count or plugin install. */
+  'providers.fallback_check': { params: ProfileHomeParams, result: FallbackCheckSidecarSchema },
   // TAL-1814: the Agent's one `/model` parser. An Agent without it reads the whole string as a model id. `errors` are its refusals; `unsupported_flags` parsed but cannot apply to a Web chat.
   'models.parse_switch_args': { params: z.object({ args: z.string() }), result: z.object({ target: z.string(), provider: z.string().nullable(), reset: z.boolean(), reasoning: z.string().nullable(), errors: z.array(z.string()), unsupported_flags: z.array(z.string()) }) },
   'models.selection_warnings': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), model: z.string().min(1), provider: z.string().nullable(), base_url: z.string().optional().describe('The route the guards price; it carries the Agent metadata key only for the configured main endpoint'), current_model: z.string().nullable(), current_provider: z.string().nullable(), context_tokens: z.number().int().positive().nullable(), messages: z.array(Loose) }), result: z.object({ warnings: z.array(ModelSelectionWarningSchema), context_tokens: z.number().int().positive().nullable(), provider: z.string(), base_url: z.string() }) },

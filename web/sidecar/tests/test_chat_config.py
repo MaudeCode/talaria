@@ -129,6 +129,18 @@ def test_declares_key_denies_the_discussion_limits_on_an_agent_without_them(monk
     assert config_methods.declares_key('hosted_rooms.discussion.max_rounds') is False
 
 
+@pytest.mark.parametrize(('has_policy', 'key', 'declared'), [(True, 'security.redact_phone_numbers', True), (False, 'security.redact_phone_numbers', False), (True, 'security.redact_other', False)])
+def test_declares_key_answers_for_the_phone_policy_the_agent_reads_without_a_default(monkeypatch, has_policy, key, declared):
+    """TAL-2651: the chat phone opt-out exists only where the Agent ships ``agent.redact_phone_policy``."""
+    _discussion_limits_module(monkeypatch)
+    module = types.ModuleType('agent.redact_phone_policy')
+    if has_policy:
+        module.chat_keeps_phone_numbers = lambda: False
+    monkeypatch.setitem(sys.modules, 'agent', types.ModuleType('agent'))
+    monkeypatch.setitem(sys.modules, 'agent.redact_phone_policy', module)
+    assert config_methods.declares_key(key) is declared
+
+
 def test_reasoning_efforts_ships_the_agent_levels_trimmed_lowercased_and_unique(monkeypatch):
     """TAL-2506: the sidecar normalizes the Agent's levels once, so no client has to."""
     module = types.ModuleType('hermes_cli.main_provider_setup')

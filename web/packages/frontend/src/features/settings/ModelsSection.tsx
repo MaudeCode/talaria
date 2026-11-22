@@ -13,6 +13,7 @@ import { catalogEntryById } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
 import { useSettingField } from './useSettingField'
 import { AuxiliaryModelsSection } from './AuxiliaryModels'
+import { FallbackModelsGroup } from './FallbackModels'
 import { SettingHeadline, SettingNumber, SettingRow, SettingToggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
 /**
@@ -110,11 +111,12 @@ export function LimitsGroup() {
   )
 }
 
-/** TAL-1691, TAL-2100: Settings > Models, the active profile's main and auxiliary models. */
+/** TAL-1691, TAL-2100, TAL-2655: Settings > Models, the active profile's main, fallback and auxiliary models. */
 export function ModelsSection() {
   return (
     <div className={SETTINGS_PAGE} data-section="models">
       <SettingsGroup id="main-model" title={m.settings_group_main_model()} hint={m.settings_default_model_hint()}><MainModelRows /></SettingsGroup>
+      <FallbackModelsGroup />
       <LimitsGroup />
       <AuxiliaryModelsSection />
     </div>

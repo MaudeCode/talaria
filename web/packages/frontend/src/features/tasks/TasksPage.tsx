@@ -161,6 +161,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         mode={editor.mode}
         job={editor.job}
         jobs={jobs}
+        wrapResponseSupported={crons.data?.wrap_response_supported === true}
         onCancel={() => setEditor(null)}
         onSubmitted={(id) => { setEditor(null); if (id) onSelect(id) }}
         onCreated={(id) => { if (id && context === getStreamContext()) onSelect(id) }}
@@ -418,6 +419,7 @@ function TaskDetail({ job, jobs, starting, unwritable, back, jobActions, onActio
               <Row label={m.cron_last()}>{lastRun ? formatDate(lastRun) : m.never()}{job.last_outcome === 'cancelled' && <span className="text-muted"> · {m.cron_last_stopped()}</span>}</Row>
               {job.last_failure && <Row label={m.cron_last_failure_label()}>{job.last_failure.at !== null && <span className="text-muted">{formatDate(job.last_failure.at)} · </span>}<span className="font-mono text-[12px] text-error">{job.last_failure.detail}</span></Row>}
               <Row label={m.cron_deliver_label()}>{job.deliver_label ?? (job.deliver || 'local')}</Row>
+              {job.wrap_response != null && <Row label={m.cron_wrap_response_label()}>{job.wrap_response ? m.cron_wrap_response_on() : m.cron_wrap_response_off()}</Row>}
               <Row label={m.cron_profile_label()}>{profileLabel}{readOnly && ownerProfile && <span className="text-muted"> · {m.cron_owner_profile_label()}: {ownerProfile}</span>}</Row>
             </dl>
           </section>

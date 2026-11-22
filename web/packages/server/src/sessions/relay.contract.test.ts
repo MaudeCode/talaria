@@ -108,3 +108,28 @@ it('publishes exactly the shared publisher-session-started fixture', async () =>
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+// TAL-2665: the Relay gate accepts this fixture as the Web publisher's update-available notice (relay/tests/sharedContracts.test.ts).
+it('publishes exactly the shared publisher-server-notice fixture to each enrolled profile', async () => {
+  const expected = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/publisher-server-notice.json'), 'utf8')) as { noticeId: string; title: string; body: string; deepLink: string }
+  const home = mkdtempSync(join(tmpdir(), 'talaria-relay-contract-'))
+  try {
+    const keyPath = join(home, 'publisher.pem')
+    writeFileSync(keyPath, generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }))
+    const requests: { url: string; body: string }[] = []
+    const deps = {
+      documents: new JsonDocuments(home, () => home), registry: new StreamRegistry(), presence: new PresenceLeases(() => 1), now: () => 1, log: vi.fn(),
+      profileHome: () => home,
+      profilesMatch: (row: string | null | undefined, active: string | null | undefined) => (row ?? 'default') === active,
+      fetch: () => (url: string, init: { body: string }) => { requests.push({ url, body: init.body }); return Promise.resolve(new Response('{}')) },
+    } as unknown as RelayPublisherDeps
+    const config = { url: 'https://relay.example', publisher_id: 'https://contract.example', key_id: 'contract-key', private_key_path: keyPath, profiles: { default: { identity: (await testProfileIdentity(home)), profile_id: 'prf_default' } } }
+    const notice = { kind: 'update_available' as const, id: expected.noticeId, title: expected.title, body: expected.body, url: expected.deepLink }
+    await (await initializeStore(new RelayPublisher(config, deps))).serverNotice(notice)
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.url).toBe(`https://relay.example/v1/publishers/${encodeURIComponent('https://contract.example')}/profiles/prf_default/notices/${encodeURIComponent(expected.noticeId)}`)
+    expect(JSON.parse(requests[0]!.body)).toEqual(expected)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})

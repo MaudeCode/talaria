@@ -2,7 +2,7 @@
 import { implement } from '@orpc/server'
 import { gitContract, type CheckpointDiff } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
-import { requestSessionIdGuard } from './session-visibility.js'
+import { requestSessionIdGuard, uploadInbox } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { cleanGeneratedCommitMessage, enclosingRepoRoot, gitBadge, GitWorkspaceError, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
@@ -260,13 +260,7 @@ export const gitRouter = os.router({
       if (!sessionId || !Array.isArray(rawTokens) || !rawTokens.length || rawTokens.length > 20) throw new HttpError(400, 'Invalid upload rollback request')
       const tokens = rawTokens.map((t) => str(t))
       if (tokens.some((t) => !t || t.length > 200)) throw new HttpError(400, 'Invalid upload rollback receipt')
-      let session: Session
-      try {
-        session = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }))
-      } catch {
-        throw new HttpError(404, 'Session not found')
-      }
-      if (!ctx.deps.sessions.visibleToRequest(session)) throw new HttpError(404, 'Session not found')
+      if (!(await uploadInbox(ctx, sessionId))) throw new HttpError(404, 'Session not found')
       try {
         return await ctx.deps.uploads.rollback(sessionId, tokens)
       } catch (error) {

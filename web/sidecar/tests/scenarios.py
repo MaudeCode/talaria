@@ -132,6 +132,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("config.get", {"profile_home": "{home}", "config_path": "{home}/config.yaml"}),
     ("config.declares_key", {"key": "compression.prepare_ahead"}),
     ("config.declares_key", {"key": "hosted_rooms.discussion.max_rounds"}),
+    ("config.declares_key", {"key": "security.redact_phone_numbers"}),
     ("config.env_write", {"profile_home": "{home}", "updates": {"TALARIA_FIXTURE_KEY": "sk-fixture-1234", "TALARIA_ABSENT_KEY": None}}),
     ("models.reasoning_efforts", {"profile_home": "{home}", "model": "claude-sonnet-4-6", "provider": "anthropic"}),
     # TAL-901: a top-level block entry, case-folded, after the Agent's built-ins.
@@ -208,3 +209,7 @@ UNEXERCISED.add("skills.replay_case")
 
 # Delegation edits are covered by the disposable native configuration contract test.
 UNEXERCISED.update({"aux.delegation", "aux.delegation_backend", "aux.delegation_routes"})
+
+# TAL-2655: the static fallback check's verdicts, pool and plugin invariants and unavailable capability are owned by test_fallback_check.py;
+# its hand-written fixture (a profile with no chain) lets the replay sidecar and FakeSidecar answer Settings › Models.
+UNEXERCISED.add("providers.fallback_check")

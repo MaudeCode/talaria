@@ -926,6 +926,33 @@ describe('deferred tool bridges after reload (TAL-2316)', () => {
 })
 
 describe('redactSessionData', () => {
+  it('keeps a phone number only in assistant reply text for a profile that opts in, never a key beside it (TAL-2651)', () => {
+    // Synthetic: a reserved-for-fiction +1 555-01xx number and a GitHub-shaped key that was never issued.
+    const phone = '+15550100123'
+    const key = `ghp_${'Synth3ticKey0'.repeat(3)}`
+    const said = `Call ${phone} with ${key}`
+    const session = {
+      title: said,
+      tool_calls: [{ name: 'send_sms', args: { to: phone } }],
+      context_messages: [{ role: 'assistant', content: said }],
+      messages: [
+        { role: 'user', content: said },
+        { role: 'assistant', content: said, reasoning: said, tool_calls: [{ id: 'a', function: { name: 'send_sms', arguments: JSON.stringify({ to: phone }) } }] },
+        { role: 'assistant', content: [{ type: 'text', text: said }, { type: 'tool_use', id: 'b', name: 'send_sms', input: { to: phone } }] },
+        { role: 'tool', tool_call_id: 'a', content: `sent to ${phone}` },
+      ],
+    }
+    const kept = redactSessionData(session, true, true)
+    const [, reply, parts] = kept.messages as Record<string, unknown>[]
+    expect(reply!.content).toBe(`Call ${phone} with ghp_Sy...Key0`)
+    expect((parts!.content as Record<string, unknown>[])[0]!.text).toBe(reply!.content)
+    // The two reply texts are the only places it shows: tool calls, results, reasoning, titles and context stay masked.
+    expect(JSON.stringify(kept).split(phone)).toHaveLength(3)
+    expect(JSON.stringify(kept)).not.toContain(key)
+    // Read after the opted-in pass, the default still masks: the cache keeps the two modes apart.
+    expect(JSON.stringify(redactSessionData(session, true))).not.toContain(phone)
+  })
+
   it('masks credential-keyed arguments of persisted calls in every shape', () => {
     const args = { command: 'login', password: 'hunter2' }
     const out = redactSessionData({ tool_calls: [{ name: 'login', args }], messages: [

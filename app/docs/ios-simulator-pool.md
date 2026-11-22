@@ -1,6 +1,6 @@
 # Shared iOS simulator pool
 
-Oar, Talaria and future iOS projects share `iOS Test 1` through `iOS Test 6`.
+Talaria and future iOS projects share `iOS Test 1` through `iOS Test 6`.
 These are disposable synthetic-test devices, not signed-in development phones.
 The current local pool uses iPhone 17 Pro on iOS 27.0. CI does not use the pool:
 its disposable GitHub-hosted runners select Xcode 27.1 through
@@ -115,10 +115,21 @@ Accessibility access, or a simulator backend.
 
 Every consumer uses `/tmp/ios-simulator-pool-$EUID/pool.lock` for setup/admission
 and `leases/<UDID>.lock` for the duration of a device session. Locks use macOS
-`shlock` and the owning process PID. `IOS_SIMULATOR_ID` selects a specific device
-under the same lease. A booted device is never taken over, even after an owner
-crashes; inspect and stop its surviving workload before manually shutting it down.
-Exit 75 means busy; exit 69 means no matching available device.
+`shlock` and the owning process PID; `leases/<UDID>.pgid` beside each lease
+records the owner's process group, which an executed helper shares with its
+command. `IOS_SIMULATOR_ID` selects a specific device under the same lease.
+
+An owner killed with SIGKILL, such as a harness timeout, never runs its EXIT
+trap, so its device stays booted under a dead lease. Every acquisition, whatever
+it selects, first reclaims such devices: a device is reclaimed only when its
+lease owner PID is dead, no process remains in its recorded process group, and
+simctl reports it `Booted`. Reclaiming shuts it down, erases it when it is an
+`iOS Test N` pool device (or quarantines it when the erase fails), removes the
+lease and `.pgid`, and names the device and dead owner on stderr. A booted device
+with no lease, a live owner, a surviving process in the owner's group, or a lease
+without its own `.pgid` (one an older copy of the helper wrote) is never taken over;
+inspect and stop its workload before manually shutting it down. Exit 75 means
+busy; exit 69 means no matching available device.
 
 `IOS_SIMULATOR_POOL_DIR` is only for isolated synthetic tooling tests. Never point
 two real consumers at different lock directories for the same devices. The old

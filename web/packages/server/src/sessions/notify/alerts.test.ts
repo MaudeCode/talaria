@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { agentNotifyAlerts, alertBody, alertForTransition, completionNotification, type AlertKind, type AlertPreferences } from './alerts.js'
+import { agentNotifyAlerts, alertBody, alertForTransition, completionNotification, serverNoticeAllowed, type AlertKind, type AlertPreferences } from './alerts.js'
 
 // The relay applies the same vectors (relay/tests/notificationAlerts.test.ts), so the rule cannot drift.
 interface Vector { name: string; previous: string | null; next: string; alertEligible: boolean; previousDecisionReviewId?: string | null; decisionReviewId?: string; preferences: AlertPreferences; expected: AlertKind | null }
 interface NoticeVector { name: string; previousAgentNotifyIds: string[]; agentNotices: { id: string }[]; expected: string[] }
-const { vectors, agentNotify } = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../../contracts/fixtures/notification-alerts.json'), 'utf8')) as { vectors: Vector[]; agentNotify: NoticeVector[] }
+interface ServerNoticeVector { name: string; owner: boolean; preferences: Partial<AlertPreferences>; expected: boolean }
+const { vectors, agentNotify, serverNotice } = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../../contracts/fixtures/notification-alerts.json'), 'utf8')) as { vectors: Vector[]; agentNotify: NoticeVector[]; serverNotice: ServerNoticeVector[] }
 
 it.each(vectors)('shared alert rule: $name', (vector) => {
   expect(alertForTransition(vector.previous, { phase: vector.next, alertEligible: vector.alertEligible, decisionReviewId: vector.decisionReviewId }, vector.preferences, vector.previousDecisionReviewId)).toBe(vector.expected)
@@ -15,6 +16,11 @@ it.each(vectors)('shared alert rule: $name', (vector) => {
 // TAL-1970: the server stamps a row only with an unmuted notice, so neither presence nor preferences enter the rule.
 it.each(agentNotify)('shared agent notice rule: $name', (vector) => {
   expect(agentNotifyAlerts(vector.previousAgentNotifyIds, vector.agentNotices).map((notice) => notice.id)).toEqual(vector.expected)
+})
+
+// TAL-2665: an update-available notice reaches only a server owner's subscription that opted in.
+it.each(serverNotice)('shared server notice rule: $name', (vector) => {
+  expect(serverNoticeAllowed(vector.preferences, vector.owner)).toBe(vector.expected)
 })
 
 // TAL-2157: one composer for the completion's Web Push and the open tab's browser notification.

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "kind": "update_available",
+  "noticeId": "update_available:webui:web-v2.1.0",
+  "publisherId": "https://contract.example",
+  "profileId": "prf_default",
+  "title": "Talaria Web update available",
+  "body": "Talaria Web 2.1.0 is available.",
+  "deepLink": "/settings/system"
+}

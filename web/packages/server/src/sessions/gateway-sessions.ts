@@ -17,6 +17,7 @@ import { str } from '../util.js'
 import { taskView, taskTitle, isTerminal, startsBackgroundWork, type BackgroundTaskStore, type Receipt } from './background-tasks.js'
 import type { BackgroundTask, BackgroundTaskResult, PathCompletions, SideLaunch } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts } from './pending.js'
+import { OWNER_IMAGE_MIMES, ownerImages } from './owner-images.js'
 import { wrapExportHtml, renderSessionHtml, renderSessionMarkdown } from './export.js'
 import { approvalAllows, clarifyReply } from './pending.js'
 import type { SessionService } from './service.js'
@@ -817,7 +818,7 @@ export class GatewaySessions {
   async modes(profile: string): Promise<ExecutionModes> {
     const result = await this.createCall({ profile_home: this.deps.profileHome(profile), probe: true })
     const reason = result.state === 'attached' ? null : unavailableReason(result)
-    // Owner chats take no file attachments (`submit` refuses them), so a fresh chat in either bypass mode cannot attach.
+    // A fresh chat in either bypass mode has no inbox before its owner creates it, so it cannot attach.
     const modes = [{ mode: 'normal' as const, available: true, reason: null, can_attach: true, can_reference: true }, ...(['ignore_config', 'safe'] as const).map((mode) => ({ mode, available: reason === null, reason, can_attach: false, can_reference: false }))]
     // TAL-2097: with one available mode a fresh chat has nothing to choose, so clients hide the mode control.
     return { modes, selectable: modes.filter((option) => option.available).length > 1 }
@@ -870,6 +871,8 @@ export class GatewaySessions {
     const snapshot = result.snapshot
     const unknown = snapshot?.pending.some((p) => p.status === 'unknown') ?? false
     const restarting = result.restarting === true
+    // TAL-1344: an owner that stages images takes them while attached; sending still waits on `can_submit`.
+    const can_attach = result.state === 'attached' && snapshot?.image_attachments === true
     const admissions = (snapshot?.pending ?? []).filter((p) => p.status === 'queued' || p.status === 'unknown').map((p) => ({ ...p,
       actions: p.status === 'queued' ? ['cancel' as const, ...(p.controls?.includes('steer') ? ['steer' as const] : []), ...(p.controls?.includes('replace') ? ['edit' as const] : [])]
         : p.execution_generation === null ? []
@@ -877,7 +880,8 @@ export class GatewaySessions {
     }))
     const value: OwnerAttachment = {
       state: result.state, reason: result.reason, restarting, can_submit: result.state === 'attached' && snapshot !== null && !unknown && !restarting,
-      can_interrupt: result.state === 'attached' && snapshot?.running === true, can_attach: false,
+      can_interrupt: result.state === 'attached' && snapshot?.running === true, can_attach,
+      attachment_mimes: can_attach ? [...OWNER_IMAGE_MIMES] : [],
       revision: snapshot?.revision ?? null, execution_generation: snapshot?.execution_generation ?? null,
       ...(result.model_change ? { model_change: result.model_change } : {}),
       active_admission: snapshot ? runningAdmission(snapshot) ?? null : null,
@@ -1121,7 +1125,8 @@ export class GatewaySessions {
     const target = await this.target(sid)
     if (!target) return null
     const text = str(body.message).trim()
-    if (!text) throw new HttpFailure(400, 'message is required')
+    const paths = (Array.isArray(body.attachments) ? body.attachments : []).map((att) => isDict(att) ? str(att.path).trim() : '')
+    if (!text && !paths.length) throw new HttpFailure(400, 'message is required')
     // Native policy is frozen by its owner. Changing model/workspace travels through session.mutate,
     // never through a hidden per-turn override or the local Agent setup path.
     const closeSnapshot = timing?.begin('owner_snapshot')
@@ -1129,19 +1134,25 @@ export class GatewaySessions {
     closeSnapshot?.(before.state === 'unavailable' ? 'unknown' : before.state === 'attached' ? 'ok' : 'refused')
     if (!this.attachment(before).can_submit) throw new HttpFailure(before.state === 'attached' ? 409 : 403, 'The owning Agent is unavailable or needs an explicit recovery decision', { owner_attachment: this.attachment(before) })
     if (typeof body.submission_id !== 'string' || !body.submission_id || body.submission_id.length > 128) throw new HttpFailure(400, 'A stable submission_id is required for an owner chat')
-    if (Array.isArray(body.attachments) && body.attachments.length) throw new HttpFailure(400, 'File attachments are unavailable through this owner connection', { code: 'owner_attachments_unavailable' })
+    if (paths.length && !this.attachment(before).can_attach) throw new HttpFailure(409, 'This chat\'s Agent cannot take images', { code: 'owner_attachments_unavailable' })
     // Resolve display state before admission; a failed post-ACK read must never turn accepted work into a refusal.
     const base = await (timing ? timing.measure('owner_detail', () => this.deps.service.detail(sid, {})) : this.deps.service.detail(sid, {}))
     if (fence && (!this.deps.service.deps.profilesMatch(str(base.profile) || null, fence.profile) || (str(base.project_id) || null) !== fence.project_id || before.snapshot?.authority_epoch !== fence.authority_epoch || before.snapshot.running || before.snapshot.pending.some((p) => p.status !== 'terminal'))) throw new HttpFailure(409, 'Queue target changed or is busy')
+    // TAL-1344: each file is read from this chat's own inbox and verified before the owner stages it; its bytes stay
+    // reserved until the owner answers, and every exit before that call releases them.
+    const staged = paths.length ? await ownerImages(this.deps.service.deps.blobs, sid, paths) : null
+    const images = staged?.images
     const closeSubmit = timing?.begin('owner_submit')
-    if (activity) await this.activityReceipts(target, before.snapshot ?? undefined, { input: str(body.submission_id), activity })
+    if (activity) await this.activityReceipts(target, before.snapshot ?? undefined, { input: str(body.submission_id), activity }).catch((error: unknown) => { staged?.release(); throw error })
     let settled: () => void = () => undefined
     const pending = this.activityAdmissions.get(target.key) ?? new Set<Promise<void>>()
     const barrier = activity ? new Promise<void>((resolve) => { settled = resolve }) : null
     if (barrier) { pending.add(barrier); this.activityAdmissions.set(target.key, pending) }
     let result: GatewaySessionResult
     try {
-      result = await this.call(target, { action: 'submit', request_id: body.submission_id, text })
+      // Images are staged on the owner this snapshot read; a replaced owner refuses them before staging.
+      result = await this.call(target, { action: 'submit', request_id: body.submission_id, text, ...(images ? { images, authority_epoch: before.snapshot!.authority_epoch } : {}) })
+        .finally(() => { staged?.release() })
       if (activity && result.receipt && 'admission_id' in result.receipt) {
         if (str(result.receipt.input_id) && str(result.receipt.input_id) !== str(body.submission_id)) throw new HttpFailure(409, 'The owner returned a receipt for another input. Reconcile before resending.', { outcome_unknown: true })
         const refused = result.receipt.status === 'terminal' && result.receipt.outcome === 'failed'
@@ -1163,6 +1174,8 @@ export class GatewaySessions {
       return { receipt: result.receipt, row: { ok: true, status: 'suppressed', reason: 'voice_stopped', session_id: sid,
         owner_attachment: this.attachment(result), session: await this.view(base, result, watch?.stream ?? null, target) } }
     }
+    // The owner staged nothing it admitted: a refused image leaves no turn, and the client restores its draft.
+    if (!result.receipt && ['owner_image_refused', 'owner_images_unsupported', 'owner_changed'].includes(str(result.reason))) throw new HttpFailure(409, 'The Agent could not take these images. Nothing was sent.', { code: 'owner_image_refused', owner_attachment: this.attachment(result) })
     if (!result.receipt || !('admission_id' in result.receipt)) throw new HttpFailure(409, 'The owner did not confirm this admission. Reconcile it before resending.', { owner_attachment: this.attachment(result), outcome_unknown: result.state === 'unavailable' })
     const snapshot = result.snapshot
     // A fast refusal can settle before submit returns; its retained completion still belongs to this input.

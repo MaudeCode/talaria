@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Server owners can let a profile's assistant replies show phone numbers in chat while keys, tool calls and exports stay masked.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Readable phone numbers in replies",
+        "description": "Let a profile's replies show phone numbers in full; keys and tool calls stay masked.",
+        "icon": "security"
+      }
+    }
+  ]
+}

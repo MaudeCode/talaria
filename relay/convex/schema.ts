@@ -276,6 +276,8 @@ export default defineSchema({
     sourceDecisionReviewId: v.optional(v.string()),
     // TAL-1970: an agent notice alert stays deliverable through retries while its session state exists.
     sourceAgentNotifyId: v.optional(v.string()),
+    // TAL-2665: a server notice alert stays deliverable while its device opts in and its user owns the publisher.
+    sourceServerNoticeId: v.optional(v.string()),
     // TAL-232: the enrollment a session-started push came from; re-enrolling the publisher elsewhere drops the push.
     sourcePublisherOwnerUserId: v.optional(v.string()),
     sourceProfileId: v.optional(v.string()),

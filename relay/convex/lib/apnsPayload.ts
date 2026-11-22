@@ -172,7 +172,8 @@ export function makeNotification(input: {
   bundleId: string;
   environment: ApsEnvironment;
   alert: ActivityAlert;
-  row: AggregateRow;
+  // TAL-2665: a server notice belongs to no session.
+  row: Pick<AggregateRow, "publisherId" | "deepLink"> & Partial<AggregateRow>;
   // One ID per chat: groups its alerts and lets the newest replace the previous one.
   threadId: string;
   // TAL-1970: an alert that must never replace or be replaced by the chat's others collapses under its own ID.

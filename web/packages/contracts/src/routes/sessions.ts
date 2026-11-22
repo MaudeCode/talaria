@@ -146,8 +146,12 @@ export type RecoveryAudit = z.infer<typeof RecoveryAuditSchema>
 export type RecoveryRepair = z.infer<typeof RecoveryRepairSchema>
 
 const WEB_PUSH_ENDPOINT_MAX = 2048
-/** The four alert kinds a browser push subscription can turn off; all default on. */
-export const WebPushPreferencesSchema = z.object({ notify_on_approval: z.boolean(), notify_on_input: z.boolean(), notify_on_completion: z.boolean(), notify_on_failure: z.boolean() })
+/**
+ * The four alert kinds a browser push subscription can turn off, all default on; TAL-2665: and an owner's opt-in alert
+ * that a Talaria Web or Hermes Agent update is available, off by default and ignored for a subscription whose login is
+ * not a server owner.
+ */
+export const WebPushPreferencesSchema = z.object({ notify_on_approval: z.boolean(), notify_on_input: z.boolean(), notify_on_completion: z.boolean(), notify_on_failure: z.boolean(), notify_on_update_available: z.boolean().default(false) })
 export type WebPushPreferences = z.infer<typeof WebPushPreferencesSchema>
 
 export const sessionsContract = {

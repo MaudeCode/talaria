@@ -62,6 +62,10 @@ Follow that checklist's safety rules:
 - The server is TypeScript on Node 24 and never imports Hermes Agent code; everything
   that needs Agent Python goes through the stdlib-only sidecar (`sidecar/talaria_sidecar`)
   and its versioned RPC in `packages/contracts`. Do not fork, patch, or vendor the Agent.
+  One owner-approved exception (TAL-2655): `providers.fallback_check` answers
+  `CredentialPool.select` with the Agent's own `choose` inside its read only, because the
+  Agent's static fallback check would otherwise count and rotate the pool; remove it once
+  the Agent's check stops selecting. Add no other runtime replacement of Agent code.
 - Every route, SSE event, and sidecar method is defined once in `packages/contracts`;
   regenerate `../contracts/web-api.openapi.json` with `npm run openapi` and keep it committed.
 - Follow root server-owned state (`../AGENTS.md`): the frontend renders contract fields;

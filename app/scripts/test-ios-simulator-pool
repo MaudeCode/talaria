@@ -26,8 +26,14 @@ with tempfile.TemporaryDirectory(prefix='ios-pool-check-') as directory:
                     deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro')
     duo = dict(personal, name='iPhone Duo', udid='00000000-0000-0000-0000-0000000000d0',
                deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPhone-Duo')
+    bystanders = []
     def save():
-        fixture.write_text(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-27-0': devices + [personal, duo]}}))
+        fixture.write_text(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-27-0':
+                                                   devices + [personal, duo] + bystanders}}))
+    def sync():  # The fake shutdown edits the fixture; carry its states back before the next save.
+        states = {d['udid']: d['state'] for runtime in json.loads(fixture.read_text())['devices'].values() for d in runtime}
+        for device in devices + [personal, duo] + bystanders:
+            device['state'] = states[device['udid']]
     save()
     fake = tools / 'xcrun'
     fake.write_text('''#!/usr/bin/env bash
@@ -42,6 +48,10 @@ elif [[ "$1 $2" == "simctl create" ]]; then
     echo 00000000-0000-0000-0000-00000000c0de
 elif [[ "$1 $2" == "simctl bootstatus" ]]; then
     [[ ! -e "$POOL_BOOT_FAIL" ]] || exit 1
+elif [[ "$1 $2" == "simctl shutdown" ]]; then
+    echo "$3" >> "$POOL_SHUTDOWNS"
+    /usr/bin/jq --arg id "$3" '(.devices[][] | select(.udid == $id) | .state) = "Shutdown"' "$POOL_FIXTURE" \
+        > "$POOL_FIXTURE.new" && mv "$POOL_FIXTURE.new" "$POOL_FIXTURE"
 elif [[ "$1 $2" == "simctl erase" ]]; then
     echo "$3" >> "$POOL_ERASURES"
     [[ ! -e "$POOL_ERASE_FAIL" ]] || exit 1
@@ -56,33 +66,42 @@ fi
                IOS_SIMULATOR_POOL_DIR=str(work / 'leases'), POOL_FIXTURE=str(fixture),
                POOL_RUNTIMES=str(runtimes),
                POOL_DELETIONS=str(work / 'deletions'), POOL_CREATIONS=str(work / 'creations'), POOL_ERASURES=str(work / 'erasures'),
+               POOL_SHUTDOWNS=str(work / 'shutdowns'),
                POOL_ERASE_FAIL=str(work / 'erase-fail'), POOL_BOOT_FAIL=str(work / 'boot-fail'))
     for key in ('IOS_SIMULATOR_ID', 'IOS_SIMULATOR_RUNTIME', 'IOS_SIMULATOR_DEVICE_TYPE'):
         env.pop(key, None)
     processes = []
-    def invoke(project='two', expected=0, **overrides):
+    def acquire(project='two', expected=0, **overrides):
         result = subprocess.run([str(work / project / 'pool'), 'bash', '-c',
                                  'echo "$IOS_SIMULATOR_ID"'], env=dict(env, **overrides),
                                 capture_output=True, text=True, timeout=10)
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
-        return result.stdout.strip()
+        return result
+    def invoke(project='two', expected=0, **overrides):
+        return acquire(project, expected, **overrides).stdout.strip()
     def erasures():
         path = work / 'erasures'
         return path.read_text().split() if path.exists() else []
-    def owner():
+    def shutdowns():
+        path = work / 'shutdowns'
+        return path.read_text().split() if path.exists() else []
+    def owner(new_group=False, **overrides):
         ready = work / 'ready'
         ready.unlink(missing_ok=True)
         command = 'import os,time,pathlib; pathlib.Path(os.environ["READY"]).write_text(str(os.getpid())); time.sleep(30)'
         process = subprocess.Popen([str(work / 'one' / 'pool'), sys.executable, '-c', command],
-                                   env=dict(env, READY=str(ready)), stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.PIPE)
+                                   env=dict(env, READY=str(ready), **overrides), stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.PIPE, start_new_session=new_group)
         processes.append(process)
+        wait_for(lambda: ready.exists() or process.poll() is not None, 'lease owner did not start')
+        assert process.poll() is None, process.stderr.read().decode()
+        return process, int(ready.read_text())
+    def wait_for(check, failure):
         for _ in range(200):
-            if ready.exists():
-                return process, int(ready.read_text())
-            assert process.poll() is None, process.stderr.read().decode()
+            if check():
+                return
             time.sleep(.02)
-        raise AssertionError('lease owner did not start')
+        raise AssertionError(failure)
     def select(expected=0, **overrides):
         result = subprocess.run([str(root / 'select-ios-simulator')], env=dict(env, **overrides),
                                 capture_output=True, text=True, timeout=10)
@@ -184,7 +203,7 @@ fi
                                 capture_output=True, timeout=10)
         assert result.returncode == 75, result.stderr
         assert not (work / 'deletions').exists()
-        # Booted devices are never reused, even with a stale or absent owner lock.
+        # A booted device without a lease, or under a live owner, is never reused.
         devices[1]['state'] = 'Booted'
         save()
         invoke(expected=75)
@@ -209,6 +228,65 @@ fi
         result = subprocess.run([str(work / 'two' / 'pool'), 'bash', '-c', 'exit 42'], env=env)
         assert result.returncode == 42
         assert invoke() == devices[0]['udid']
+        # A harness timeout SIGKILLs a run's whole process group: no EXIT trap releases its booted device.
+        # The next acquisition, for any selection, reclaims it once nothing in that group survives.
+        leases = work / 'leases' / 'leases'
+        def killed(**overrides):
+            process, _ = owner(new_group=True, **overrides)
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=10)
+            wait_for(lambda: subprocess.run(['pgrep', '-g', str(process.pid)]).returncode == 1,
+                     'killed process group did not exit')
+            return process.pid
+        bystanders.extend(dict(personal, name=name, udid=f'00000000-0000-0000-0000-0000000000b{n}')
+                          for n, name in enumerate(('Hand-booted', 'Live lease', 'Old-script lease', 'Taken-over lease')))
+        save()
+        manual, live, legacy, taken = bystanders
+        live_owner, _ = owner(IOS_SIMULATOR_ID=live['udid'])
+        gone = subprocess.Popen(['true'])
+        gone.wait()
+        for old in (legacy, taken):  # An older copy writes no .pgid,
+            (leases / (old['udid'] + '.lock')).write_text(f'{gone.pid}\n')
+        stale_group = leases / (taken['udid'] + '.pgid')  # so one beside its lease is an earlier owner's.
+        stale_group.write_text(f'{gone.pid}\n')
+        os.utime(stale_group, (time.time() - 60,) * 2)
+        dead = killed()
+        for device in [devices[0]] + bystanders:
+            device['state'] = 'Booted'
+        save()
+        time.sleep(1.1)  # macOS shlock reclaims a dead owner's lock only once it is a second old.
+        before_erasures, before_shutdowns = erasures(), shutdowns()
+        result = acquire(IOS_SIMULATOR_ID=personal['udid'])
+        assert result.stdout.strip() == personal['udid']
+        assert devices[0]['udid'] in result.stderr and str(dead) in result.stderr, result.stderr
+        assert shutdowns()[len(before_shutdowns):] == [devices[0]['udid'], personal['udid']]
+        assert erasures() == before_erasures + [devices[0]['udid']]
+        assert not (leases / (devices[0]['udid'] + '.lock')).exists()
+        assert not (leases / (devices[0]['udid'] + '.pgid')).exists()
+        sync()
+        assert [device['state'] for device in bystanders] == ['Booted'] * 4
+        assert not set(shutdowns()) & {device['udid'] for device in bystanders}
+        assert (leases / (live['udid'] + '.lock')).read_text().strip() == str(live_owner.pid)
+        for old in (legacy, taken):
+            assert (leases / (old['udid'] + '.lock')).read_text().strip() == str(gone.pid)
+        assert not (leases / (manual['udid'] + '.lock')).exists()
+        live_owner.terminate()
+        assert live_owner.wait(timeout=10) == 130
+        for path in ('.lock', '.pgid'):
+            for old in (legacy, taken):
+                (leases / (old['udid'] + path)).unlink(missing_ok=True)
+        bystanders.clear()
+        save()
+        # A reclaimed non-pool device is shut down but never erased, and the selection that reclaimed it may lease it.
+        dead = killed(IOS_SIMULATOR_DEVICE_TYPE=duo['deviceTypeIdentifier'])
+        duo['state'] = 'Booted'
+        save()
+        time.sleep(1.1)
+        before_erasures = erasures()
+        assert invoke(IOS_SIMULATOR_DEVICE_TYPE=duo['deviceTypeIdentifier']) == duo['udid']
+        assert erasures() == before_erasures
+        sync()
+        assert duo['state'] == 'Shutdown'
         # A device whose erase fails is quarantined until an erase succeeds.
         dirty = work / 'leases' / 'leases' / (devices[0]['udid'] + '.dirty')
         (work / 'erase-fail').touch()
@@ -278,4 +356,5 @@ fi
             if process.poll() is None:
                 process.terminate()
                 process.wait(timeout=10)
-print('Shared pool checks passed: released-runtime selection, creation on fresh images, independent callers, explicit IDs, exhaustion, runtime, refresh, erase on release, cancellation, crash, repeated acquire/release, exit status and cleanup after failed, malformed or unbootable acquisitions.')
+print('Shared pool checks passed: released-runtime selection, creation on fresh images, independent callers, explicit IDs, exhaustion, runtime, refresh, erase on release, cancellation, crash, repeated acquire/release, exit status, stale-lease reclamation after a killed process group, and cleanup after failed, malformed or '
+      'unbootable acquisitions.')

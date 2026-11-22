@@ -2198,7 +2198,7 @@ function redactRules(text: string): string {
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + (/['"\\]/.test(secret) ? '***' : mask(secret)))
   out = out.replace(URL_BARE_TOKEN_RE, (_, head: string, token: string) => head + (token.length < 8 && token.endsWith('***') ? token : mask(token)))
   out = out.replace(TELEGRAM_TOKEN_RE, (whole, boundary: string, csi: string | undefined, bot: string | undefined, id: string) => (!csi && encodesIdentifierChar(boundary) ? whole : `${boundary}${bot ?? ''}${id}:***`))
-  out = out.replace(PHONE_RE, (phone) => { const keep = phone.length <= 8 ? 2 : 4; return `${phone.slice(0, keep)}****${phone.slice(-keep)}` })
+  if (!keepPhoneNumbers) out = out.replace(PHONE_RE, (phone) => { const keep = phone.length <= 8 ? 2 : 4; return `${phone.slice(0, keep)}****${phone.slice(-keep)}` })
   out = redactUserFlags(out)
   out = redactCommandFlags(out)
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
@@ -2289,17 +2289,21 @@ function mightContainKeyword(text: string): boolean {
   return false
 }
 
+/** TAL-2651: set only while `redactText` scrubs an assistant reply whose profile keeps phone numbers in chat. */
+let keepPhoneNumbers = false
+
 const cache = new Map<string, string>()
 const CACHE_MAX = 4096
 const CACHE_MAX_TEXT_LEN = 16384
 const CACHE_MAX_BYTES = 16 * 1024 * 1024
 let cacheBytes = 0
 
-export function redactText(text: unknown, enabled: boolean): unknown {
+/** `keepPhones` (TAL-2651): E.164 numbers stay readable; every other rule still applies. Only assistant reply text passes it. */
+export function redactText(text: unknown, enabled: boolean, keepPhones = false): unknown {
   if (typeof text !== 'string' || !text) return text
   if (!enabled) return text
-  // UTF-16 preserves lone-surrogate identity; inline keys must own their backing storage.
-  const key = text.length > CACHE_MAX_TEXT_LEN ? `sha256:${createHash('sha256').update(text, 'utf16le').digest('hex')}` : `text:${Buffer.from(text, 'utf16le').toString('utf16le')}`
+  // UTF-16 preserves lone-surrogate identity; inline keys must own their backing storage. The mode is part of the key.
+  const key = (keepPhones ? 'phones:' : '') + (text.length > CACHE_MAX_TEXT_LEN ? `sha256:${createHash('sha256').update(text, 'utf16le').digest('hex')}` : `text:${Buffer.from(text, 'utf16le').toString('utf16le')}`)
   const hit = cache.get(key)
   if (hit !== undefined) {
     cache.delete(key)
@@ -2308,7 +2312,9 @@ export function redactText(text: unknown, enabled: boolean): unknown {
   }
   // A plugin-only match needs no shell/assignment scan of an otherwise ordinary (possibly very large) payload.
   const known = maskKnownSecrets(text)
-  const out = mightContainBuiltinSensitiveText(known) ? redactSensitive(known) : redactPluginPatterns(known)
+  keepPhoneNumbers = keepPhones
+  let out: string
+  try { out = mightContainBuiltinSensitiveText(known) ? redactSensitive(known) : redactPluginPatterns(known) } finally { keepPhoneNumbers = false }
   // Count both strings conservatively as UTF-16, even when V8 stores them as Latin-1.
   const bytes = 2 * (key.length + out.length)
   if (bytes > CACHE_MAX_BYTES) return out
@@ -2531,7 +2537,20 @@ function withoutWithheldText(message: unknown): unknown {
   return { ...Object.fromEntries(Object.entries(display).filter(([key]) => !REASONING_FIELDS.has(key))), content: Array.isArray(message.content) ? message.content.filter(isToolUse) : '' }
 }
 
-function publicMessageProjection(message: unknown, enabled: boolean, activeTurnToken: string | null, workspace: string | null, sessionId: string | null): unknown {
+/**
+ * TAL-2651: an assistant reply's own text (a string, or its `text` parts) with phone numbers kept for a profile that opts
+ * in; every other part, a tool call's input included, is redacted as usual.
+ */
+function redactReplyContent(content: unknown, enabled: boolean): unknown {
+  if (typeof content === 'string') return redactText(content, enabled, true)
+  if (!Array.isArray(content)) return redactValue(content, enabled)
+  return content.map((part) => {
+    const redacted = redactValue(part, enabled)
+    return isDict(part) && part.type === 'text' && typeof part.text === 'string' ? { ...(redacted as Record<string, unknown>), text: redactText(part.text, enabled, true) } : redacted
+  })
+}
+
+function publicMessageProjection(message: unknown, enabled: boolean, activeTurnToken: string | null, workspace: string | null, sessionId: string | null, keepChatPhones = false): unknown {
   const isActive = Boolean(message && typeof message === 'object' && (message as Record<string, unknown>).role === 'user' && activeTurnToken !== null && (message as Record<string, unknown>)._active_turn_token === activeTurnToken)
   // Exports and nested public documents bypass scene hydration; project their user content at this boundary too.
   const scrubbed = withoutWithheldText(normalizeUserDisplay((scrubInternalReplayFields([message], { messageRecords: true }) as unknown[])[0]))
@@ -2546,7 +2565,8 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
     const shipped = key === 'content' && (scrubbed as Record<string, unknown>).role === 'tool' ? withoutImageData(value) : value
     // Preserve the string/parts/null contract and redact JSON credential fields with their key context intact.
     const publicValue = key === 'content' && shipped != null && typeof shipped !== 'string' && !Array.isArray(shipped) ? JSON.stringify(shipped) : shipped
-    item[key] = userParts ? value.map((part) => redactUserContentPart(part, enabled)) : redactValue(publicValue, enabled)
+    const reply = keepChatPhones && key === 'content' && (scrubbed as Record<string, unknown>).role === 'assistant'
+    item[key] = userParts ? value.map((part) => redactUserContentPart(part, enabled)) : reply ? redactReplyContent(publicValue, enabled) : redactValue(publicValue, enabled)
   }
   if (isActive) item._active_turn_user = true
   // Server-owned: a `_collapsible` the stored row carries never survives the projection's own decision.
@@ -2809,9 +2829,9 @@ function withRawTool(call: Record<string, unknown>, out: Record<string, unknown>
   return { ...rest, ...(rawArgs === undefined ? {} : { raw_args: rawArgs }), ...(rawResult === undefined ? {} : { raw_result: rawResult }), ...(processId ? { process_id: processId } : {}) }
 }
 
-function redactMessages(messages: unknown, enabled: boolean, activeTurnToken: string | null, workspace: string | null, sessionId: string | null): unknown {
+function redactMessages(messages: unknown, enabled: boolean, activeTurnToken: string | null, workspace: string | null, sessionId: string | null, keepChatPhones = false): unknown {
   if (!Array.isArray(messages)) return redactValue(messages, enabled)
-  return messages.map((m) => publicMessageProjection(m, enabled, activeTurnToken, workspace, sessionId))
+  return messages.map((m) => publicMessageProjection(m, enabled, activeTurnToken, workspace, sessionId, keepChatPhones))
 }
 
 function redactToolCalls(toolCalls: unknown, enabled: boolean, workspace: string | null, sessionId: string | null): unknown {
@@ -2944,8 +2964,11 @@ export function redactNestedMessageContainers(value: unknown, enabled: boolean, 
   return result
 }
 
-/** Redact credentials in a public session response without mutation (Python `redact_session_data`). */
-export function redactSessionData(session: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
+/**
+ * Redact credentials in a public session response without mutation (Python `redact_session_data`). `keepChatPhones`
+ * (TAL-2651): the session's profile sets `security.redact_phone_numbers: false`, so its assistant replies keep phone numbers.
+ */
+export function redactSessionData(session: Record<string, unknown>, enabled: boolean, keepChatPhones = false): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   const activeTurnToken = buildActiveTurnToken(session.active_stream_id, session.pending_started_at)
   // TAL-1537: the session's own root decides which absolute tool paths are its `focus_path` files.
@@ -2955,7 +2978,8 @@ export function redactSessionData(session: Record<string, unknown>, enabled: boo
   for (const [key, value] of Object.entries(session)) {
     if (PUBLIC_MESSAGE_INTERNAL_FIELDS.has(key)) continue
     if (key === 'title' && typeof value === 'string') result[key] = redactText(value, enabled)
-    else if (key === 'messages' || key === 'context_messages') result[key] = redactMessages(value, enabled, activeTurnToken, workspace, sessionId)
+    else if (key === 'messages') result[key] = redactMessages(value, enabled, activeTurnToken, workspace, sessionId, keepChatPhones)
+    else if (key === 'context_messages') result[key] = redactMessages(value, enabled, activeTurnToken, workspace, sessionId)
     else if (key === 'tool_calls' && Array.isArray(value)) result[key] = redactToolCalls(value, enabled, workspace, sessionId)
     else if (key === 'todo_state' || key === 'runtime_journal_snapshot') result[key] = redactNestedMessageContainers(value, enabled, workspace, sessionId)
     else result[key] = copyJson(value)

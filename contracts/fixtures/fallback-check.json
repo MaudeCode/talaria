@@ -1,0 +1,110 @@
+{
+  "mixed": {
+    "sidecar": {
+      "available": true,
+      "entries": [
+        {
+          "provider": "openrouter",
+          "model": "vendor/pooled-model",
+          "configured": true,
+          "auth_ready": true,
+          "ready": true,
+          "error_class": "",
+          "error": ""
+        },
+        {
+          "provider": "nosuchprovider",
+          "model": "ghost",
+          "configured": false,
+          "auth_ready": false,
+          "ready": false,
+          "error_class": "config",
+          "error": "Unknown provider 'nosuchprovider'. Check 'hermes model' for available providers, or run 'hermes doctor' to diagnose config issues."
+        },
+        {
+          "provider": "copilot-acp",
+          "model": "gpt-5",
+          "configured": false,
+          "auth_ready": false,
+          "ready": false,
+          "error_class": "config",
+          "error": "Unknown provider 'copilot-acp'.\n\nGitHub Copilot moved out of core into the 'github-copilot' plugin: install it with `hermes plugins install github-copilot`."
+        },
+        {
+          "provider": "anthropic",
+          "model": "claude-sonnet-4-6",
+          "configured": true,
+          "auth_ready": false,
+          "ready": false,
+          "error_class": "auth",
+          "error": "No Anthropic credentials found. Run 'hermes auth add anthropic' to sign in, or set ANTHROPIC_TOKEN / ANTHROPIC_API_KEY."
+        }
+      ]
+    },
+    "view": {
+      "available": true,
+      "entries": [
+        {
+          "position": 1,
+          "provider": "openrouter",
+          "provider_label": "OpenRouter",
+          "model": "vendor/pooled-model",
+          "configured": true,
+          "auth_ready": true,
+          "status": "ready",
+          "error": null
+        },
+        {
+          "position": 2,
+          "provider": "nosuchprovider",
+          "provider_label": "nosuchprovider",
+          "model": "ghost",
+          "configured": false,
+          "auth_ready": false,
+          "status": "config",
+          "error": "Unknown provider 'nosuchprovider'. Check 'hermes model' for available providers, or run 'hermes doctor' to diagnose config issues."
+        },
+        {
+          "position": 3,
+          "provider": "copilot-acp",
+          "provider_label": "copilot-acp",
+          "model": "gpt-5",
+          "configured": false,
+          "auth_ready": false,
+          "status": "config",
+          "error": "Unknown provider 'copilot-acp'.\n\nGitHub Copilot moved out of core into the 'github-copilot' plugin: install it with `hermes plugins install github-copilot`."
+        },
+        {
+          "position": 4,
+          "provider": "anthropic",
+          "provider_label": "Anthropic",
+          "model": "claude-sonnet-4-6",
+          "configured": true,
+          "auth_ready": false,
+          "status": "auth",
+          "error": "No Anthropic credentials found. Run 'hermes auth add anthropic' to sign in, or set ANTHROPIC_TOKEN / ANTHROPIC_API_KEY."
+        }
+      ]
+    }
+  },
+  "none": {
+    "sidecar": {
+      "available": true,
+      "entries": []
+    },
+    "view": {
+      "available": true,
+      "entries": []
+    }
+  },
+  "unavailable": {
+    "sidecar": {
+      "available": false,
+      "entries": []
+    },
+    "view": {
+      "available": false,
+      "entries": []
+    }
+  }
+}

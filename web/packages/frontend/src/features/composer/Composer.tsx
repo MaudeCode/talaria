@@ -275,6 +275,8 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const modes = useExecutionModesQuery(pendingMode !== undefined)
   const attachmentsSupported = session ? session.owner_attachment?.can_attach !== false
     : pendingMode === undefined || modes.data?.modes.find((option) => option.mode === pendingMode)?.can_attach === true
+  // TAL-1344: an owner chat takes only the image kinds its server lists; a long paste stays text there.
+  const attachmentKinds = session?.owner_attachment?.attachment_mimes
   const readOnly = !!session?.read_only && !nativeOwner
   useLayoutEffect(() => {
     const f = footer.current
@@ -781,7 +783,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     // Real files attach; string items (rich-text HTML and the like) never do. Accompanying plain text pastes natively.
     const pastedFiles = Array.from(e.clipboardData.items).filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter((f): f is File => !!f)
     const pasted = e.clipboardData.getData('text/plain')
-    if (attachmentsSupported && settings?.large_text_paste_as_attachment !== false && pasted.length > 8000) {
+    if (attachmentsSupported && !attachmentKinds && settings?.large_text_paste_as_attachment !== false && pasted.length > 8000) {
       e.preventDefault()
       const name = `pasted-${Date.now()}.txt`
       const file = new File([pasted], name, { type: 'text/plain' })
@@ -969,7 +971,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
           <div className="composer-right flex gap-1.5 items-center shrink-0 max-[641px]:flex-none max-[641px]:w-auto max-[641px]:justify-end max-[641px]:min-w-0">
             <div className="composer-tools flex items-center gap-0.5">
               {attachmentsSupported && !hide('hide_composer_attach') && (
-                <AttachControl owner={`${trayId}\n${bootstrap.profile?.name ?? ''}\n${clarify ? `${clarify.pending.clarify_id ?? ''}:${String(clarify.index)}` : ''}`} onFiles={addFiles} fallbackFocus={textarea} />
+                <AttachControl owner={`${trayId}\n${bootstrap.profile?.name ?? ''}\n${clarify ? `${clarify.pending.clarify_id ?? ''}:${String(clarify.index)}` : ''}`} onFiles={addFiles} fallbackFocus={textarea} kinds={attachmentKinds} />
               )}
               {!hide('hide_composer_mic') && (liveOffered || dictationSupported()) && <button type="button" className={cn('icon-btn mic-btn has-tooltip', dictating && 'active')} id="btnMic" data-tooltip={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-label={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-pressed={dictating} onClick={toggleDictation}><Mic size={16} aria-hidden="true" /></button>}
             </div>

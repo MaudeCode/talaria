@@ -238,12 +238,10 @@ function parsePreferences(value: unknown): NotificationPreferences | null {
   if (!isRecord(value)) return null;
   const keys = Object.keys(defaultNotificationPreferences) as (keyof NotificationPreferences)[];
   if (keys.some((key) => typeof value[key] !== "boolean")) return null;
-  const { notifyOnBackground } = value;
-  if (notifyOnBackground !== undefined && typeof notifyOnBackground !== "boolean") return null;
-  return {
-    ...Object.fromEntries(keys.map((key) => [key, value[key]])) as unknown as NotificationPreferences,
-    ...(notifyOnBackground === undefined ? {} : { notifyOnBackground }),
-  };
+  // Optional switches an older App omits; absent means off.
+  const optional = (["notifyOnBackground", "notifyOnUpdateAvailable"] as const).filter((key) => value[key] !== undefined);
+  if (optional.some((key) => typeof value[key] !== "boolean")) return null;
+  return Object.fromEntries([...keys, ...optional].map((key) => [key, value[key]])) as unknown as NotificationPreferences;
 }
 
 async function authenticateUser(
@@ -639,6 +637,21 @@ http.route({
   }),
 });
 
+const serverNoticeKeys = ["body", "deepLink", "kind", "noticeId", "profileId", "publisherId", "title", "version"];
+
+// TAL-2665: exactly the v1 fields, each bounded; `kind` names the device preference that gates the notice.
+function parseServerNotice(value: Record<string, unknown>) {
+  if (Object.keys(value).sort().join() !== serverNoticeKeys.join() || value.version !== 1 || value.kind !== "update_available") return null;
+  const noticeId = stringField(value, "noticeId", 200);
+  const publisherId = canonicalHttpOrigin(stringField(value, "publisherId", 191) ?? "");
+  const profileId = stringField(value, "profileId", 128);
+  const title = stringField(value, "title", 80);
+  const body = stringField(value, "body", 300);
+  const deepLink = stringField(value, "deepLink", 512);
+  if (!noticeId || !publisherId || !profileId || !title || !body || !deepLink || !safePath(deepLink)) return null;
+  return { noticeId, publisherId, profileId, title, body, deepLink };
+}
+
 http.route({
   pathPrefix: "/v1/publishers/",
   method: "PUT",
@@ -720,6 +733,21 @@ http.route({
         sessionId: event.sessionId,
         eventId: event.eventId,
         startedAt: event.startedAt,
+      });
+      return json(result.status === "accepted" ? 200 : 409, result);
+    }
+
+    if (parts.length === 7 && parts[5] === "notices") {
+      const notice = parseServerNotice(body);
+      if (!notice || notice.noticeId !== parts[6]) return json(400, { error: "invalid_server_notice" });
+      if (notice.publisherId !== publisherId || notice.profileId !== profileId) return json(403, { error: "profile_mismatch" });
+      const result = await ctx.runMutation(internal.publishers.acceptServerNotice, {
+        profileId,
+        ...auth,
+        noticeId: notice.noticeId,
+        title: notice.title,
+        body: notice.body,
+        deepLink: notice.deepLink,
       });
       return json(result.status === "accepted" ? 200 : 409, result);
     }
