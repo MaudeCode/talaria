@@ -158,6 +158,19 @@
         "\\bfrom\\s+['\"](?:\\.\\./)+server/src/"
       ],
       "message": "test-audit junk pattern: prove a server contract in the server's tests; feed the client a synthetic value typed by the contract (docs/testing.md)"
+    },
+    "ready-fresh-page-capture": {
+      "paths": [
+        "web/packages/"
+      ],
+      "patterns": [
+        "=\\s*await\\s+[\\w$.]+\\.screenshot\\("
+      ],
+      "nearby": {
+        "lines": 4,
+        "pattern": "\\.newPage\\(\\)"
+      },
+      "message": "test-audit ready: build a stand-in image from data (canvasImage in e2e/fixtures.ts), never by capturing a page the test just opened; a fresh page has no compositor surface yet (docs/testing.md)"
     }
   }
 }

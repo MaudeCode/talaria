@@ -1,5 +1,5 @@
 import type { Route } from '@playwright/test'
-import { expect, expectNoOverflow, settle, test } from './fixtures'
+import { canvasImage, expect, expectNoOverflow, settle, test } from './fixtures'
 
 /** TAL-1574: Settings → Help sends feedback optimistically; a refusal reopens the dialog with the draft. */
 const diagnostics = { text: 'Web: 1.4.0\nRelay registered: no', bytes: 31 }
@@ -125,18 +125,7 @@ test('Send feedback stages an attachment, closes at once, and keeps it across a 
   const dialog = page.getByRole('dialog', { name: 'Send feedback' })
   await dialog.getByRole('textbox', { name: 'Title' }).fill('Thread list jumps after a reply')
   await dialog.getByRole('textbox', { name: 'Details' }).fill('The list scrolls to the top when a reply arrives.')
-  const png = Buffer.from(await page.evaluate(async () => {
-    const canvas = document.createElement('canvas')
-    canvas.width = 640
-    canvas.height = 400
-    const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#1f6feb'
-    ctx.fillRect(0, 0, 640, 400)
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(40, 40, 360, 48)
-    const blob = await new Promise<Blob>((resolve) => { canvas.toBlob((b) => { resolve(b!) }, 'image/png') })
-    return Array.from(new Uint8Array(await blob.arrayBuffer()))
-  }))
+  const png = await canvasImage(page, { width: 640, height: 400, fills: [['#1f6feb', 0, 0, 640, 400], ['#ffffff', 40, 40, 360, 48]] })
   await page.locator('input[data-feedback-picker]').setInputFiles({ name: 'thread-list.png', mimeType: 'image/png', buffer: png })
   await expect(dialog.getByRole('button', { name: 'Uploading… thread-list.png' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

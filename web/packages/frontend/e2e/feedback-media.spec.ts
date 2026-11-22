@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import type { Page, Request } from '@playwright/test'
 import type * as Mediabunny from 'mediabunny'
 import { ALL_FORMATS, BufferSource, Input } from 'mediabunny'
-import { expect, settle, test } from './fixtures'
+import { canvasImage, expect, settle, test } from './fixtures'
 
 /** The script-tag build, which exposes a global `Mediabunny`; the package's exports do not name it, so it is found beside the Node bundle. */
 const MEDIABUNNY_BROWSER_BUNDLE = join(dirname(createRequire(import.meta.url).resolve('mediabunny')), 'mediabunny.min.cjs')
@@ -71,18 +71,7 @@ function jpegMarkers(data: Buffer): { app1: number; width: number; height: numbe
 
 test('image re-encoding drops EXIF and caps the long edge at 2560 px', async ({ page }) => {
   const { uploads } = await openDialog(page, {})
-  const canvasJpeg = Buffer.from(await page.evaluate(async () => {
-    const canvas = document.createElement('canvas')
-    canvas.width = 4000
-    canvas.height = 3000
-    const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#3366cc'
-    ctx.fillRect(0, 0, 4000, 3000)
-    ctx.fillStyle = '#ffcc00'
-    ctx.fillRect(500, 500, 2000, 1000)
-    const blob = await new Promise<Blob>((resolve) => { canvas.toBlob((b) => { resolve(b!) }, 'image/jpeg', 0.9) })
-    return Array.from(new Uint8Array(await blob.arrayBuffer()))
-  }))
+  const canvasJpeg = await canvasImage(page, { width: 4000, height: 3000, fills: [['#3366cc', 0, 0, 4000, 3000], ['#ffcc00', 500, 500, 2000, 1000]], type: 'image/jpeg', quality: 0.9 })
   // A synthetic EXIF block (big-endian TIFF, one empty IFD) carrying a marker string, inserted after SOI.
   const tiff = Buffer.concat([Buffer.from('MM\0*\0\0\0\x08', 'latin1'), Buffer.from([0, 0, 0, 0, 0, 0]), Buffer.from('TAL1596-SYNTHETIC-GPS', 'latin1')])
   const exif = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff])
