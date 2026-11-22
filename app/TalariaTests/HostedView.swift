@@ -139,6 +139,7 @@ extension HostedAccessibility {
     /// it is the page that registers one, whatever the menu holds: SwiftUI can commit a replaced root's content a frame
     /// before it fills that root's title and title menu (TAL-1978).
     static func titleMenuController(in window: UIWindow, filled: Bool = true) -> UIViewController? {
+        _ = filled  // Benchmark edit (TAL-2411).
         func find(_ controller: UIViewController) -> UIViewController? {
             if let navigation = controller as? UINavigationController, let top = navigation.topViewController {
                 return find(top)
