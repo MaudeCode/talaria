@@ -34,9 +34,11 @@ export function ModelViewer({ asset, title, autoRotate = false }: { asset: Meshy
     return () => { live = false }
   }, [attempt])
 
-  useEffect(() => {
-    const el = viewer.current
-    if (!el || !rendererReady) return
+  // Listens from the commit that inserts the element: an effect would leave it deaf until a later task, and a load
+  // fired in between would never clear the loading state.
+  const attach = (el: ViewerElement | null) => {
+    viewer.current = el
+    if (!el) return
     const onLoad = () => {
       const names = [...(el.availableAnimations ?? [])]
       setClips(names)
@@ -47,8 +49,8 @@ export function ModelViewer({ asset, title, autoRotate = false }: { asset: Meshy
     const onError = () => { setPhase('error') }
     el.addEventListener('load', onLoad)
     el.addEventListener('error', onError)
-    return () => { el.removeEventListener('load', onLoad); el.removeEventListener('error', onError) }
-  }, [rendererReady, attempt, reduced])
+    return () => { viewer.current = null; el.removeEventListener('load', onLoad); el.removeEventListener('error', onError) }
+  }
 
   const toggle = () => {
     const el = viewer.current
@@ -72,7 +74,7 @@ export function ModelViewer({ asset, title, autoRotate = false }: { asset: Meshy
         {rendererReady && phase !== 'error' && (
           <model-viewer
             key={attempt}
-            ref={viewer}
+            ref={attach}
             src={appUrl(asset.url.replace(/^\.\//, '')).href}
             alt={title}
             aria-label={m.meshy_viewer_label({ title })}

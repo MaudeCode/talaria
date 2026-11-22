@@ -5,17 +5,18 @@ import XCTest
 
 /// A streaming code block keeps its view across updates (TAL-1396).
 ///
-/// Streams a 2,000-line fence into a reply's Markdown in 200 updates, through the view a streaming reply draws its
-/// Markdown with. SwiftUI builds an inserted row twice, so an update may build each existing line at most once and its
-/// new lines twice; a new view per update, as the Markdown renderer gave the fence, builds every line twice. Whether
-/// SwiftUI also skips the finished groups, whose values stay equal (`MarkdownMathRendererTests`), is its own decision:
-/// on CI (Xcode 27.1, iOS 27.0) one run re-ran every equal group on every update and the next skipped them, so this test
-/// does not count on it (TAL-2535). While streaming, the highlight task never runs, so no fallback is logged until the
-/// stream ends.
+/// Streams a 640-line fence (ten 64-line groups) into a reply's Markdown in 64 updates, through the view a streaming
+/// reply draws its Markdown with. SwiftUI builds an inserted row twice, so an update may build each existing line at
+/// most once and its new lines twice; a new view per update, as the Markdown renderer gave the fence, builds every line
+/// twice. Whether SwiftUI also skips the finished groups, whose values stay equal (`MarkdownMathRendererTests`), is its
+/// own decision: on CI (Xcode 27.1, iOS 27.0) one run re-ran every equal group on every update and the next skipped
+/// them, so this test does not count on it (TAL-2535). Re-running every group makes the stream's line builds quadratic
+/// in its length, so the stream stays short: 2,000 lines in 200 updates took 48 s on CI, over the 30 s budget. While
+/// streaming, the highlight task never runs, so no fallback is logged until the stream ends.
 @MainActor
 final class ChatCodeBlockStreamingTests: XCTestCase {
-    private static let lineCount = 2_000
-    private static let updateCount = 200
+    private static let lineCount = 640
+    private static let updateCount = 64
 
     override func tearDown() {
         MainActor.assumeIsolated { ChatBodyEvaluationRecorder.installed = nil }
