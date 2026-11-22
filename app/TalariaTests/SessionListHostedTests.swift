@@ -2253,11 +2253,14 @@ extension RegularSplitHostedTests {
     private func isBarButtonDrawn(_ label: String, in window: UIWindow) -> Bool { barButtonDrawn(label, in: window) != nil }
 
     /// The chat's Companion Page item among the detail column's bar items.
-    private func companionPageItem(in window: UIWindow) -> UIBarButtonItem? {
+    private func companionPageItem(in window: UIWindow) -> UIBarButtonItem? { detailBarItem("Companion Page", in: window) }
+
+    /// The detail column's bar item titled `title`.
+    private func detailBarItem(_ title: String, in window: UIWindow) -> UIBarButtonItem? {
         guard let detail = HostedAccessibility.splitViewController(under: window.rootViewController)?.viewController(for: .secondary)
         else { return nil }
         return HostedAccessibility.toolbarItems(under: detail).first {
-            $0.title == "Companion Page" || $0.accessibilityLabel == "Companion Page" || $0.primaryAction?.title == "Companion Page"
+            $0.title == title || $0.accessibilityLabel == title || $0.primaryAction?.title == title
         }
     }
 
@@ -2402,8 +2405,8 @@ extension RegularSplitHostedTests {
         }
     }
 
-    /// TAL-1540: the first Sidebar press suspends the page and the second brings it back, the chat fitting its pane and
-    /// keeping the reader's draft each time.
+    /// TAL-1540: the first Sidebar press suspends the page and the second brings it back as the reader left it, Changes
+    /// on, the chat fitting its pane and keeping the reader's draft each time.
     func testTheSecondSidebarPressBringsBackTheSuspendedCompanionPage() async throws {
         let (window, split) = try await openChatBesideCompanionPage()
         func showsSidebar() -> Bool { split.displayMode == .oneBesideSecondary }
@@ -2411,6 +2414,10 @@ extension RegularSplitHostedTests {
         let draft = "Keep this draft"
         try await typeIntoComposer(draft, in: window)
         window.endEditing(true)
+        let changes = await drawnBarButton("Changes", in: window)
+        press(try XCTUnwrap(changes, "The page offers no Changes"))
+        let changesOn = await awaitCondition { self.detailBarItem("Changes", in: window)?.isSelected == true }
+        XCTAssertTrue(changesOn, "Changes did not turn on")
         attachHostedScreenshot(window, name: "duo-companion-beside-chat")
         for opens in [true, false] {
             let moment = opens ? "opening the column" : "closing the column"
@@ -2419,12 +2426,45 @@ extension RegularSplitHostedTests {
             XCTAssertTrue(settled, "\(moment.capitalized) left the sidebar \(showsSidebar() ? "shown" : "hidden") and the page "
                           + "\(companionPage(in: window) == nil ? "hidden" : "shown")")
             XCTAssertEqual(companionPageItem(in: window)?.isSelected, !opens, "After \(moment) the Companion Page button misreads")
+            if !opens {
+                let keptChanges = await awaitCondition { self.detailBarItem("Changes", in: window)?.isSelected == true }
+                XCTAssertTrue(keptChanges, "The page came back with Changes off")
+            }
             let kept = await awaitCondition { self.composerDraftText(in: window) == draft }
             XCTAssertTrue(kept, "After \(moment) the composer holds \(String(describing: composerDraftText(in: window)))")
             let paneMaxX = opens ? window.bounds.maxX : frame(await companionTitle("Alpha.swift", in: window)).minX
             try await assertTheChatLiesInsideItsPane(in: window, split: split, paneMaxX: paneMaxX, "after \(moment)")
             attachHostedScreenshot(window, name: opens ? "duo-companion-suspended-by-sidebar" : "duo-companion-restored-by-sidebar")
         }
+    }
+
+    /// TAL-1540: the page the column suspends comes back at the reader's place in its file, not at the file's top.
+    func testTheSuspendedCompanionPageComesBackAtTheReadersPlace() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat([UITestFixtureEnvironment.companionFocusArgument], size: HostedSize.duoInnerLandscape,
+                                                 writes: false)
+        let split = try XCTUnwrap(HostedAccessibility.splitViewController(under: window.rootViewController))
+        let gamma = await companionTitle("Gamma.swift", in: window)
+        XCTAssertNotNil(gamma, "The companion page never showed")
+        var file: UIScrollView?
+        let scrollable = await awaitCondition {
+            file = self.companionPageScrollView(in: window)
+            return (file?.contentSize.height ?? 0) > (file?.bounds.height ?? 0) + 400
+        }
+        XCTAssertTrue(scrollable, "The page's file never ran past its pane")
+        let reading = try XCTUnwrap(file).contentOffset.y + 400
+        file?.setContentOffset(CGPoint(x: 0, y: reading), animated: false)
+        settle(window: window)
+        for opens in [true, false] {
+            try await pressSidebar(in: window)
+            let toggled = await awaitCondition { (split.displayMode == .oneBesideSecondary) == opens }
+            XCTAssertTrue(toggled, "The Sidebar button did not \(opens ? "open" : "close") the column")
+        }
+        let kept = await awaitCondition {
+            abs((self.companionPageScrollView(in: window)?.contentOffset.y ?? 0) - reading) < 1
+        }
+        XCTAssertTrue(kept, "The page came back at \(String(describing: companionPageScrollView(in: window)?.contentOffset.y)), "
+                      + "not the reader's \(reading)")
     }
 
     /// TAL-1540: a page the reader hid with its own button stays hidden as the Sidebar button opens and closes the column.

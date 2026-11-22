@@ -12,6 +12,8 @@ struct SourceFileView: View {
     /// One-based; clamped into the file so an out-of-range link still lands.
     let targetLine: Int?
     let wrapsLines: Bool
+    /// The reader's place, kept by a host that shows this file in more than one place (TAL-1540).
+    var scrollOffset: Binding<CGPoint>?
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var lines: [SourceLine] = []
@@ -37,6 +39,7 @@ struct SourceFileView: View {
                 }
                 .padding(.vertical, 8)
             }
+            .keepsScrollOffset(targetLine == nil ? scrollOffset : nil)
             .onChange(of: lines.isEmpty) { _, isEmpty in
                 guard !isEmpty, let target = highlightedLine else { return }
                 proxy.scrollTo(target, anchor: .center)
@@ -108,5 +111,39 @@ struct SourceFileView: View {
         line.segments.reduce(Text(verbatim: "")) { partial, segment in
             partial + Text(segment)
         }
+    }
+}
+
+extension View {
+    /// Keeps the reader's place in `offset` and, once the content reaches it again, scrolls back there: a second copy of
+    /// the same view opens where the first was left (TAL-1540). Nil leaves the scroll view as it is.
+    @ViewBuilder
+    func keepsScrollOffset(_ offset: Binding<CGPoint>?) -> some View {
+        if let offset { modifier(ScrollOffsetKeeping(offset: offset)) } else { self }
+    }
+}
+
+private struct ScrollOffsetKeeping: ViewModifier {
+    @Binding var offset: CGPoint
+    @State private var position = ScrollPosition()
+    @State private var restored = false
+
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: ScrollGeometry.self, of: { $0 }) { _, geometry in
+                guard restored else {
+                    // Lazily loaded rows arrive after the first layout; wait until the content reaches the kept place.
+                    // ponytail: a file that shrank below its kept place opens at its top and keeps no new place.
+                    if offset == .zero {
+                        restored = true
+                    } else if geometry.contentSize.height >= offset.y + geometry.containerSize.height {
+                        position.scrollTo(point: offset)
+                        restored = true
+                    }
+                    return
+                }
+                offset = geometry.contentOffset
+            }
     }
 }

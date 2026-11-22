@@ -1190,7 +1190,8 @@ struct ChatView: View {
 
     private var companionPageShown: Binding<Bool> {
         Binding(get: { !viewModel.companionFocus.isHidden && !companionPageIsSuspended }, set: { shown in
-            if shown { splitFilesInspector?.resumeCompanionPage() }
+            // Only a page the column suspended needs the column's room back; a hidden one shows beside it as it is.
+            if shown, companionPageIsSuspended { splitFilesInspector?.resumeCompanionPage() }
             viewModel.setCompanionPageHidden(!shown)
         })
     }

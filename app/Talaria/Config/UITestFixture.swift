@@ -1821,8 +1821,11 @@ final class UITestFixtureURLProtocol: URLProtocol {
     private static func companionFileResponse(_ url: URL) -> Data {
         let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "path" }?.value ?? ""
         let name = (path as NSString).lastPathComponent
-        return json(["path": path, "name": name, "language": "swift", "lines": 2,
-                     "content": "// \(path)\nstruct \((name as NSString).deletingPathExtension) {}\n"])
+        // Gamma, the session's own focus file, runs long enough to scroll (TAL-1540).
+        let body = name == "Gamma.swift" ? (1...120).map { "let line\($0) = \($0)\n" }.joined() : ""
+        let content = "// \(path)\n\(body)struct \((name as NSString).deletingPathExtension) {}\n"
+        return json(["path": path, "name": name, "language": "swift", "lines": content.split(separator: "\n").count,
+                     "content": content])
     }
 
     private static func companionListResponse() -> Data {
