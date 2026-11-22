@@ -311,6 +311,22 @@ it('paints retained output before delayed detail/status and reconnects once on A
 })
 
 
+it('a reload of a run without a transcript cursor shows its persisted rows once, then only frames from the live tail (TAL-2644)', async () => {
+  const session = sessionFixture({ session_id: 'a', active_stream_id: 'run-a', transcript_seq: null, messages: [{ id: 1, role: 'user', content: 'Question' }, { id: 2, role: 'assistant', content: 'Persisted partial.' }] })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session })
+  vi.mocked(api.fetchStreamStatus).mockResolvedValue({ active: true, replay_available: false, stream_id: 'run-a', blocking_stream_id: null })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  qc.setQueryData(keys.sessions.detail('a'), { session })
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useTranscript('a'), { wrapper })
+  await waitFor(() => expect(streams).toHaveLength(1))
+  expect(streams[0]!.replay).toBe('tail')
+  act(() => streams[0]!.event(parseChatEvent('token', JSON.stringify({ text: ' Live.' }))!, ''))
+  await waitFor(() => expect(result.current.live && liveText(result.current.live)).toBe(' Live.'))
+  expect(result.current.rows.map((row) => row.message.content)).toEqual(['Question', 'Persisted partial.'])
+  expect(result.current.live?.claimsPersistedRows).toBe(false)
+})
+
 it('an accepted history cut fences an older page that was already loading', async () => {
   const prior = sessionFixture({ session_id: 'cut', messages: [{ role: 'user', id: 5, content: 'Current' }], _messages_offset: 4, _messages_truncated: true })
   const page = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()

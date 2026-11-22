@@ -144,7 +144,7 @@ function closeLive(sessionId: string): void {
   entry.handle.close()
 }
 
-function open(sessionId: string, streamId: string, replay: Replay | null, owner: object): void {
+function open(sessionId: string, streamId: string, replay: Replay | 'tail' | null, owner: object): void {
   closeLive(sessionId)
   const entry: Live = { sessionId, streamId, handle: { close: () => undefined, readyState: () => SSE_CLOSED }, reconnectTimer: null, reconnectAttempts: 0, owner }
   live.set(sessionId, entry)
@@ -170,14 +170,18 @@ function open(sessionId: string, streamId: string, replay: Replay | null, owner:
       if (!turn || isTerminal(turn.status)) { closeLive(sessionId); return }
       dispatch({ type: 'connection', sessionId, streamId, status: 'error' })
       if (readyState === SSE_CLOSED) scheduleReconnect(entry)
+      // The browser would reopen a live-tail URL at the tail again and skip what the run buffered meanwhile: reopen it as
+      // its own reconnect would without `tail`, from the last journaled frame this turn received, else with the buffer.
+      else if (replay === 'tail') open(sessionId, streamId, turn.lastEventId ? { afterSeq: turn.lastSeq, afterEventId: turn.lastEventId } : null, entry.owner)
     },
   })
 }
 
 /**
  * Where to resume `streamId`: this page's own cursor while its live turn holds that stream, else the session detail's
- * `transcript_seq` for that stream (its transcript holds nothing the journal delivers after it), else null — attach live
- * without replay. A cursor for another stream is never used.
+ * `transcript_seq` for that stream (its transcript holds nothing the journal delivers after it), else null — attach an
+ * active run at its live tail, since the persisted rows already hold what it buffered (TAL-2644). A cursor for another
+ * stream is never used.
  */
 function resumeFrom(sessionId: string, streamId: string, transcriptSeq: Session['transcript_seq']): Replay | null {
   const turn = getStreamState().turns[sessionId]
@@ -226,7 +230,7 @@ async function settleFromServer(sessionId: string, streamId: string, owner: obje
       if (st?.active) {
         const replay = resumeFrom(sessionId, streamId, session.transcript_seq)
         dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: session.pending_started_at, serverCompressionStartedAt: session.compression_started_at, serverRunStatus: session.run_status })
-        open(sessionId, streamId, replay, owner)
+        open(sessionId, streamId, replay ?? 'tail', owner)
         return
       }
     }
@@ -362,7 +366,7 @@ export function attachToStream(sessionId: string, streamId: string, run: Pick<Se
     const replay = resumeFrom(sessionId, streamId, run.transcript_seq ?? null)
     dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: run.pending_started_at, serverCompressionStartedAt: run.compression_started_at, serverRunStatus: run.run_status })
     dispatch({ type: 'pending_steers', sessionId, streamId, steers: run.pending_steers ?? [] })
-    open(sessionId, streamId, replay, owner)
+    open(sessionId, streamId, replay ?? (st.active ? 'tail' : null), owner)
   })().finally(() => {
     if (attaching.get(sessionId)?.promise === promise) attaching.delete(sessionId)
     if (owners.get(sessionId) === owner && !live.has(sessionId)) owners.delete(sessionId)

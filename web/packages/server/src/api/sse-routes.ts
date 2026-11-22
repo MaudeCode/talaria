@@ -190,23 +190,23 @@ function sameRunSeq(eventId: string | null | undefined, streamId: string): numbe
 }
 
 /** Python `_chat_stream_resume_cursor` (journal cursors only; the runner adapter is not part of this backend). */
-function resumeCursor(ctx: RequestContext, streamId: string): { afterSeq: number | null; requested: boolean } {
+function resumeCursor(ctx: RequestContext, streamId: string): { afterSeq: number | null; requested: boolean; explicit: boolean } {
   const q = ctx.query
   const afterSeqRaw = q.get('after_seq')
   const afterEventId = (q.get('after_event_id') ?? '').trim()
   const explicit = (afterSeqRaw !== null && afterSeqRaw !== '') || Boolean(afterEventId) || Boolean(q.get('replay'))
   if (explicit) {
     const [runId, seq] = parseRunJournalEventId(afterEventId)
-    if (runId) return { afterSeq: runId === streamId ? seq : null, requested: true }
-    if (afterSeqRaw === null || afterSeqRaw === '') return { afterSeq: null, requested: true }
+    if (runId) return { afterSeq: runId === streamId ? seq : null, requested: true, explicit }
+    if (afterSeqRaw === null || afterSeqRaw === '') return { afterSeq: null, requested: true, explicit }
     const parsed = Number.parseInt(afterSeqRaw, 10)
-    return { afterSeq: Number.isFinite(parsed) ? Math.max(0, parsed) : 0, requested: true }
+    return { afterSeq: Number.isFinite(parsed) ? Math.max(0, parsed) : 0, requested: true, explicit }
   }
   const header = (ctx.header('last-event-id') ?? '').trim()
-  if (!header) return { afterSeq: null, requested: false }
+  if (!header) return { afterSeq: null, requested: false, explicit }
   const [runId, seq] = parseRunJournalEventId(header)
-  if (runId && seq !== null) return { afterSeq: runId === streamId ? seq : null, requested: true }
-  return { afterSeq: null, requested: true }
+  if (runId && seq !== null) return { afterSeq: runId === streamId ? seq : null, requested: true, explicit }
+  return { afterSeq: null, requested: true, explicit }
 }
 
 /** TAL-1969: whether each streaming request is the server owner, settled before its first frame; unknown reads as not. */
@@ -387,11 +387,13 @@ async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubsc
 export async function handleChatStream(ctx: RequestContext): Promise<void> {
   const streamId = ctx.query.get('stream_id') ?? ''
   const sessionHint = ctx.query.get('session_id') || undefined
+  const cursor = resumeCursor(ctx, streamId)
+  const tail = ctx.query.get('tail') === '1'
+  if (tail && cursor.explicit) { (await ctx.json({ error: 'tail cannot be combined with a resume cursor' }, { status: 400 })); return }
   const resolved = await resolveStreamOwner(ctx, streamId, sessionHint)
   const { owner } = resolved
   if (!(await streamVisibleToRequest(ctx, streamId, resolved))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
   await settleServerOwner(ctx)
-  const cursor = resumeCursor(ctx, streamId)
   const channel = ctx.deps.registry.peek(streamId)
   if (!channel) {
     const summary = await streamRunSummary(ctx, streamId, resolved, sessionHint)
@@ -404,7 +406,8 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
     try { await replayRunJournal(ctx, sse, streamId, summary, afterSeq) } finally { sse.end() }
     return
   }
-  const [sub, snapshot] = channel.subscribeWithSnapshot()
+  // A `Last-Event-ID` resume (EventSource's own reconnect) outranks `tail`: the client has seen frames up to that id.
+  const [sub, snapshot] = channel.subscribeWithSnapshot({ tail: tail && !cursor.requested })
   const sse = (await claimOrReject(ctx, true, null))
   if (!sse) { channel.unsubscribe(sub); return }
   sse.start()

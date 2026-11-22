@@ -22,9 +22,11 @@ export interface ChatStreamCallbacks {
   onUnknown?: (name: string, data: string) => void
 }
 
-export function openChatStream(streamId: string, replay: { afterSeq: number; afterEventId: string } | null, cb: ChatStreamCallbacks): SseHandle {
+/** `replay`: resume after a cursor; `'tail'`: attach at the live tail (TAL-2644); null: attach with the run's buffered frames. */
+export function openChatStream(streamId: string, replay: { afterSeq: number; afterEventId: string } | 'tail' | null, cb: ChatStreamCallbacks): SseHandle {
   const params = new URLSearchParams({ stream_id: streamId })
-  if (replay) {
+  if (replay === 'tail') params.set('tail', '1')
+  else if (replay) {
     params.set('replay', '1')
     params.set('after_seq', String(replay.afterSeq))
     params.set('after_event_id', replay.afterEventId)

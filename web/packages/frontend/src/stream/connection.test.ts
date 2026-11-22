@@ -9,7 +9,7 @@ import type { ChatEvent } from '../contracts/sse'
 import { parseChatEvent } from '../contracts/sse'
 
 let readyState = 1
-const opened: { streamId: string; replay: { afterSeq: number; afterEventId: string } | null; onEvent: (event: ChatEvent, lastEventId: string) => void; onOpen: () => void; close: ReturnType<typeof vi.fn> }[] = []
+const opened: { streamId: string; replay: { afterSeq: number; afterEventId: string } | 'tail' | null; onEvent: (event: ChatEvent, lastEventId: string) => void; onOpen: () => void; onError: (readyState: number) => void; close: ReturnType<typeof vi.fn> }[] = []
 
 vi.mock('../api/endpoints', () => ({
   fetchStreamStatus: vi.fn(() => Promise.resolve({ active: true, replay_available: true, stream_id: 'run-a', blocking_stream_id: null })),
@@ -21,9 +21,9 @@ vi.mock('../api/endpoints', () => ({
 vi.mock('../features/toast/toast', () => ({ showToast: vi.fn() }))
 vi.mock('../api/sse', () => ({
   SSE_CLOSED: 2,
-  openChatStream: (streamId: string, replay: { afterSeq: number; afterEventId: string } | null, cb: { onEvent: (event: ChatEvent, lastEventId: string) => void; onOpen: () => void }) => {
+  openChatStream: (streamId: string, replay: { afterSeq: number; afterEventId: string } | 'tail' | null, cb: { onEvent: (event: ChatEvent, lastEventId: string) => void; onOpen: () => void; onError: (readyState: number) => void }) => {
     const close = vi.fn()
-    opened.push({ streamId, replay, onEvent: cb.onEvent, onOpen: cb.onOpen, close })
+    opened.push({ streamId, replay, onEvent: cb.onEvent, onOpen: cb.onOpen, onError: cb.onError, close })
     return { close, readyState: () => close.mock.calls.length ? 2 : readyState }
   },
 }))
@@ -173,11 +173,28 @@ describe('stream attach cursor (TAL-316)', () => {
     expect(opened.map((o) => [o.streamId, o.replay])).toEqual([['run-a', { afterSeq: 0, afterEventId: '' }]])
   })
 
-  it('attaches live without replay when the detail states no cursor, or a cursor for another stream', async () => {
+  // TAL-2644: the detail's persisted rows already hold what the run buffered before this attach.
+  it('attaches an active run at its live tail when the detail states no cursor, or a cursor for another stream', async () => {
     await attachToStream(SID, 'run-a')
     teardown(SID)
     await attachToStream(SID, 'run-b', { transcript_seq: { stream_id: 'run-a', seq: 7 } })
-    expect(opened.map((o) => [o.streamId, o.replay])).toEqual([['run-a', null], ['run-b', null]])
+    expect(opened.map((o) => [o.streamId, o.replay])).toEqual([['run-a', 'tail'], ['run-b', 'tail']])
+    expect(getStreamState().turns[SID]?.claimsPersistedRows).toBe(false)
+  })
+
+  it('replays a finished run\'s journal without a cursor, never at its tail', async () => {
+    vi.mocked(api.fetchStreamStatus).mockResolvedValueOnce({ active: false, replay_available: true, stream_id: 'run-a', blocking_stream_id: null })
+    await attachToStream(SID, 'run-a')
+    expect(opened.map((o) => o.replay)).toEqual([null])
+  })
+
+  // The browser would reopen the same `tail=1` URL and skip what the run buffered while the connection was down.
+  it.each([['', null], ['run-a:4', { afterSeq: 4, afterEventId: 'run-a:4' }]] as const)('a dropped live-tail attach that received "%s" reopens without tail from %j', async (lastEventId, replay) => {
+    await attachToStream(SID, 'run-a')
+    opened[0]!.onEvent(token('Live'), lastEventId)
+    opened[0]!.onError(0)
+    expect(opened[0]!.close).toHaveBeenCalled()
+    expect(opened.map((o) => o.replay)).toEqual(['tail', replay])
   })
 
   it('an in-page reconnect keeps its own same-stream cursor, and replayed events render once', async () => {

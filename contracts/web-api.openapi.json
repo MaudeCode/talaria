@@ -173777,6 +173777,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "tail",
+            "in": "query",
+            "required": false,
+            "description": "`1` attaches a live run at its live tail: frames the run buffered while no client was attached are skipped (the session detail's persisted rows hold them when `transcript_seq` is null). A finished run replays its journal as without it; a `Last-Event-ID` resume outranks it.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -173784,6 +173793,12 @@
             "description": "Event stream; ends after `stream_end`, `cancel`, `apperror`, or `error`.",
             "content": {
               "text/event-stream": {}
+            }
+          },
+          "400": {
+            "description": "`tail=1` combined with `after_seq`, `after_event_id`, or `replay`.",
+            "content": {
+              "application/json": {}
             }
           },
           "404": {

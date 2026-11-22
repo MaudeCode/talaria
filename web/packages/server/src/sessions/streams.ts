@@ -43,10 +43,12 @@ export class StreamChannel {
   private offlineDropped = 0
   lastEventId: string | null = null
 
-  subscribeWithSnapshot(): [StreamSubscriber, SubscribeSnapshot] {
-    const sub: StreamSubscriber = { queue: [...this.offline, ...this.toolProgress.values()], wake: null, closed: false, gap: null }
-    const first = this.offline[0]
-    const snapshot: SubscribeSnapshot = { offline_buffered_events: this.offline.length, offline_dropped_events: this.offlineDropped, offline_first_event_id: first?.[2] ?? null, last_event_id: this.lastEventId }
+  /** `tail` (TAL-2644): start at the live tail; the subscriber skips the frames buffered while no subscriber was attached. */
+  subscribeWithSnapshot(opts: { tail?: boolean } = {}): [StreamSubscriber, SubscribeSnapshot] {
+    const offline = opts.tail ? [] : this.offline
+    const sub: StreamSubscriber = { queue: [...offline, ...this.toolProgress.values()], wake: null, closed: false, gap: null }
+    const first = offline[0]
+    const snapshot: SubscribeSnapshot = { offline_buffered_events: offline.length, offline_dropped_events: opts.tail ? 0 : this.offlineDropped, offline_first_event_id: first?.[2] ?? null, last_event_id: this.lastEventId }
     this.subscribers.add(sub)
     return [sub, snapshot]
   }
