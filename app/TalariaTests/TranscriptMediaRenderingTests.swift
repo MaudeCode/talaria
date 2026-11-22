@@ -52,6 +52,19 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         XCTAssertEqual(Set(loads.urls), Set(media.map(\.url)), "Each construct's image loads as the server's item")
         XCTAssertFalse(loads.urls.contains(audio.url), "Audio renders as a tile, not an inline image")
     }
+
+    /// TAL-753: the audio tile's export button keeps the 44 pt minimum touch target around its 15 pt glyph.
+    func testAudioExportButtonHasAMinimumTouchTarget() async throws {
+        let audio = TranscriptMediaReference(url: "./api/media?path=%2Ftmp%2Fclip.mp3&session_id=s1", name: "clip.mp3", mime: "audio/mpeg", mediaKind: .audio)
+        let window = try hostInOwnWindow(
+            TranscriptMediaAudioExportView(reference: audio, loadMediaData: { nil }),
+            size: CGSize(width: 360, height: 200)
+        )
+
+        let button = try await requireElement(in: window, label: "Export audio clip.mp3")
+        XCTAssertGreaterThanOrEqual(button.accessibilityFrame.width.rounded(), 44)
+        XCTAssertGreaterThanOrEqual(button.accessibilityFrame.height.rounded(), 44)
+    }
 }
 
 /// TAL-2582: a streaming reply is raw Markdown the server has not rewritten yet. A remote image in it never loads by

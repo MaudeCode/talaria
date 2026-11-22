@@ -35,6 +35,9 @@ struct TranscriptMediaAudioExportView: View {
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 15, weight: .semibold))
+                    // A 44 pt touch target that grows past the glyph's trailing edge, so the glyph keeps its place.
+                    .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.chatTactile(.icon))
             .disabled(isExporting)
