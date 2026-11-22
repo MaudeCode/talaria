@@ -177,9 +177,10 @@ test('long history beside a live run renders on a slow CPU', async ({ page }, te
   }
 })
 
-// In the baseline nearly every token past the first twenty is a long task, so 50 tokens keep the paired comparison
-// while the run stays inside the per-test budget; 200 took 47-52 s on CI (TAL-2405).
-const STREAM_TOKENS = 50
+// In the baseline most tokens are their own long task (51 for 50 tokens on CI, 14-20 for 20 locally) and the contained
+// run has at most one, so 20 tokens keep the paired comparison; 50 took 21 s on a loaded main runner (TAL-2687) and 200
+// took 47-52 s (TAL-2405).
+const STREAM_TOKENS = 20
 
 test(`off-screen history halves long tasks during a ${STREAM_TOKENS}-token stream`, async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'paired CPU measurements use one fixed viewport')
