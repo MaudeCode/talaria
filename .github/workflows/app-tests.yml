@@ -453,10 +453,12 @@ jobs:
       # The keyboard's slide-to-type introduction marked as shown (TAL-668), the notification service answering
       # (TAL-651) and a photo the tests own (TAL-633). It needs only the booted simulator, so it runs in the background
       # while the job waits for and downloads the build, and "Test without building" collects it (TAL-1599). Only the
-      # shard whose tests wait on the notification server waits for it here (TAL-2352).
+      # shard whose tests wait on the notification server waits for it here (TAL-2352). The boot's end starts the
+      # render server's settle deadline in "Test without building" (TAL-2705).
       - name: Prepare the simulator
         if: env.DUO_SKIPPED != '1'
         run: |
+          echo "SIMULATOR_BOOTED_AT=$(date +%s)" >> "${GITHUB_ENV}"
           printf '%s' "${SHARD_PLAN}" > "${RUNNER_TEMP}/shard.json"
           options=$(ci/hosted-test-shard prepare-options "${RUNNER_TEMP}/shard.json")
           # shellcheck disable=SC2086 # One-word options, one per line; none where the shard needs notifications.
@@ -510,7 +512,8 @@ jobs:
       # Within it, XCTest's per-test limit fails a hung test by name, with a spindump, and the run goes on: one minute,
       # the shortest XCTest allows and the nearest to the 30 s run-time budget, not its default ten (TAL-2544). The
       # step's limit sits above the slowest measured shard: 10 to 13 minutes at four shards (main run 44328773116), 18
-      # to 19.5 minutes at a release's two (release run 44252691504).
+      # to 19.5 minutes at a release's two (release run 44252691504), plus at most about 6 minutes of the render
+      # server's settle wait before the first launch (TAL-2705).
       - name: Test without building
         if: env.DUO_SKIPPED != '1'
         timeout-minutes: ${{ inputs.diagnostic && 45 || 30 }}
@@ -546,8 +549,20 @@ jobs:
           simulator_id=${SIMULATOR_ID}
           # shellcheck disable=SC2034 # scripts/xctest-launch reads it.
           destination="platform=iOS Simulator,id=${SIMULATOR_ID}"
+          # The freshly booted simulator's render server bursts to 2-5 GB in about half the shards, 1.5 to 7 minutes
+          # after the boot, and starves every test it overlaps (TAL-696): two tests that take 3-15 s took 39-40 s inside
+          # one (run 45068210315), since the runtime deletion before the boot (TAL-2385) lets the tests start sooner
+          # after it. So the tests start once the burst came and went, or 450 s after the boot, past the latest onset
+          # seen in 21 shards of seven runs (407 s) (TAL-2705). The shard's test time leaves this wait out.
           # shellcheck disable=SC2329 # scripts/xctest-launch calls it.
-          xctest_ready() { ci/background wait simulator-prepare; }
+          xctest_ready() {
+            ci/background wait simulator-prepare || return
+            local now settle
+            now=$(date +%s)
+            settle=$(( SIMULATOR_BOOTED_AT + 450 - now ))
+            ci/memory-sampler settle $(( settle > 0 ? settle : 0 ))
+            start_seconds=$(( start_seconds + $(date +%s) - now ))
+          }
           # shellcheck disable=SC2329 # scripts/xctest-launch calls it.
           xctest_recover() {
             mkdir -p launch-fault
