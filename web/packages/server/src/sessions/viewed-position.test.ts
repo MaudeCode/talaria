@@ -54,11 +54,34 @@ describe('the last-viewed position (TAL-2676)', () => {
 
   it('keeps each profile\'s position apart', async () => {
     const sid = await seeded('viewed_profiles')
+    const unreadFor = async (profile: string) => s.deps.sessions.unreadFromMessageId(sid, profile, await s.deps.sessions.detail(sid, { msg_limit: '50' }))
     await s.deps.sessions.markViewed(sid, 'work')
     await append(s, sid)
-    expect(await s.deps.sessions.unreadFromMessageId(sid, 'work')).toBe(fixture.session.unread_from_message_id)
-    expect(await s.deps.sessions.unreadFromMessageId(sid, 'default')).toBeNull()
+    expect(await unreadFor('work')).toBe(fixture.session.unread_from_message_id)
+    expect(await unreadFor('default')).toBeNull()
     await s.deps.sessions.markViewed(sid, 'default')
-    expect(await s.deps.sessions.unreadFromMessageId(sid, 'work')).toBe(fixture.session.unread_from_message_id)
+    expect(await unreadFor('work')).toBe(fixture.session.unread_from_message_id)
+  })
+
+  it('names nothing once the viewed row is gone, even when a new row takes its position', async () => {
+    const sid = 'viewed_cleared'
+    const rows = (at: number) => [{ role: 'user', content: 'q', timestamp: at }, { role: 'assistant', content: 'a', timestamp: at + 1 }]
+    await s.deps.sessionStore.save(new Session({ session_id: sid, messages: rows(10) }, { workspace: s.state, model: null }))
+    expect((await viewed(s, sid)).status).toBe(200)
+    expect((await s.get('/api/session/clear', { method: 'POST', body: JSON.stringify({ session_id: sid }), headers: { 'content-type': 'application/json' } })).status).toBe(200)
+    const session = await s.deps.sessionStore.get(sid)
+    session.messages.push(...rows(20), ...rows(30))
+    await s.deps.sessionStore.save(session)
+    expect(await unread(s, sid)).toBeNull()
+  })
+
+  it('finds the viewed row on the page before a full chat-open window', async () => {
+    const sid = await seeded('viewed_paged')
+    expect((await viewed(s, sid)).status).toBe(200)
+    await append(s, sid)
+    const res = await s.get(`/api/session?session_id=${sid}&msg_limit=1`)
+    const session = ((await res.json()) as { session: Row }).session
+    expect(session._messages_offset).toBeGreaterThan(fixture.viewed_through)
+    expect(session.unread_from_message_id).toBe(fixture.session.unread_from_message_id)
   })
 })

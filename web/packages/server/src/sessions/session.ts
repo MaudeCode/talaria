@@ -105,8 +105,8 @@ export const WORKTREE_RETAINED_KEY = 'worktree_retained'
  */
 export const TERMINAL_CWD_KEY = 'terminal_cwd'
 /**
- * TAL-2676: an `extra` key, `{ [profile]: { viewed_at, message_id } }`: when each profile last viewed the chat, and the
- * transcript row key of its last row then (null for an empty transcript).
+ * TAL-2676: an `extra` key, `{ [profile]: { viewed_at, message_id, timestamp } }`: when each profile last viewed the chat,
+ * and the transcript row key (null for an empty transcript) and timestamp of its last row then.
  */
 export const VIEWED_POSITIONS_KEY = 'viewed_positions'
 

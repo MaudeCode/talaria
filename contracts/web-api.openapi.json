@@ -13907,7 +13907,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -21789,7 +21789,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -28324,7 +28324,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -38143,7 +38143,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -47297,7 +47297,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -57008,7 +57008,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -63487,7 +63487,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -70028,7 +70028,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -76567,7 +76567,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -96432,7 +96432,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -102963,7 +102963,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -110201,7 +110201,7 @@
                               "type": "null"
                             }
                           ],
-                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                          "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -116877,7 +116877,7 @@
                                   "type": "null"
                                 }
                               ],
-                              "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first renderable row added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed or that position is gone. Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
+                              "description": "TAL-2676: the transcript row key (`message_id`, else `id`, else `<index>-<role>`) of the first standalone row (`_display: 'row'`) added since the requesting profile last reported this chat viewed (`POST /api/talaria/viewed`); null when nothing is new, the chat was never viewed, or the viewed row is gone (a clear, truncation or retry replaced it, or it lies more than one page before the window). Only the chat-open read (`GET /api/session` with messages and no `msg_before`) carries it; older servers omit it."
                             },
                             "sidebar_group": {
                               "anyOf": [

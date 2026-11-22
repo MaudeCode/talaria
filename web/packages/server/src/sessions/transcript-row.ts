@@ -1,6 +1,5 @@
 /** What the transcript makes of one stored row, shared by the public projection, the outline and content search (TAL-1922). */
 import { str } from '../util.js'
-import { messageCountsAsRenderable } from './window.js'
 
 type Row = Record<string, unknown>
 
@@ -20,18 +19,35 @@ export function transcriptRowKey(row: Row, index: number): string {
   return typeof id === 'string' || typeof id === 'number' ? String(id) : `${String(index)}-${str(row.role)}`
 }
 
+/** TAL-2676: where a profile last viewed a chat: its last row's key and timestamp then (key null: the chat was empty). */
+export interface ViewedRow { message_id: string | null; timestamp: number | null }
+
+/** TAL-2676: the position a public detail page starting at absolute `offset` ends at: its last row. */
+export function viewedRow(rows: readonly unknown[], offset: number): ViewedRow {
+  const last = rows.length - 1
+  const row = rows[last]
+  return isRow(row) ? { message_id: transcriptRowKey(row, offset + last), timestamp: rowTimestamp(row) } : { message_id: null, timestamp: null }
+}
+
 /**
- * TAL-2676: the key of the first renderable row after the row keyed `viewed` (null: the transcript was empty then), or
- * null when nothing renderable follows it or it is gone (a /clear or rewrite since: no rule rather than a wrong one).
+ * TAL-2676: the key of the first standalone row (`_display: 'row'`, the projection's own decision) after `viewed` among
+ * public detail rows starting at absolute `offset`; null when none follows. `undefined`: the page does not reach the
+ * viewed row. A row is the viewed one only with the same key and timestamp, so one a /clear, truncation or retry put
+ * at the same position never is.
  */
-export function firstUnreadKey(rows: readonly unknown[], viewed: string | null): string | null {
-  const after = viewed === null ? 0 : rows.findLastIndex((row, index) => isRow(row) && transcriptRowKey(row, index) === viewed) + 1
-  if (!after && viewed !== null) return null
-  for (let index = after; index < rows.length; index += 1) {
+export function unreadAfter(rows: readonly unknown[], offset: number, viewed: ViewedRow | null): string | null | undefined {
+  let start = 0
+  if (viewed?.message_id === null && offset > 0) return undefined
+  if (viewed && viewed.message_id !== null) {
+    start = rows.findLastIndex((row, index) => isRow(row) && transcriptRowKey(row, offset + index) === viewed.message_id && rowTimestamp(row) === viewed.timestamp) + 1
+    if (!start) return undefined
+  }
+  for (let index = start; index < rows.length; index += 1) {
     const row = rows[index]
-    if (isRow(row) && messageCountsAsRenderable(row)) return transcriptRowKey(row, index)
+    if (isRow(row) && row._display === 'row') return transcriptRowKey(row, offset + index)
   }
   return null
 }
 
 const isRow = (v: unknown): v is Row => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
+const rowTimestamp = (row: Row): number | null => (typeof row.timestamp === 'number' && Number.isFinite(row.timestamp) ? row.timestamp : null)

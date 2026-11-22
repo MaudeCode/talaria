@@ -356,7 +356,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       try {
         const session = await ctx.deps.sessions.detail(input.session_id, input)
         // TAL-2676: the chat-open read names the first row since this profile last viewed it; older pages need none.
-        if ((input.messages ?? '1') !== '0' && !input.msg_before) session.unread_from_message_id = await ctx.deps.sessions.unreadFromMessageId(str(session.session_id) || input.session_id, requesterProfile(ctx, await ensureTrustedAuthSession(ctx)))
+        if ((input.messages ?? '1') !== '0' && !input.msg_before) session.unread_from_message_id = await ctx.deps.sessions.unreadFromMessageId(str(session.session_id) || input.session_id, requesterProfile(ctx, await ensureTrustedAuthSession(ctx)), session)
         return { session: session as { session_id: string; title: string } }
       } catch (error) {
         // Runs left on the relay by a deletion that predates `clearRelayCompletions` clear when the id is next requested.
