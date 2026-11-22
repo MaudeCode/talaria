@@ -324,7 +324,9 @@ goals, todos, lifecycle status) are typed React components fed from the stream
 reducer and session payload, never Markdown strings. The only HTML sink is
 Streamdown's own sanitized renderer; `dangerouslySetInnerHTML` is forbidden by
 lint outside `packages/frontend/src/features/chat/render/`, which contains no
-such use today. The Markdown corpus lives in
+such use today. A settled `svg` fence opens in the image lightbox as an `<img>`
+data URI, so its markup never joins the document and runs no scripts (TAL-2678).
+The Markdown corpus lives in
 `packages/frontend/src/features/chat/__fixtures__/markdown/`.
 
 While a reply streams, `MarkdownRenderer` extends Streamdown's block parser with
