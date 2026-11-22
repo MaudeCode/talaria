@@ -177,7 +177,9 @@ describe('decision reviews (TAL-1963)', () => {
     const changed = DecisionReviewSchema.parse((await answer(id, 'a', { value: 'change', expected_version: 1 })).body)
     expect(changed.items.find((i) => i.id === 'a')!.outcome).toBeNull()
     await answer(id, 'b', { value: 'keep' })
-    await http('POST', `/api/decisions/${id}/submit`)
+    // The first submit's turn must leave the session first: a submit into a running turn steers it (TAL-2633).
+    await vi.waitFor(() => { expect(s.deps.registry.activeRunStreamForSession(CALLER)).toBeNull() })
+    expect(await http('POST', `/api/decisions/${id}/submit`)).toMatchObject({ status: 200, body: { status: 'submitted' } })
     const partial = DecisionReviewSchema.parse(result(await ask('server.decision_review_record', { review_id: id, outcomes: [{ id: 'b', state: 'applied' }] })))
     expect(partial.status).toBe('submitted')
   })
