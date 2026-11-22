@@ -1474,9 +1474,10 @@ extension ChatViewModelSendTests {
     }
 
     // A detail without the `transcript_seq` key is read like `null`: the loaded turn
-    // stays and the stream attaches live, with no replay.
+    // stays and the stream attaches at the live tail (TAL-361), with no replay, so the
+    // frames the run buffered while no client listened do not repeat the persisted rows.
     @MainActor
-    func testColdRelaunchWithoutJournalRendersPersistedSegmentsAndRequestsNoReplay() async throws {
+    func testColdRelaunchWithoutJournalAttachesAtLiveTailAndRendersPersistedSegmentsOnce() async throws {
         for cursor in [#""transcript_seq": null,"#, ""] {
             let streamClient = SpySSEStreamingClient()
             let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, transcriptJSON: """
@@ -1503,6 +1504,10 @@ extension ChatViewModelSendTests {
                 cursor
             )
 
+            // The server's offline buffer holds the persisted output; it delivers it only without `tail=1`.
+            if queryItems.first(where: { $0.name == "tail" })?.value != "1" {
+                streamClient.emit(.token("Once Raj reached the river. "))
+            }
             streamClient.emit(.token("The snare broke."))
 
             XCTAssertEqual(viewModel.messages.compactMap(\.content), [
