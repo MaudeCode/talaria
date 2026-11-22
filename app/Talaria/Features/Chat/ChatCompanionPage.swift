@@ -197,9 +197,24 @@ final class CompanionPageDividerView: UIView, UIPointerInteractionDelegate {
         line.frame = CGRect(x: bounds.midX - width / 2, y: 0, width: width, height: bounds.height)
     }
 
+    /// Where the finger touched down, and how far it travelled before the pan recognized: the edge keeps under the
+    /// finger rather than trailing it by the recognizer's slop.
+    private var touchDownX: CGFloat?
+    private var slop: CGFloat = 0
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        touchDownX = touches.first?.location(in: window).x
+        super.touchesBegan(touches, with: event)
+    }
+
     @objc func panned(_ pan: UIPanGestureRecognizer) {
+        let translation = pan.translation(in: window).x
+        if pan.state == .began {
+            slop = touchDownX.map { pan.location(in: window).x - translation - $0 } ?? 0
+        }
         let towardTrailing = effectiveUserInterfaceLayoutDirection == .rightToLeft ? -1.0 : 1.0
-        onPan(pan.state, -pan.translation(in: window).x * towardTrailing)
+        onPan(pan.state, -(translation + slop) * towardTrailing)
+        if pan.state != .began, pan.state != .changed { touchDownX = nil }
     }
 
     @objc func resetWidth() { onReset() }
