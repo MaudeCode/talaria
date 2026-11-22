@@ -2303,8 +2303,6 @@ extension RegularSplitHostedTests {
         // TAL-1546: the page's first split keeps the chat, so its first load is the only one until the run ends.
         let loads = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/session" } }
         XCTAssertEqual(loads.count, 1, "The companion page reloaded the running chat")
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
     }
 
     /// TAL-1539: the bar's Companion Page button hides the page and shows it again; neither a new file nor a fold
@@ -2359,8 +2357,6 @@ extension RegularSplitHostedTests {
         let beta = await companionTitle("Beta.swift", in: window)
         XCTAssertNotNil(beta, "Pressing the button again did not show the page")
         try await assertTheChatKeepsTheBar(in: window, pageShows: true, "showing the page after a fold")
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
     }
 
     /// The chat's bar is the one drawn, its Companion Page button reading whether the page shows, with the page's Follow
@@ -2414,9 +2410,6 @@ extension RegularSplitHostedTests {
             let toggled = await awaitCondition { showsSidebar() == opens }
             XCTAssertTrue(toggled, "After hiding the page the Sidebar button did not \(opens ? "open" : "close") the column")
         }
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
     }
 
     /// TAL-1538: with the sidebar column already hidden, a page the agent opens takes no room from the column, so the
@@ -2457,9 +2450,6 @@ extension RegularSplitHostedTests {
         let columnShown = await awaitCondition { split.displayMode == .oneBesideSecondary && self.companionPage(in: window) == nil }
         XCTAssertTrue(columnShown, "The Sidebar button did not open the column in the page's room")
         try await assertTheChatLiesInsideItsPane(in: window, split: split, paneMaxX: window.bounds.maxX, "with the column shown")
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
     }
 
     /// The transcript's newest row and the composer lie inside the chat's pane: from the detail column's leading edge to
@@ -2485,11 +2475,6 @@ extension RegularSplitHostedTests {
             XCTAssertLessThanOrEqual(element.maxX, pane.maxX + 0.5,
                 "\(moment) the \(name) \(element) runs past its pane \(pane)", file: file, line: line)
         }
-    }
-
-    /// The composer's editor as the window draws it.
-    private func composerFrame(in window: UIWindow) -> CGRect? {
-        window.firstView(ofType: UITextView.self) { $0.isEditable && !$0.isHidden }.map { $0.convert($0.bounds, to: window) }
     }
 
     /// TAL-1539: with Open the Agent's File Automatically off, a chat opens without its page until the button.
@@ -2573,7 +2558,6 @@ extension RegularSplitHostedTests {
         press(try XCTUnwrap(follow, "The pinned page has no Follow toggle"))
         let followed = await companionTitle("Delta.swift", in: window)
         XCTAssertNotNil(followed, "Follow did not show the agent's latest file")
-        UITestFixtureURLProtocol.advanceCompanionRun()
     }
 
     func testDuoInnerPortraitShowsOnlyTheChatAndPushesFiles() async throws {
@@ -2588,9 +2572,6 @@ extension RegularSplitHostedTests {
         XCTAssertNotNil(found4, "Files did not open")
         let covered = await awaitNoElement(in: window, timeout: 5) { $0.accessibilityLabel?.contains("Writing Alpha.swift.") == true }
         XCTAssertTrue(covered, "Files did not push over the chat")
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
     }
 
     func testPhoneShowsOnlyTheChat() async throws {
@@ -2602,9 +2583,6 @@ extension RegularSplitHostedTests {
         let found6 = await companionTitle("Alpha.swift", in: window, timeout: 1)
         XCTAssertNil(found6, "A phone chat showed a companion page")
         XCTAssertNil(HostedAccessibility.toolbarAction("Companion Page", in: window), "A phone chat offered a companion page")
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
     }
 
     func testPadLandscapeShowsTheCompanionPageBesideTheChat() async throws {
@@ -2615,9 +2593,6 @@ extension RegularSplitHostedTests {
         XCTAssertFalse(alpha.isEmpty, "The companion page never showed the file")
         XCTAssertLessThanOrEqual(transcript.maxX, alpha.minX + 1, "The companion page overlaps the chat")
         attachHostedScreenshot(window, name: "pad-landscape-companion")
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
-        UITestFixtureURLProtocol.advanceCompanionRun()
     }
 
     func testAReopenedChatShowsItsLastFileBeforeAnyStreamEvent() async throws {
@@ -3552,7 +3527,6 @@ extension RegularSplitHostedTests {
         let companionAfter = await companionTitle("Alpha.swift", in: window)
         XCTAssertNotNil(companionAfter, "Close must restore the companion page")
         attachHostedScreenshot(window, name: "duo-companion-restored")
-        for _ in 0..<3 { UITestFixtureURLProtocol.advanceCompanionRun() }
     }
 
     func testTwoChatsOccupySeparateBookFoldRegions() async throws {
