@@ -1,7 +1,7 @@
 import { memo, useContext, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { PluginAutoUpdateView, PluginOAuthClientView, PluginSettingView, PluginUpdateAllRow, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
+import type { PluginAutoUpdateView, PluginIdleTaskView, PluginOAuthClientView, PluginSettingView, PluginUpdateAllRow, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -17,7 +17,7 @@ import { HubHeadSlotsContext } from '../../shell/hubHeadSlots'
 import { QuotaMeter } from '../insights/QuotaMeter'
 import { SETTINGS_PAGE, SettingRow, SettingsGroup, SettingsStats } from './SettingsGroup'
 import { Select } from '../../ui/Select'
-import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
+import { EmptyState, ErrorState, LoadingState, epochMs, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { useResourceEffects, useResourceMutation, type ResourceEffect } from '../sessions/useResourceMutation'
@@ -26,6 +26,8 @@ import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { BlockedFindings, usePluginInstall } from './usePluginInstall'
 import { useDebounced } from '../../lib/useDebounced'
 import { sameRowProps } from '../../lib/sameRowProps'
+import { resetTime } from '../../i18n/units'
+import { useLocale } from '../../i18n/useLocale'
 
 export function PluginsSection() {
   const qc = useQueryClient()
@@ -118,7 +120,7 @@ export function PluginsSection() {
   // TAL-2129: `plugins` is the server's filter answer; `total` counts the whole install.
   const installed = (plugins.data.total ?? 0) > 0
   const { groups, summary } = plugins.data
-  const rowProps = (p: InstalledPlugin) => ({ plugin: p, editable, open: open === p.key, onOpen: setOpen, updateBusy, updating: update.isPending && update.variables.key === p.key,
+  const rowProps = (p: InstalledPlugin) => ({ plugin: p, editable, open: open === p.key, onOpen: setOpen, updateBusy, updating: update.isPending && update.variables.key === p.key, idleTaskRunner: plugins.data.idle_task_runner,
     blockedFindings: scan?.key === p.key && scan.status === 'blocked' ? scan.findings : null, onUpdate: requestUpdate, enabledEffect: enabledEffects[enabledResource(p.key)], onSetEnabled: setEnabled.mutate })
   // TAL-2132: Update all shows only while a plugin has an update.
   const updateAllButton = autoUpdate && summary && summary.updates > 0
@@ -230,12 +232,14 @@ interface InstalledPluginRowProps {
   onUpdate: (key: string) => void
   enabledEffect: ResourceEffect<boolean> | undefined
   onSetEnabled: (value: { key: string; enabled: boolean }) => void
+  /** TAL-2664: who runs the profile's idle tasks, as the server reported it. */
+  idleTaskRunner: PluginsView['idle_task_runner']
   /** Inside a built-in group: indented, without the row symbol. */
   nested?: boolean
 }
 
 // Memoized so typing in the filter renders only the rows entering the list (TAL-1405); each filter answer is a new response.
-const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editable, open, onOpen, updateBusy, updating, blockedFindings, onUpdate, enabledEffect, onSetEnabled, nested }: InstalledPluginRowProps) {
+const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editable, open, onOpen, updateBusy, updating, blockedFindings, onUpdate, enabledEffect, onSetEnabled, idleTaskRunner, nested }: InstalledPluginRowProps) {
   const name = p.name ?? p.key
   const control = p.can_toggle
     ? <ResourceSwitch effect={enabledEffect} checked={p.enabled === true} onCheckedChange={(enabled) => onSetEnabled({ key: p.key, enabled })} aria-label={name} stateLabel={(on) => on ? m.plugins_enabled() : m.plugins_disabled()} />
@@ -252,6 +256,7 @@ const InstalledPluginRow = memo(function InstalledPluginRow({ plugin: p, editabl
       ]}>
       {p.disabled_reason && <div className="mt-1 flex min-w-0"><StatusDot state="warning" title={m.plugins_disabled_by_update({ reason: p.disabled_reason.reason })}>{m.plugins_disabled_by_update({ reason: p.disabled_reason.reason })}</StatusDot></div>}
       {p.oauth_clients?.length ? <ul className="mt-2 flex flex-col gap-2">{p.oauth_clients.map((c) => <PluginOAuthClientRow key={c.id} pluginKey={p.key} client={c} editable={editable} />)}</ul> : null}
+      {p.idle_tasks?.length ? <PluginIdleTasks pluginKey={p.key} tasks={p.idle_tasks} runner={idleTaskRunner} /> : null}
       {blockedFindings !== null && <BlockedFindings>{blockedFindings}</BlockedFindings>}
       {editable && open && p.settings ? <PluginSettingsForm pluginKey={p.key} fields={p.settings} onSaved={() => onOpen(null)} /> : null}
     </PluginRow>
@@ -403,6 +408,56 @@ function PluginOAuthClientRow({ pluginKey, client, editable }: { pluginKey: stri
       )}
     </li>
   )
+}
+
+const IDLE_TASK_STATUS: Record<PluginIdleTaskView['status'], { label: () => string; state: DotState }> = {
+  paused: { label: m.plugins_idle_task_paused, state: 'idle' },
+  ok: { label: m.plugins_idle_task_ok, state: 'ok' },
+  error: { label: m.plugins_idle_task_error, state: 'error' },
+  waiting: { label: m.plugins_idle_task_waiting, state: 'idle' },
+  not_seeded: { label: m.plugins_idle_task_not_seeded, state: 'idle' },
+}
+const idleTaskResource = (pluginKey: string, task: string) => `plugin-idle-task:${pluginKey}:${task}`
+
+/**
+ * TAL-2664: the plugin's idle tasks in this profile. Each shows the server's status, next and last run, and its last result; its
+ * switch pauses or resumes it at once and rolls back on a refusal. Nothing here runs a task: without a gateway, nothing does.
+ */
+function PluginIdleTasks({ pluginKey, tasks, runner }: { pluginKey: string; tasks: PluginIdleTaskView[]; runner: PluginsView['idle_task_runner'] }) {
+  const locale = useLocale()
+  const effects = useResourceEffects<boolean>()
+  const setPaused = useResourceMutation({
+    resource: ({ task }: { task: string; paused: boolean }) => idleTaskResource(pluginKey, task), effect: ({ paused }) => ({ value: paused }), queryKey: keys.plugins,
+    mutationFn: ({ task, paused }) => api.setPluginIdleTaskPaused(pluginKey, task, paused),
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
+  })
+  return <div className="mt-2 flex flex-col gap-1">
+    {runner === 'none' && <div className="flex min-w-0"><StatusDot state="warning">{m.gateway_not_running()}</StatusDot></div>}
+    <ul aria-label={m.plugins_idle_tasks()} className="flex flex-col">
+      {tasks.map((task) => {
+        const pending = effects[idleTaskResource(pluginKey, task.name)]
+        const paused = pending?.value ?? task.paused
+        // A pending pause shows Paused; a pending resume shows no status until the server answers with one.
+        const status = pending ? (paused ? 'paused' : task.status === 'paused' ? null : task.status) : task.status
+        const times = ([['next', task.next_due_at, m.cron_next()], ['last', task.last_run_at, m.cron_last()]] as const)
+          .flatMap(([key, at, label]) => at && !(key === 'next' && paused) ? [<span key={key} data-run={key} title={formatDate(at)}>{label} {resetTime(locale, epochMs(at))}</span>] : [])
+        const actions: RowAction[] = task.can_pause ? [{ label: paused ? m.cron_resume() : m.cron_pause(), run: () => setPaused.mutate({ task: task.name, paused: !paused }) }] : []
+        // The name, status and switch keep one line; the run times and the last result share the line under it.
+        const row = <li className="flex min-h-11 flex-col justify-center py-1 text-xs" data-idle-task={task.name}>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="min-w-0 flex-1 truncate font-medium text-text">{task.name}</span>
+            {status && <StatusDot state={IDLE_TASK_STATUS[status].state}>{IDLE_TASK_STATUS[status].label()}</StatusDot>}
+            {task.can_pause && <Switch checked={!paused} onCheckedChange={(on) => setPaused.mutate({ task: task.name, paused: !on })} aria-label={m.plugins_idle_task_run({ name: task.name })} />}
+          </div>
+          {(times.length > 0 || task.last_result) && <div className="flex min-w-0 gap-2 text-muted">
+            {times.length > 0 && <span className="flex shrink-0 gap-2 tabular-nums">{times}</span>}
+            {task.last_result && <span className="min-w-0 truncate" title={task.last_result}>{task.last_result}</span>}
+          </div>}
+        </li>
+        return <RowContextMenu key={task.name} label={m.plugins_row_menu()} actions={actions} trigger={row} />
+      })}
+    </ul>
+  </div>
 }
 
 /** The address the browser landed on after the approval, for when it runs on another machine than the Agent. */

@@ -20,6 +20,11 @@ it('keeps member catalog reads display-only and refuses installation before call
   expect(await (await server.get('/api/plugins', { headers })).json()).toMatchObject({ read_only: true, plugins: [{ key: 'probe', can_toggle: false }] })
   expect((await server.get('/api/plugins/enabled', { method: 'POST', body: '{"key":"probe","enabled":false}', headers })).status).toBe(403)
   expect(sidecar.calls.some((c) => c.method === 'plugins.set_enabled')).toBe(false)
+  // TAL-2664: a member sees idle tasks without the pause, and the pause route refuses before calling the Agent.
+  sidecar.respond('plugins.idle_tasks', () => ({ supported: true, tasks: [{ plugin: 'probe', task: 'compact', seeded: true, paused: false, run_count: 1, last_run_at: null, next_due_at: null, interval_hours: 24, last_status: null, last_result: null }] }))
+  expect(await (await server.get('/api/plugins', { headers })).json()).toMatchObject({ plugins: [{ key: 'probe', idle_tasks: [{ name: 'compact', can_pause: false }] }] })
+  expect((await server.get('/api/plugins/idle-task', { method: 'POST', body: '{"key":"probe","task":"compact","paused":true}', headers })).status).toBe(403)
+  expect(sidecar.calls.some((c) => c.method === 'plugins.idle_task_set_paused')).toBe(false)
   // TAL-1812: the provider card's install offer follows the same operator gate.
   sidecar.respond('plugins.providers', () => ({ providers: [{ name: 'left-core', display_name: 'Left Core', auth_type: '', setup: 'not_installed', install_hint: 'left-core-plugin' }] }))
   const { providers } = await (await server.get('/api/providers', { headers })).json() as { providers: { id: string; install_hint?: string }[] }

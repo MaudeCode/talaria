@@ -764,6 +764,39 @@
       }
     }
   ],
+  "plugins.idle_tasks": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "supported": true,
+        "tasks": []
+      }
+    }
+  ],
+  "plugins.idle_task_set_paused": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "key": "team-notes",
+        "task": "compact-notes",
+        "paused": true
+      },
+      "result": {
+        "plugin": "team-notes",
+        "task": "compact-notes",
+        "seeded": true,
+        "paused": true,
+        "run_count": 3,
+        "last_run_at": "2026-11-20T08:00:00+00:00",
+        "next_due_at": "2026-11-21T08:00:00+00:00",
+        "interval_hours": 24.0,
+        "last_status": "ok",
+        "last_result": "Compacted 12 notes"
+      }
+    }
+  ],
   "plugins.update": [
     {
       "params": {

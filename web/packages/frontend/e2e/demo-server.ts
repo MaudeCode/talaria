@@ -81,9 +81,22 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   sidecar.respond('plugins.list', () => ({ plugins: DEMO_PLUGINS, supported_hooks: [] }))
   sidecar.respond('plugins.settings', () => ({ supported: true, plugins: [{ key: 'meshy', fields: [{ key: 'quality', type: 'enum', label: 'Quality', description: '', required: false, choices: ['draft', 'final'], value: 'draft' }] }, { key: 'image_gen/fal', fields: [{ key: 'model', type: 'string', label: 'Model', description: '', required: false, value: 'flux-2-pro' }] }] }))
   sidecar.respond('plugins.auto_update', () => ({ supported: true, auto_apply: true, check_hours: 6 }))
+  // A time `hours` from now (negative: in the past).
+  const resetIn = (hours: number) => new Date(Date.now() + hours * 3_600_000).toISOString()
+  // TAL-2664: team-notes' idle tasks: one ran, one failed and one no owner has seeded yet.
+  const idleTask = (task: string, extra: object) => ({ plugin: 'team-notes', task, seeded: true, paused: false, run_count: 4, last_run_at: resetIn(-3), next_due_at: resetIn(21), interval_hours: 24, last_status: 'ok' as const, last_result: 'Compacted 12 notes', ...extra })
+  const pausedTasks = new Set<string>()
+  sidecar.respond('plugins.idle_task_set_paused', (params) => {
+    if (params.paused) pausedTasks.add(params.task); else pausedTasks.delete(params.task)
+    return idleTask(params.task, { paused: params.paused })
+  })
+  sidecar.respond('plugins.idle_tasks', () => ({ supported: true, tasks: [
+    idleTask('compact-notes', { paused: pausedTasks.has('compact-notes') }),
+    idleTask('sync-index', { paused: pausedTasks.has('sync-index'), last_status: 'error', last_result: 'RuntimeError: index store unreachable' }),
+    idleTask('weekly-digest', { seeded: false, run_count: 0, last_run_at: null, next_due_at: null, interval_hours: 168, last_status: null, last_result: null }),
+  ] }))
   // TAL-2151: an Anthropic 5h window at 79% used, and the composer's quota chip on, so the chat page shows "21% left".
   // TAL-2513: a weekly and a model-only Opus window too, so the chip's detail lists windows with their resets.
-  const resetIn = (hours: number) => new Date(Date.now() + hours * 3_600_000).toISOString()
   sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', plan: 'max', details: [], windows: [
     { label: '5h', used_percent: 79, window_seconds: 18_000, reset_at: resetIn(2) },
     { label: 'Opus week', used_percent: 64, window_seconds: 604_800, reset_at: resetIn(100), scope: 'model' },

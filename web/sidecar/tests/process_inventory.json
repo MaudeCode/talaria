@@ -141,6 +141,11 @@
       "reason": "Real Agent config loader and plugin discovery must surface the plugins.disabled_by_update record the Agent writes, read from a test-owned config.",
       "cases": [""]
     },
+    "tests/test_plugin_idle_tasks.py::test_each_profile_lists_and_pauses_only_its_own_tasks": {
+      "layer": "compatibility",
+      "reason": "Real Agent plugins_idle_tasks enumeration, next_due, set_paused and plugin registration must list each profile's own task states and a registered unseeded task, mask a key in the last error, and persist a pause in one profile only; an Agent before v0.23.2 must read as unsupported.",
+      "cases": [""]
+    },
     "tests/test_plugin_set_enabled.py::test_the_agent_turns_a_synthetic_plugin_on": {
       "layer": "compatibility",
       "reason": "Real Agent dashboard_set_agent_plugin_enabled must resolve, admit through its real admission transaction and persist turning a profile plugin on, report a repeat as unchanged and an unknown key as a failed switch, and plugin discovery must report the new state and offer no switch for exclusive backends.",

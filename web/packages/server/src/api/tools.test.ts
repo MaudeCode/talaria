@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SidecarError } from '../sidecar/client.js'
-import { RPC_ERROR_CODES } from '@maudecode/talaria-web-contracts'
+import { RPC_ERROR_CODES, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { sanitizeClientEvent, WindowLimiter } from './tools-router.js'
@@ -819,12 +819,13 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     sidecar.respond('plugins.oauth_status', () => held('plugins.oauth_status', { supported: true, plugins: [{ key: 'probe', clients: [oauthClient] }] }))
     sidecar.respond('plugins.isolation', () => held('plugins.isolation', { profiles: [isolationRow('default'), isolationRow('work')] }))
     sidecar.respond('plugins.auto_update', () => held('plugins.auto_update', { supported: true, auto_apply: false, check_hours: 24 }))
+    sidecar.respond('plugins.idle_tasks', () => held('plugins.idle_tasks', { supported: true, tasks: [] }))
     sidecar.respond('gateway.mode', () => ({ gateway_mode: 'stopped' }))
     try {
       const expected = {
         plugins: [{ ...row, can_toggle: false, settings: [], oauth_clients: [{ ...oauthClient, can_sign_out: false }] }],
         total: 1, empty: false, supported_hooks: ['pre_tool_call'], read_only: false, plugin_isolation_advisory: true,
-        auto_update: { auto_apply: false, check_hours: 24, inactive_reason: 'no_gateway' },
+        auto_update: { auto_apply: false, check_hours: 24, inactive_reason: 'no_gateway' }, idle_task_runner: 'none',
         groups: [{ id: 'installed', plugin_keys: [], enabled_count: 0, total_count: 0, enabled_percent: 0 }, { id: 'other', plugin_keys: ['probe'], enabled_count: 1, total_count: 1, enabled_percent: 100 }],
         summary: { installed: 0, bundled: 1, enabled: 1, total: 1, updates: 0, updates_tone: null },
       }
@@ -833,11 +834,72 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       gate = new Promise((resolve) => { release = resolve })
       started.length = 0
       const page = s.get('/api/plugins')
-      await vi.waitFor(() => { expect([...started].sort()).toEqual(['plugins.auto_update', 'plugins.isolation', 'plugins.list', 'plugins.oauth_status', 'plugins.settings']) })
+      await vi.waitFor(() => { expect([...started].sort()).toEqual(['plugins.auto_update', 'plugins.idle_tasks', 'plugins.isolation', 'plugins.list', 'plugins.oauth_status', 'plugins.settings']) })
       release()
       expect(await json(await page)).toEqual(expected)
     } finally {
-      for (const method of ['plugins.list', 'plugins.settings', 'plugins.oauth_status', 'plugins.isolation', 'plugins.auto_update', 'gateway.mode'] as const) sidecar.respond(method, undefined)
+      for (const method of ['plugins.list', 'plugins.settings', 'plugins.oauth_status', 'plugins.isolation', 'plugins.auto_update', 'plugins.idle_tasks', 'gateway.mode'] as const) sidecar.respond(method, undefined)
+    }
+  })
+
+  it('TAL-2664: ships each plugin\'s idle tasks with server-owned status, next due time and pause availability, and who runs them', async () => {
+    const row = (key: string) => ({ name: key, key, version: '1', description: '', enabled: true, kind: 'standalone', activation: 'enabled', hooks: [] })
+    const task: SidecarResult<'plugins.idle_task_set_paused'> = { plugin: 'probe', task: 'compact', seeded: true, paused: false, run_count: 3, last_run_at: '2026-11-20T08:00:00+00:00', next_due_at: '2026-11-21T08:00:00+00:00', interval_hours: 24, last_status: 'ok', last_result: 'Compacted 12 notes' }
+    let tasks: SidecarResult<'plugins.idle_tasks'> = { supported: true, tasks: [
+      { ...task, task: 'compact' },
+      { ...task, task: 'broken', last_status: 'error', last_result: 'RuntimeError: boom' },
+      { ...task, task: 'held', paused: true },
+      { ...task, task: 'fresh', last_status: null, last_run_at: 'not a time', last_result: null },
+      { plugin: 'probe', task: 'unseen', seeded: false, paused: false, run_count: 0, last_run_at: null, next_due_at: null, interval_hours: 6, last_status: null, last_result: null },
+    ] }
+    let gateway: 'own' | 'stopped' = 'stopped'
+    sidecar.respond('plugins.list', () => ({ plugins: [row('probe'), row('quiet')], supported_hooks: [] }))
+    sidecar.respond('plugins.idle_tasks', () => tasks)
+    sidecar.respond('gateway.mode', () => ({ gateway_mode: gateway }))
+    const view = { status: 'ok', paused: false, run_count: 3, last_run_at: '2026-11-20T08:00:00.000Z', next_due_at: '2026-11-21T08:00:00.000Z', interval_hours: 24, last_result: 'Compacted 12 notes', can_pause: true }
+    try {
+      let body = await json(await s.get('/api/plugins'))
+      expect(body.idle_task_runner).toBe('none')
+      const [probe, quiet] = body.plugins as Json[]
+      expect(quiet).not.toHaveProperty('idle_tasks')
+      expect(probe!.idle_tasks).toEqual([
+        { ...view, name: 'compact' },
+        { ...view, name: 'broken', status: 'error', last_result: 'RuntimeError: boom' },
+        { ...view, name: 'held', status: 'paused', paused: true, next_due_at: null },
+        { ...view, name: 'fresh', status: 'waiting', last_run_at: null, last_result: null },
+        { name: 'unseen', status: 'not_seeded', paused: false, run_count: 0, last_run_at: null, next_due_at: null, interval_hours: 6, last_result: null, can_pause: false },
+      ])
+      gateway = 'own'
+      expect((await json(await s.get('/api/plugins'))).idle_task_runner).toBe('gateway')
+      tasks = { supported: false, tasks: [] }
+      body = await json(await s.get('/api/plugins'))
+      expect(body.idle_task_runner).toBe('unsupported')
+      expect((body.plugins as Json[])[0]).not.toHaveProperty('idle_tasks')
+      sidecar.respond('plugins.idle_tasks', () => { throw new SidecarError('state unreadable', { condition: 'internal' }) })
+      body = await json(await s.get('/api/plugins'))
+      expect(body).not.toHaveProperty('idle_task_runner')
+      expect((body.plugins as Json[]).map((plugin) => plugin.key)).toEqual(['probe', 'quiet'])
+    } finally {
+      for (const method of ['plugins.list', 'plugins.idle_tasks', 'gateway.mode'] as const) sidecar.respond(method, undefined)
+    }
+  })
+
+  it('TAL-2664: pauses or resumes one idle task through the Agent, answers with the read-back task and maps its refusals', async () => {
+    const calls: unknown[] = []
+    sidecar.respond('plugins.idle_task_set_paused', (params) => { calls.push(params); return { plugin: 'probe', task: params.task, seeded: true, paused: params.paused, run_count: 1, last_run_at: '2026-11-20T08:00:00+00:00', next_due_at: '2026-11-21T08:00:00+00:00', interval_hours: 24, last_status: 'ok', last_result: null } })
+    try {
+      expect(await json(await post(s, '/api/plugins/idle-task', { key: 'probe', task: 'compact', paused: true }))).toEqual({ name: 'compact', status: 'paused', paused: true, run_count: 1, last_run_at: '2026-11-20T08:00:00.000Z', next_due_at: null, interval_hours: 24, last_result: null, can_pause: true })
+      expect(await json(await post(s, '/api/plugins/idle-task', { key: 'probe', task: 'compact', paused: false }))).toMatchObject({ status: 'ok', paused: false, next_due_at: '2026-11-21T08:00:00.000Z' })
+      expect(calls).toEqual([{ profile_home: s.deps.profileHome('default'), key: 'probe', task: 'compact', paused: true }, { profile_home: s.deps.profileHome('default'), key: 'probe', task: 'compact', paused: false }])
+      expect((await post(s, '/api/plugins/idle-task', { key: 'probe', task: 'compact', paused: 'yes' })).status).toBe(400)
+      for (const [condition, status] of [['idle_task_not_found', 404], ['idle_task_not_saved', 409], ['idle_tasks_unsupported', 503]] as const) {
+        sidecar.respond('plugins.idle_task_set_paused', () => { throw new SidecarError(`refused: ${condition}`, { condition }) })
+        const refused = await post(s, '/api/plugins/idle-task', { key: 'probe', task: 'compact', paused: true })
+        expect(refused.status).toBe(status)
+        expect(await json(refused)).toMatchObject({ error: `refused: ${condition}`, condition })
+      }
+    } finally {
+      sidecar.respond('plugins.idle_task_set_paused', undefined)
     }
   })
 

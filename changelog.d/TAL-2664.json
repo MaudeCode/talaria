@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Settings › Tools › Plugins in Talaria Web lists each plugin's idle tasks with their last and next run, and pauses or resumes one with a switch.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Pause plugin idle tasks",
+        "description": "See when a plugin's background tasks last ran and pause or resume them from Plugins.",
+        "icon": "automation"
+      }
+    }
+  ]
+}
