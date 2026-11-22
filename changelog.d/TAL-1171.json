@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "On the Web, a past chat a search found in another profile opens after switching to that profile, a search links at most its first five chats, and a removed scheduled job's row no longer opens the Tasks page.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

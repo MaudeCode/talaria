@@ -141,8 +141,8 @@ export function useOnboardingQuery() {
   return useQuery({ queryKey: keys.onboarding, queryFn: api.fetchOnboarding, staleTime: 0 })
 }
 
-/** A profile to switch to; `botChat` opens that profile's canonical Bot Chat once switched. */
-export interface ProfileSwitch { name: string; botChat?: boolean }
+/** A profile to switch to; `botChat` opens that profile's canonical Bot Chat once switched, `sessionId` (TAL-1171) that chat. */
+export interface ProfileSwitch { name: string; botChat?: boolean; sessionId?: string }
 
 /**
  * Profile switch: server-side cookie change; every cached resource belongs to the previous profile. TAL-2099: the
@@ -156,13 +156,13 @@ export function useSwitchProfile() {
   const router = useRouter()
   return useMutation({
     mutationFn: ({ name }: ProfileSwitch) => api.switchProfile(name),
-    onSuccess: async (res, { name, botChat }) => {
+    onSuccess: async (res, { name, botChat, sessionId }) => {
       teardownAll()
       // `/` restores the last chat, which is the previous profile's.
       removePersisted('hermes-webui-session')
       // The server resolves the Bot Chat in the switch's own reply (TAL-213), not from the cached listing.
-      const botSession = botChat ? res.profiles.find((p) => p.name === name)?.canonical_session?.tip_session_id : undefined
-      if (botSession) await router.navigate({ to: '/session/$sessionId', params: { sessionId: botSession } })
+      const target = botChat ? res.profiles.find((p) => p.name === name)?.canonical_session?.tip_session_id : sessionId
+      if (target) await router.navigate({ to: '/session/$sessionId', params: { sessionId: target } })
       else {
         showToast(m.profile_switched({ name }))
         if (router.state.location.pathname.startsWith('/session/')) await router.navigate({ to: '/' })

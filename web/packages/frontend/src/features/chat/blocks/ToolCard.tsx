@@ -14,6 +14,7 @@ import { useLocale } from '../../../i18n/useLocale'
 import { m } from '../../../paraglide/messages.js'
 import { useQuery } from '@tanstack/react-query'
 import { fetchToolResult } from '../../../api/endpoints'
+import { useSwitchProfile } from '../../../app/queries'
 import { Button, IconButton } from '../../../ui/Button'
 import { SwapText } from '../../../ui/SwapText'
 import { useArrival } from '../arrival'
@@ -220,11 +221,21 @@ function PagesResult({ pages }: { pages: ResultPage[] }) {
 const ROW_DOT: Record<NonNullable<ToolRow['status']>, DotState> = { ok: 'ok', warn: 'warning', error: 'error', pending: 'changed' }
 const ROW_LINK = 'min-w-0 truncate text-accent-text hover:underline'
 
-/** TAL-2326: a row's label, opening the Talaria page the server named: a chat, the scheduled jobs page, connections, a skill or (TAL-2327) a Kanban task. */
+/** TAL-1171: a chat on another profile, opened after switching to that profile. */
+function OtherProfileSessionLink({ label, sessionId, profile }: { label: string; sessionId: string; profile: string }) {
+  const switchProfile = useSwitchProfile()
+  return <Link to="/session/$sessionId" params={{ sessionId }} onClick={(event) => { event.preventDefault(); switchProfile.mutate({ name: profile, sessionId }) }} className={ROW_LINK} title={label}>{label}</Link>
+}
+
+/**
+ * TAL-2326: a row's label, opening the Talaria page the server named: a chat (TAL-1171: on its profile), a scheduled job,
+ * connections, a skill or (TAL-2327) a Kanban task.
+ */
 function ToolRowLabel({ row, wrap }: { row: ToolRow; wrap: boolean }) {
   const link = row.link
+  if (link?.kind === 'session' && link.id && link.profile) return <OtherProfileSessionLink label={row.label} sessionId={link.id} profile={link.profile} />
   if (link?.kind === 'session' && link.id) return <Link to="/session/$sessionId" params={{ sessionId: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
-  if (link?.kind === 'crons') return <Link to="/tasks" search={link.id ? { job: link.id } : {}} className={ROW_LINK} title={row.label}>{row.label}</Link>
+  if (link?.kind === 'crons' && link.id) return <Link to="/tasks" search={{ job: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'connectors') return <Link to="/settings/$section" params={{ section: 'tools' }} search={{ tab: 'connectors' }} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'skill' && link.id) return <Link to="/skills" search={{ skill: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'kanban_task' && link.id) return <Link to="/kanban" search={{ ...(link.board ? { board: link.board } : {}), task: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>

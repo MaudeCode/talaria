@@ -1,0 +1,120 @@
+{
+  "session_search": {
+    "result": {
+      "success": true,
+      "mode": "discover",
+      "query": "deploy",
+      "detail": "adaptive",
+      "results": [
+        { "session_id": "w1", "when": "November 20, 2026 at 09:00 AM", "source": "talaria", "model": "m", "title": "Deploy fix", "matched_role": "user", "match_message_id": 4, "snippet": "the deploy failed\nsecond line", "link": "@session:work/w1" },
+        { "session_id": "w2", "when": "November 19, 2026 at 09:00 AM", "source": "talaria", "model": "m", "title": "Rollback", "matched_role": "assistant", "match_message_id": 9, "snippet": "rolled back the deploy", "link": "@session:work/w2" },
+        { "session_id": "w3", "when": "November 18, 2026 at 09:00 AM", "source": "cli", "model": "m", "title": null, "matched_role": "user", "match_message_id": 2, "snippet": "deploy window", "link": "@session:work/w3" },
+        { "session_id": "w4", "when": "November 17, 2026 at 09:00 AM", "source": "talaria", "model": "m", "title": "Release notes", "matched_role": "user", "match_message_id": 1, "snippet": "deploy notes", "link": "@session:work/w4" },
+        { "session_id": "w5", "when": "November 16, 2026 at 09:00 AM", "source": "talaria", "model": "m", "title": "Staging", "matched_role": "user", "match_message_id": 3, "snippet": "deploy to staging", "link": "@session:work/w5" },
+        { "session_id": "w6", "when": "November 15, 2026 at 09:00 AM", "source": "talaria", "model": "m", "title": "Canary", "matched_role": "user", "match_message_id": 6, "snippet": "canary deploy", "link": "@session:work/w6" }
+      ],
+      "count": 6,
+      "sessions_searched": 6
+    },
+    "row": {
+      "row_id": "tool:search",
+      "role": "tool",
+      "tool": {
+        "id": "search",
+        "name": "session_search",
+        "kind": "session",
+        "target": "deploy",
+        "args": { "query": "deploy", "profile": "work", "limit": 6 },
+        "preview": null,
+        "done": true,
+        "is_error": false,
+        "duration": null,
+        "cost_usd": null,
+        "result_view": {
+          "rows": {
+            "title": "deploy",
+            "rows": [
+              { "label": "Deploy fix", "detail": "November 20, 2026 at 09:00 AM · the deploy failed", "link": { "kind": "session", "id": "w1", "profile": "work" } },
+              { "label": "Rollback", "detail": "November 19, 2026 at 09:00 AM · rolled back the deploy", "link": { "kind": "session", "id": "w2", "profile": "work" } },
+              { "label": "Untitled chat", "detail": "November 18, 2026 at 09:00 AM · deploy window", "link": { "kind": "session", "id": "w3", "profile": "work" } },
+              { "label": "Release notes", "detail": "November 17, 2026 at 09:00 AM · deploy notes", "link": { "kind": "session", "id": "w4", "profile": "work" } },
+              { "label": "Staging", "detail": "November 16, 2026 at 09:00 AM · deploy to staging", "link": { "kind": "session", "id": "w5", "profile": "work" } },
+              { "label": "Canary", "detail": "November 15, 2026 at 09:00 AM · canary deploy" }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "cronjob_manage": {
+    "result": {
+      "success": true,
+      "job_id": "j7",
+      "name": "Digest",
+      "skill": null,
+      "skills": [],
+      "schedule": "every day at 09:00",
+      "repeat": "forever",
+      "deliver": "local",
+      "next_run_at": "2026-11-23T09:00:00-05:00",
+      "job": {
+        "job_id": "j7", "name": "Digest", "skill": null, "skills": [], "prompt_preview": "Summarize my inbox", "model": null, "provider": null, "pinned": false,
+        "base_url": null, "schedule": "every day at 09:00", "repeat": "forever", "deliver": "local", "next_run_at": "2026-11-23T09:00:00-05:00",
+        "last_run_at": null, "last_status": null, "last_delivery_error": null, "last_delivery_unverified": null, "last_fire_error": null, "last_error": null,
+        "enabled": true, "state": "scheduled", "paused_at": null, "paused_reason": null
+      },
+      "message": "Cron job 'Digest' created."
+    },
+    "row": {
+      "row_id": "tool:cron",
+      "role": "tool",
+      "tool": {
+        "id": "cron",
+        "name": "cronjob_manage",
+        "kind": "schedule",
+        "target": "Digest",
+        "args": { "action": "create", "name": "Digest", "schedule": "0 9 * * *", "prompt": "Summarize my inbox" },
+        "preview": null,
+        "done": true,
+        "is_error": false,
+        "duration": null,
+        "cost_usd": null,
+        "result_view": {
+          "rows": { "title": "Created", "rows": [{ "label": "Digest", "detail": "every day at 09:00 · next 2026-11-23 09:00", "link": { "kind": "crons", "id": "j7" } }] }
+        }
+      }
+    }
+  },
+  "kanban_show": {
+    "result": {
+      "task": {
+        "id": "t_7", "title": "Fix login", "body": "Sign-in loops on Safari.", "assignee": "scout", "status": "running", "tenant": null, "priority": 0,
+        "workspace_kind": null, "workspace_path": null, "created_by": "agent", "created_at": 1763600000, "started_at": 1763600100, "completed_at": null,
+        "result": null, "current_run_id": 3, "model_override": null, "provider_override": null, "completion_contract": null, "last_failure_error": null
+      },
+      "parents": [],
+      "unsatisfied_parents": [],
+      "children": []
+    },
+    "row": {
+      "row_id": "tool:card",
+      "role": "tool",
+      "tool": {
+        "id": "card",
+        "name": "kanban_show",
+        "kind": "kanban",
+        "verb": "view",
+        "target": "t_7",
+        "args": { "task_id": "t_7", "board": "ops" },
+        "preview": null,
+        "done": true,
+        "is_error": false,
+        "duration": null,
+        "cost_usd": null,
+        "result_view": {
+          "rows": { "rows": [{ "label": "Fix login", "detail": "running · scout", "link": { "kind": "kanban_task", "id": "t_7", "board": "ops" } }] }
+        }
+      }
+    }
+  }
+}
