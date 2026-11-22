@@ -306,25 +306,19 @@ final class ChatHostedTests: XCTestCase {
         let session = try await fixture.session()
         // The chat loads in portrait: at this size a landscape composer leaves the transcript no room.
         let portrait = CGSize(width: 402, height: 874)
-        let window = try hostWindow(fixture.chat(session), size: portrait) {
+        let draft = "Keep this accessibility draft visible"
+        let window = try hostWindow(fixture.chat(session, initialDraft: draft), size: portrait) {
             $0.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
         }
         // At this size only the newest reply fits on screen.
         _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("FixturePlainLead") == true }
-        let draft = "Keep this accessibility draft visible"
-        let keyboardOpening = XCTNSNotificationExpectation(name: UIResponder.keyboardWillShowNotification)
-        let keyboardShown = try await awaitKeyboard(UIResponder.keyboardDidShowNotification) {
-            try await self.typeIntoComposer(draft, in: window)
-        }
-        // A hardware keyboard may leave the editor focused without presenting a software keyboard.
-        let softwareKeyboardStarted = await XCTWaiter().fulfillment(of: [keyboardOpening], timeout: 0) == .completed
-        if softwareKeyboardStarted && !keyboardShown {
-            XCTFail("The keyboard must finish opening before resizing its pane")
-            return
-        }
         let loadedEditor = await composerTextView(in: window)
         let editor = try XCTUnwrap(loadedEditor)
-        XCTAssertTrue(editor.isFirstResponder, "The editor must be focused before the first resize")
+        // The short frame below already models the space the software keyboard takes.
+        // Use a local input view so the real editor keeps editing without depending on the keyboard service.
+        editor.inputView = UIView(frame: .zero)
+        XCTAssertTrue(editor.becomeFirstResponder(), "The editor must focus before the first resize")
+        editor.selectedRange = NSRange(location: (draft as NSString).length, length: 0)
         let lineHeight = try XCTUnwrap(editor.font).lineHeight
         let selection = editor.selectedRange
         // The keyboard leaves a landscape chat about 200 pt. Rotate there, back to portrait, and there again.
