@@ -303,8 +303,29 @@ function listedParts(entries: XNode[], targets: Map<string, string>): { entry: X
 
 /** openpyxl `is_date_format`: the first section, without literals, escapes and `[...]` codes, still names a date or time part. */
 export function isDateFormat(code: string): boolean {
-  const section = code.split(';')[0] ?? ''
-  return /[dmyhs]/i.test(section.replace(/"[^"]*"|\\.|_.|\*.|\[(?!h+\]|m+\]|s+\])[^\]]*\]/gi, ''))
+  // One pass: a closing quote or bracket is searched for at most once per kind, so an unclosed run cannot go quadratic.
+  let quoteClosed = true
+  let bracketClosed = true
+  for (let i = 0; i < code.length; i += 1) {
+    const c = code.charAt(i)
+    if (c === ';') return false
+    if (c === '\\' || c === '_' || c === '*') { i += 1; continue }
+    if (c === '"' && quoteClosed) {
+      const end = code.indexOf('"', i + 1)
+      if (end >= 0) { i = end; continue }
+      quoteClosed = false
+    } else if (c === '[' && bracketClosed) {
+      const end = code.indexOf(']', i + 1)
+      if (end >= 0) {
+        if (/^(h+|m+|s+)$/i.test(code.slice(i + 1, end))) return true
+        i = end
+        continue
+      }
+      bracketClosed = false
+    }
+    if ('dmyhsDMYHS'.includes(c)) return true
+  }
+  return false
 }
 
 const BUILTIN_DATE_FORMATS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22])
@@ -317,8 +338,8 @@ export function excelSerialIso(serial: number, date1904: boolean): string | null
   const date = new Date(base + Math.round(days * 86_400) * 1000)
   if (Number.isNaN(date.getTime())) return null
   const iso = date.toISOString()
-  if (iso.endsWith('T00:00:00.000Z')) return iso.slice(0, 10)
   if (serial < 1) return iso.slice(11, 19)
+  if (iso.endsWith('T00:00:00.000Z')) return iso.slice(0, 10)
   return iso.slice(0, 19)
 }
 

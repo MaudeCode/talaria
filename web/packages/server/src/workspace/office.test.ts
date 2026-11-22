@@ -2,7 +2,7 @@
 import { randomBytes } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { BLANK_SECTION, DOCX_CORE, DOCX_STYLES, docx, docxPackage, plainParagraphs, pptx, xlsx } from '../test/office-fixtures.js'
-import { OfficeError, previewOffice, saveDocx } from './office.js'
+import { excelSerialIso, isDateFormat, OfficeError, previewOffice, saveDocx } from './office.js'
 import { readZip } from './unzip.js'
 import { zipBuffer } from './zip.js'
 
@@ -83,6 +83,24 @@ describe('xlsx preview', () => {
     expect(preview.truncated).toBe(true)
     expect(preview.content.startsWith('Sheet: Far\nkept')).toBe(true)
     expect(preview.content).not.toContain('far')
+  })
+
+  it('names date and time formats by their first section, ignoring literals, escapes and bracket codes', () => {
+    const cases: [string, boolean][] = [
+      ['yyyy\\-mm\\-dd', true], ['[h]:mm:ss', true], ['[$-409]mmmm d', true], ['General', false], ['0.00;[Red]-0.00', false],
+      ['"days" 0', false], ['\\d0', false], ['_d0', false], ['*d0', false], ['[Red]0', false], ['0;dd', false],
+      // An unclosed bracket or quote is a literal, not the start of a code that hides what follows.
+      [`${'['.repeat(80_000)}0`, false], [`${'['.repeat(80_000)}d`, true], ['"unclosed d', true],
+    ]
+    for (const [code, date] of cases) expect(isDateFormat(code), code.slice(0, 20)).toBe(date)
+  })
+
+  it('shows serials below 1 as times, midnight included, in both date systems', () => {
+    expect(excelSerialIso(0, false)).toBe('00:00:00')
+    expect(excelSerialIso(0, true)).toBe('00:00:00')
+    expect(excelSerialIso(0.5, false)).toBe('12:00:00')
+    expect(excelSerialIso(45306, false)).toBe('2024-01-15')
+    expect(excelSerialIso(45306.75, false)).toBe('2024-01-15T18:00:00')
   })
 
   it('stops at 20 sheets and 500 rows per sheet', async () => {
