@@ -69,19 +69,25 @@ function invalidateSession(sessionId: string, mode: 'all' | 'settled' | 'started
   void invalidateSessionQueries(queryClient, sessionId, { detail: mode !== 'settled' })
 }
 
+/**
+ * Applies a live frame's fields to the cached session detail. TAL-1121: a detail read already in flight would answer
+ * later with the older values, so it is cancelled and the detail reread.
+ */
+function patchDetail(sessionId: string, fields: Partial<Session>): void {
+  if (!queryClient) return
+  const qc = queryClient, filter = { queryKey: keys.sessions.detail(sessionId), exact: true }
+  if (qc.isFetching(filter)) void qc.cancelQueries(filter).then(() => qc.invalidateQueries(filter))
+  qc.setQueryData<{ session: Session }>(filter.queryKey, (old) => old ? { ...old, session: { ...old.session, ...fields } } : old)
+}
+
 function applySideEffects(sessionId: string, event: ChatEvent): void {
   switch (event.event) {
     case 'session_snapshot':
       queryClient?.setQueryData(keys.sessions.detail(sessionId), { session: event.data.session })
       break
-    case 'todo_state': {
-      if (!queryClient) break
-      // TAL-1121: a read started before this write must not answer later with the older list; reread the rest instead.
-      const qc = queryClient, filter = { queryKey: keys.sessions.detail(sessionId), exact: true }
-      if (qc.isFetching(filter)) void qc.cancelQueries(filter).then(() => qc.invalidateQueries(filter))
-      qc.setQueryData<{ session: Session }>(filter.queryKey, (old) => old ? { ...old, session: { ...old.session, todo_state: event.data } } : old)
+    case 'todo_state':
+      patchDetail(sessionId, { todo_state: event.data })
       break
-    }
     // TAL-425: a Stop gives a pending steer's text back to the tab that sent it.
     case 'steer_withdrawn':
       if (event.data.reason === 'stopped') returnStoppedSteer(sessionId, event.data.steer_id, event.data.text)
@@ -107,16 +113,16 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
     }
     // TAL-803: the session's notice list changed; the cached session shows the new one until its next load.
     case 'notices':
-      queryClient?.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => (old ? { ...old, session: { ...old.session, notices: event.data.notices } } : old))
+      patchDetail(sessionId, { notices: event.data.notices })
       break
     // TAL-808: the standing goal changed; the cached session shows the new one until its next load.
     case 'session_goal':
-      queryClient?.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => (old ? { ...old, session: { ...old.session, goal: event.data.goal } } : old))
+      patchDetail(sessionId, { goal: event.data.goal })
       break
     case 'title': {
       const title = event.data.title
       if (title && queryClient) {
-        queryClient.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => old ? { ...old, session: { ...old.session, title } } : old)
+        patchDetail(sessionId, { title })
         void invalidateSessionQueries(queryClient, sessionId, { detail: false })
       }
       break
