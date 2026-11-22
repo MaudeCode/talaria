@@ -2295,7 +2295,7 @@ final class ChatHostedTests: XCTestCase {
     /// The Agent's notices show as chips above the composer with the server's text, and Dismiss hides one (TAL-831).
     func testTheAgentsNoticesShowAboveTheComposerAndDismiss() async throws {
         let window = try await hostFixtureChat(["--ui-test-session-notices"])
-        let warning = "Memory provider 'honcho' could not be loaded; memory is off."
+        let warning = UITestFixtureEnvironment.sessionNoticeWarning
         let chip = try await requireElement(in: window, label: warning, "The Agent's warning is not above the composer")
         XCTAssertTrue(window.bounds.contains(window.convert(chip.accessibilityFrame, from: nil)), "The warning is off screen")
         _ = try await requireElement(in: window, label: "You've used 90% of your credits.", "The Agent's credit notice is missing")
@@ -2309,11 +2309,43 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNotNil(kept, "Dismiss hid the other notice")
     }
 
+    /// A session notice longer than two lines opens to its full text on a tap and closes on a second one; Dismiss still
+    /// works while it is open (TAL-1016).
+    func testTappingALongSessionNoticeShowsItsFullText() async throws {
+        let window = try await hostFixtureChat(["--ui-test-session-notices"])
+        let warning = UITestFixtureEnvironment.sessionNoticeWarning
+        func chip() -> NSObject? { HostedAccessibility.elements(in: window).first { $0.accessibilityLabel == warning } }
+        func height() -> CGFloat { chip()?.accessibilityFrame.height ?? 0 }
+        _ = try await requireElement(in: window, label: warning, "The long notice is not above the composer")
+        let collapsed = height()
+        attachHostedScreenshot(window, name: "Long session notice, collapsed")
+
+        HostedAccessibility.activate(try XCTUnwrap(chip()))
+        let opened = await awaitCondition { height() > collapsed + 10 }
+        attachHostedScreenshot(window, name: "Long session notice, expanded")
+        XCTAssertTrue(opened, "Tapping the notice left it at \(height()) pt, its two-line \(collapsed) pt")
+        XCTAssertTrue(chip()?.accessibilityTraits.contains(.button) == true, "The notice text is not a button")
+        XCTAssertEqual(chip()?.accessibilityHint, "Show less")
+
+        HostedAccessibility.activate(try XCTUnwrap(chip()))
+        let closed = await awaitCondition { abs(height() - collapsed) < 1 }
+        XCTAssertTrue(closed, "A second tap left the notice at \(height()) pt, not its two-line \(collapsed) pt")
+        XCTAssertEqual(chip()?.accessibilityHint, "Show full notice")
+
+        HostedAccessibility.activate(try XCTUnwrap(chip()))
+        let reopened = await awaitCondition { height() > collapsed + 10 }
+        XCTAssertTrue(reopened, "A third tap did not open the notice before Dismiss")
+        let dismiss = elements(named: "Dismiss notice", in: window).first { $0.accessibilityValue == warning }
+        HostedAccessibility.activate(try XCTUnwrap(dismiss, "The open notice has no Dismiss"))
+        let dismissed = await awaitNoElement(in: window) { $0.accessibilityLabel == warning }
+        XCTAssertTrue(dismissed, "Dismiss left the open notice up")
+    }
+
     /// The Agent's notices arrive on the stream, and the one the Agent clears leaves its chip (TAL-831).
     func testANoticeTheServerClearsLeavesItsChip() async throws {
         let window = try await hostFixtureChat(["--ui-test-chat-pending-steers", "--ui-test-session-notices"])
         try await sendFromComposer("Back up the cluster", in: window)
-        let warning = "Memory provider 'honcho' could not be loaded; memory is off."
+        let warning = UITestFixtureEnvironment.sessionNoticeWarning
         _ = try await requireElement(in: window, label: warning, "The stream's warning is not above the composer")
         // The fixture's Agent clears its warning after the steer's edit.
         HostedAccessibility.activate(try await requireElement(in: window, label: "Edit steering message"))

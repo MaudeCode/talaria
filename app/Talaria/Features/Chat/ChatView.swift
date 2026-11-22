@@ -1861,7 +1861,7 @@ struct ChatView: View {
                     .layoutPriority(-1)
             }
             ForEach(visibleSessionNotices, id: \.self) { notice in
-                NoticeChip(text: notice.text, level: notice.level) { dismissedSessionNotices.insert(notice) }
+                NoticeChip(text: notice.text, level: notice.level, expandsOnTap: true) { dismissedSessionNotices.insert(notice) }
             }
             if showsWorkChips, viewModel.showsBackgroundWorkEntry {
                 backgroundTasksChip
