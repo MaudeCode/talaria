@@ -250,6 +250,10 @@ export class RelayPublisher {
   private alertEligibilitySupported = true
   private stopped = false
   private loop: Promise<void> | null = null
+  /** Set once the loop returned: stopped, or refused permanently. */
+  private ended = false
+  /** The pass the loop is running, until it ends or backs off after a failure. */
+  private passing: Promise<void> | null = null
   private dirty = false
   /** The hub change the next pass answers, while no other change followed it. */
   private change: number | undefined
@@ -277,7 +281,7 @@ export class RelayPublisher {
 
   async start(publishInitial = true): Promise<void> {
     if (this.loop) return
-    this.loop = this.run()
+    this.loop = this.run().finally(() => { this.ended = true })
     if (publishInitial || (await loadDeletedViews(this.deps.documents)).length) this.changed()
   }
 
@@ -291,6 +295,11 @@ export class RelayPublisher {
     this.change = change
     this.dirty = true
     this.wake?.()
+  }
+
+  /** Settles once no pass runs and no change waits for one (tests). */
+  async idle(): Promise<void> {
+    while (this.passing || (this.dirty && this.loop !== null && !this.ended)) await (this.passing ?? new Promise<void>((resolve) => setImmediate(resolve)))
   }
 
   noteTerminal(streamId: string, phase: string): void {
@@ -384,6 +393,9 @@ export class RelayPublisher {
       this.dirty = false
       const change = idle ? undefined : this.change
       this.change = undefined
+      let passed!: () => void
+      this.passing = new Promise<void>((resolve) => { passed = resolve })
+      const settled = (): void => { this.passing = null; passed() }
       try {
         // TAL-1722: a tick with no change republishes only to refresh live activity's lease or deliver queued views, and
         // rereads the session lists only after an Agent wrote state.db, since every Web change arrives as a change.
@@ -398,6 +410,7 @@ export class RelayPublisher {
         if (this.failures) this.deps.log('[relay] Talaria relay snapshot recovered')
         this.failures = 0
       } catch (error) {
+        settled()
         if (error instanceof RelayHttpError && !error.retryable) {
           this.deps.log(`[relay] Talaria relay publisher stopped after permanent HTTP ${String(error.status)}`)
           return
@@ -407,6 +420,8 @@ export class RelayPublisher {
         this.deps.log(`[relay] Talaria relay snapshot ${this.failures === 1 ? 'failed' : 'still failing'} (${(error as Error).message}); retrying in ${delay.toFixed(1)}s`)
         await this.sleep(delay)
         if (!this.stopped) this.dirty = true
+      } finally {
+        settled()
       }
     }
   }
