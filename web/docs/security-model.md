@@ -275,7 +275,10 @@ nothing for a remote or sandboxed backend. A request with any field besides
 `session_id` and `before` is refused. A word that is absolute, starts with `~` or a
 drive, or holds a `..` segment is refused before the owner is asked, and a
 candidate of that shape is dropped (`sessions/path-completion.ts`
-`outsideWorkspace`). The owner follows workspace symlinks as the agent's own file
+`outsideWorkspace`). A caller without server authority is answered only when this
+server observes the chat's owner and the owner's frozen cwd passes the same
+`WorkspaceRegistry.resolveTrusted` fence as the file routes; otherwise it gets
+`workspace_not_allowed` and the owner is not asked. The owner follows workspace symlinks as the agent's own file
 tools do, so a name it lists is one the session's agent can already read.
 
 **Escape grants.** A workspace symlink that points outside the workspace opens

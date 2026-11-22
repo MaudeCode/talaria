@@ -218,7 +218,9 @@ export const chatRouter = os.router({
     })),
     pathCompletions: os.chat.pathCompletions.handler(({ input, context: { ctx } }) => run(async () => {
       if (!(await ctx.deps.sessions.sessionIdVisible(input.session_id))) throw new HttpError(404, 'Session not found')
-      return await ctx.deps.sessions.owner?.completePath(input.session_id, input.before)
+      // The same fence as the file routes: a non-owner may list only a workspace `resolveTrusted` grants it.
+      const trusted = async (cwd: string, profile: string) => { try { await ctx.deps.workspaces.resolveTrusted(cwd, profile, false); return true } catch { return false } }
+      return await ctx.deps.sessions.owner?.completePath(input.session_id, input.before, await requestCanManageServer(ctx) ? undefined : trusted)
         ?? { available: false, reason: 'not_owner_chat' as const, replace_from: null, items: [] }
     })),
     sync: os.chat.sync.handler(({ input, context: { ctx } }) => run(async () => (await syncChat(ctx, input as Record<string, unknown>)))),

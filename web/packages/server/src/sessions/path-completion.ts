@@ -12,12 +12,19 @@ const PATH_WORD = /((?:["']?(?:[A-Za-z]:[\\/]|\.{1,2}\/|~\/|\/|@|[^"'`\s]+\/))[^
 // The Agent's `format_reference_value`: a reference value with any of these is read back whole only when quoted.
 const NEEDS_QUOTING = /[\s()[\]{}<>"'`]/
 
-/** The word before the caret and where it starts, or null for prose and slash commands. */
+// An `@file:`/`@folder:` value whose quote is still open at the caret: its spaces belong to the path.
+const OPEN_REFERENCE = /@(file|folder):([`"'])((?:(?!\2)[^\n])*)$/
+
+/**
+ * The word before the caret and where it starts, or null for prose and slash commands. `word` is what the owner is asked:
+ * an open quoted reference goes as its unquoted path, and the whole reference, quote included, is replaced.
+ */
 export function pathCompletionWord(before: string): { word: string; replace_from: number } | null {
   if (before.trimStart().startsWith('/')) return null
-  const match = PATH_WORD.exec(before)
-  const word = match?.[1]
-  return word && word.length <= 512 ? { word, replace_from: before.length - word.length } : null
+  const open = OPEN_REFERENCE.exec(before)
+  const bare = open ? undefined : PATH_WORD.exec(before)?.[1]
+  const found = open ? { word: `@${open[1]!}:${open[3]!}`, replace_from: open.index } : bare ? { word: bare, replace_from: before.length - bare.length } : null
+  return found && found.word.length <= 512 ? found : null
 }
 
 /** The path a word or candidate names, without its quote and `@file:`/`@folder:` prefix. */

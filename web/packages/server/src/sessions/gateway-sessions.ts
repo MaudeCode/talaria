@@ -1210,13 +1210,19 @@ export class GatewaySessions {
    * TAL-1342: the path or reference before the caret, completed by the chat's owner from its frozen workspace. A word that
    * names another root is refused before the owner is asked; the owner answers nothing for a remote or sandboxed backend.
    */
-  async completePath(sid: string, before: string): Promise<PathCompletions> {
+  async completePath(sid: string, before: string, workspaceAllowed?: (cwd: string, profile: string) => Promise<boolean>): Promise<PathCompletions> {
     const none = (available: boolean, reason: PathCompletions['reason'] = null): PathCompletions => ({ available, reason, replace_from: null, items: [] })
     const target = await this.target(sid)
     if (!target) return none(false, 'not_owner_chat')
     const word = pathCompletionWord(before)
     if (!word) return none(true)
     if (outsideWorkspace(word.word)) return none(true, 'outside_workspace')
+    if (workspaceAllowed) {
+      // A caller without server authority lists only a workspace it could browse: the frozen cwd of the owner this server
+      // observes for the chat. Without an observation there is no known cwd, and nothing is listed.
+      const cwd = (this.observations.get(target.key) ?? this.watches.get(target.key))?.snapshot.info.cwd
+      if (typeof cwd !== 'string' || !cwd || !(await workspaceAllowed(cwd, target.profile))) return none(false, 'workspace_not_allowed')
+    }
     const result = await this.call(target, { action: 'complete_path', word: word.word })
     if (result.state !== 'attached' || !result.completion) return none(false, 'owner_unavailable')
     return { available: true, reason: null, replace_from: word.replace_from, items: pathCompletionItems(result.completion.items, word.word) }

@@ -4,12 +4,12 @@
  * `[complete]` peer mode.
  */
 import type { DatabaseSync } from 'node:sqlite'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { PathCompletionsSchema, type GatewaySessionParams, type GatewaySessionResult, type PathCompletions } from '@maudecode/talaria-web-contracts'
 import type { TestServer } from '../test/harness.js'
 import type { FakeSidecar } from '../sidecar/fake.js'
-import { attached, bootOwnerAttachment, sid, snapshot } from '../test/gateway-owner.js'
+import { attached, bootOwnerAttachment, ownerHelpers, sid, snapshot } from '../test/gateway-owner.js'
 
 interface Item { text: string; display: string; meta: string }
 const bare = { reason: null, snapshot: null, receipt: null }
@@ -29,6 +29,7 @@ describe('native owner path completion (TAL-1342)', () => {
       : attached(snapshot({ session_id: params.session_id, stored_session_id: params.session_id })))
   })
   afterEach(async () => { db.close(); await s.close() })
+  const { observeOwner } = ownerHelpers(() => ({ s, sidecar }))
 
   const complete = (before: string, extra: Record<string, unknown> = {}, session = sid, profile = 'default') => s.get('/api/chat/path-completions', {
     method: 'POST', headers: { 'content-type': 'application/json', cookie: `hermes_profile=${profile}` }, body: JSON.stringify({ session_id: session, before, ...extra }) })
@@ -57,6 +58,14 @@ describe('native owner path completion (TAL-1342)', () => {
     listing = shared.owner.items
     expect(await read(shared.before)).toEqual(shared.response)
     expect(asked()[0]!.word).toBe('@file:no')
+  })
+
+  it('completes inside a quoted reference as one path and replaces the whole reference', async () => {
+    listing = [{ text: '@file:my notes/src.md', display: 'src.md', meta: 'my notes' }]
+    const before = 'read @file:`my notes/sr'
+    expect(await read(before)).toMatchObject({ replace_from: before.indexOf('@file:'), items: [{ label: 'src.md', kind: 'file', insert: '@file:`my notes/src.md`' }] })
+    // The owner reads paths, not quotes: it is asked for the reference's unquoted value.
+    expect(asked()[0]!.word).toBe('@file:my notes/sr')
   })
 
   it('ships at most the bounded count', async () => {
@@ -111,5 +120,31 @@ describe('native owner path completion (TAL-1342)', () => {
   it('is unavailable when the owner cannot answer', async () => {
     listing = { state: 'unavailable', ...bare, reason: 'owner_connection_lost' }
     expect(await read('src/')).toEqual({ available: false, reason: 'owner_unavailable', replace_from: null, items: [] })
+  })
+
+  describe('a caller without server authority', () => {
+    const cwd = '/frozen/workspace'
+    const complete = (allowed: (cwd: string, profile: string) => Promise<boolean>) => s.deps.sessions.owner!.completePath(sid, 'src/', allowed)
+
+    it('lists nothing while this server observes no owner for the chat, so no workspace is known', async () => {
+      const allowed = vi.fn(() => Promise.resolve(true))
+      expect(await complete(allowed)).toEqual({ available: false, reason: 'workspace_not_allowed', replace_from: null, items: [] })
+      expect(allowed).not.toHaveBeenCalled()
+      expect(asked()).toEqual([])
+    })
+
+    it.each([[false, 'workspace_not_allowed'], [true, null]] as const)('asks the owner only when the observed frozen workspace is one it may browse (%s)', async (trusted, reason) => {
+      const watch = await observeOwner(snapshot({ running: true, info: { ...snapshot().info, cwd } }))
+      // The observed owner answers its other actions; completion still reaches the synthetic listing.
+      const observed = sidecar.responderFor('gateway.session')!
+      sidecar.respond('gateway.session', (params, send, opts) => params.action === 'complete_path'
+        ? { state: 'attached', ...bare, completion: { items: [{ text: 'src/main.py', display: 'main.py', meta: '' }] } } : observed(params, send, opts))
+      const allowed = vi.fn(() => Promise.resolve(trusted))
+      expect(await complete(allowed)).toMatchObject({ available: trusted, reason })
+      expect(allowed).toHaveBeenCalledWith(cwd, 'default')
+      expect(asked()).toHaveLength(trusted ? 1 : 0)
+      watch.finish()
+      await watch.read
+    })
   })
 })

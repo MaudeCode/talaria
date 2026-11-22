@@ -84,7 +84,8 @@ export const PathCompletionRequestSchema = z.strictObject({
 })
 export const PathCompletionsSchema = z.object({
   available: z.boolean().describe('False when this chat has no native owner to ask, or its owner could not answer.'),
-  reason: z.enum(['outside_workspace', 'not_owner_chat', 'owner_unavailable']).nullable(),
+  reason: z.enum(['outside_workspace', 'not_owner_chat', 'owner_unavailable', 'workspace_not_allowed']).nullable()
+    .describe('`workspace_not_allowed`: the caller may not browse the workspace the owner froze for this chat.'),
   replace_from: z.number().int().nonnegative().nullable().describe('Where in `before` the completed word starts. Null: nothing to complete.'),
   items: z.array(z.object({
     label: z.string(), detail: z.string(), kind: z.enum(['file', 'folder', 'reference']),
