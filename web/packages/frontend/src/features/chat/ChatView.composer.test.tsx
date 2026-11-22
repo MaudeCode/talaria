@@ -236,7 +236,6 @@ it('routes picker effort and reset through the current direct-chat identity afte
   fireEvent.click(await screen.findByRole('menuitemradio', { name: 'High' }))
   await waitFor(() => expect(adapter.calls).toHaveLength(1))
   expect(JSON.parse(adapter.calls[0]!.body as string)).toEqual({ effort: 'high', model: 'shared-model', session_id: first.session_id })
-  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
   await waitFor(() => expect(view.container.querySelector('#composerReasoningChip')).toHaveAttribute('aria-expanded', 'false'))
   view.rerender(<QueryClientProvider client={qc}><ChatView sessionId={second.session_id} /></QueryClientProvider>)
   await waitFor(() => expect(qc.isFetching()).toBe(0))
@@ -244,6 +243,54 @@ it('routes picker effort and reset through the current direct-chat identity afte
   fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Default' }))
   await waitFor(() => expect(adapter.calls).toHaveLength(2))
   expect(JSON.parse(adapter.calls[1]!.body as string)).toEqual({ effort: '', model: 'shared-model', session_id: second.session_id })
+  view.unmount()
+  qc.clear()
+})
+
+// TAL-1423: synthetic statuses the server ships for one chat on the Codex route.
+const SPEED_TIERS = [{ id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' }, { id: 'ultrafast', service_tier: 'ultrafast' }] as const
+const speedChat = sessionFixture({ session_id: 'speed-chat', model: 'gpt-6-astra', model_provider: 'openai-codex' })
+const renderSpeedChat = (status: Record<string, unknown>) => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session: speedChat })
+  vi.spyOn(api, 'fetchReasoning').mockResolvedValue(status)
+  qc.setQueryData(keys.sessions.detail(speedChat.session_id), { session: speedChat })
+  qc.setQueryData(keys.reasoning(speedChat.session_id, speedChat.model, speedChat.model_provider), status)
+  return { qc, view: render(<QueryClientProvider client={qc}><ChatView sessionId={speedChat.session_id} /></QueryClientProvider>) }
+}
+
+it('shows a speed pick at once and rolls it back to the server value on refusal (TAL-1423)', async () => {
+  let refuse!: () => void
+  const held = new Promise<void>((resolve) => { refuse = resolve })
+  const adapter = createMemoryAdapter({ routes: { 'POST /api/reasoning': async () => { await held; return [409, { error: 'This speed is not available for the conversation\'s model', code: 'speed_unsupported' }] } } })
+  configureClient({ transport: adapter })
+  const showToast = vi.spyOn(toast, 'showToast').mockImplementation(() => undefined)
+  const { qc, view } = renderSpeedChat({ reasoning_effort: 'high', effort_options: ['low', 'high'], supports_reasoning_effort: true, service_tier: 'default', supported_speed_tiers: SPEED_TIERS })
+  await waitFor(() => expect(qc.isFetching()).toBe(0))
+  fireEvent.click(screen.getByRole('button', { name: 'Reasoning effort: High' }))
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Fast' }))
+  expect(await screen.findByRole('button', { name: 'Reasoning effort: High, Speed: Fast' })).toBeInTheDocument()
+  await waitFor(() => expect(adapter.calls).toHaveLength(1))
+  expect(JSON.parse(adapter.calls[0]!.body as string)).toEqual({ service_tier: 'priority', session_id: speedChat.session_id })
+  refuse()
+  await waitFor(() => expect(showToast).toHaveBeenCalledWith('This speed is not available for the conversation\'s model', 4000, 'error'))
+  expect(await screen.findByRole('button', { name: 'Reasoning effort: High' })).toBeInTheDocument()
+  expect(adapter.calls).toHaveLength(1)
+  view.unmount()
+  qc.clear()
+})
+
+it.each([
+  ['an older server shows effort alone', { reasoning_effort: 'high', effort_options: ['high'], supports_reasoning_effort: true }, 'Reasoning effort: High', false],
+  ['a model with speed alone shows its speed', { reasoning_effort: '', supports_reasoning_effort: false, supports_thinking_toggle: false, service_tier: 'ultrafast', supported_speed_tiers: SPEED_TIERS }, 'Speed: Ultrafast', true],
+  ['a model with neither shows no chip', { reasoning_effort: '', supports_reasoning_effort: false, supports_thinking_toggle: false, service_tier: 'default', supported_speed_tiers: [] }, null, false],
+] as const)('%s (TAL-1423)', async (_, status, chip, speedRows) => {
+  const { qc, view } = renderSpeedChat(status)
+  await waitFor(() => expect(qc.isFetching()).toBe(0))
+  if (!chip) { expect(view.container.querySelector('#composerReasoningChip')).toBeNull(); view.unmount(); return }
+  fireEvent.click(screen.getByRole('button', { name: chip }))
+  await screen.findByRole('menu')
+  expect(!!screen.queryByRole('menuitemradio', { name: 'Standard' })).toBe(speedRows)
   view.unmount()
   qc.clear()
 })

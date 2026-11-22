@@ -668,6 +668,13 @@
         ""
       ]
     },
+    "tests/test_chat_request_overrides.py::test_chat_service_tier_replaces_the_profile_tier": {
+      "layer": "compatibility",
+      "reason": "A chat's service_tier must replace the profile tier through the release's route resolver (accepted on another Codex model, refused on Z.AI) while the main model's extra_body still reaches AIAgent(request_overrides=), and a tier change must rebuild the cached agent.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_chat_request_overrides.py::test_turn_speed_uses_agent_route_resolver": {
       "layer": "compatibility",
       "reason": "The release's model_supports_ultrafast and route resolver decide service_tier per model, provider and base URL; each row is a different resolver branch.",

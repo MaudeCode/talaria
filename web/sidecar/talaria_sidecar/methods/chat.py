@@ -1226,37 +1226,43 @@ def _profile_prefill_messages(cfg: dict | None = None) -> list[dict] | None:
     return _load_prefill_messages(_resolve_prefill_messages_file((load_config() or {}) if cfg is None else cfg), get_hermes_home()) or None
 
 
-def _main_model_request_overrides(model: str, provider, base_url: str = "", cfg: dict | None = None) -> dict | None:
-    """Predecessor ``_main_model_request_overrides``: the profile's ``model.service_tier`` and ``model.extra_body``
-    (written by ``/api/model/set``) apply only to turns on that configured main model. Runs under ``scoped_home``."""
-    from hermes_cli.config import load_config
-
-    model_cfg = ((load_config() or {}) if cfg is None else cfg).get("model")
-    if not isinstance(model_cfg, dict):
-        return None
+def _is_main_model(model_cfg: dict, model: str, provider) -> bool:
     main_model = str(model_cfg.get("default") or model_cfg.get("name") or "").strip()
     main_provider = str(model_cfg.get("provider") or "").strip().lower()
     if not main_model or main_model != model.strip():
-        return None
+        return False
     # An unset or ``auto`` main provider resolves at runtime, so the model id alone identifies the main model.
     from hermes_cli.models import normalize_provider
 
-    if main_provider not in ("", "auto") and normalize_provider(main_provider) != normalize_provider(str(provider or "").strip().lower()):
-        return None
+    return main_provider in ("", "auto") or normalize_provider(main_provider) == normalize_provider(str(provider or "").strip().lower())
+
+
+def _main_model_request_overrides(model: str, provider, base_url: str = "", cfg: dict | None = None, service_tier: str | None = None) -> dict | None:
+    """Predecessor ``_main_model_request_overrides``: the profile's ``model.service_tier`` and ``model.extra_body``
+    (written by ``/api/model/set``) apply only to turns on that configured main model. TAL-1423: a chat's
+    ``service_tier``, which the server resolved, replaces the profile's tier on any model; the Agent's resolver still
+    decides whether the route takes it. Runs under ``scoped_home``."""
+    from hermes_cli.config import load_config
+
+    model_cfg = ((load_config() or {}) if cfg is None else cfg).get("model")
+    model_cfg = model_cfg if isinstance(model_cfg, dict) else {}
+    main = _is_main_model(model_cfg, model, provider)
+    if service_tier is None:
+        service_tier = str(model_cfg.get("service_tier") or "").strip().lower() if main else ""
     from ..speed import fast_overrides
 
-    overrides = fast_overrides(model, str(provider or ""), base_url, str(model_cfg.get("service_tier") or "").strip().lower()) or {}
+    overrides = fast_overrides(model, str(provider or ""), base_url, service_tier) or {}
     extra_body = model_cfg.get("extra_body")
-    if isinstance(extra_body, dict) and extra_body:
+    if main and isinstance(extra_body, dict) and extra_body:
         overrides["extra_body"] = copy.deepcopy(extra_body)
     return overrides or None
 
 
-def _request_overrides(model: str, provider, runtime: dict, cfg: dict | None = None) -> dict | None:
+def _request_overrides(model: str, provider, runtime: dict, cfg: dict | None = None, service_tier: str | None = None) -> dict | None:
     """The resolver's ``request_overrides`` (a custom provider entry's ``extra_body``) under the main-model ones, whose
     ``extra_body`` wins key by key, the Agent's own merge order. Runs under ``scoped_home``."""
     merged = dict(runtime.get("request_overrides") or {})
-    main = _main_model_request_overrides(model, provider, str(runtime.get("base_url") or ""), cfg) or {}
+    main = _main_model_request_overrides(model, provider, str(runtime.get("base_url") or ""), cfg, service_tier) or {}
     extra_body = {**(merged.get("extra_body") or {}), **(main.get("extra_body") or {})}
     merged.update(main)
     if extra_body:
@@ -1368,7 +1374,8 @@ def _agent_kwargs(AIAgent, params: dict, session_id: str, model: str, provider, 
     fallback_chain = _profile_fallback_chain(cfg)
     if fallback_chain and _supported(AIAgent, "fallback_model"):
         kwargs["fallback_model"] = fallback_chain
-    request_overrides = _request_overrides(model, provider, runtime, cfg)
+    tier = params.get("service_tier")
+    request_overrides = _request_overrides(model, provider, runtime, cfg, tier if tier in ("default", "priority", "ultrafast") else None)
     if request_overrides and _supported(AIAgent, "request_overrides"):
         kwargs["request_overrides"] = request_overrides
     prefill_messages = _profile_prefill_messages(cfg)

@@ -7,6 +7,7 @@ import type { SessionPrefixIndex } from './prefix-index.js'
  * keys the file carried.
  */
 import { str } from '../util.js'
+import { validServiceTier, type ServiceTier } from '../config/agent-config.js'
 import { randomUUID } from 'node:crypto'
 import { resolvePathLikePython } from '../workspace/paths.js'
 import { turnOrigin } from './background-updates.js'
@@ -308,6 +309,8 @@ export class Session {
   personality: unknown
   /** TAL-1647: this chat's reasoning effort; `null` inherits the profile default, `''` is the provider default. */
   reasoning_effort: string | null
+  /** TAL-1423: this chat's speed (`default`, `priority`, `ultrafast`); `null` inherits the profile's main-model tier. */
+  service_tier: ServiceTier | null
   active_stream_id: string | null
   pending_user_message: string | null
   pending_attachments: unknown[]
@@ -436,6 +439,8 @@ export class Session {
     this.personality = take('personality', null)
     const effort = take('reasoning_effort', null)
     this.reasoning_effort = typeof effort === 'string' ? effort.trim().toLowerCase() : null
+    const tier = take('service_tier', null)
+    this.service_tier = validServiceTier(tier) ? tier : null
     const streamId = take('active_stream_id', null)
     this.active_stream_id = streamId ? str(streamId) : null
     const pending = take('pending_user_message', null)
@@ -552,6 +557,8 @@ export class Session {
     // Written only when set, so an unowned session's document keeps its existing shape; it precedes `messages`, so
     // metadata-only reads see it.
     if (this.owner_person_id) meta.owner_person_id = this.owner_person_id
+    // TAL-1423: likewise a chat's own speed, so a chat without one keeps its existing document bytes.
+    if (this.service_tier !== null) meta.service_tier = this.service_tier
     meta.message_count = this.messages.length
     meta.anchor_scene_index = anchorSceneIndexFromRecords(this.anchor_activity_scenes)
     this.anchorSceneIndex = { ...(meta.anchor_scene_index as Record<string, number>) }

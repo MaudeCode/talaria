@@ -94,6 +94,8 @@ export const setPersonality = (session_id: SessionId, name: string) => orpc().pe
  */
 export const fetchReasoning = (session_id?: SessionId, model?: string | null, provider?: string | null) => orpc().reasoning.get({ ...(session_id ? { session_id } : {}), ...(model ? { model } : {}), ...(provider ? { provider } : {}) })
 /** `effort: ''` clears the override so the provider default applies. */
+/** TAL-1423: one chat's own speed tier; the profile's main-model tier is never written here. */
+export const setChatSpeed = (service_tier: 'default' | 'priority' | 'ultrafast', session_id: SessionId) => orpc().reasoning.set({ service_tier, session_id })
 export const setReasoningEffort = (effort: string, model?: string | null, provider?: string | null, session_id?: SessionId) => orpc().reasoning.set({ effort, ...(session_id !== undefined ? { session_id } : {}), ...(model ? { model } : {}), ...(provider ? { provider } : {}) })
 export const setReasoningDisplay = (display: 'show' | 'hide') => orpc().reasoning.set({ display })
 

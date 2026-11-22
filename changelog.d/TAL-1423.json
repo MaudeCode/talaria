@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Choose Fast or Ultrafast for one chat from the effort chip in the composer, where the model offers it. Other chats and your default model's speed stay as they are.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Speed per chat",
+        "description": "Pick Fast or Ultrafast for one chat from the effort chip, where the model offers it.",
+        "icon": "speed"
+      }
+    }
+  ]
+}

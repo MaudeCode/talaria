@@ -93,6 +93,32 @@ def test_turn_speed_uses_agent_route_resolver(tmp_path, model, provider, tier, b
     assert json.loads(run.stdout.strip().splitlines()[-1]) == [expected]
 
 
+# TAL-1423: a chat's resolved ``service_tier`` replaces the profile's tier on any model the Agent's resolver accepts it
+# for; the profile's main-model ``extra_body`` still applies, and a tier change builds a fresh agent.
+CHAT_TIER_PROBE = PROBE.split('turn(0, "main")')[0].replace(
+    'def turn(i, session, model="gpt-5.4", provider="openai-codex"):\n    params = {',
+    'def turn(i, session, model="gpt-5.4", provider="openai-codex", tier=None):\n    params = {**({"service_tier": tier} if tier else {}), ',
+) + """
+config.write_text(config.read_text() + "  extra_body:\\n    store: false\\n")
+turn(0, "main", tier="default")
+turn(1, "main", tier="priority")
+turn(2, "other", model="gpt-5.5", tier="priority")
+turn(3, "zai", model="glm-5", provider="zai", tier="priority")
+print(json.dumps(seen))
+"""
+
+
+@requires_agent
+def test_chat_service_tier_replaces_the_profile_tier(tmp_path) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    (root / "config.yaml").write_text(CONFIG)
+    run = subprocess.run([AGENT_PYTHON, "-c", CHAT_TIER_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    seen = json.loads(run.stdout.strip().splitlines()[-1])
+    assert seen == [{"extra_body": {"store": False}}, {"service_tier": "priority", "extra_body": {"store": False}}, {"service_tier": "priority"}, None], seen
+
+
 # TAL-789: the resolver's ``request_overrides`` (a custom provider's ``extra_body``) reach both build sites. The entry's
 # display name differs from the ``custom:<slug>`` id the server sends, so only the resolver result carries it.
 PROXY_PROBE = PROBE.replace('chat._resolve_runtime = lambda provider, model: {"model": model, "provider": provider}\n', """

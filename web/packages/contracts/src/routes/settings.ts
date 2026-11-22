@@ -60,7 +60,7 @@ export const FeedbackErrorSchema = z.discriminatedUnion('error', [
   ErrorSchema.extend({ error: z.enum(['feedback_unavailable', 'relay_unreachable', 'invalid']) }),
 ])
 
-export const ReasoningUnsupportedSchema = ErrorSchema.extend({ code: z.literal('reasoning_unsupported') })
+export const ReasoningUnsupportedSchema = ErrorSchema.extend({ code: z.enum(['reasoning_unsupported', 'speed_unsupported']) })
 
 const AdvancedBody = z.object({ advanced: Loose.nullable().optional() })
 
@@ -116,7 +116,7 @@ export const settingsContract = {
   },
   reasoning: {
     get: oc.route({ method: 'GET', path: '/api/reasoning', tags, summary: "TAL-1647: with session_id, that chat's own effort coerced for its turn model and provider; another profile's chat is 404. A chat Web keeps no record of (a native chat), or no session_id, reads the profile default for model/provider/base_url." }).input(z.object({ auxiliary_task: z.string().trim().min(1).optional().describe('Read-only task capability preview for model/provider; incompatible with session_id. Omit model/provider to inspect the current route; an empty model with provider auto previews inheritance.'), session_id: z.string().trim().min(1).optional(), model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional() })).output(ReasoningStatusSchema),
-    set: oc.route({ method: 'POST', path: '/api/reasoning', tags, summary: "Body is `{display: show|hide}` or `{effort, session_id?, model?, provider?, base_url?}`. TAL-1647: an effort with session_id is that chat's alone (`''` is the provider default) and answers its status as GET does; the profile default is unchanged. Read-only/native targets return 409 reasoning_unsupported and missing ones 404, without writes. Omit session_id only for explicit profile settings." }).input(z.object({ display: Json.optional(), effort: Json.optional(), session_id: z.string().trim().min(1).optional(), model: z.string().nullable().optional(), provider: z.string().nullable().optional(), base_url: z.string().nullable().optional() })).output(ReasoningStatusSchema),
+    set: oc.route({ method: 'POST', path: '/api/reasoning', tags, summary: "Body is `{display: show|hide}` or `{effort, session_id?, model?, provider?, base_url?}`. TAL-1647: an effort with session_id is that chat's alone (`''` is the provider default) and answers its status as GET does; the profile default is unchanged. Read-only/native targets return 409 reasoning_unsupported and missing ones 404, without writes. Omit session_id only for explicit profile settings. TAL-1423: `{service_tier, session_id}` sets that chat's speed alone, one of its `supported_speed_tiers` (else 409 speed_unsupported, nothing written; 503 when the Agent cannot say), and answers its status; the profile's `model.service_tier` is never written here." }).input(z.object({ display: Json.optional(), effort: Json.optional(), service_tier: z.enum(['default', 'priority', 'ultrafast']).optional(), session_id: z.string().trim().min(1).optional(), model: z.string().nullable().optional(), provider: z.string().nullable().optional(), base_url: z.string().nullable().optional() })).output(ReasoningStatusSchema),
   },
   personalities: {
     list: oc.route({ method: 'GET', path: '/api/personalities', tags }).output(PersonalitiesSchema),

@@ -55,7 +55,7 @@ chat._resolve_runtime = lambda provider, model: {"model": "m", "provider": "p"}
 chat._discover_mcp_tools = lambda run: None
 chat._profile_toolsets = lambda cfg=None: ["clarify"]
 chat._profile_fallback_chain = lambda cfg=None: None
-chat._main_model_request_overrides = lambda model, provider, base_url="", cfg=None: None
+chat._main_model_request_overrides = lambda model, provider, base_url="", cfg=None, service_tier=None: None
 chat.checkpoint_kwargs = lambda cfg=None: {}
 result = chat.start(Ctx(), {
     "profile_home": os.environ["HERMES_HOME"], "session_id": "s-clarify", "stream_id": "st-clarify",

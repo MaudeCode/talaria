@@ -837,6 +837,34 @@ export function effectiveReasoningEffort(config: Config, chosen: string | null =
   return chosen ?? str(dict(config.agent).reasoning_effort)
 }
 
+// ── speed ─────────────────────────────────────────────────────────────
+
+export type ServiceTier = SpeedTier['service_tier']
+const SERVICE_TIERS: readonly string[] = ['default', 'priority', 'ultrafast'] satisfies ServiceTier[]
+export const validServiceTier = (raw: unknown): raw is ServiceTier => typeof raw === 'string' && SERVICE_TIERS.includes(raw)
+
+/**
+ * TAL-1423: the profile's `model.service_tier` for a turn on `model`/`provider`. It applies only to the configured main
+ * model, as the sidecar's `_main_model_request_overrides` matched it: the same model id, and the same provider unless the
+ * main one is unset or `auto`, which resolves at runtime.
+ */
+export function profileServiceTier(config: Config, model: string | null, provider: string | null): ServiceTier {
+  const main = modelSection(config)
+  const mainModel = str(main.default || main.name).trim()
+  const mainProvider = str(main.provider).trim().toLowerCase()
+  if (!mainModel || mainModel !== str(model).trim()) return 'default'
+  if (mainProvider && mainProvider !== 'auto' && canonicaliseProviderId(mainProvider) !== canonicaliseProviderId(str(provider).trim().toLowerCase())) return 'default'
+  const tier = str(main.service_tier).trim().toLowerCase()
+  return validServiceTier(tier) ? tier : 'default'
+}
+
+/** TAL-1423: the speed a chat's turns ask for: its own pick, else the profile's main-model tier. The Agent's resolver decides what is sent. */
+export const chatServiceTier = (config: Config, chosen: string | null, model: string | null, provider: string | null): ServiceTier =>
+  validServiceTier(chosen) ? chosen : profileServiceTier(config, model, provider)
+
+/** TAL-1423: the speed a chat runs at, given the tiers its route offers: what it asks for when offered, else `default`. */
+export const effectiveServiceTier = (asked: ServiceTier, tiers: SpeedTier[]): ServiceTier => tiers.some((t) => t.service_tier === asked) ? asked : 'default'
+
 /** TAL-1647: the profile default a new chat keeps as its own; `''` (none set) is the provider default. */
 export function profileReasoningEffort(config: Config): string {
   const raw = str(dict(config.agent).reasoning_effort).trim().toLowerCase()

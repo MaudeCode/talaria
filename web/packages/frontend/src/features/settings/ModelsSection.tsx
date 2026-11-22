@@ -6,7 +6,7 @@ import { Segmented } from '../../ui/Segmented'
 import { Select } from '../../ui/Select'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { useModelsQuery, useSetDefaultModel, useAuxiliaryModelsQuery, useDefaultModelChoice } from '../../app/queries'
-import { ModelPickerPopover, reasoningLevelLabel } from '../composer/chips'
+import { ModelPickerPopover, reasoningLevelLabel, speedTierLabel } from '../composer/chips'
 import { PROFILE_REASONING, reasoningResource, useReasoningDisplayChoice, useReasoningQuery, useSetReasoningDisplay, useSetReasoningEffort } from '../composer/reasoning'
 import { useResourceEffects } from '../sessions/useResourceMutation'
 import { catalogEntryById } from '../../lib/modelEntry'
@@ -48,7 +48,7 @@ function MainModelRows() {
           <Select id="settingsModelSpeed" value={chosen?.service_tier ?? (chosen ? speedTiers[0]?.service_tier : main?.service_tier)} onValueChange={(service_tier) => {
             setDefault.mutate({ model: mainModel, provider: chosen ? chosen.provider : main?.provider ?? null, advanced: { service_tier } })
           }}>
-            {speedTiers.map((tier) => <option key={tier.id} value={tier.service_tier}>{tier.id === 'standard' ? m.settings_model_speed_standard() : tier.id === 'ultrafast' ? m.settings_model_speed_ultrafast() : m.settings_model_speed_fast()}</option>)}
+            {speedTiers.map((tier) => <option key={tier.id} value={tier.service_tier}>{speedTierLabel(tier)}</option>)}
           </Select>
         </SettingRow>
       )}
