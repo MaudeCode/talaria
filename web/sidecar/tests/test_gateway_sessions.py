@@ -94,7 +94,7 @@ def shared_owner(tmp_path_factory):
 
 
 @requires_agent
-@pytest.mark.parametrize("mode", ["shared", "reactions", "reaction-watch", "batch", "approval", "approval-tell", "clarify", "detail",
+@pytest.mark.parametrize("mode", ["shared", "reactions", "reaction-watch", "images", "batch", "approval", "approval-tell", "clarify", "detail",
                                   "queued-controls", "model", "voice-stop", "connections", "work", "transcript", "bridge", "commands"])
 def test_real_native_owner_shared_admission_and_detach(request, shared_owner, mode):
     shared_owner(request, mode)
@@ -237,6 +237,17 @@ def native_owner_stub(tmp_path, monkeypatch):
         owner.calls.append((method, params))
         if method == "runtime.describe":
             return owner.described
+        failure = getattr(owner, "failures", {}).get(method)
+        if failure is not None:
+            raise failure
+        if method == "image.attach_bytes":
+            # The owner's staged copy: a private Agent path that must never leave the sidecar.
+            ext = params["ext"]
+            return {"attached": True, "path": f"/private/agent-home/cache/images/upload_{len(owner.calls)}.{ext}",
+                    "mime": {"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}[ext],
+                    "name": f"upload_{len(owner.calls)}.{ext}", "bytes": 4}
+        if method == "prompt.submit":
+            return owner.receipt
         if method in {"prompt.background", "prompt.btw"}:
             result = owner.launch
             if isinstance(result, Exception):
@@ -319,6 +330,87 @@ def native_owner_stub(tmp_path, monkeypatch):
     owner.session, owner.create = adapter.session, adapter.create
     owner.run = lambda ctx, params, **loop: asyncio.run(adapter._run(ctx, params, tmp_path, found), **loop)
     return owner
+
+
+IMAGES = [{"data_base64": "iVBORw0K", "ext": "png"}, {"data_base64": "/9j/4AAQ", "ext": "jpg"}]
+
+
+def _image_submit(**extra):
+    return {"session_id": "native", "action": "submit", "request_id": "stable-input", "text": "Look",
+            "authority_epoch": 1, "images": IMAGES, **extra}
+
+
+def test_owner_images_stage_through_the_subscribed_owner_before_one_submit(native_owner_stub):
+    """TAL-1344: each verified image is staged by the owner, then the stable submission names only its staged copies."""
+    owner = native_owner_stub
+    owner.receipt = {"admission_id": "admitted", "status": "queued"}
+    result = owner.run(None, _image_submit())
+    staged = [call for call in owner.calls if call[0] == "image.attach_bytes"]
+    assert staged == [("image.attach_bytes", {"session_id": "native", "content_base64": image["data_base64"], "ext": image["ext"]}) for image in IMAGES]
+    submits = [call for call in owner.calls if call[0] == "prompt.submit"]
+    assert len(submits) == 1 and submits[0][1]["submission_id"] == "stable-input"
+    assert [item["mime"] for item in submits[0][1]["attachments"]] == ["image/png", "image/jpeg"]
+    assert all(item["path"].startswith("/private/agent-home/") for item in submits[0][1]["attachments"])
+    assert owner.calls.index(staged[-1]) < owner.calls.index(submits[0])
+    assert result["receipt"] == {"admission_id": "admitted", "status": "queued"}
+    assert "/private/agent-home/" not in json.dumps(result)
+
+
+def test_owner_without_the_image_contract_refuses_images_before_staging(native_owner_stub):
+    owner = native_owner_stub
+    owner.endpoint.code_sha = "0" * 40
+    result = owner.run(None, _image_submit())
+    assert (result["state"], result["reason"], result["receipt"]) == ("incompatible", "owner_images_unsupported", None)
+    assert result["snapshot"] is None
+    assert not [call for call in owner.calls if call[0] in {"image.attach_bytes", "prompt.submit"}]
+
+
+def test_replaced_owner_refuses_images_before_staging(native_owner_stub):
+    owner = native_owner_stub
+    result = owner.run(None, _image_submit(authority_epoch=0))
+    assert (result["state"], result["reason"], result["receipt"]) == ("refused", "owner_changed", None)
+    assert not [call for call in owner.calls if call[0] in {"image.attach_bytes", "prompt.submit"}]
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("permission_denied"), RuntimeError("invalid_params"),
+                                     RuntimeError("storage_unavailable"), ConnectionError("closed"), TimeoutError()])
+def test_failed_image_staging_never_submits(native_owner_stub, failure):
+    """A staging refusal or lost staging reply admitted nothing, so the caller rolls back with no unknown outcome."""
+    owner = native_owner_stub
+    owner.failures = {"image.attach_bytes": failure}
+    result = owner.run(None, _image_submit())
+    assert (result["state"], result["reason"], result["receipt"]) == ("refused", "owner_image_refused", None)
+    assert not [call for call in owner.calls if call[0] == "prompt.submit"]
+
+
+def test_expired_staged_image_is_the_owners_refusal(native_owner_stub):
+    owner = native_owner_stub
+    owner.failures = {"prompt.submit": RuntimeError("invalid_params")}
+    result = owner.run(None, _image_submit())
+    assert (result["state"], result["reason"], result["receipt"]) == ("refused", "invalid_params", None)
+    assert "/private/agent-home/" not in json.dumps(result)
+
+
+def test_lost_image_submit_ack_is_unknown_and_never_resent(native_owner_stub):
+    owner = native_owner_stub
+    owner.failures = {"prompt.submit": ConnectionError("closed")}
+    result = owner.run(None, _image_submit())
+    assert (result["state"], result["reason"], result["receipt"]) == ("unavailable", "owner_connection_lost", None)
+    assert len([call for call in owner.calls if call[0] == "prompt.submit"]) == 1
+
+
+@pytest.mark.parametrize("change", [
+    {"images": []}, {"images": IMAGES * 6}, {"images": [{"data_base64": "PD94", "ext": "svg"}]},
+    {"images": [{"data_base64": "", "ext": "png"}]}, {"images": [{"data_base64": "iVBORw0K", "ext": "png", "path": "/etc/passwd"}]},
+    {"images": [{"path": "/etc/passwd", "mime": "image/png"}]}, {"authority_epoch": None}, {"action": "steer", "execution_generation": 1},
+])
+def test_owner_images_are_validated_before_connecting(tmp_path, native_owner_stub, change):
+    from talaria_sidecar.errors import InvalidParams
+    params = {"profile_home": str(tmp_path), **_image_submit(), **change}
+    params = {key: value for key, value in params.items() if value is not None}
+    with pytest.raises(InvalidParams):
+        native_owner_stub.session(None, params)
+    assert native_owner_stub.calls == []
 
 
 @pytest.mark.parametrize("kind", ["background", "btw"])

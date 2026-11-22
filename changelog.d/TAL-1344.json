@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Agent gateway chats take images: attach a PNG, JPEG, GIF or WebP picture and the original Agent sees it with your message.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Images in gateway chats",
+        "description": "Attach pictures to chats that run on your Agent gateway, such as ones started in the terminal.",
+        "icon": "attachment"
+      }
+    }
+  ]
+}

@@ -58,6 +58,10 @@ _WAKE = object()
 # replaces the interval (TAL-2526).
 _RESTART_CHECK_S, _REACTION_POLL_S = 2, 10
 _SUPPORT_RECORD = Path(__file__).resolve().parents[2] / "agent_support.json"
+# TAL-1344: the owner's ``image.attach_bytes`` stages these kinds, at most ``_IMAGE_LIMIT`` per input
+# (``session_ingress_media._ATTACHMENT_LIMIT``). The server sniffs and verifies the bytes before they get here.
+_IMAGE_MIMES = {"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}
+_IMAGE_LIMIT = 10
 _CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
 
 
@@ -531,6 +535,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     pass  # older owners have no stats capability
             return {**_snapshot(value), "plan_gauge": gauge,
                     "reactions_supported": _verified_contract(endpoint, "message-reactions-v1"),
+                    "image_attachments": _verified_contract(endpoint, "image-attach-v1"),
                     **({"transcripts": True} if _TRANSCRIPT in described["capabilities"] else {})}
 
         receipt = lock = None
@@ -648,9 +653,22 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     detail = unavailable("unsupported")
                 return {"state": "attached", "reason": None, "snapshot": snap, "receipt": None, "context_detail": detail}
             if action == "submit":
+                staged = []
+                if "images" in params:
+                    if not snap["image_attachments"]:
+                        return _refused("incompatible", "owner_images_unsupported")
+                    # The physical tip may differ from the logical id after compression; the owner identity may not.
+                    if snap.get("authority_epoch") != params["authority_epoch"]:
+                        return _refused("refused", "owner_changed")
+                    try:
+                        staged = [await _stage_image(client, common, image) for image in params["images"]]
+                    except Exception:  # noqa: BLE001 - nothing was submitted, so the input is known not admitted
+                        return _refused("refused", "owner_image_refused")
                 # The caller retains this identity across lost ACKs. An ambiguous error never
-                # causes this adapter to generate a replacement or replay started work.
-                receipt = await client.rpc("prompt.submit", **common, submission_id=params["request_id"], text=params["text"])
+                # causes this adapter to generate a replacement or replay started work. A retry
+                # stages again; the owner matches it to the admission by identity and image digest.
+                receipt = await client.rpc("prompt.submit", **common, submission_id=params["request_id"], text=params["text"],
+                                           **({"attachments": staged} if staged else {}))
             elif action == "receipt":
                 receipt = await client.rpc("prompt.receipt", **common, admission_id=params["admission_id"])
             elif action in {"cancel", "discard"}:
@@ -804,6 +822,23 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     await client.rpc("session.detach", session_id=sid, subscription_id=subscription)
 
 
+async def _stage_image(client, common: dict, image: dict) -> dict:
+    """One verified image staged by the subscribed owner. Its private path goes only into this owner's submit."""
+    reply = await client.rpc("image.attach_bytes", **common, content_base64=image["data_base64"], ext=image["ext"])
+    if (not isinstance(reply, dict) or not isinstance(reply.get("path"), str) or not reply["path"]
+            or reply.get("mime") != _IMAGE_MIMES[image["ext"]]):
+        raise ValueError("owner_image_invalid")
+    return {"path": reply["path"], "mime": reply["mime"]}
+
+
+def _valid_images(params: dict) -> bool:
+    images = params["images"]
+    return (params.get("action") == "submit" and type(params.get("authority_epoch")) is int and params["authority_epoch"] >= 0
+            and isinstance(images, list) and 0 < len(images) <= _IMAGE_LIMIT
+            and all(isinstance(image, dict) and set(image) == {"data_base64", "ext"} and image["ext"] in _IMAGE_MIMES
+                    and isinstance(image["data_base64"], str) and image["data_base64"] for image in images))
+
+
 def _validate_connection(action: str, params: dict) -> None:
     if (not isinstance(params.get("op_id"), str) or not params["op_id"]
             or type(params.get("authority_epoch")) is not int or params["authority_epoch"] < 0):
@@ -862,6 +897,8 @@ def session(ctx, params: dict) -> dict:
                                    or type(params.get("limit")) is not int or not 1 <= params["limit"] <= 500
                                    or not (params.get("cursor") is None or isinstance(params["cursor"], str) and 0 < len(params["cursor"]) <= 1024)):
         raise InvalidParams("transcript requires an order, a limit of 1 to 500 and at most a cursor")
+    if "images" in params and not _valid_images(params):
+        raise InvalidParams("images go with a submit, its owner identity and at most ten staged image kinds")
     if action in _CONNECTION_ACTIONS:
         _validate_connection(action, params)
     if action in _WORK_ACTIONS - {"work_list"} and (

@@ -41,12 +41,20 @@ export const GatewayAdmissionSchema = z.object({
   controls: z.array(z.string()).optional(), steering: z.boolean().optional(),
   text: z.string().optional(), input_id: z.string().optional(),
 })
+/**
+ * TAL-1344: the image kinds an owner chat takes, as the owner's `image.attach_bytes` stages them, at most
+ * `OWNER_IMAGE_LIMIT` per message and `OWNER_IMAGE_MAX_BYTES` each. The server verifies every file's bytes before staging.
+ */
+export const OwnerImageMimeSchema = z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+export const OWNER_IMAGE_LIMIT = 10
+export const OWNER_IMAGE_MAX_BYTES = 20 * 1024 * 1024
 export const GatewaySnapshotSchema = z.object({
   plan_gauge: PlanGaugeSchema.nullable().optional(),
   session_id: z.string(), stored_session_id: z.string(), messages: z.array(ObjectSchema), message_count: z.number().int(),
   running: z.boolean(), authority_epoch: z.number().int(), replay_epoch: z.string(), last_sequence: z.number().int(),
   subscription_id: z.string(), revision: z.number().int(), execution_generation: z.number().int(),
   reactions_supported: z.boolean().optional(),
+  image_attachments: z.boolean().optional().describe('TAL-1344: the owner stages images (`image-attach-v1`). Absent from older sidecars.'),
   transcripts: z.boolean().optional().describe('TAL-2072: the owner serves `transcript`, its stored history read. Absent on older owners.'),
   todo_state: z.object({ todos: z.array(ObjectSchema), revision: z.number().int().nonnegative().optional() }).nullable().optional()
     .describe('Canonical owner plan. Null clears it; omission retains transcript fallback for older owners.'),
@@ -147,6 +155,8 @@ export const GatewaySessionParamsSchema = z.object({
   authority_epoch: z.number().int().nonnegative().optional(), replay_epoch: z.string().min(1).optional(),
   request_id: z.string().min(1).max(128).optional(), text: z.string().optional(),
   submission_id: z.string().min(1).max(128).optional(),
+  images: z.array(z.strictObject({ data_base64: z.string().min(1), ext: z.enum(['png', 'jpg', 'gif', 'webp']) })).min(1).max(OWNER_IMAGE_LIMIT).optional()
+    .describe('`submit`: verified image bytes the owner stages before admitting the input; needs `authority_epoch`. Staged paths never come back.'),
   show_reasoning: z.boolean().optional().describe('Whether the owner sends reasoning to the server observer; client visibility uses the current profile preference.'),
   admission_id: z.string().optional(), execution_generation: z.number().int().nonnegative().optional(),
   prompt_id: z.string().optional(), choice: z.enum(['once', 'session', 'always', 'deny']).optional(),
@@ -216,6 +226,7 @@ export type OwnerReasoning = z.infer<typeof OwnerReasoningSchema>
 export const OwnerAttachmentSchema = z.object({
   state: GatewaySessionResultSchema.shape.state, reason: z.string().nullable(),
   can_submit: z.boolean(), can_interrupt: z.boolean(), can_attach: z.boolean(),
+  attachment_mimes: z.array(OwnerImageMimeSchema).optional().describe('TAL-1344: the file kinds this chat takes, empty when `can_attach` is false. Pickers offer only these. Absent from older servers, which never attach.'),
   restarting: z.boolean().describe('The owning gateway is restarting once this turn ends; sending waits until it is back.'),
   revision: z.number().int().nullable(), execution_generation: z.number().int().nullable(),
   model_change: ModelChangeSchema.optional(),

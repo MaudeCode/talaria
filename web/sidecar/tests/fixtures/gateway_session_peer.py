@@ -254,6 +254,43 @@ async def probe_reactions(home, peer, desc):
         sidecar.close()
 
 
+async def probe_images(home, peer, desc):
+    """TAL-1344: Web's submit stages images through image.attach_bytes on the actual owner. The admission commits
+    their digests; a lost-ACK retry restages the same bytes and reconciles to that admission, changed bytes under the
+    same identity are refused, and no staged path reaches the sidecar's result."""
+    import base64
+    import sqlite3
+    png = base64.b64encode(bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+                                         "0000000d49444154789c6360f8cfc0f01f0005000201a5e2c3a30000000049454e44ae426082")).decode()
+    sidecar = SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            sid = (await rpc(native, "session.create", request_id="images-create", source="cli", toolsets=[]))["result"]["session_id"]
+            def call(action, **params):
+                return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+            before = await asyncio.to_thread(call, "snapshot")
+            # Every supported release lists image-attach-v1 in agent_support.json.
+            assert before["snapshot"]["image_attachments"] is True, before
+            submit = dict(request_id="images-input", text="IMAGE_TURN", authority_epoch=before["snapshot"]["authority_epoch"],
+                          images=[{"data_base64": png, "ext": "png"}])
+            first = await asyncio.to_thread(call, "submit", **submit)
+            assert first["state"] == "attached" and first["receipt"]["admission_id"], first
+            retry = await asyncio.to_thread(call, "submit", **submit)
+            assert retry["receipt"]["admission_id"] == first["receipt"]["admission_id"], retry
+            changed = await asyncio.to_thread(call, "submit", **{**submit, "images": [{"data_base64": png[:-8] + "AAAAAA==", "ext": "png"}]})
+            assert (changed["state"], changed["receipt"]) == ("refused", None), changed
+            await drained(call)
+            with sqlite3.connect(home / "state.db") as db:
+                rows = db.execute("SELECT payload_json FROM session_admissions WHERE target_session_id=?", (sid,)).fetchall()
+            assert len(rows) == 1, rows
+            committed = json.loads(rows[0][0])["attachments_v1"]
+            assert committed["media_types"] == ["image/png"], committed
+            for result in (first, retry, changed):
+                assert "cache/images" not in json.dumps(result), result
+    finally:
+        sidecar.close()
+
+
 async def probe_reaction_watch(home, peer, desc):
     """Another native viewer's reaction reaches a watching Web viewer and survives the watch's cancel. The owner emits
     no event for it, so the watch reads it on its idle poll, injected here as REACTION_POLL_S (TAL-2526)."""
@@ -1559,6 +1596,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_reactions(home, peer, desc)
     if mode == "reaction-watch":
         return probe_reaction_watch(home, peer, desc)
+    if mode == "images":
+        return probe_images(home, peer, desc)
     if mode == "detail":
         return probe_detail(home, peer, desc)
     if mode == "restart":

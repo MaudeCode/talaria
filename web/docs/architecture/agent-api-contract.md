@@ -91,7 +91,9 @@ the oldest entry only after the candidate passes.
 The optional `nativeContracts` section records exact boot revisions proven for an
 additional native-owner contract, independently of release promotion. TAL-2056
 verifies `served-local-policy-v1` on Agent v0.23.1, TAL-2293 on v0.23.2 and
-TAL-2596 on v0.23.3. The sidecar admits served canonical sessions
+TAL-2596 on v0.23.3. TAL-1344 verifies `image-attach-v1`, the owner's
+`image.attach_bytes` staging and digest-checked `prompt.submit` attachments, on all
+three releases. The sidecar admits served canonical sessions
 only when private control discovery reports one of those revisions and the authenticated owner's profile,
 instance, authority epoch and session capabilities match. A local checkout or
 package version cannot authorize the connection. Missing or unreadable evidence retains

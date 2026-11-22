@@ -287,7 +287,7 @@ class CheckerTests(unittest.TestCase):
         path = self.root / "web/sidecar/agent_support.json"
         record = json.loads(path.read_text())
         record["nativeContracts"] = {"served-local-policy-v1": ["f" * 40], "captured-command-v1": ["e" * 40],
-                                     "message-reactions-v1": ["d" * 40]}
+                                     "message-reactions-v1": ["d" * 40], "image-attach-v1": ["c" * 40]}
         path.write_text(json.dumps(record))
         self.assertEqual(checker.supported_releases(self.root), [checker.stable_identity(r) for r in RELEASES])
         for invalid in (None, [], {"unknown": ["f" * 40]}, {"served-local-policy-v1": []},

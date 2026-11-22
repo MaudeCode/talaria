@@ -316,6 +316,13 @@ description and closes it. No route returns a script's contents.
 - Upload bodies are capped by `TALARIA_WEB_MAX_UPLOAD_MB` (default 20) and
   names reduced to a sanitized basename (`workspace/upload.ts`
   `sanitizeUploadName`).
+- A canonical owner chat's inbox takes only a PNG, JPEG, GIF or WebP image of at
+  most 20 MB whose bytes are one complete image of the kind its name says,
+  checked at upload and again at send (`sessions/owner-images.ts`). A send names
+  only top-level files of that chat's own inbox; the server reads them from the
+  blob store and the sidecar hands their bytes to the owner's
+  `image.attach_bytes` on the owner the server's snapshot read. The owner's staged
+  path goes only into its own `prompt.submit` and never reaches a response or log.
 - Archive extraction (`workspace/extract.ts` `extractArchive`) allows at most
   `MAX_ARCHIVE_MEMBERS` members and `TALARIA_WEB_MAX_EXTRACTED_MB` of output,
   bounds decompression as it runs, extracts into a fresh folder with anchored
