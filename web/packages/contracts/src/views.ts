@@ -1220,6 +1220,7 @@ export const SettingsSchema = z.looseObject({
   screen_reader_mode: z.boolean().optional().describe('TAL-1605: give the Web workspace PTY an xterm accessibility tree; owner-command output always has one.'),
   workspace_panel_open: z.boolean().optional().describe('TAL-2154: open the Web chat workspace panel on each chat\'s first visit in a browser tab; the person\'s own open or close wins after that.'),
   workspace_todos_tab: z.boolean().optional().describe('TAL-2154: show a Todos page for the current chat in the Web chat workspace panel.'),
+  chat_task_list: z.boolean().optional().describe('TAL-1122: show the current chat\'s `todo_state` as a collapsible strip at the top of the Web chat. Default false.'),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 export const ProfileSchema = z.looseObject({

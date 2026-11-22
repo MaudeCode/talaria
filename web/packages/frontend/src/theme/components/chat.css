@@ -35,6 +35,8 @@
 .messages-history{contain:layout style}
 .msg-row{padding:10px 0}
 .messages-inner > .msg-row{content-visibility:auto;contain-intrinsic-size:auto 300px}
+/* TAL-1122: the chat's task list strip (ChatTaskList) takes at most half the height the composer leaves. */
+.chat-task-list{max-height:calc((var(--chat-stage-h,100dvh) - var(--composer-h,0px)) / 2)}
 .messages-inner > .msg-row[data-role="user"]{width:fit-content;margin-inline-start:auto}
 /* Keep live and latest persisted replies measured across streaming and settlement, and the sent row as it lands (TAL-1753). */
 .msg-row:is(.live-turn,[data-latest="1"],[data-live-user]){content-visibility:visible;contain:content}

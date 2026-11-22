@@ -1647,6 +1647,7 @@
 	"settings_label_auto_title_refresh": "Actualiser les titres des discussions",
 	"settings_label_busy_placeholder_hint": "Indiquer l’action en cours dans la zone de saisie",
 	"settings_label_chat_activity_display_mode": "Affichage des activités",
+	"settings_label_chat_task_list": "Liste des tâches dans le chat",
 	"settings_label_check_updates": "Vérifier les mises à jour",
 	"settings_label_claude_code_sessions": "Claude Code",
 	"settings_label_composer_attach": "Bouton de pièce jointe",

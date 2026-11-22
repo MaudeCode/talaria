@@ -54,7 +54,7 @@
 @media (max-width:899px){.session-jump-btn--outline~.session-jump-btn--start{right:calc(var(--chat-col-inset) + 40px)}}
 /* A jump lands a row below the floating buttons. */
 #messages .msg-row{scroll-margin-top:56px}
-@media (min-width:900px){.session-jump-btn--outline{display:none}.chat-stage:has(.outline-column) .composer-dock{right:14rem}.outline-column~.session-jump-btn--start{right:calc(14rem + max(20px, calc((100% - 14rem - var(--msg-max)) / 2 + 20px)))}.outline-column~.scroll-to-bottom-btn{left:calc(50% - 7rem)}}
+@media (min-width:900px){.session-jump-btn--outline{display:none}.chat-stage:has(.outline-column) .composer-dock{right:14rem}.chat-stage:has(.outline-column) .chat-task-list{padding-right:calc(14rem + 1.25rem)}.outline-column~.session-jump-btn--start{right:calc(14rem + max(20px, calc((100% - 14rem - var(--msg-max)) / 2 + 20px)))}.outline-column~.scroll-to-bottom-btn{left:calc(50% - 7rem)}}
 @media (max-width:640px){.session-item{min-height:44px;padding:10px 64px 10px 12px;line-height:var(--session-line-height)}}
 @media (max-width:640px){.session-actions{opacity:1;pointer-events:auto}}
 @media (hover:none) and (pointer:coarse){.session-actions{display:none}}

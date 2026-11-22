@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpDown, ChevronsUpDown, CornerDownLeft, FileText, Hash, List, ListTree, Loader, PanelRight, SlidersHorizontal, Type, Wrench } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpDown, ChevronsUpDown, CornerDownLeft, FileText, Hash, List, ListChecks, ListTree, Loader, PanelRight, SlidersHorizontal, Type, Wrench } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { ChatPage } from '../../contracts/url'
 import { modifierKey } from '../../ui/Keys'
@@ -44,6 +44,7 @@ export function ChatSection() {
         <Toggle icon={Hash} label={m.settings_label_token_usage()} settingKey="show_token_usage" fallback />
         <Toggle icon={ArrowDownToLine} label={m.settings_label_auto_scroll_follow()} hint={m.settings_desc_auto_scroll_follow()} settingKey="auto_scroll_follow" fallback />
         <Toggle icon={ListTree} label={m.settings_label_conversation_outline()} settingKey="show_conversation_outline" />
+        <Toggle icon={ListChecks} label={m.settings_label_chat_task_list()} settingKey="chat_task_list" />
         <Toggle icon={ArrowUpDown} label={m.settings_label_session_jump_buttons()} settingKey="session_jump_buttons" fallback />
       </SettingsGroup>
       <SettingsGroup id="more" title={m.settings_group_more()}>

@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web can show a chat's task list in a collapsible strip at the top of the chat. Turn it on in Settings, Chat.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Task list in chat",
+        "description": "Follow the agent's task list at the top of the chat without leaving the conversation.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

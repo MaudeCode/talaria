@@ -46,7 +46,7 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
     ['settingsChatActivityDisplayMode', m.settings_label_chat_activity_display_mode], [key('worklog_details_expanded_default'), m.settings_label_worklog_details_expanded_default],
     [key('render_user_markdown'), m.settings_label_render_user_markdown], [key('show_token_usage'), m.settings_label_token_usage],
     [key('auto_scroll_follow'), m.settings_label_auto_scroll_follow], [key('show_conversation_outline'), m.settings_label_conversation_outline],
-    [key('session_jump_buttons'), m.settings_label_session_jump_buttons],
+    [key('chat_task_list'), m.settings_label_chat_task_list],    [key('session_jump_buttons'), m.settings_label_session_jump_buttons],
   ]),
   ...onPage('workspace-panel', [
     ...rows('chat', m.settings_group_panel, 'interface', [

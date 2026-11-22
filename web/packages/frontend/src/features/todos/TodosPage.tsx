@@ -1,4 +1,6 @@
+import { useId, useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { ChevronDown, ChevronUp, ListChecks } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { HubPage } from '../../shell/AppShell'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
@@ -30,7 +32,7 @@ export function TodosPage({ sessionId }: { sessionId?: string | null }) {
   )
 }
 
-/** A chat's server-ordered todos, as the Todos hub page and (TAL-2154) the chat panel's Todos page show them. */
+/** A chat's server-ordered todos, as the Todos hub page, (TAL-2154) the chat panel's Todos page and (TAL-1122) the chat's task list strip show them. */
 export function TodoList({ state }: { state: Session['todo_state'] }) {
   const todos = state?.display_items ?? []
   return (
@@ -51,5 +53,30 @@ export function TodoList({ state }: { state: Session['todo_state'] }) {
       )}
       {state?.description && <p className="text-xs text-muted">{state.description}</p>}
     </>
+  )
+}
+
+/**
+ * TAL-1122: the chat's task list as the opt-in strip at the top of the reading column, closed until its header opens it.
+ * Its rows are `TodoList`'s and its count is the server's `plan_progress`; it is absent while the server lists no item.
+ * Open, only the list scrolls, inside the height `.chat-task-list` caps.
+ */
+export function ChatTaskList({ state }: { state: Session['todo_state'] }) {
+  const [open, setOpen] = useState(false)
+  const bodyId = useId()
+  if (!state?.display_items?.length) return null
+  const progress = state.plan_progress
+  return (
+    <section className="chat-task-list flex shrink-0 flex-col border-b border-border px-5 max-[641px]:px-2.5">
+      <div className="mx-auto flex min-h-0 w-full max-w-(--msg-max) flex-col">
+        <button type="button" aria-expanded={open} aria-controls={open ? bodyId : undefined} onClick={() => setOpen((o) => !o)} className="flex min-h-11 w-full shrink-0 items-center gap-2 text-left text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-accent">
+          <ListChecks size={14} aria-hidden="true" />
+          <span className="text-sm font-semibold text-text">{m.tab_todos()}</span>{' '}
+          {progress && progress.total > 0 && <span className="text-xs tabular-nums">{m.bg_agents_progress({ done: progress.completed, total: progress.total })}</span>}
+          {open ? <ChevronUp size={14} className="ml-auto" aria-hidden="true" /> : <ChevronDown size={14} className="ml-auto" aria-hidden="true" />}
+        </button>
+        {open && <div id={bodyId} data-task-list-body="" tabIndex={0} className="min-h-0 flex-1 overflow-y-auto pb-2"><TodoList state={state} /></div>}
+      </div>
+    </section>
   )
 }

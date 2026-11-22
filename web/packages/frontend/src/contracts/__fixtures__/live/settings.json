@@ -114,7 +114,8 @@
     "voice_silence_ms": 1800,
     "webui_version": "0.0.0-fixture",
     "worklog_details_expanded_default": false,
-    "workspace_todos_tab": false
+    "workspace_todos_tab": false,
+    "chat_task_list": false
   },
   "method": "GET",
   "path": "/api/settings",

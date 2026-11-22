@@ -1621,6 +1621,7 @@
 	"settings_label_auto_title_refresh": "Sohbet başlıklarını yenile",
 	"settings_label_busy_placeholder_hint": "Mesaj alanında süren eylemi göster",
 	"settings_label_chat_activity_display_mode": "Activity display",
+	"settings_label_chat_task_list": "Sohbette görev listesi",
 	"settings_label_check_updates": "Güncellemeleri kontrol edin",
 	"settings_label_claude_code_sessions": "Claude Code",
 	"settings_label_composer_attach": "Ekle düğmesi",

@@ -31,7 +31,11 @@
     "pending_count": 0,
     "in_progress_count": 1,
     "completed_count": 1,
-    "cancelled_count": 0
+    "cancelled_count": 0,
+    "plan_progress": {
+      "completed": 1,
+      "total": 2
+    }
   },
   "session": {
     "session_id": "native-todo",
@@ -80,7 +84,11 @@
       "pending_count": 0,
       "in_progress_count": 1,
       "completed_count": 1,
-      "cancelled_count": 0
+      "cancelled_count": 0,
+      "plan_progress": {
+        "completed": 1,
+        "total": 2
+      }
     }
   }
 }

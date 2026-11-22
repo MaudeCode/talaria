@@ -1621,6 +1621,7 @@
 	"settings_label_auto_title_refresh": "채팅 제목 새로 고침",
 	"settings_label_busy_placeholder_hint": "작성기에 진행 중인 동작 표시",
 	"settings_label_chat_activity_display_mode": "Activity display",
+	"settings_label_chat_task_list": "채팅 안의 작업 목록",
 	"settings_label_check_updates": "업데이트 확인",
 	"settings_label_claude_code_sessions": "Claude Code",
 	"settings_label_composer_attach": "첨부 버튼",
