@@ -2,6 +2,7 @@
 import { timingOutcome } from '../startup-timing.js'
 import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE } from '../sessions/turn.js'
 import { implement } from '@orpc/server'
+import { PeleError, renderAsync } from 'pele/lazy'
 import { chatContract, type ApprovalAnswerer, type BackgroundTask, type OwnerAttachment, type PromptWithdrawal } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
@@ -389,6 +390,15 @@ export const chatRouter = os.router({
       return { ok: true as const, session_id: s.session_id, task_id: pid, noop: true as const }
     })),
   },
+  // TAL-2678: the same Pele options as Web's diagram plugin, so a drawing never fetches or links anywhere.
+  renderDiagram: os.renderDiagram.handler(async ({ input }) => {
+    try {
+      return { svg: (await renderAsync(input.source, { links: false, images: false })).svg }
+    } catch (error) {
+      if (error instanceof PeleError) return { error: error.message }
+      throw error
+    }
+  }),
   btw: os.btw.handler(({ input, context: { ctx } }) => run(async () => {
     const body = input as Record<string, unknown>
     requireField(body, 'session_id', 'question')

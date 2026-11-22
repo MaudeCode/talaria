@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Markdown from './MarkdownRenderer'
@@ -112,6 +112,41 @@ describe('content ids (TAL-2217)', () => {
     expect(check).not.toHaveBeenCalled()
     expect(open).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})
+
+describe('svg code blocks (TAL-2678)', () => {
+  const fence = (source: string) => `\`\`\`svg\n${source}\n\`\`\``
+  const drawing = '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>'
+  // The lightbox loads its viewer lazily; a warm module keeps that load inside the query's wait.
+  beforeAll(() => import('../LightboxViewer'))
+  // Streamdown's plain code block, which held svg fences before, scrolls to the end while streaming.
+  afterEach(() => { Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo') })
+
+  it('offers View only once an svg fence settles, and opens its source as an image data URI', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
+    const text = `${fence(drawing)}\n\n\`\`\`xml\n${drawing}\n\`\`\``
+    const { rerender } = render(<Markdown text={text} streaming />)
+    await waitFor(() => { expect(screen.getAllByRole('button', { name: 'Copy Code' })).toHaveLength(2) })
+    expect(screen.queryByRole('button', { name: 'View image' })).toBeNull()
+    rerender(<Markdown text={text} />)
+    await screen.findByRole('button', { name: 'View image' })
+    expect(screen.getAllByRole('button', { name: 'View image' })).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: 'View image' }))
+    const dialog = await screen.findByRole('dialog', { name: 'SVG' })
+    const image = await within(dialog).findByRole('img', { name: 'SVG' })
+    expect(image).toHaveAttribute('src', `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`${drawing}\n`)}`)
+  })
+
+  it('shows the failure state for source that is not a well-formed svg and keeps the code block', async () => {
+    const broken = '<svg xmlns="http://www.w3.org/2000/svg"><rect></svg'
+    render(<Markdown text={fence(broken)} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'View image' }))
+    const dialog = await screen.findByRole('dialog', { name: 'SVG' })
+    // jsdom decodes no images; the browser reports a malformed SVG to the image the same way.
+    fireEvent.error(await within(dialog).findByRole('img', { name: 'SVG' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Could not load image')
+    expect(document.querySelector('[data-streamdown="code-block-body"]')).toHaveTextContent(broken)
   })
 })
 

@@ -14,6 +14,7 @@ import { CodeBlock, LineEndedContext } from './CodeBlock'
 export { CodeBlockBody } from './CodeBlock'
 import { code, HIGHLIGHTED_LANGUAGES } from './codeHighlight'
 import { JsonCodeBlock } from './JsonCodeBlock'
+import { SvgCodeBlock } from './SvgCodeBlock'
 import { LinkCheckContext, type LinkCheck } from './LinkCheckContext'
 import type { MarkdownProps } from './Markdown'
 import { createIncrementalMarkdownParser } from './incrementalMarkdown'
@@ -28,7 +29,7 @@ const STREAM_WORDS = { animation: 'blurIn', sep: 'word', duration: 400, easing: 
 // Streamdown checks renderers before Mermaid, so `mermaid` keeps its diagram; unlabeled fences fall back to `code`.
 const OWN_RENDERERS = new Set(['json', 'mermaid', 'mmd'])
 const CODE_LANGUAGES = HIGHLIGHTED_LANGUAGES.filter((language) => !OWN_RENDERERS.has(language))
-const PLUGINS = { code, cjk, renderers: [{ language: 'json', component: JsonCodeBlock }, { language: CODE_LANGUAGES, component: CodeBlock }] }
+const PLUGINS = { code, cjk, renderers: [{ language: 'json', component: JsonCodeBlock }, { language: 'svg', component: SvgCodeBlock }, { language: CODE_LANGUAGES, component: CodeBlock }] }
 const loadMermaid = () => import('./diagramPlugin').then(({ mermaid }) => mermaid)
 const loadMath = () => Promise.all([import('@streamdown/math'), import('katex/dist/katex.min.css')]).then(([{ math }]) => math)
 

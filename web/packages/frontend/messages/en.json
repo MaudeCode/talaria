@@ -3690,6 +3690,7 @@
 	"vault_unlock_heading": "Unlock {name}",
 	"vault_unlock_submit": "Unlock",
 	"view": "View",
+	"view_image": "View image",
 	"voice_dictate": "Dictate",
 	"voice_dictate_active": "Stop dictation",
 	"voice_error": "Voice not supported in this browser",
