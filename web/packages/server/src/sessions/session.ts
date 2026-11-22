@@ -104,6 +104,11 @@ export const WORKTREE_RETAINED_KEY = 'worktree_retained'
  * per-session `cd` record, process-local in the sidecar), and the workspace that turn ran in. Cleared with the conversation.
  */
 export const TERMINAL_CWD_KEY = 'terminal_cwd'
+/**
+ * TAL-2676: an `extra` key, `{ [profile]: { viewed_at, message_id, timestamp } }`: when each profile last viewed the chat,
+ * and the transcript row key (null for an empty transcript) and timestamp of its last row then.
+ */
+export const VIEWED_POSITIONS_KEY = 'viewed_positions'
 
 /** TAL-2303: the chat's saved terminal directory for a turn in `workspace`; null after a workspace move or without one. */
 export function savedTerminalCwd(s: Session, workspace: string): string | null {

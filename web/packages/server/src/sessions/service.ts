@@ -22,7 +22,7 @@ import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { allSessions, sessionSortTimestamp, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, type OwnerSources, mergeCliSidebarMetadata, sessionListResponse, withSidebarChildren, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
-import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetModelFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, TERMINAL_CWD_KEY, titleFrom, WORKTREE_RETAINED_KEY, type Message } from './session.js'
+import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetModelFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, TERMINAL_CWD_KEY, titleFrom, VIEWED_POSITIONS_KEY, WORKTREE_RETAINED_KEY, type Message } from './session.js'
 import { DraftDeleteFailed, SessionBusy, SessionNotFound, type SessionOwnership, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState, tsFloat } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
@@ -30,6 +30,7 @@ import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } fr
 import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, emptyLineageReport, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stateDbTimestampSeconds, withStateDbListingReads, type stateDbSessionRow, type StateDbMessageSummary, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { sessionOutline } from './outline.js'
+import { unreadAfter, viewedRow, type ViewedRow } from './transcript-row.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, withDisplayText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentViews, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, withheldRowForModel, newestSettledReply, refusedNotice, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
@@ -1936,6 +1937,46 @@ export class SessionService {
     const users = marked.flatMap((message, index) => (isMessageDict(message) && message.role === 'user' ? [{ message, index }] : []))
     const projected = redactSessionData({ messages: users.map(({ message }) => message) }, this.deps.redactEnabled()).messages as unknown[]
     return sessionOutline(s.session_id, users.map(({ index }, k) => ({ message: projected[k], index })))
+  }
+
+  /**
+   * TAL-2676: record that `profile` viewed the chat through its last row now, read from the detail's bounded tail. A
+   * session without a Web document (state.db only), or one this request may not see, records nothing; an unchanged
+   * position writes nothing.
+   */
+  async markViewed(sid: string, profile: string): Promise<void> {
+    sid = await this.resolveSessionId(sid)
+    try { if (!this.visibleToRequest(await this.store.get(sid, { metadataOnly: true }))) return } catch (error) { if (error instanceof SessionNotFound) return; throw error }
+    const tail = await this.detail(sid, { msg_limit: '1' })
+    const viewed = viewedRow(Array.isArray(tail.messages) ? tail.messages : [], Number(tail._messages_offset) || 0)
+    await this.withMutationLock(sid, async () => {
+      // The resident document, so a turn's concurrent rows are never saved over.
+      const current = await this.store.ensureFull(sid, await this.store.get(sid))
+      const own = viewedPosition(current, profile)
+      if (own?.message_id === viewed.message_id && own.timestamp === viewed.timestamp) return
+      current.extra[VIEWED_POSITIONS_KEY] = { ...(isMessageDict(current.extra[VIEWED_POSITIONS_KEY]) ? current.extra[VIEWED_POSITIONS_KEY] : {}), [profile]: { viewed_at: this.deps.now(), ...viewed } }
+      await this.store.save(current, { touchUpdatedAt: false })
+    }, { allowReadOnly: true })
+  }
+
+  /**
+   * TAL-2676: the first row `profile` has not seen since it last viewed the chat, found in `page` (the chat-open detail's
+   * tail) or, when the viewed row lies before it, in one bounded page before it; null when none or never viewed.
+   */
+  async unreadFromMessageId(sid: string, profile: string, page: Record<string, unknown>): Promise<string | null> {
+    sid = await this.resolveSessionId(sid)
+    let s: Session
+    try { s = await this.store.get(sid) } catch (error) { if (error instanceof SessionNotFound) return null; throw error }
+    const viewed = viewedPosition(s, profile)
+    if (!viewed) return null
+    const rows = Array.isArray(page.messages) ? page.messages : []
+    const offset = Number(page._messages_offset) || 0
+    const found = unreadAfter(rows, offset, viewed)
+    if (found !== undefined || offset === 0) return found ?? null
+    // ponytail: one extra bounded page; more new rows than both pages hold, or a vanished viewed row, names none.
+    const earlier = await this.detail(sid, { msg_limit: String(MAX_MSG_LIMIT), msg_before: String(offset) })
+    const before = unreadAfter(Array.isArray(earlier.messages) ? earlier.messages : [], Number(earlier._messages_offset) || 0, viewed)
+    return before === undefined ? null : before ?? unreadAfter(rows, offset, null) ?? null
   }
 
   /**
@@ -4237,3 +4278,11 @@ export function worktreeRetainedPayload(session: Session | null): Record<string,
 }
 
 export { titleFrom }
+
+/** TAL-2676: where `profile` last viewed `s`, or null when it never did. */
+function viewedPosition(s: Session, profile: string): ViewedRow | null {
+  const positions = s.extra[VIEWED_POSITIONS_KEY]
+  const own = isMessageDict(positions) ? positions[profile] : null
+  if (!isMessageDict(own)) return null
+  return { message_id: typeof own.message_id === 'string' ? own.message_id : null, timestamp: typeof own.timestamp === 'number' ? own.timestamp : null }
+}

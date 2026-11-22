@@ -44,6 +44,11 @@ it('derives only the requested turns on first open and older pages of 5,000 rows
       expect(fullRead).not.toHaveBeenCalled()
     }
     expect(prefixes.size).toBe(1)
+    // TAL-2676: reporting the chat viewed and reopening it, which adds its unread position, read the same bounded pages.
+    expect((await server.get('/api/talaria/viewed', { method: 'POST', body: JSON.stringify({ session_id: sid }), headers: { 'content-type': 'application/json' } })).status).toBe(200)
+    const reopened = await server.get(`/api/session?session_id=${sid}&msg_limit=50`)
+    expect(((await reopened.json()) as { session: { unread_from_message_id?: unknown } }).session.unread_from_message_id).toBeNull()
+    expect(fullRead).not.toHaveBeenCalled()
     expect(Math.max(...derive.mock.calls.map((call) => call[1].length))).toBeLessThanOrEqual(52)
     expect(merge.mock.calls.some((call) => (call[1] ?? session.messages).length === 5000)).toBe(false)
     expect(context).not.toHaveBeenCalled()
