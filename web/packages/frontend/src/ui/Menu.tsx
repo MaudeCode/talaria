@@ -186,11 +186,18 @@ function passThrough(event: BaseUIEvent<SyntheticEvent>) {
  * `data-context-menu` restores the callout on links nested in it, which keep the browser's menu (base.css, TAL-1154).
  */
 export function ContextMenu({ trigger, children, className, label }: Pick<MenuProps, 'trigger' | 'children' | 'className' | 'label'>) {
-  // A browser may send a click when the long-press finger lifts; while that menu is open it must not also activate the trigger.
+  // A browser may follow the long-press finger's lift with mouse events on the trigger, after the menu's grace period for
+  // a press outside it: they must neither close that menu nor activate the trigger (TAL-2692).
   const pressed = useRef(false)
+  const triggerRef = useRef<HTMLDivElement>(null)
+  const onOpenChange = (open: boolean, details: BaseContextMenu.Root.ChangeEventDetails) => {
+    if (!open && pressed.current && details.reason === 'outside-press' && triggerRef.current?.contains(details.event.target as Node)) { details.cancel(); return }
+    pressed.current = open && details.event.type === 'touchstart'
+  }
   return (
-    <BaseContextMenu.Root onOpenChange={(open, details) => { pressed.current = open && details.event.type === 'touchstart' }}>
+    <BaseContextMenu.Root onOpenChange={onOpenChange}>
       <BaseContextMenu.Trigger
+        ref={triggerRef}
         render={trigger}
         data-context-menu=""
         onContextMenu={passThrough}

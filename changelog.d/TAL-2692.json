@@ -2,7 +2,15 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "A 3D model preview in Talaria Web no longer stays on \"Loading model…\" when the model finishes loading the moment it appears.",
+      "summary": "A 3D model preview in Talaria Web no longer stays on \"Loading model\u2026\" when the model finishes loading the moment it appears.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Holding a long-press on a row in Talaria Web, such as a file in the Files panel, now keeps its menu open when you lift your finger, instead of closing it and opening the row.",
       "highlight": false,
       "components": [
         "web"

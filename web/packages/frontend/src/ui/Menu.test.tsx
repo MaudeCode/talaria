@@ -174,9 +174,13 @@ describe('ContextMenu', () => {
       press(screen.getByText('Row title'))
       await act(async () => { await vi.runAllTimersAsync() })
       expect(screen.getByRole('menu', { name: 'Row actions' })).toBeInTheDocument()
-      // Some browsers send a click when the finger lifts; it neither follows the link nor runs the trigger's handler.
+      // Some browsers follow the lift with mouse events, after the menu's grace period for a press outside it (TAL-2692):
+      // they neither close the menu nor follow the link nor run the trigger's handler.
+      fireEvent.mouseDown(screen.getByText('Row title'))
+      fireEvent.mouseUp(screen.getByText('Row title'))
       expect(fireEvent.click(screen.getByText('Row title'))).toBe(false)
       expect(clicked).not.toHaveBeenCalled()
+      expect(screen.getByRole('menu', { name: 'Row actions' })).toBeInTheDocument()
       fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
       await act(async () => { await vi.runAllTimersAsync() })
       expect(screen.queryByRole('menu')).toBeNull()
