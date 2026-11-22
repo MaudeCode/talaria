@@ -246,7 +246,7 @@ def native_owner_stub(tmp_path, monkeypatch):
             return {"attached": True, "path": f"/private/agent-home/cache/images/upload_{len(owner.calls)}.{ext}",
                     "mime": {"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}[ext],
                     "name": f"upload_{len(owner.calls)}.{ext}", "bytes": 4}
-        if method == "prompt.submit":
+        if method in {"prompt.submit", "prompt.receipt"}:
             return owner.receipt
         if method in {"prompt.background", "prompt.btw"}:
             result = owner.launch
@@ -372,14 +372,44 @@ def test_replaced_owner_refuses_images_before_staging(native_owner_stub):
     assert not [call for call in owner.calls if call[0] in {"image.attach_bytes", "prompt.submit"}]
 
 
+def _admissions(home, *rows):
+    import sqlite3
+    from contextlib import closing
+    with closing(sqlite3.connect(home / "state.db")) as db:
+        db.execute("CREATE TABLE session_admissions(admission_id TEXT, request_id TEXT, target_session_id TEXT)")
+        db.executemany("INSERT INTO session_admissions VALUES (?, ?, ?)", rows)
+        db.commit()
+
+
 @pytest.mark.parametrize("failure", [RuntimeError("permission_denied"), RuntimeError("invalid_params"),
                                      RuntimeError("storage_unavailable"), ConnectionError("closed"), TimeoutError()])
-def test_failed_image_staging_never_submits(native_owner_stub, failure):
-    """A staging refusal or lost staging reply admitted nothing, so the caller rolls back with no unknown outcome."""
+def test_failed_image_staging_never_submits(native_owner_stub, tmp_path, failure):
+    """A staging refusal or lost staging reply for an identity the owner never admitted sent nothing: the caller rolls back."""
     owner = native_owner_stub
+    _admissions(tmp_path, ("other-admission", "other-input", "native"), ("elsewhere", "stable-input", "other-chat"))
     owner.failures = {"image.attach_bytes": failure}
     result = owner.run(None, _image_submit())
     assert (result["state"], result["reason"], result["receipt"]) == ("refused", "owner_image_refused", None)
+    assert not [call for call in owner.calls if call[0] in {"prompt.submit", "prompt.receipt"}]
+
+
+def test_failed_image_restaging_answers_with_the_admission_a_lost_ack_left(native_owner_stub, tmp_path):
+    """A retried identity the owner already admitted is reconciled to that admission, never reported as not sent."""
+    owner = native_owner_stub
+    _admissions(tmp_path, ("admitted-before", "stable-input", "native"))
+    owner.failures = {"image.attach_bytes": TimeoutError()}
+    owner.receipt = {"admission_id": "admitted-before", "status": "started"}
+    result = owner.run(None, _image_submit())
+    assert (result["state"], result["receipt"]) == ("attached", {"admission_id": "admitted-before", "status": "started"})
+    assert ("prompt.receipt", {"session_id": "native", "admission_id": "admitted-before"}) in owner.calls
+    assert not [call for call in owner.calls if call[0] == "prompt.submit"]
+
+
+def test_failed_image_staging_is_unknown_when_earlier_admission_cannot_be_read(native_owner_stub):
+    owner = native_owner_stub
+    owner.failures = {"image.attach_bytes": TimeoutError()}
+    result = owner.run(None, _image_submit())
+    assert (result["state"], result["reason"], result["receipt"]) == ("unavailable", "owner_connection_lost", None)
     assert not [call for call in owner.calls if call[0] == "prompt.submit"]
 
 

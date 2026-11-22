@@ -277,6 +277,10 @@ async def probe_images(home, peer, desc):
             assert first["state"] == "attached" and first["receipt"]["admission_id"], first
             retry = await asyncio.to_thread(call, "submit", **submit)
             assert retry["receipt"]["admission_id"] == first["receipt"]["admission_id"], retry
+            # A failed restaging reconciles through the owner's own ledger: this identity, and no other, is admitted.
+            from talaria_sidecar.methods.gateway_sessions import _admission_for
+            assert _admission_for(home, sid, "images-input") == first["receipt"]["admission_id"]
+            assert _admission_for(home, sid, "never-sent") is None
             changed = await asyncio.to_thread(call, "submit", **{**submit, "images": [{"data_base64": png[:-8] + "AAAAAA==", "ext": "png"}]})
             assert (changed["state"], changed["receipt"]) == ("refused", None), changed
             await drained(call)

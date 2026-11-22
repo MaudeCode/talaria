@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
+import { crc32 } from 'node:zlib'
 import type { DatabaseSync } from 'node:sqlite'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionEnvelopeSchema, type GatewaySessionParams, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
 import type { TestServer } from '../test/harness.js'
 import type { FakeSidecar } from '../sidecar/fake.js'
@@ -16,6 +17,15 @@ const IMAGES = {
   'still.webp': Buffer.concat([Buffer.from('RIFF'), Buffer.from([18, 0, 0, 0]), Buffer.from('WEBPVP8L'), Buffer.from([5, 0, 0, 0, 0x2f, 0, 0, 0, 0, 0])]),
 }
 const EXT = { 'shot.png': 'png', 'photo.jpg': 'jpg', 'loop.gif': 'gif', 'still.webp': 'webp' }
+/** A complete PNG of about `bytes`, padded with one ancillary text chunk. */
+const bigPng = (bytes: number): Buffer => {
+  const type = Buffer.from('tEXt')
+  const data = Buffer.concat([Buffer.from('pad\0'), Buffer.alloc(bytes, 0x61)])
+  const length = Buffer.alloc(4); length.writeUInt32BE(data.length)
+  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([type, data])))
+  const png = IMAGES['shot.png']
+  return Buffer.concat([png.subarray(0, 33), length, type, data, crc, png.subarray(33)])
+}
 
 describe('images sent to a canonical owner chat (TAL-1344)', () => {
   let s: TestServer
@@ -108,6 +118,39 @@ describe('images sent to a canonical owner chat (TAL-1344)', () => {
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ code: 'owner_attachments_unavailable' })
     expect(submits()).toEqual([])
+  })
+
+  it('refuses one file named twice, and more bytes in one message than the owner path carries', async () => {
+    const small = await uploaded('shot.png', IMAGES['shot.png'])
+    const first = await s.deps.uploads.store(sid, 'first.png', bigPng(17 * 1024 * 1024))
+    const second = await s.deps.uploads.store(sid, 'second.png', bigPng(17 * 1024 * 1024))
+    for (const [files, reason] of [[[small, small], 'duplicate'], [[first, second], 'too_large_total']] as const) {
+      const response = await send(files.map((file) => ({ path: file.path, mime: file.mime })))
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({ code: 'owner_attachment_unsupported', reason })
+    }
+    expect(submits()).toEqual([])
+  })
+
+  it('holds image bytes for one send at a time, and frees them once the owner answers', async () => {
+    const first = await s.deps.uploads.store(sid, 'first.png', bigPng(17 * 1024 * 1024))
+    const second = await s.deps.uploads.store(sid, 'second.png', bigPng(17 * 1024 * 1024))
+    let answer!: () => void
+    const held = new Promise<void>((resolve) => { answer = resolve })
+    submitted = () => ({ ...attached(snapshot(owned)), receipt: admission('queued') })
+    sidecar.respond('gateway.session', async (params) => {
+      if (params.action !== 'submit') return attached(snapshot(owned))
+      if (params.request_id === 'held') await held
+      return submitted(params)
+    })
+    const pending = send([{ path: first.path, mime: first.mime }], 'held')
+    await vi.waitFor(() => { expect(submits()).toHaveLength(1) })
+    const busy = await send([{ path: second.path, mime: second.mime }], 'concurrent')
+    expect(busy.status).toBe(503)
+    expect(await busy.json()).toMatchObject({ code: 'owner_images_busy' })
+    answer()
+    expect((await pending).status).toBe(200)
+    expect((await send([{ path: second.path, mime: second.mime }], 'concurrent')).status).toBe(200)
   })
 
   it.each(['owner_image_refused', 'owner_changed', 'owner_images_unsupported', 'invalid_params'])('answers a %s refusal as not admitted, so the draft comes back', async (reason) => {

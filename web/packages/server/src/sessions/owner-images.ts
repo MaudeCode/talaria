@@ -3,7 +3,7 @@
  * server verifies its bytes at upload and again at send, then the owner stages them through `image.attach_bytes`. The
  * owner's staged path never leaves the sidecar, and no file outside this chat's inbox reaches the owner.
  */
-import { OWNER_IMAGE_LIMIT, OWNER_IMAGE_MAX_BYTES, OwnerImageMimeSchema, type GatewaySessionParams } from '@maudecode/talaria-web-contracts'
+import { OWNER_IMAGE_LIMIT, OWNER_IMAGE_MAX_BYTES, OWNER_IMAGES_MAX_TOTAL_BYTES, OwnerImageMimeSchema, type GatewaySessionParams } from '@maudecode/talaria-web-contracts'
 import { basename } from 'node:path'
 import { isCompleteRaster } from '../raster-image.js'
 import { resolvePathLikePython } from '../workspace/paths.js'
@@ -31,25 +31,51 @@ export function ownerImage(name: string, bytes: Buffer): OwnerImage['ext'] {
   return ext
 }
 
-/** The images a send names, read from this chat's own inbox and verified again, in order. */
-export async function ownerImages(blobs: BlobStore, sid: string, paths: string[]): Promise<OwnerImage[]> {
+// ponytail: one process-wide budget, so concurrent sends never hold more than one message's bytes; per-user budgets if many people send images at once.
+let inFlight = 0
+
+/**
+ * The images a send names, read from this chat's own inbox and verified again, in order. Sizes are checked from the
+ * store before any byte is read, and the bytes stay reserved until `release`, once the owner has answered.
+ */
+export async function ownerImages(blobs: BlobStore, sid: string, paths: string[]): Promise<{ images: OwnerImage[]; release: () => void }> {
   if (paths.length > OWNER_IMAGE_LIMIT) throw new HttpFailure(400, `At most ${String(OWNER_IMAGE_LIMIT)} images can be sent at once`, { code: 'owner_attachment_unsupported', reason: 'too_many' })
-  const images: OwnerImage[] = []
+  if (new Set(paths).size !== paths.length) throw unsupported('duplicate')
+  const files: { key: string; size: number }[] = []
   for (const path of paths) {
     const key = path ? blobKeyForPath(blobs.attachmentRoot(), resolvePathLikePython(path)) : null
     // A top-level file of this chat's inbox: never another chat's file, an extracted tree or a host path.
     if (!key?.startsWith(attachmentPrefix(sid)) || key.slice(attachmentPrefix(sid).length).includes('/')) throw unsupported('not_in_chat')
-    const stored = await blobs.get(key)
-    if (!stored) throw unsupported('not_found')
-    const chunks: Buffer[] = []
-    let size = 0
-    for await (const chunk of stored.body as AsyncIterable<Buffer>) {
-      size += chunk.length
-      if (size > OWNER_IMAGE_MAX_BYTES) { stored.body.destroy(); throw unsupported('too_large') }
-      chunks.push(chunk)
-    }
-    const bytes = Buffer.concat(chunks)
-    images.push({ data_base64: bytes.toString('base64'), ext: ownerImage(basename(key), bytes) })
+    const stat = await blobs.stat(key)
+    if (!stat) throw unsupported('not_found')
+    if (stat.size > OWNER_IMAGE_MAX_BYTES) throw unsupported('too_large')
+    files.push({ key, size: stat.size })
   }
-  return images
+  const total = files.reduce((sum, file) => sum + file.size, 0)
+  if (total > OWNER_IMAGES_MAX_TOTAL_BYTES) throw unsupported('too_large_total')
+  if (inFlight + total > OWNER_IMAGES_MAX_TOTAL_BYTES) throw new HttpFailure(503, 'Other images are being sent. Try again in a moment.', { code: 'owner_images_busy' })
+  inFlight += total
+  let released = false
+  const release = (): void => { if (!released) { released = true; inFlight -= total } }
+  try {
+    const images: OwnerImage[] = []
+    for (const { key, size } of files) {
+      const stored = await blobs.get(key)
+      if (!stored) throw unsupported('not_found')
+      const chunks: Buffer[] = []
+      let read = 0
+      for await (const chunk of stored.body as AsyncIterable<Buffer>) {
+        read += chunk.length
+        // The stored file may have grown since its size was checked; never read past what was reserved.
+        if (read > size) { stored.body.destroy(); throw unsupported('too_large') }
+        chunks.push(chunk)
+      }
+      const bytes = Buffer.concat(chunks)
+      images.push({ data_base64: bytes.toString('base64'), ext: ownerImage(basename(key), bytes) })
+    }
+    return { images, release }
+  } catch (error) {
+    release()
+    throw error
+  }
 }

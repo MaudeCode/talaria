@@ -11324,6 +11324,10 @@
               "reactions_supported": {
                 "type": "boolean"
               },
+              "image_attachments": {
+                "description": "TAL-1344: the owner stages images (`image-attach-v1`). Absent from older sidecars.",
+                "type": "boolean"
+              },
               "transcripts": {
                 "description": "TAL-2072: the owner serves `transcript`, its stored history read. Absent on older owners.",
                 "type": "boolean"
@@ -12986,6 +12990,10 @@
                 "maximum": 9007199254740991
               },
               "reactions_supported": {
+                "type": "boolean"
+              },
+              "image_attachments": {
+                "description": "TAL-1344: the owner stages images (`image-attach-v1`). Absent from older sidecars.",
                 "type": "boolean"
               },
               "transcripts": {

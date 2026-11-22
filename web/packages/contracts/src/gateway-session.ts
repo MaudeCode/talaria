@@ -43,11 +43,13 @@ export const GatewayAdmissionSchema = z.object({
 })
 /**
  * TAL-1344: the image kinds an owner chat takes, as the owner's `image.attach_bytes` stages them, at most
- * `OWNER_IMAGE_LIMIT` per message and `OWNER_IMAGE_MAX_BYTES` each. The server verifies every file's bytes before staging.
+ * `OWNER_IMAGE_LIMIT` per message, `OWNER_IMAGE_MAX_BYTES` each and `OWNER_IMAGES_MAX_TOTAL_BYTES` together. The server verifies every file's bytes before staging.
  */
 export const OwnerImageMimeSchema = z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 export const OWNER_IMAGE_LIMIT = 10
 export const OWNER_IMAGE_MAX_BYTES = 20 * 1024 * 1024
+/** All of one message's images together; the server also holds at most this many image bytes in flight at once. */
+export const OWNER_IMAGES_MAX_TOTAL_BYTES = 32 * 1024 * 1024
 export const GatewaySnapshotSchema = z.object({
   plan_gauge: PlanGaugeSchema.nullable().optional(),
   session_id: z.string(), stored_session_id: z.string(), messages: z.array(ObjectSchema), message_count: z.number().int(),

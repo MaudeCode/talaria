@@ -653,7 +653,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     detail = unavailable("unsupported")
                 return {"state": "attached", "reason": None, "snapshot": snap, "receipt": None, "context_detail": detail}
             if action == "submit":
-                staged = []
+                staged, prior = [], None
                 if "images" in params:
                     if not snap["image_attachments"]:
                         return _refused("incompatible", "owner_images_unsupported")
@@ -662,13 +662,21 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                         return _refused("refused", "owner_changed")
                     try:
                         staged = [await _stage_image(client, common, image) for image in params["images"]]
-                    except Exception:  # noqa: BLE001 - nothing was submitted, so the input is known not admitted
-                        return _refused("refused", "owner_image_refused")
+                    except Exception:  # noqa: BLE001 - this attempt submitted nothing; an earlier one may have
+                        # A retried identity whose first ACK was lost may already be admitted: answer with that
+                        # admission. Only an identity the owner provably never admitted is refused.
+                        try:
+                            prior = await asyncio.to_thread(_admission_for, home, sid, params["request_id"])
+                        except Exception:  # noqa: BLE001 - an unreadable ledger cannot exclude the earlier admission
+                            return _refused("unavailable", "owner_connection_lost")
+                        if prior is None:
+                            return _refused("refused", "owner_image_refused")
                 # The caller retains this identity across lost ACKs. An ambiguous error never
                 # causes this adapter to generate a replacement or replay started work. A retry
                 # stages again; the owner matches it to the admission by identity and image digest.
-                receipt = await client.rpc("prompt.submit", **common, submission_id=params["request_id"], text=params["text"],
-                                           **({"attachments": staged} if staged else {}))
+                receipt = await (client.rpc("prompt.receipt", **common, admission_id=prior) if prior else
+                                 client.rpc("prompt.submit", **common, submission_id=params["request_id"], text=params["text"],
+                                            **({"attachments": staged} if staged else {})))
             elif action == "receipt":
                 receipt = await client.rpc("prompt.receipt", **common, admission_id=params["admission_id"])
             elif action in {"cancel", "discard"}:
@@ -820,6 +828,14 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             if subscription:
                 with suppress(Exception):
                     await client.rpc("session.detach", session_id=sid, subscription_id=subscription)
+
+
+def _admission_for(home: Path, sid: str, request_id: str) -> str | None:
+    """The owner's admission already holding this submission identity in its session, read-only. Raises when unreadable."""
+    with closing(sqlite3.connect((home / "state.db").as_uri() + "?mode=ro", uri=True, timeout=_STATE_BUSY_BUDGET)) as db:
+        row = db.execute("SELECT admission_id FROM session_admissions WHERE target_session_id=? AND request_id=?",
+                         (sid, request_id)).fetchone()
+    return row[0] if row else None
 
 
 async def _stage_image(client, common: dict, image: dict) -> dict:

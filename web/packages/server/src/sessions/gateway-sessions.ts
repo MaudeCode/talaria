@@ -1134,13 +1134,15 @@ export class GatewaySessions {
     if (!this.attachment(before).can_submit) throw new HttpFailure(before.state === 'attached' ? 409 : 403, 'The owning Agent is unavailable or needs an explicit recovery decision', { owner_attachment: this.attachment(before) })
     if (typeof body.submission_id !== 'string' || !body.submission_id || body.submission_id.length > 128) throw new HttpFailure(400, 'A stable submission_id is required for an owner chat')
     if (paths.length && !this.attachment(before).can_attach) throw new HttpFailure(409, 'This chat\'s Agent cannot take images', { code: 'owner_attachments_unavailable' })
-    // TAL-1344: each file is read from this chat's own inbox and verified before the owner stages it; nothing is staged yet.
-    const images = paths.length ? await ownerImages(this.deps.service.deps.blobs, sid, paths) : null
     // Resolve display state before admission; a failed post-ACK read must never turn accepted work into a refusal.
     const base = await (timing ? timing.measure('owner_detail', () => this.deps.service.detail(sid, {})) : this.deps.service.detail(sid, {}))
     if (fence && (!this.deps.service.deps.profilesMatch(str(base.profile) || null, fence.profile) || (str(base.project_id) || null) !== fence.project_id || before.snapshot?.authority_epoch !== fence.authority_epoch || before.snapshot.running || before.snapshot.pending.some((p) => p.status !== 'terminal'))) throw new HttpFailure(409, 'Queue target changed or is busy')
+    // TAL-1344: each file is read from this chat's own inbox and verified before the owner stages it; its bytes stay
+    // reserved until the owner answers, and every exit before that call releases them.
+    const staged = paths.length ? await ownerImages(this.deps.service.deps.blobs, sid, paths) : null
+    const images = staged?.images
     const closeSubmit = timing?.begin('owner_submit')
-    if (activity) await this.activityReceipts(target, before.snapshot ?? undefined, { input: str(body.submission_id), activity })
+    if (activity) await this.activityReceipts(target, before.snapshot ?? undefined, { input: str(body.submission_id), activity }).catch((error: unknown) => { staged?.release(); throw error })
     let settled: () => void = () => undefined
     const pending = this.activityAdmissions.get(target.key) ?? new Set<Promise<void>>()
     const barrier = activity ? new Promise<void>((resolve) => { settled = resolve }) : null
@@ -1149,6 +1151,7 @@ export class GatewaySessions {
     try {
       // Images are staged on the owner this snapshot read; a replaced owner refuses them before staging.
       result = await this.call(target, { action: 'submit', request_id: body.submission_id, text, ...(images ? { images, authority_epoch: before.snapshot!.authority_epoch } : {}) })
+        .finally(() => { staged?.release() })
       if (activity && result.receipt && 'admission_id' in result.receipt) {
         if (str(result.receipt.input_id) && str(result.receipt.input_id) !== str(body.submission_id)) throw new HttpFailure(409, 'The owner returned a receipt for another input. Reconcile before resending.', { outcome_unknown: true })
         const refused = result.receipt.status === 'terminal' && result.receipt.outcome === 'failed'
