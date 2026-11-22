@@ -139305,7 +139305,7 @@
     "/api/commands": {
       "get": {
         "operationId": "commands.list",
-        "summary": "The active profile's slash-command catalog for the requester. TAL-2314: with `prefix` or `client`, the palette's rows for that typed prefix instead: commands `client` runs (without one, commands some client runs) whose name or alias starts with `prefix`, ignoring case, the exact name or alias first, the rest in catalog order, at most 40.",
+        "summary": "The active profile's slash-command catalog for the requester. TAL-2314: with `prefix` or `client`, the palette's rows for that typed prefix instead: commands `client` runs (without one, commands some client runs) whose name or alias starts with `prefix`, ignoring case, the exact name or alias first, the rest in catalog order, at most 40. TAL-1338: with `session_id` of a chat its native owner holds, the catalog also lists the quick commands that owner registers, which run there.",
         "tags": [
           "tools"
         ],
@@ -139328,6 +139328,15 @@
                 "web",
                 "ios"
               ],
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "schema": {
               "type": "string"
             },
             "allowEmptyValue": true,
@@ -139432,7 +139441,7 @@
     "/api/commands/classify": {
       "post": {
         "operationId": "commands.classify",
-        "summary": "TAL-1927: what `text` submitted in Web's composer does, from the requester's catalog for the active profile; with `session_id`, that chat must be visible. Side-effect free. 503 when a command token needs the Agent registry and it is unavailable.",
+        "summary": "TAL-1927: what `text` submitted in Web's composer does, from the requester's catalog for the active profile; with `session_id`, that chat must be visible, and a chat its native owner holds adds that owner's quick commands (TAL-1338). Side-effect free. 503 when a command token needs the Agent registry and it is unavailable.",
         "tags": [
           "tools"
         ],
@@ -139529,6 +139538,7 @@
     "/api/commands/exec": {
       "post": {
         "operationId": "commands.exec",
+        "summary": "Runs an `exec` command and returns its output. TAL-1338: with `session_id` of a chat its native owner holds, that owner runs the command under its own policy and workspace; `/refine`'s summary arrives later as a session notice. 409 when the owner refused it or its outcome is unknown, which is never retried.",
         "tags": [
           "tools"
         ],

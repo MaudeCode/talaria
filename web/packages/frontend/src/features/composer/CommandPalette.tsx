@@ -13,11 +13,11 @@ import { cn } from '../../ui/cn'
  * previous prefix's rows stay shown as `stale` and no key, hover or click picks from them: Enter submits the typed text as
  * when nothing matches, and Tab and the arrows do nothing. A failed read leaves keys to the composer.
  */
-export function useCommandPalette(text: string) {
+export function useCommandPalette(text: string, sessionId: string | null) {
   const match = /^\/([\w-]*)$/.exec(text.trimStart())
   const open = !!match
   const prefix = match?.[1] ?? ''
-  const commands = useQuery({ queryKey: keys.commandSuggestions(prefix), queryFn: ({ signal }) => api.fetchCommands(prefix, signal), enabled: open, staleTime: 5 * 60_000, placeholderData: keepPreviousData })
+  const commands = useQuery({ queryKey: keys.commandSuggestions(prefix, sessionId), queryFn: ({ signal }) => api.fetchCommands(prefix, sessionId, signal), enabled: open, staleTime: 5 * 60_000, placeholderData: keepPreviousData })
   const stale = open && !commands.isError && (commands.isPlaceholderData || !commands.isSuccess)
   const items: CommandSuggestion[] = open ? (commands.data?.commands ?? []).map(toSuggestion) : []
   const [activeState, setActiveState] = useState<{ text: string; index: number }>({ text, index: 0 })

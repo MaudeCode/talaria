@@ -1,5 +1,6 @@
-import { AcceptedSourceReferenceSchema, ApprovalPendingSchema, CommandDecisionSchema, BackgroundLinkSchema, ApprovalRespondRequestSchema, ApprovalRespondResponseSchema, AuxiliaryReasoningSchema, SessionNewRequestSchema } from './views.js'
+import { AcceptedSourceReferenceSchema, ApprovalPendingSchema, CommandDecisionSchema, CommandRowSchema, SessionNoticeSchema, BackgroundLinkSchema, ApprovalRespondRequestSchema, ApprovalRespondResponseSchema, AuxiliaryReasoningSchema, SessionNewRequestSchema } from './views.js'
 import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.js'
+import { toolsContract } from './routes/tools.js'
 import { SessionStreamEventSchema } from './sse.js'
 import { ScreenLeaseInputSchema, ScreenViewSchema } from './screen.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
@@ -243,6 +244,16 @@ describe('contracts package', () => {
     for (const name of ['unknown', 'unsupported']) expect(states[name]).toMatchObject({ running_count: null, awaiting_delivery_count: null, memory_live: null })
     expect(DelegationStatusSchema.safeParse({ ...states.available_zero, running_count: -1 }).success).toBe(false)
     expect(BackgroundTasksResponseSchema.parse({ session_id: 's', tasks: [], pinned_count: 0, agent_available: true }).delegation_status).toBeUndefined()
+  })
+
+  it('carries the native command exchange and review notice the App adopts (TAL-1338)', () => {
+    const fixture = shared('fixtures/web-native-commands.json') as Record<'quick_command' | 'exec_request' | 'exec_response' | 'review_notice', Record<string, unknown>> & { review_summary_event: { payload: { text: string } } }
+    expect(CommandRowSchema.parse(fixture.quick_command)).toMatchObject({ exec: true, handler: 'agent' })
+    expect(toolsContract.commands.exec['~orpc'].inputSchema!.parse(fixture.exec_request)).toEqual(fixture.exec_request)
+    expect(toolsContract.commands.exec['~orpc'].outputSchema!.parse(fixture.exec_response)).toEqual(fixture.exec_response)
+    expect(SessionNoticeSchema.parse({ key: 'review', expires_at: 1, ...fixture.review_notice }).text).toBe(fixture.review_summary_event.payload.text)
+    expect(GatewaySessionResultSchema.parse({ state: 'attached', reason: null, snapshot: null, receipt: null, command_result: { kind: 'prompt' } }).command_result).toEqual({ kind: 'prompt' })
+    expect(GatewaySessionParamsSchema.safeParse({ profile_home: '/h', session_id: 's', action: 'command_dispatch', name: '/deploy now', arg: '' }).success).toBe(false)
   })
 
   it('carries native launch verdicts without making an older background row depend on them (TAL-1340)', () => {
