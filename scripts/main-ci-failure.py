@@ -5,7 +5,6 @@ starts (T3F-136); docs/main-ci-repair.md is the session's guide.
 
 report    A repair session's entry point: given a run ID, re-reads that main or release run from GitHub and prints
           its verified failure report, or why there is nothing to repair.
-park      The needs-a-person issue for a failure the session could not repair: the open one for its key, or a new one.
 findings  Everything the session reads about its own repair PR, and a text-free wait for its next change.
 land      Merges the session's repair PR at an exact head once CI Gate passed there, and reads the merge back on main.
 base      CI's path detection on a main push: prints the commit of the last earlier main run that completed, whose
@@ -13,8 +12,8 @@ base      CI's path detection on a main push: prints the commit of the last earl
 watch     A pull request run's reporter job: from the first failed job or test on, keeps one PR comment naming each
           failure, its tested commit, a local reproduction command and its evidence (docs/main-ci-repair.md).
 
-GitHub is read through `gh`. Only `watch`, `park` and `land` write: watch's own PR comment, a needs-a-person issue, and a
-repair PR's merge.
+GitHub is read through `gh`. Only `watch` and `land` write: watch's own PR comment and a repair PR's merge. A failure a
+session leaves is recorded in Kanvil TAL, never on GitHub (TAL-2574).
 """
 
 import argparse
@@ -130,7 +129,7 @@ def tested_range(base, head):
 
 # Failures (TAL-2397). Main push runs and release runs report their failures; a pull request's own agent owns its
 # failures. Each failure is keyed by its failing test or, without one, its job and step, so the same flaky test failing
-# on main and in a release has one key, which its needs-a-person issue carries.
+# on main and in a release has one key, which a TAL ticket for a failure left to a person carries in its title.
 XCTEST = re.compile(r"Test Case '-\[(TalariaTests|TalariaKitTests)\.([A-Za-z_]\w*) ([A-Za-z_]\w*)\]' failed")
 # A release's test jobs; its other jobs build or publish, and the release recovery path owns those.
 RELEASE_TESTS = re.compile(r"release / (?:app-hosted-tests / |web-tests / |relay-tests / |agent v|contracts$|"
@@ -177,7 +176,6 @@ SHAPES = {
     "merged": r"[1-9][0-9]{0,9}", "id": r"[1-9][0-9]{0,19}", "line": r"[1-9][0-9]{0,6}",
     "sha": r"[0-9a-f]{40}", "head": r"[0-9a-f]{40}", "commit": r"[0-9a-f]{40}", "source": r"[0-9a-f]{40}",
     "foreign": r"[0-9a-f]{12}", "incident": r"[0-9a-f]{12}",
-    "parked": r"[1-9][0-9]{0,9}",
     "test": TEST_ID, "name": job_name, "path": r"(?!.*\.\.)[\w./-]{1,200}", "priority": r"P[0-3]",
     "created": r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", "url": r"https://github\.com/MaudeCode/talaria/actions/runs/"
     r"[1-9][0-9]*(?:/job/[1-9][0-9]*)?", "refused": lambda value: value in LAND_REFUSALS,
@@ -257,7 +255,7 @@ def incident(github, run, kind):
             continue
         name = str(job.get("name", ""))[:MAX_NAME]
         test_lane, _, _, groups = reproduction(name, attempt)
-        # Every failing test the job names is its own failure, so a parked one never hides a new one beside it: each
+        # Every failing test the job names is its own failure with its own key, never folded into another: each
         # XCTest its log names as failed, and each spec file Playwright annotated as failed.
         logged_tests = list(dict.fromkeys("/".join(found) for found in XCTEST.findall(log_text(github, job["id"])))) \
             if test_lane in TARGETS else []
@@ -308,15 +306,10 @@ def incident(github, run, kind):
 ROUTES = {"runner fault": "runner fault: the CI harness owner (tooling) decides, not a failing test",
           "release publication": "release publication: the release recovery path owns it"}
 
-# A repair session's records on GitHub (TAL-2460). A failure it cannot repair gets an open needs-a-person issue carrying
-# `ci-repair-known: <key>`, and the report lists such a failure as known instead of to repair. Only issues a collaborator
-# opened count. Each repair commit and PR body carries the run it repairs and each commit its own branch, which bind
-# `findings` and `land` to that repair.
-KNOWN = "ci-repair-known"
+# A repair session's records on GitHub (TAL-2460). Each repair commit and PR body carries the run it repairs and each
+# commit its own branch, which bind `findings` and `land` to that repair.
 RUN_LINE = "ci-repair-run"
 BRANCH_LINE = "ci-repair-branch"
-KNOWN_LINE = re.compile(rf"^{KNOWN}: ([0-9a-f]{{12}})$", re.M)
-TRUSTED = {"OWNER", "MEMBER", "COLLABORATOR"}
 
 
 def listed(github, path):
@@ -330,23 +323,12 @@ def listed(github, path):
         page += 1
 
 
-def known_failures(github):
-    """{failure key: needs-a-person issue number} from the open issues a collaborator opened (GitHub lists open ones)."""
-    known = {}
-    for issue in listed(github, f"repos/{REPOSITORY}/issues"):
-        if "pull_request" in issue or issue.get("author_association") not in TRUSTED:
-            continue
-        for found in KNOWN_LINE.findall(issue.get("body") or ""):
-            known.setdefault(found, issue["number"])
-    return known
-
-
 def on_main(github, commit):
     return github.get(f"repos/{REPOSITORY}/compare/{commit}...{BRANCH}").get("status") in ("identical", "ahead")
 
 
 def decide(github, run, kind):
-    """What a red run asks of a repair session: {"work": failures, "routed": ..., "known": ...} or {"stop": reason}."""
+    """What a red run asks of a repair session: {"work": failures, "routed": ...} or {"stop": reason}."""
     failures, routed = incident(github, run, kind)
     if not failures:
         return {"stop": "; ".join(f"{fact['label']}: {ROUTES[fact['route']]}" for fact in routed)
@@ -364,15 +346,10 @@ def decide(github, run, kind):
         for item in green if names else []:
             if names <= {job.get("name") for job in jobs(github, item["id"]) if job.get("conclusion") == "success"}:
                 return {"stop": f"superseded: main run {item['id']} at {item['head_sha']} passed"}
-    known = known_failures(github)
-    new = [fact for fact in failures if fact["key"] not in known]
-    if not new:
-        return {"stop": "every failure has an open needs-a-person issue"}
-    return {"work": new, "routed": routed, "known": [(fact, known[fact["key"]]) for fact in failures
-                                                     if fact["key"] in known]}
+    return {"work": failures, "routed": routed}
 
 
-def message(run, kind, failures, routed, known, base=None):
+def message(run, kind, failures, routed, base=None):
     """The verified failure report a repair session works from, filled only with crossed values. How to repair is the
     repository's repair guide, docs/main-ci-repair.md."""
     head = run["source"]
@@ -388,8 +365,6 @@ def message(run, kind, failures, routed, known, base=None):
         lines.append(f"- [{fact['key']}] {where}: {what}{rerun}. Focused command: `{fact['command']}`.{log}")
     for fact in routed:
         lines.append(f"- Not yours: {fact['label']}: {ROUTES[fact['route']]}.")
-    for fact, number in known:
-        lines.append(f"- Known, with open needs-a-person issue #{number}: [{fact['key']}] {fact['label']}.")
     lines += ["", f"Evidence: `gh run view {run['run']} --repo {REPOSITORY} --log-failed` and `gh run download "
               f"{run['run']} --repo {REPOSITORY}`. Reproduce at {head}. Repair this run as docs/main-ci-repair.md says, "
               f"with `{RUN_LINE}: {run['run']}` in the pull request body and every commit."]
@@ -421,23 +396,8 @@ def failure_report(github, run_id):
     if "stop" in decision:
         return {"action": "stop", "reason": decision["stop"]}
     return {"action": "work", "lane": kind,
-            "message": message(facts, kind, decision["work"], decision["routed"], decision["known"],
+            "message": message(facts, kind, decision["work"], decision["routed"],
                                recorded_base(github, run_id) if kind == "main" else None)}
-
-
-def park(github, failure_key, run_id):
-    """The needs-a-person issue for one failure the session could not repair: the open one for its key, or a new one.
-    While it is open, the failure is known, so it shows here once instead of in every later repair."""
-    if not cross("incident", failure_key) or not cross("run", run_id):
-        return {"action": "stop", "reason": "malformed key or run ID"}
-    if (number := known_failures(github).get(failure_key)) is not None:
-        return {"parked": number}
-    issue = github.send("POST", f"repos/{REPOSITORY}/issues", {
-        "title": f"CI failure needs a person ({failure_key})",
-        "body": f"{KNOWN}: {failure_key}\n\nFirst seen in https://github.com/{REPOSITORY}/actions/runs/{run_id}. The "
-                "repair session could not repair it; its findings follow. While this is open, no repair works on this "
-                "failure again. Close it once it is fixed or no longer applies."})
-    return {"parked": issue["number"]}
 
 
 CODEX = "chatgpt-codex-connector[bot]"
@@ -837,9 +797,6 @@ def main(argv=None):
     commands.add_parser("base")
     reporter = commands.add_parser("report", help="the verified failure report of a main or release run")
     reporter.add_argument("--run-id", required=True)
-    parker = commands.add_parser("park")
-    parker.add_argument("--key", required=True)
-    parker.add_argument("--run-id", required=True)
     reader = commands.add_parser("findings")
     reader.add_argument("--pr", type=int, required=True)
     reader.add_argument("--run-id", required=True, help="the run every commit carries")
@@ -859,8 +816,7 @@ def main(argv=None):
     if args.command == "land":
         return land(GitHub(), args.pr, args.head, args.run_id)
     result = {"findings": lambda: wait(GitHub(), args.pr, args.run_id, args.wait),
-              "report": lambda: failure_report(GitHub(), args.run_id),
-              "park": lambda: park(GitHub(), args.key, args.run_id)}[args.command]()
+              "report": lambda: failure_report(GitHub(), args.run_id)}[args.command]()
     print(json.dumps(emit(result), indent=2))
     return 0
 
