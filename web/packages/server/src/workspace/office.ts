@@ -65,8 +65,15 @@ function memberName(raw: string): string {
   return name
 }
 
-/** Every file member, inflated, in archive order, once the whole archive passed the limits. */
-function preflight(format: OfficeFormat, bytes: Buffer): Map<string, Buffer> {
+/**
+ * The uncompressed bytes the Office previews of one request share (TAL-262): one archive's total, so a request that
+ * carries many archives, each within its own caps, still parses no more than one archive at its limit.
+ */
+export interface OfficeBudget { bytes: number }
+export const officeRequestBudget = (): OfficeBudget => ({ bytes: MAX_OFFICE_ARCHIVE_TOTAL_BYTES })
+
+/** Every file member, inflated, in archive order, once the whole archive passed the limits and `budget`, when given. */
+function preflight(format: OfficeFormat, bytes: Buffer, budget?: OfficeBudget): Map<string, Buffer> {
   let entries: ZipEntry[]
   try { entries = readZip(bytes).filter((entry) => !entry.isDir) } catch { throw readError(format) }
   if (entries.length > MAX_OFFICE_ARCHIVE_MEMBERS) throw new OfficeError(LIMIT_MESSAGE)
@@ -76,6 +83,7 @@ function preflight(format: OfficeFormat, bytes: Buffer): Map<string, Buffer> {
     const name = memberName(entry.name)
     total += entry.size
     if (entry.size > memberLimit(format, name) || total > MAX_OFFICE_ARCHIVE_TOTAL_BYTES || entry.size > Math.max(entry.compressedSize, 1) * MAX_OFFICE_COMPRESSION_RATIO) throw new OfficeError(LIMIT_MESSAGE)
+    if (budget && (budget.bytes -= entry.size) < 0) throw new OfficeError(LIMIT_MESSAGE)
     try { parts.set(name, entry.readSync()) } catch { throw readError(format) }
   }
   return parts
@@ -476,8 +484,8 @@ function pptxPreviewText(parts: Map<string, Buffer>): { content: string; truncat
 
 // ── Entry points ─────────────────────────────────────────────────────────
 
-function preview(format: OfficeFormat, bytes: Buffer): Omit<OfficePreview, 'path'> {
-  const parts = preflight(format, bytes)
+function preview(format: OfficeFormat, bytes: Buffer, budget?: OfficeBudget): Omit<OfficePreview, 'path'> {
+  const parts = preflight(format, bytes, budget)
   let text: { content: string; truncated: boolean }
   let reason: string | null
   if (format === 'docx') {
@@ -494,11 +502,14 @@ function preview(format: OfficeFormat, bytes: Buffer): Omit<OfficePreview, 'path
   return out
 }
 
-/** The text preview of an Office file at `path`; throws `OfficeError` for anything the preflight or parser refuses. */
-export function previewOffice(path: string, bytes: Buffer): OfficePreview {
+/**
+ * The text preview of an Office file at `path`; throws `OfficeError` for anything the preflight or parser refuses. A
+ * request previewing several files passes one `officeRequestBudget()` to them all.
+ */
+export function previewOffice(path: string, bytes: Buffer, budget?: OfficeBudget): OfficePreview {
   const format = officeFormat(path)
   if (!format) throw new OfficeError(`Unsupported Office format: ${path}`)
-  return { path, ...preview(format, bytes) }
+  return { path, ...preview(format, bytes, budget) }
 }
 
 /** Characters XML 1.0 cannot carry: C0 controls other than tab and line breaks, U+FFFE, U+FFFF and lone surrogates. */

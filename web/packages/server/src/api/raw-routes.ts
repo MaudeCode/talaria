@@ -29,7 +29,7 @@ import { ZipWriter } from '../workspace/zip.js'
 import { anchoredAt } from '../workspace/escape.js'
 import { guessMime, parseMultipart, sanitizeUploadName, uploadDestination, UploadConflict, UploadRejected, type MultipartResult } from '../workspace/upload.js'
 import { ArchiveRejected, CorruptArchive, extractArchive, isArchiveName } from '../workspace/extract.js'
-import { OfficeError, officeFormat, previewOffice } from '../workspace/office.js'
+import { OfficeError, officeFormat, officeRequestBudget, previewOffice, type OfficeBudget } from '../workspace/office.js'
 import { writeFully } from '../fs/atomic.js'
 import { pythonPrettyJson, renderSessionHtml, renderSessionMarkdown } from '../sessions/export.js'
 import type { Session } from '../sessions/session.js'
@@ -581,15 +581,16 @@ type WorkspaceUploadResult = Record<string, unknown>
 
 /**
  * TAL-262: an uploaded Office file's preview text as `<name>.md` beside it, reported as `sidecar`. Any failure, an
- * existing `.md` included, reports `sidecar_error`, leaves no partial `.md` and keeps the upload.
+ * existing `.md` included, reports `sidecar_error`, leaves no partial `.md` and keeps the upload. All of an upload's
+ * Office files draw on one `budget`, so one request parses at most one archive's worth.
  */
-function officeSidecar(ctx: RequestContext, workspace: string, dest: string, bytes: Buffer): WorkspaceUploadResult {
+function officeSidecar(ctx: RequestContext, workspace: string, dest: string, bytes: Buffer, budget: OfficeBudget): WorkspaceUploadResult {
   const format = officeFormat(dest)
   if (!format) return {}
   const path = `${dest}.md`
   let created = false
   try {
-    const data = Buffer.from(previewOffice(basename(dest), bytes).content, 'utf8')
+    const data = Buffer.from(previewOffice(basename(dest), bytes, budget).content, 'utf8')
     const fd = openAnchoredCreateFd(workspace, path)
     created = true
     try { writeFully(fd, data) } finally { closeSync(fd) }
@@ -634,6 +635,7 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
     throw new HttpError(403, 'Upload target escapes workspace')
   }
   const results: WorkspaceUploadResult[] = []
+  const officeBudget = officeRequestBudget()
   try {
     // Held for the whole upload, extraction included, so a Git operation cannot start in this workspace meanwhile.
     await ctx.deps.git.holdWrite(workspace, async () => {
@@ -672,7 +674,7 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
           results.push(outcome)
           continue
         }
-        results.push({ filename: basename(dest), path: dest, size: file.body.length, mime, is_image: mime.startsWith('image/'), extracted: false, ...officeSidecar(ctx, workspace, dest, file.body) })
+        results.push({ filename: basename(dest), path: dest, size: file.body.length, mime, is_image: mime.startsWith('image/'), extracted: false, ...officeSidecar(ctx, workspace, dest, file.body, officeBudget) })
       }
     })
   } catch (error) {
