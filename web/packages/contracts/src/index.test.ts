@@ -130,6 +130,11 @@ describe('contracts package', () => {
     for (const frame of [fixture.tool_a, fixture.tool_b, fixture.shell]) expect(ChatEventSchema.parse(frame)).toEqual(frame)
     expect(SessionSchema.shape.focus_path.parse(fixture.session.focus_path)).toBe(fixture.session.focus_path)
   })
+  it('carries the first unread row key on the chat-open session, and older servers omit it (TAL-2676)', () => {
+    const { session } = shared('fixtures/unread-from-message.json') as { session: Record<string, unknown> }
+    expect(SessionSchema.parse(session).unread_from_message_id).toBe('m3')
+    expect(SessionSchema.parse({ ...session, unread_from_message_id: undefined }).unread_from_message_id).toBeUndefined()
+  })
   it('carries a running delegated child\'s reread delay, and null once it settles (TAL-1760)', () => {
     const fixture = shared('fixtures/running-subagent.json') as { running: unknown; settled: unknown }
     expect(SessionSchema.parse(fixture.running)).toMatchObject({ activity_phase: 'running', refresh_after: 5 })

@@ -354,7 +354,10 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       await ctx.deps.sessions.deps.warmModelOptions?.()
       await ctx.deps.turns.loadGoal(input.session_id.trim())
       try {
-        return { session: (await ctx.deps.sessions.detail(input.session_id, input)) as { session_id: string; title: string } }
+        const session = await ctx.deps.sessions.detail(input.session_id, input)
+        // TAL-2676: the chat-open read names the first row since this profile last viewed it; older pages need none.
+        if ((input.messages ?? '1') !== '0' && !input.msg_before) session.unread_from_message_id = await ctx.deps.sessions.unreadFromMessageId(str(session.session_id) || input.session_id, requesterProfile(ctx, await ensureTrustedAuthSession(ctx)))
+        return { session: session as { session_id: string; title: string } }
       } catch (error) {
         // Runs left on the relay by a deletion that predates `clearRelayCompletions` clear when the id is next requested.
         const sid = input.session_id.trim()
@@ -700,6 +703,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
     }),
     viewed: os.talaria.viewed.handler(({ input, context: { ctx } }) => run(async () => {
       await ctx.deps.notifications.markViewed(input.session_id.trim())
+      await ctx.deps.sessions.markViewed(input.session_id.trim(), requesterProfile(ctx, await ensureTrustedAuthSession(ctx)))
       return { ok: true as const }
     })),
   },
@@ -1110,9 +1114,13 @@ function spawnDetached(cmd: string[]): Promise<void> {
 /** Alerts are scoped like presence leases: the login's bound profile, else the active one, with root as `default`. */
 export async function notificationRequester(ctx: RequestContext): Promise<WebPushRequester> {
   const session = await ensureTrustedAuthSession(ctx)
-  const bound = str(session?.bound_profile).trim() || null
-  const name = bound ?? ctx.deps.activeProfile()
-  return { profile: ctx.deps.isRootProfile(name) ? 'default' : name, login: session?.token ? loginHash(session.token) : null, origin: new URL(await requestBaseUrl(ctx)).origin }
+  return { profile: requesterProfile(ctx, session), login: session?.token ? loginHash(session.token) : null, origin: new URL(await requestBaseUrl(ctx)).origin }
+}
+
+/** The profile a request acts as: its sign-in's bound profile, else the active one; the root profile is `default`. */
+function requesterProfile(ctx: RequestContext, session: Awaited<ReturnType<typeof ensureTrustedAuthSession>>): string {
+  const name = str(session?.bound_profile).trim() || ctx.deps.activeProfile()
+  return ctx.deps.isRootProfile(name) ? 'default' : name
 }
 
 async function webPushCall<T>(fn: () => Promise<T>): Promise<T> {
