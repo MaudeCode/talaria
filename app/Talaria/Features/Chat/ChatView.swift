@@ -121,6 +121,11 @@ struct ChatView: View {
     /// TAL-1540: the page that slides with the sidebar column, out past the trailing edge or back in beside the chat.
     @State private var slidingCompanionPage: SlidingCompanionPage?
     @State private var companionPagePreview = CompanionPagePreview()
+    /// TAL-1541: the page's share of the arrangement, fully open and in book pose.
+    @AppStorage(CompanionPageDivider.landscapeShareKey) private var companionPageLandscapeShare = CompanionPageDivider.defaultShare
+    @AppStorage(CompanionPageDivider.bookPoseShareKey) private var companionPageBookPoseShare = CompanionPageDivider.defaultShare
+    /// A drag of the page's divider in progress.
+    @State private var companionPageDrag: CompanionPageDrag?
     @Environment(\.holdsForegroundLayout) private var holdsForegroundLayout
     @Environment(\.targetChatLayoutWidth) private var splitTargetChatLayoutWidth
     @State private var lastActiveLayoutSize: CGSize = .zero
@@ -1171,7 +1176,9 @@ struct ChatView: View {
     /// wider than its pane overflows the pane's leading edge and is clipped there. A page returning with the column's
     /// close takes its width from the target (TAL-1540).
     private var targetChatLayoutWidth: CGFloat? {
-        arrangementShowsSecondary ? nil : splitTargetChatLayoutWidth.map { $0 - returningCompanionPageWidth }
+        // While the page's divider moves, the chat keeps its width and the page's edge passes over it (TAL-1541).
+        if let companionPageDrag { return companionPageDrag.chatWidth }
+        return arrangementShowsSecondary ? nil : splitTargetChatLayoutWidth.map { $0 - returningCompanionPageWidth }
     }
 
     /// The room a page sliding back in keeps at the chat's trailing edge.
@@ -1199,9 +1206,9 @@ struct ChatView: View {
     /// TAL-1540: on the turn before the sidebar column moves, a page the column suspends leaves the arrangement for one
     /// drawn in place over the chat's trailing edge, and a page it brings back waits past that edge.
     private func prepareSlidingCompanionPage(suspended: Bool) {
-        // ponytail: the system split gives the page half the arrangement, measured or, before the column closes, the
-        // split's target; measure the pane if a style ever stops halving it.
-        let width = max(arrangementSize.width, splitTargetChatLayoutWidth ?? 0) / 2
+        // The page's share of the arrangement, measured or, before the column closes, the split's target.
+        let arrangementWidth = max(arrangementSize.width, splitTargetChatLayoutWidth ?? 0)
+        let width = arrangementWidth * RegularSplitLayout.clampedSplitShare(storedCompanionPageShare, width: arrangementWidth)
         if suspended {
             guard companionPageFits, !viewModel.companionFocus.isHidden, !secondaryChatIsBeside else { return }
             slidingCompanionPage = SlidingCompanionPage(width: width, returns: false)
@@ -1222,8 +1229,43 @@ struct ChatView: View {
         return splitFilesInspector?.sidebarColumnIsShown == true ? slidingCompanionPage.width : 0
     }
 
-    /// While a page leaves, the chat keeps to the pane's leading edge, which carries it beside the opening column.
-    private var chatFollowsLeadingEdge: Bool { slidingCompanionPage?.returns == false }
+    /// While a page leaves, the chat keeps to the pane's leading edge, which carries it beside the opening column. While the
+    /// page's divider moves, it keeps there under the page's edge.
+    private var chatFollowsLeadingEdge: Bool { slidingCompanionPage?.returns == false || companionPageDrag != nil }
+
+    /// TAL-1541: the reader's share for the page in this posture.
+    private var storedCompanionPageShare: CGFloat {
+        get { splitFilesInspector?.chatUsesFoldRegions == true ? companionPageBookPoseShare : companionPageLandscapeShare }
+        nonmutating set {
+            if splitFilesInspector?.chatUsesFoldRegions == true { companionPageBookPoseShare = newValue } else { companionPageLandscapeShare = newValue }
+        }
+    }
+
+    /// The page's share of the arrangement as shown: the drag's while one moves the divider, clamped to the arrangement.
+    private var companionPageShare: CGFloat {
+        RegularSplitLayout.clampedSplitShare(companionPageDrag?.share ?? storedCompanionPageShare, width: arrangementSize.width)
+    }
+
+    /// The divider follows the finger; the chat snaps to its new width once, as the finger lifts. A cancelled drag leaves
+    /// the page as it was.
+    private func dragCompanionPage(_ state: UIGestureRecognizer.State, widening: CGFloat) {
+        switch state {
+        case .began, .changed:
+            let width = max(1, arrangementSize.width)
+            var drag = companionPageDrag ?? CompanionPageDrag(startShare: companionPageShare, chatWidth: lastActiveLayoutSize.width)
+            drag.share = RegularSplitLayout.clampedSplitShare(drag.startShare + widening / width, width: width)
+            companionPageDrag = drag
+        case .ended:
+            if let companionPageDrag { storedCompanionPageShare = companionPageDrag.share }
+            companionPageDrag = nil
+        default:
+            companionPageDrag = nil
+        }
+    }
+
+    private func stepCompanionPage(by delta: CGFloat) {
+        storedCompanionPageShare = RegularSplitLayout.clampedSplitShare(companionPageShare + delta, width: arrangementSize.width)
+    }
 
     /// Once the column has moved, a page that left is gone and one that came back leaves its place to the arrangement.
     private func settleSlidingCompanionPage() {
@@ -1278,6 +1320,16 @@ struct ChatView: View {
                                               preview: companionPagePreview)
                                 // Reduce Motion shows the page on its first frame.
                                 .opacity(reduceMotion ? 1 : companionPageOpacity)
+                                .overlay(alignment: .leading) {
+                                    CompanionPageDivider(share: companionPageShare,
+                                                         onPan: { dragCompanionPage($0, widening: $1) },
+                                                         onStep: stepCompanionPage(by:),
+                                                         onReset: { storedCompanionPageShare = CompanionPageDivider.defaultShare })
+                                        .frame(width: 44)
+                                        // Centred on the page's edge.
+                                        .alignmentGuide(.leading) { $0.width / 2 }
+                                }
+                                .splitArrangementLayoutRatio(companionPageShare)
                         }
                     }
                     .arrangementViewStyle(ResizableChatArrangementStyle(isChatSplit: secondaryChatIsBeside,
@@ -4490,6 +4542,14 @@ private struct ChatLiveSync: ViewModifier {
     }
 }
 
+/// TAL-1541: a drag of the companion page's divider: the page's share where it started and as it moves, and the chat's
+/// width, which holds until the finger lifts.
+private struct CompanionPageDrag {
+    let startShare: CGFloat
+    let chatWidth: CGFloat
+    var share: CGFloat = 0
+}
+
 /// TAL-1540: a companion page sliding with the sidebar column.
 private struct SlidingCompanionPage: Equatable {
     let id = UUID()
@@ -4549,8 +4609,9 @@ private struct ChatLayoutInputs: Sendable {
     }
 }
 
-/// The native split owns companion pages and physical fold regions. It has no adjustable divider;
-/// two chats on an undivided display use this style's resizable widths instead.
+/// The native split owns companion pages and physical fold regions. It has no divider of its own: a companion page sets
+/// its share with `splitArrangementLayoutRatio` and draws its own (TAL-1541), and two chats on an undivided display use
+/// this style's resizable widths instead.
 @available(iOS 27.1, *)
 private struct ResizableChatArrangementStyle: ArrangementViewStyle {
     let isChatSplit: Bool
@@ -4561,8 +4622,7 @@ private struct ResizableChatArrangementStyle: ArrangementViewStyle {
         if isChatSplit, !keepsFoldRegions {
             GeometryReader { geometry in
                 let available = max(1, geometry.size.width - 12)
-                let minimum = min(RegularSplitLayout.detailMinWidth, available / 2) / available
-                let share = min(1 - minimum, max(minimum, fraction))
+                let share = RegularSplitLayout.clampedSplitShare(fraction, width: available)
                 HStack(spacing: 0) {
                     configuration.primary.frame(width: available * share)
                     Rectangle()
@@ -4573,7 +4633,7 @@ private struct ResizableChatArrangementStyle: ArrangementViewStyle {
                         .zIndex(1)
                         .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("chat-split"))
                             .onChanged { value in
-                                fraction = min(1 - minimum, max(minimum, (value.location.x - 6) / available))
+                                fraction = RegularSplitLayout.clampedSplitShare((value.location.x - 6) / available, width: available)
                             })
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Chat split")
@@ -4581,8 +4641,8 @@ private struct ResizableChatArrangementStyle: ArrangementViewStyle {
                         .accessibilityValue(Double(share).formatted(.percent.precision(.fractionLength(0))))
                         .accessibilityAdjustableAction { direction in
                             switch direction {
-                            case .increment: fraction = min(1 - minimum, share + 0.1)
-                            case .decrement: fraction = max(minimum, share - 0.1)
+                            case .increment: fraction = RegularSplitLayout.clampedSplitShare(share + 0.1, width: available)
+                            case .decrement: fraction = RegularSplitLayout.clampedSplitShare(share - 0.1, width: available)
                             @unknown default: break
                             }
                         }

@@ -580,21 +580,6 @@ final class DuoFoldHostedTests: XCTestCase {
         }
     }
 
-    /// A reader drags up into the middle of the transcript and lets go there; returns the row at its top.
-    private func scrollReaderToMiddle(in window: UIWindow) async throws -> String {
-        _ = try await requireElement(in: window, "The transcript never loaded", where: FixtureApp.isLoadedTranscriptRow)
-        settle(0.5)
-        let scroll = try transcriptScrollView(in: window)
-        let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
-        coordinator.scrollPositionController?.userDidBeginDragging()
-        coordinator.onFollowEvent(.userScrollBegin)
-        scroll.contentOffset.y = max(0, scroll.contentSize.height / 2)
-        // The rows around the reader are built and measured before the finger lifts, as during a drag.
-        _ = await awaitCondition { coordinator.scrollPositionController?.isRealizingRows == false }
-        coordinator.onFollowEvent(.userScrollEnd(isAtBottom: false))
-        return try XCTUnwrap(readingRow(in: window), "No row at the top of the transcript")
-    }
-
     /// The window once the transcript has built the rows around the reader. Row building runs on the main actor, which
     /// `settle()` keeps busy, so this waits by sleeping.
     private func attachRealizedTranscript(_ window: UIWindow, name: String) async {
@@ -604,11 +589,6 @@ final class DuoFoldHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: name)
     }
 
-    /// The row at the top of the visible transcript, as the transcript measures it.
-    private func readingRow(in window: UIWindow) -> String? {
-        window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator?.scrollPositionController?.readingAnchorRowID
-    }
-
     private func transcriptScrollView(in window: UIWindow, timeout: TimeInterval = 10) throws -> UIScrollView {
         var scroll: UIScrollView?
         waitUntil(timeout: timeout) {
@@ -616,12 +596,6 @@ final class DuoFoldHostedTests: XCTestCase {
             return scroll != nil
         }
         return try XCTUnwrap(scroll, "The transcript's native scroll handler did not attach")
-    }
-
-    private func mountedTranscriptScrollView(in window: UIWindow) -> UIScrollView? {
-        window.firstView(ofType: ChatMessageMenuHostView.self)?.superview.flatMap {
-            sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
-        }
     }
 }
 
@@ -633,6 +607,40 @@ final class HostedDuoDisplay {
 }
 
 extension XCTestCase {
+    /// A reader drags up into the middle of the transcript and lets go there; returns the row at its top.
+    @MainActor
+    func scrollReaderToMiddle(in window: UIWindow) async throws -> String {
+        _ = try await requireElement(in: window, "The transcript never loaded", where: FixtureApp.isLoadedTranscriptRow)
+        settle(0.5)
+        var mounted: UIScrollView?
+        waitUntil(timeout: 10) {
+            mounted = self.mountedTranscriptScrollView(in: window)
+            return mounted != nil
+        }
+        let scroll = try XCTUnwrap(mounted, "The transcript's native scroll handler did not attach")
+        let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
+        coordinator.scrollPositionController?.userDidBeginDragging()
+        coordinator.onFollowEvent(.userScrollBegin)
+        scroll.contentOffset.y = max(0, scroll.contentSize.height / 2)
+        // The rows around the reader are built and measured before the finger lifts, as during a drag.
+        _ = await awaitCondition { coordinator.scrollPositionController?.isRealizingRows == false }
+        coordinator.onFollowEvent(.userScrollEnd(isAtBottom: false))
+        return try XCTUnwrap(readingRow(in: window), "No row at the top of the transcript")
+    }
+
+    /// The row at the top of the visible transcript, as the transcript measures it.
+    @MainActor
+    func readingRow(in window: UIWindow) -> String? {
+        window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator?.scrollPositionController?.readingAnchorRowID
+    }
+
+    @MainActor
+    func mountedTranscriptScrollView(in window: UIWindow) -> UIScrollView? {
+        window.firstView(ofType: ChatMessageMenuHostView.self)?.superview.flatMap {
+            sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
+        }
+    }
+
     /// Closes the Duo onto its outer display (compact) or opens it onto the inner one (regular), as the device does:
     /// the same window takes the other display's size and size class.
     @MainActor

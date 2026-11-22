@@ -2783,6 +2783,111 @@ extension RegularSplitHostedTests {
         XCTAssertEqual(try XCTUnwrap(first, "The companion page never showed"), 1, accuracy: 0.001, "The page faded under Reduce Motion")
     }
 
+    /// TAL-1541: dragging the page's divider 100pt toward the leading edge widens the page by 100pt. The chat keeps its
+    /// width while the finger moves and takes its new width once, as the finger lifts, at the reader's row.
+    func testDraggingTheCompanionPageDividerWidensThePageAndTheChatSnapsOnce() async throws {
+        let window = try await openChatBesideCompanionDivider()
+        let reading = try await scrollReaderToMiddle(in: window)
+        let divider = try await companionPageDivider(in: window)
+        let before = try await settledCompanionPageWidth(in: window)
+        let chatBefore = try XCTUnwrap(transcriptScrollView(in: window)?.bounds.width)
+
+        divider.panned(ScriptedPan(state: .began, x: 0))
+        divider.panned(ScriptedPan(state: .changed, x: -100))
+        let widened = await awaitCondition { abs((self.companionPageWidth(in: window) ?? 0) - before - 100) <= 1 }
+        XCTAssertTrue(widened, "The page is \(String(describing: companionPageWidth(in: window))) wide mid-drag, not \(before + 100)")
+        XCTAssertEqual(transcriptScrollView(in: window)?.bounds.width, chatBefore, "The chat re-wrapped while the finger moved")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-divider-dragging")
+
+        // The release's own update can reach the first committed frame, so the width before it starts the record.
+        var widths = [chatBefore]
+        try await sampleCommittedLayouts(in: window) {
+            if let width = self.transcriptScrollView(in: window)?.bounds.width, widths.last != width { widths.append(width) }
+        } during: {
+            divider.panned(ScriptedPan(state: .ended, x: -100))
+            _ = await awaitQuiet { self.transcriptScrollView(in: window)?.bounds.width }
+        }
+        XCTAssertEqual(widths.count, 2, "The chat went through \(widths) after the drag, not one new width")
+        XCTAssertEqual(widths.last ?? 0, chatBefore - 100, accuracy: 1, "The chat did not take the page's room")
+        XCTAssertEqual(companionPageWidth(in: window) ?? 0, before + 100, accuracy: 1, "The page did not keep its width")
+        let kept = await awaitCondition { self.readingRow(in: window) == reading }
+        XCTAssertTrue(kept, "The drag moved the reader from \(reading) to \(readingRow(in: window) ?? "nothing")")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-divider-dragged")
+    }
+
+    /// TAL-1541: the page's width outlives its views, and a double-tap on the divider halves the arrangement again.
+    func testTheCompanionPageKeepsItsWidthUntilTheDividerIsDoubleTapped() async throws {
+        let first = try await openChatBesideCompanionDivider()
+        let half = try await settledCompanionPageWidth(in: first)
+        try await companionPageDivider(in: first).accessibilityIncrement()
+        let widened = try await settledCompanionPageWidth(in: first)
+        XCTAssertGreaterThan(widened, half + 50, "Incrementing the divider did not widen the page")
+        first.isHidden = true
+
+        let window = try await openChatBesideCompanionDivider(resettingWidth: false)
+        let restored = await awaitCondition { abs((self.companionPageWidth(in: window) ?? 0) - widened) <= 1 }
+        XCTAssertTrue(restored, "A rebuilt chat shows its page \(String(describing: companionPageWidth(in: window))) wide, not \(widened)")
+        try await companionPageDivider(in: window).resetWidth()
+        let reset = await awaitCondition { abs((self.companionPageWidth(in: window) ?? 0) - half) <= 1 }
+        XCTAssertTrue(reset, "A double-tap left the page \(String(describing: companionPageWidth(in: window))) wide, not \(half)")
+    }
+
+    /// TAL-1541: VoiceOver steps the page's share by a tenth, never past either pane's narrowest width.
+    func testVoiceOverStepsTheCompanionPageWidthWithinTheClamp() async throws {
+        let window = try await openChatBesideCompanionDivider()
+        let divider = try await companionPageDivider(in: window)
+        XCTAssertEqual(divider.accessibilityLabel, "Companion page width")
+        XCTAssertTrue(divider.accessibilityTraits.contains(.adjustable))
+        func share() -> Double { UserDefaults.standard.object(forKey: CompanionPageDivider.landscapeShareKey) as? Double ?? 0.5 }
+        divider.accessibilityIncrement()
+        XCTAssertEqual(share(), 0.6, accuracy: 0.001, "An increment widens the page by a tenth")
+        divider.accessibilityDecrement()
+        divider.accessibilityDecrement()
+        XCTAssertEqual(share(), 0.4, accuracy: 0.001, "A decrement narrows the page by a tenth")
+        _ = try await settledCompanionPageWidth(in: window)
+        let width = window.bounds.width
+        for _ in 0..<5 { divider.accessibilityDecrement() }
+        XCTAssertEqual(share() * width, RegularSplitLayout.detailMinWidth, accuracy: 1, "The page went under its narrowest width")
+        for _ in 0..<10 { divider.accessibilityIncrement() }
+        XCTAssertEqual((1 - share()) * width, RegularSplitLayout.detailMinWidth, accuracy: 1, "The chat went under its narrowest width")
+    }
+
+    /// The fixture chat at the Duo's inner landscape with its page beside it, at the default width unless the test keeps
+    /// the width it set. The test's end forgets the width.
+    private func openChatBesideCompanionDivider(resettingWidth: Bool = true) async throws -> UIWindow {
+        try requireArrangement()
+        for key in [CompanionPageDivider.landscapeShareKey, CompanionPageDivider.bookPoseShareKey] where resettingWidth {
+            UserDefaults.standard.removeObject(forKey: key)
+            addTeardownBlock { UserDefaults.standard.removeObject(forKey: key) }
+        }
+        let window = try await openCompanionChat([UITestFixtureEnvironment.companionFocusArgument], size: HostedSize.duoInnerLandscape,
+                                                 writes: false)
+        let gamma = await companionTitle("Gamma.swift", in: window)
+        XCTAssertNotNil(gamma, "The companion page never showed")
+        window.endEditing(true)
+        return window
+    }
+
+    private func companionPageDivider(in window: UIWindow) async throws -> CompanionPageDividerView {
+        var divider: CompanionPageDividerView?
+        _ = await awaitCondition {
+            divider = window.firstView(ofType: CompanionPageDividerView.self)
+            return divider != nil
+        }
+        return try XCTUnwrap(divider, "The companion page has no width divider")
+    }
+
+    private func settledCompanionPageWidth(in window: UIWindow) async throws -> CGFloat {
+        let width = await awaitQuiet { self.companionPageWidth(in: window) }
+        return try XCTUnwrap(width.flatMap { $0 }, "The companion page never settled")
+    }
+
+    /// The page's width as laid out: from its divider, centred on its leading edge, to the window's trailing edge.
+    private func companionPageWidth(in window: UIWindow) -> CGFloat? {
+        guard let divider = window.firstView(ofType: CompanionPageDividerView.self) else { return nil }
+        return window.bounds.maxX - divider.convert(divider.bounds, to: window).midX
+    }
+
     func testAFileChosenInTheBrowserHoldsUntilFollowResumes() async throws {
         try requireArrangement()
         let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInnerLandscape)

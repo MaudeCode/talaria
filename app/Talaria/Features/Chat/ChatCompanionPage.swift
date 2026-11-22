@@ -136,3 +136,78 @@ final class CompanionPagePreview {
         return made
     }
 }
+
+/// TAL-1541: the handle on the companion page's leading edge that sets the page's width. It reports a drag as the points
+/// the page widens by, toward the leading edge whatever the layout direction.
+struct CompanionPageDivider: UIViewRepresentable {
+    /// The page's share of the arrangement in each posture, device-local.
+    static let landscapeShareKey = "chat.companionPageShare.landscape"
+    static let bookPoseShareKey = "chat.companionPageShare.bookPose"
+    static let defaultShare = 0.5
+    /// How far one VoiceOver increment or decrement moves it.
+    static let step: CGFloat = 0.1
+
+    let share: CGFloat
+    let onPan: (UIGestureRecognizer.State, CGFloat) -> Void
+    let onStep: (CGFloat) -> Void
+    let onReset: () -> Void
+
+    func makeUIView(context: Context) -> CompanionPageDividerView { CompanionPageDividerView() }
+
+    func updateUIView(_ view: CompanionPageDividerView, context: Context) {
+        view.share = share
+        view.onPan = onPan
+        view.onStep = onStep
+        view.onReset = onReset
+    }
+}
+
+/// UIKit gestures, so a pan's translation stays in the window while the page's edge moves under the finger.
+final class CompanionPageDividerView: UIView, UIPointerInteractionDelegate {
+    var share: CGFloat = CompanionPageDivider.defaultShare {
+        didSet { accessibilityValue = Double(share).formatted(.percent.precision(.fractionLength(0))) }
+    }
+    var onPan: (UIGestureRecognizer.State, CGFloat) -> Void = { _, _ in }
+    var onStep: (CGFloat) -> Void = { _ in }
+    var onReset: () -> Void = {}
+    private let line = UIView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        line.backgroundColor = .separator
+        line.isUserInteractionEnabled = false
+        addSubview(line)
+        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(panned(_:))))
+        let reset = UITapGestureRecognizer(target: self, action: #selector(resetWidth))
+        reset.numberOfTapsRequired = 2
+        addGestureRecognizer(reset)
+        addInteraction(UIPointerInteraction(delegate: self))
+        isAccessibilityElement = true
+        accessibilityLabel = String(localized: "Companion page width")
+        accessibilityTraits = .adjustable
+        accessibilityIdentifier = "companion-page-divider"
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let width = 1 / max(1, traitCollection.displayScale)
+        line.frame = CGRect(x: bounds.midX - width / 2, y: 0, width: width, height: bounds.height)
+    }
+
+    @objc func panned(_ pan: UIPanGestureRecognizer) {
+        let towardTrailing = effectiveUserInterfaceLayoutDirection == .rightToLeft ? -1.0 : 1.0
+        onPan(pan.state, -pan.translation(in: window).x * towardTrailing)
+    }
+
+    @objc func resetWidth() { onReset() }
+
+    override func accessibilityIncrement() { onStep(CompanionPageDivider.step) }
+    override func accessibilityDecrement() { onStep(-CompanionPageDivider.step) }
+
+    func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {
+        UIPointerStyle(shape: .verticalBeam(length: min(bounds.height, 36)), constrainedAxes: .horizontal)
+    }
+}

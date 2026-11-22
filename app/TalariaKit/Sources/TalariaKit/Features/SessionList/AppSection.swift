@@ -76,6 +76,14 @@ public enum RegularSplitLayout {
         width > 0 && width >= height
     }
 
+    /// TAL-1541: a pane's share of a two-pane split of `width`, clamped so each pane keeps `detailMinWidth`. A split too
+    /// narrow for two such panes halves.
+    public static func clampedSplitShare(_ share: CGFloat, width: CGFloat) -> CGFloat {
+        guard width > 0 else { return 0.5 }
+        let minimum = min(detailMinWidth, width / 2) / width
+        return min(1 - minimum, max(minimum, share))
+    }
+
     /// Whether the chat's companion page fits beside it only with the sidebar column hidden: the iPhone Duo inner
     /// display and iPad in landscape.
     public static func hidesSidebarForCompanionPage(splitWidth: CGFloat, splitHeight: CGFloat) -> Bool {

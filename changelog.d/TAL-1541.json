@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On iPhone Duo and iPad, drag the edge of the companion page to resize it beside the chat; it keeps the width you choose, and a double-tap on the edge evens the split again.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Resize the companion page",
+        "description": "Drag the edge of the file beside the chat to give it or the chat more room.",
+        "icon": "appearance"
+      }
+    }
+  ]
+}

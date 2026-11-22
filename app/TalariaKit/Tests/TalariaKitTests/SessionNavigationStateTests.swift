@@ -791,6 +791,20 @@ final class AppSectionLayoutTests: XCTestCase {
         XCTAssertFalse(RegularSplitLayout.splitsCompanionPage(width: 700, height: 720))
     }
 
+    /// A dragged or stepped split never leaves either pane under 320pt: at the Duo's 951pt inner landscape and the narrower
+    /// book-pose panes (TAL-1541).
+    func testClampedSplitShareKeepsBothPanesAtTheirNarrowestTestedWidth() {
+        for width: CGFloat in [951, 900, 885, 700, 640] {
+            for share in stride(from: CGFloat(-0.5), through: 1.5, by: 0.05) {
+                let clamped = RegularSplitLayout.clampedSplitShare(share, width: width)
+                XCTAssertGreaterThanOrEqual(width * clamped, RegularSplitLayout.detailMinWidth - 0.001, "share \(share) of \(width)")
+                XCTAssertGreaterThanOrEqual(width * (1 - clamped), RegularSplitLayout.detailMinWidth - 0.001, "share \(share) of \(width)")
+            }
+        }
+        XCTAssertEqual(RegularSplitLayout.clampedSplitShare(0.4, width: 951), 0.4, "A share inside the clamp is kept")
+        XCTAssertEqual(RegularSplitLayout.clampedSplitShare(0.2, width: 600), 0.5, "Too narrow for two 320pt panes halves")
+    }
+
     func testSecondaryChatOpensSwapsClosesAndClearsOnRootReplacement() {
         var state = SessionNavigationState()
         let first = SessionSummary(sessionId: "split-first")
