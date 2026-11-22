@@ -1,10 +1,10 @@
 import { createElement, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { AppWindow, AudioLines, Bot, BookOpen, Brain, Cable, CalendarClock, FilePen, FileText, Globe, Image, List, MessageCircleQuestion, MessagesSquare, Monitor, Plug, Search, Server, SquareKanban, Terminal, Video, Wrench } from 'lucide-react'
+import { AppWindow, AudioLines, Bot, BookOpen, Brain, Cable, CalendarClock, FilePen, FileText, Globe, Image, List, ListTodo, MessageCircleQuestion, MessagesSquare, Monitor, Plug, Search, Server, SquareKanban, Terminal, Video, Wrench } from 'lucide-react'
 import type { ToolKind } from '../../i18n/toolText'
 import { Brandmark } from '../../shell/Brandmark'
 
-const ICONS: Record<string, LucideIcon> = { shell: Terminal, read: FileText, list: List, search: Search, web: Globe, write: FilePen, skill: BookOpen, memory: Brain, delegate: Bot, image: Image, audio: AudioLines, video: Video, image_analysis: Image, video_analysis: Video, session: MessagesSquare, schedule: CalendarClock, connection: Plug, question: MessageCircleQuestion, kanban: SquareKanban, browser: AppWindow, computer: Monitor, mcp: Server, connector: Cable, unknown: Wrench }
+const ICONS: Record<string, LucideIcon> = { shell: Terminal, read: FileText, list: List, search: Search, web: Globe, write: FilePen, skill: BookOpen, memory: Brain, delegate: Bot, image: Image, audio: AudioLines, video: Video, image_analysis: Image, video_analysis: Video, session: MessagesSquare, schedule: CalendarClock, connection: Plug, question: MessageCircleQuestion, kanban: SquareKanban, todo: ListTodo, browser: AppWindow, computer: Monitor, mcp: Server, connector: Cable, unknown: Wrench }
 export function toolIcon(kind: ToolKind): LucideIcon {
   return ICONS[kind] ?? Wrench
 }

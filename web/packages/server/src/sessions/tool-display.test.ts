@@ -25,7 +25,7 @@ describe('toolKind', () => {
     ['memory', 'memory'],
     ['terminal', 'shell'], ['bash', 'shell'], ['exec_command', 'shell'], ['process', 'shell'], ['execute_code', 'shell'],
     ['read_file', 'read'], ['read_url', 'read'], ['vision_analyze', 'image_analysis'], ['video_analyze', 'video_analysis'],
-    ['list_directory', 'list'], ['todo', 'list'], ['todo_list', 'list'],
+    ['list_directory', 'list'], ['todo', 'todo'], ['todo_list', 'todo'], ['TodoList', 'todo'],
     ['web_search', 'web'], ['web_extract', 'web'], ['browser_navigate', 'web'],
     ['search_files', 'search'], ['grep', 'search'], ['rg', 'search'], ['ripgrep', 'search'], ['glob', 'search'],
     ['write_file', 'write'], ['patch', 'write'], ['mcp_filesystem_edit_file', 'write'],

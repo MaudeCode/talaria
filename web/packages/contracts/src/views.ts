@@ -51,12 +51,13 @@ export type Attachment = z.infer<typeof AttachmentSchema>
  * TAL-2326: `session` searches past chats (`session_search`), `schedule` manages scheduled jobs (`cronjob_manage`),
  * `connection` manages connected apps (`manage_connections`) and `question` asks the user (`clarify`).
  * TAL-2327: `kanban` reads or changes Kanban tasks (every `kanban_*` tool); its `ToolVerb` picks the verb.
+ * TAL-993: `todo` updates the run's to-do list (the Agent's `todo_list`, and its legacy `todo`).
  * TAL-2328: `browser` drives the agent's browser (`browser_exec`, `browser_cdp`, `browser_dialog`, `browser_vault`) and
  * `computer` the desktop (`computer_use`); a `ToolVerb` picks the verb of each.
  * TAL-2330: `mcp` runs an MCP server's tool (`mcp__<server>__<tool>`) and `connector` a hosted connector's
  * (`connectors__<app>__<tool>`); each names its app in `app` and its action in `target`.
  */
-export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'session', 'schedule', 'connection', 'question', 'kanban', 'browser', 'computer', 'mcp', 'connector', 'unknown'])
+export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'session', 'schedule', 'connection', 'question', 'kanban', 'todo', 'browser', 'computer', 'mcp', 'connector', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
 /**
  * TAL-2327: what a call of a kind whose tools act differently (`kanban`) does, which picks the verb clients show for it in
@@ -160,7 +161,7 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   skills_list: { kind: 'skill', presentation: 'rows' },
   terminal: { kind: 'shell', presentation: 'terminal' },
   text_to_speech: { kind: 'audio', presentation: 'media' },
-  todo_list: { kind: 'list', presentation: 'todo' },
+  todo_list: { kind: 'todo', presentation: 'todo' },
   video_analyze: { kind: 'video_analysis', presentation: 'analysis' },
   video_generate: { kind: 'video', presentation: 'media' },
   vision_analyze: { kind: 'image_analysis', presentation: 'analysis' },

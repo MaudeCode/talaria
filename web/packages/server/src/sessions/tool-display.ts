@@ -57,7 +57,9 @@ const RULES: [ToolKind, (tokens: Set<string>, name: string) => boolean][] = [
   ['web', (_, n) => n === 'browser_exec'],
   ['shell', (t, n) => ['terminal', 'shell', 'command', 'process', 'bash', 'exec'].some((k) => t.has(k)) || n === 'execute_code'],
   ['read', (t) => ['read', 'view', 'open'].some((k) => t.has(k))],
-  ['list', (t, n) => t.has('list') || n === 'todo'],
+  // TAL-993: the Agent's todo tool (and its legacy name) updates the run's to-do list; it never lists files.
+  ['todo', (_, n) => n === 'todo' || n === 'todo_list'],
+  ['list', (t) => t.has('list')],
   ['web', (t) => ['web', 'fetch', 'curl', 'extract', 'browse', 'browser', 'navigate'].some((k) => t.has(k))],
   ['search', (t) => ['search', 'grep', 'find', 'rg', 'ripgrep', 'glob'].some((k) => t.has(k))],
   ['write', (t) => ['write', 'patch', 'edit'].some((k) => t.has(k))],
