@@ -15,7 +15,7 @@ import type { MessageMatch } from './storage/backend.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
 import { buildActiveTurnToken, copyJson, rawToolText, redactedRunStatus, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
-import type { ScreenView, ContextWindowSource, DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionOutline, SessionSkills } from '@maudecode/talaria-web-contracts'
+import type { ScreenView, ContextWindowSource, DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionFind, SessionOutline, SessionSkills } from '@maudecode/talaria-web-contracts'
 import { addSkillUses, inheritedSkillUses, orderedSkillCounts, resetSkillUses, skillGeneration } from './skill-provenance.js'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
@@ -30,6 +30,7 @@ import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } fr
 import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, emptyLineageReport, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stateDbTimestampSeconds, withStateDbListingReads, type stateDbSessionRow, type StateDbMessageSummary, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { sessionOutline } from './outline.js'
+import { sessionFindMatches } from './find.js'
 import { unreadAfter, viewedRow, type ViewedRow } from './transcript-row.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -1945,6 +1946,17 @@ export class SessionService {
     const users = marked.flatMap((message, index) => (isMessageDict(message) && message.role === 'user' ? [{ message, index }] : []))
     const projected = redactSessionData({ messages: users.map(({ message }) => message) }, this.deps.redactEnabled()).messages as unknown[]
     return sessionOutline(s.session_id, users.map(({ index }, k) => ({ message: projected[k], index })))
+  }
+
+  /**
+   * TAL-2666: find in chat, over the whole public detail (the rows, scenes and redaction its pages show) so every match
+   * names a row and text a client already has.
+   */
+  async find(sid: string, q: string): Promise<SessionFind> {
+    // A blank query matches nothing; its metadata read still answers 404 for an unknown session.
+    const detail = await this.detail(sid, { messages: q.trim() ? '1' : '0' })
+    const rows = q.trim() && Array.isArray(detail.messages) ? detail.messages : []
+    return { session_id: str(detail.session_id) || sid, matches: sessionFindMatches(rows, Number(detail._messages_offset) || 0, q) }
   }
 
   /**
