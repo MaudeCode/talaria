@@ -4,7 +4,8 @@
     "all_profiles": false,
     "jobs": [],
     "other_profile_count": 0,
-    "unwritable_stores": []
+    "unwritable_stores": [],
+    "wrap_response_supported": true
   },
   "method": "GET",
   "path": "/api/crons",
