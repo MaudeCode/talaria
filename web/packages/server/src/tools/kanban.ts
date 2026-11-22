@@ -79,13 +79,27 @@ export function kanbanTaskActions(task: Dict): KanbanTaskActions {
   }
 }
 
+/** Warning and critical ages in seconds by status (TAL-2648); any other status is never stale. */
+const STALE_AFTER: Record<string, [number, number]> = { running: [600, 3600], ready: [3600, Infinity], blocked: [3600, 86400] }
+
+/** The age a card shows and its staleness. The Agent's `task_age` object gives a running task's age since its start and any
+ * other task's since its creation; an Agent before that object sent the number itself. */
+function kanbanTaskAge(task: Dict): { selected_age_seconds: number | null; staleness: 'none' | 'warning' | 'critical' } {
+  const status = str(task.status)
+  const raw = task.age_seconds ?? task.age
+  const value = raw && typeof raw === 'object' ? (raw as Dict)[status === 'running' ? 'started_age_seconds' : 'created_age_seconds'] : raw
+  const age = typeof value === 'number' && Number.isFinite(value) ? value : null
+  const limits = STALE_AFTER[status]
+  return { selected_age_seconds: age, staleness: age === null || !limits ? 'none' : age >= limits[1] ? 'critical' : age >= limits[0] ? 'warning' : 'none' }
+}
+
 /** One task with its server-owned card policy; the Agent's move table it was computed from stays on the server. */
 export function withTaskPolicy(task: unknown): unknown {
   if (!task || typeof task !== 'object' || Array.isArray(task)) return task
   const t: Dict = { ...(task as Dict) }
   const available_actions = kanbanTaskActions(t)
   delete t.agent_move_targets
-  return { ...t, available_actions, requires_running_exit_confirmation: t.read_only !== true && str(t.status) === 'running' }
+  return { ...t, available_actions, requires_running_exit_confirmation: t.read_only !== true && str(t.status) === 'running', ...kanbanTaskAge(t) }
 }
 
 /** Agent event kinds a Block or Unblock writes (`block_task` routes a block to `blocked`, or to `triage`/`todo` with its own kind). */

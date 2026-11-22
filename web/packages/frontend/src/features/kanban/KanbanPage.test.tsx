@@ -23,7 +23,7 @@ function deferred<T>() {
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-const task = (id = 'A', status = 'todo') => ({ id, title: `Task ${id}`, status, session_id: null as string | null, priority: 0, claim_live: false, has_completion_evidence: false, current_run_started_at: null, available_actions: { block: true, unblock: false, complete: true, archive: true, move_to: ['ready', 'done'] }, requires_running_exit_confirmation: status === 'running' })
+const task = (id = 'A', status = 'todo') => ({ id, title: `Task ${id}`, status, session_id: null as string | null, priority: 0, claim_live: false, has_completion_evidence: false, current_run_started_at: null, available_actions: { block: true, unblock: false, complete: true, archive: true, move_to: ['ready', 'done'] }, requires_running_exit_confirmation: status === 'running', selected_age_seconds: null as number | null, staleness: 'none' as 'none' | 'warning' | 'critical' })
 const STATUSES = ['todo', 'ready', 'running', 'blocked', 'done']
 const byStatus = (tasks: ReturnType<typeof task>[]) => STATUSES.map((name) => ({ name, label: name, tasks: tasks.filter((t) => t.status === name) }))
 const snapshot = (tasks = [task(), task('B')], lanes = false) => ({ columns: byStatus(tasks), bulk_move_targets: ['done'], create_statuses: ['todo'], lane_by_profile: lanes, latest_event_id: 7, read_only: false, ...(lanes ? { lanes: [{ assignee: 'scout', count: tasks.length, columns: byStatus(tasks) }] } : {}) })

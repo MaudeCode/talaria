@@ -2148,8 +2148,10 @@ export const CronRunSchema = z.looseObject({ content: z.string().optional(), sni
 export const CronStatusSchema = z.looseObject({ running: z.union([z.boolean(), z.record(z.string(), z.number())]).optional() })
 /** Card actions the server offers for a task's current status (TAL-557); clients show exactly these. `move_to` lists the statuses a Move may target, in display order. */
 export const KanbanTaskActionsSchema = z.object({ block: z.boolean(), unblock: z.boolean(), complete: z.boolean(), archive: z.boolean(), move_to: z.array(z.string()) })
-/** Server-computed card policy on every task the Kanban routes return (TAL-557). `requires_running_exit_confirmation`: any action takes the task out of a live run, so clients confirm first. */
-export const KanbanTaskPolicyShape = { available_actions: KanbanTaskActionsSchema, requires_running_exit_confirmation: z.boolean() }
+export const KanbanStalenessSchema = z.enum(['none', 'warning', 'critical'])
+/** Server-computed card policy on every task the Kanban routes return (TAL-557). `requires_running_exit_confirmation`: any action takes the task out of a live run, so clients confirm first.
+ * `selected_age_seconds`: the age a card shows, a running task's since its start and any other's since its creation, `null` when unknown; `staleness`: how stale the server judges that age (TAL-2648). */
+export const KanbanTaskPolicyShape = { available_actions: KanbanTaskActionsSchema, requires_running_exit_confirmation: z.boolean(), selected_age_seconds: z.number().nullable(), staleness: KanbanStalenessSchema }
 export const KanbanTaskViewSchema = z.looseObject({ id: z.union([z.string(), z.number()]), title: z.string().optional(), status: z.string().optional(), assignee: NullableString.optional(), priority: z.union([z.string(), z.number()]).nullable().optional(), description: z.string().optional(), tags: z.array(z.string()).optional(), session_id: NullableString.optional(), archived: z.boolean().optional(), created_at: Json.optional(), updated_at: Json.optional(), ...KanbanTaskPolicyShape })
 /** A board column in the Agent workflow's order (TAL-796): `name` is the status key, `label` the Agent's English label. */
 export const KanbanColumnSchema = z.looseObject({ name: z.string(), label: z.string(), tasks: z.array(KanbanTaskViewSchema) })

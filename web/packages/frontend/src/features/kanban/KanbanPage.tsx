@@ -197,7 +197,7 @@ export function KanbanPage({ openTaskId, board: requestedBoardSlug, onOpenTask }
   const createTask = useKanbanMutation({
     resource: ({ resource }: { resource: string; board: string | undefined; title: string; description: string; status: string }) => resource,
     readKeys: ({ board }) => kanbanReads(board), exclusive: true,
-    effect: ({ resource, title, status }) => ({ fields: { id: resource, title, status, priority: 0, claim_live: false, has_completion_evidence: false, current_run_started_at: null, requires_running_exit_confirmation: false, available_actions: { block: false, unblock: false, complete: false, archive: false, move_to: [] } } }),
+    effect: ({ resource, title, status }) => ({ fields: { id: resource, title, status, priority: 0, claim_live: false, has_completion_evidence: false, current_run_started_at: null, requires_running_exit_confirmation: false, selected_age_seconds: null, staleness: 'none' as const, available_actions: { block: false, unblock: false, complete: false, archive: false, move_to: [] } } }),
     mutationFn: ({ board, title, description, status }) => api.createKanbanTask(board, { title, description: description || undefined, status: status || undefined }),
     onError: toastError,
   })
