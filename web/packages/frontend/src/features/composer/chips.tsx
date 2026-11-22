@@ -1,7 +1,7 @@
 import { ProviderQuotaPace } from '../settings/ProviderQuotaPace'
 import { useRef, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
-import { ChevronDown, Cpu, Brain, Gauge, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
+import { ChevronDown, Cpu, Brain, Gauge, Wrench, FolderOpen, GitBranch, Settings, Shield } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
@@ -14,8 +14,15 @@ import { ProviderIcon } from '../../lib/providerIcon'
 import { lockBackgroundScroll, ModelPickerContent } from './ModelPicker'
 import { useDebounced } from '../../lib/useDebounced'
 import { useProviderQuotas } from '../../lib/useProviderQuotas'
-import { LEVEL_COLOR } from '../insights/QuotaMeter'
+import { LEVEL_COLOR, QuotaMeter } from '../insights/QuotaMeter'
+import { IconButton } from '../../ui/Button'
+import { Segmented } from '../../ui/Segmented'
+import { useSettingField } from '../settings/useSettingField'
+import { useLocale } from '../../i18n/useLocale'
+import { formatPercent, resetTime } from '../../i18n/units'
 import type { ContextWindowSource, ExecutionMode, ExecutionModes } from '@maudecode/talaria-web-contracts'
+import type { z } from 'zod'
+import type { ProviderQuotasSchema } from '../../contracts'
 
 /**
  * T3 Code's composer control (TAL-429): borderless and muted until hovered, with a faded chevron. `sm` sits in the card's
@@ -75,20 +82,93 @@ export function ModelChip({ model, optionId, servedModel = null, onChange, row }
     trigger={<Chip id={row ? undefined : 'composerModelChip'} icon={icon} label={label} title={title} tooltip={servedModel && !row ? title : `${title}: ${label}`} row={row} className="composer-model-chip" />} />
 }
 
+type ComposerQuota = NonNullable<z.infer<typeof ProviderQuotasSchema>['composer']>
+
 /**
- * TAL-2151: the remaining quota of the provider the chat's model routes to, as the server's `composer` words and levels it,
- * opening that provider's Settings page. Mounted only while `show_quota_chip` is on, so nothing is read while it is off;
- * renders nothing while the server has no figure for the provider.
+ * TAL-2151, TAL-2513: the remaining quota of the provider the chat's model routes to, as the server's `composer` words, levels
+ * and selects it (the `quota_chip_window` setting). The chip opens the windows behind it with their resets and a link to that
+ * provider's Settings page; the phone's overflow row (`row`) lists them inline. Mounted only while `show_quota_chip` is on, so
+ * nothing is read while it is off; renders nothing while the server has no figure for the provider.
  */
 export function QuotaChip({ model, optionId, row }: { model: string | null; optionId: string | null; row?: boolean }) {
   const provider = useChatModelEntry(model, optionId).selected?.provider_id
   const { quotas } = useProviderQuotas({ provider, enabled: !!provider })
   const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
   const quota = provider ? quotas.data?.composer : null
   if (!provider || !quota) return null
-  return <Chip id={row ? undefined : 'composerQuotaChip'} className="composer-quota-chip" row={row} chevron={false} data-level={quota.level} label={quota.label} title={m.composer_quota_chip_title()}
-    icon={<Gauge size={16} className={cn('shrink-0', LEVEL_COLOR[quota.level].text)} aria-hidden="true" />}
-    onClick={() => { void navigate({ to: '/settings/providers/$providerId', params: { providerId: provider } }) }} />
+  const title = m.composer_quota_chip_title()
+  const icon = <Gauge size={16} className={cn('shrink-0', LEVEL_COLOR[quota.level].text)} aria-hidden="true" />
+  const openSettings = () => { setOpen(false); void navigate({ to: '/settings/providers/$providerId', params: { providerId: provider } }) }
+  if (row) {
+    return (
+      <div className="composer-mobile-config-action composer-mobile-context-action" role="group" aria-label={`${title}: ${quota.label}`} data-level={quota.level}>
+        {icon}
+        <div className="composer-mobile-config-copy composer-mobile-context-copy">
+          <span className="composer-mobile-config-kicker">{title}</span>
+          <span className="composer-mobile-config-value">{quota.label}</span>
+          <QuotaDetail quota={quota} onSettings={openSettings} />
+        </div>
+      </div>
+    )
+  }
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger render={<Chip id="composerQuotaChip" className="composer-quota-chip" data-level={quota.level} label={quota.label} title={title} icon={icon} />} />
+      <Popover.Portal>
+        <Popover.Positioner side="top" align="end" sideOffset={6} className="z-[1500]">
+          <Popover.Popup id="composerQuotaPopup" aria-label={title} className={cn('flex w-[min(18rem,calc(100vw-2rem))] flex-col rounded-md border border-border bg-surface px-3 py-2 text-xs text-text shadow-md outline-none', POPUP_MOTION)}>
+            <QuotaDetail quota={quota} onSettings={openSettings} />
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
+const QUOTA_WINDOWS = [
+  { value: 'most_constrained', label: m.composer_quota_window_most_constrained },
+  { value: 'shortest', label: m.composer_quota_window_shortest },
+  { value: 'longest', label: m.composer_quota_window_longest },
+] as const
+
+/**
+ * TAL-2513: the account's name with the provider's Settings link, which window the chip shows (the `quota_chip_window` setting,
+ * saved at once and rolled back with the error toast if refused; the server then headlines it), and each window in the
+ * server's order with its figure, meter and reset.
+ */
+function QuotaDetail({ quota, onSettings }: { quota: ComposerQuota; onSettings: () => void }) {
+  const locale = useLocale()
+  const { str, set } = useSettingField(['quota_chip_window'])
+  return (
+    <div className="flex min-w-0 flex-col gap-2 text-xs" data-quota-detail="">
+      <div className="flex items-center justify-between gap-3">
+        <span className="truncate font-medium text-strong">{quota.name}</span>
+        <IconButton variant="ghost" label={m.composer_quota_settings()} onClick={onSettings}><Settings size={16} aria-hidden="true" /></IconButton>
+      </div>
+      <Segmented label={m.composer_quota_window()} value={str('quota_chip_window', 'most_constrained')} onChange={(v) => set({ quota_chip_window: v })}
+        options={QUOTA_WINDOWS.map((o) => ({ value: o.value, label: o.label() }))} />
+      {quota.windows.length > 0 && (
+        <ul className="flex flex-col gap-2.5">
+          {quota.windows.map((w, i) => {
+            const figure = w.percent_remaining === null ? null : formatPercent(locale, w.percent_remaining)
+            return (
+              <li key={i} className="flex flex-col gap-1" data-quota-window={w.label} data-headline={w.headline || undefined}>
+                <span className="flex items-baseline justify-between gap-3">
+                  <span className={cn('truncate', w.headline ? 'font-medium text-strong' : 'text-text')}>{w.label}</span>
+                  {figure !== null
+                    ? <span className="flex shrink-0 items-baseline gap-1"><span className="font-medium tabular-nums text-strong">{figure}</span><span className="text-muted">{m.provider_quota_metric_remaining()}</span></span>
+                    : w.detail && <span className="shrink-0 text-muted">{w.detail}</span>}
+                </span>
+                {w.percent_remaining !== null && <QuotaMeter level={w.level} percent={w.percent_remaining} marker={null} label={`${w.label}: ${figure ?? ''} ${m.provider_quota_metric_remaining()}`} />}
+                {w.reset_at && <span className="text-muted">{m.provider_quota_resets({ time: resetTime(locale, w.reset_at) })}</span>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 /**

@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The composer's provider quota chip opens every quota window with its reset time, and lets you pick whether it shows the tightest, shortest or longest window.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Quota windows in the composer",
+        "description": "Open the quota chip to see each limit and when it resets, and choose which one the chip shows.",
+        "icon": "model"
+      }
+    }
+  ]
+}

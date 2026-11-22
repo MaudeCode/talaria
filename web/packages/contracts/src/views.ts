@@ -1181,6 +1181,9 @@ export const WebUpdateChannelSchema = z.enum(['stable', 'nightly', 'experimental
 export type WebUpdateChannel = z.infer<typeof WebUpdateChannelSchema>
 /** Ordered board preferences; the server deduplicates and projects only active boards. */
 export const KanbanPinnedBoardsSchema = z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).max(100)
+/** TAL-2513: which quota window the composer chip headlines. */
+export const QuotaChipWindowSchema = z.enum(['most_constrained', 'shortest', 'longest'])
+export type QuotaChipWindow = z.infer<typeof QuotaChipWindowSchema>
 export const SettingsSchema = z.looseObject({
   managed_fields: z.record(z.string(), z.object({ managed: z.literal(true) })).optional().describe('Administrator-managed fields keyed by Settings field name. The corresponding Settings value is effective and read-only.'),
   kanban_pinned_boards: KanbanPinnedBoardsSchema.optional().describe('TAL-1851: replace the active profile ordered board pins; stored in Talaria settings, independently of the Agent.'),
@@ -1199,6 +1202,7 @@ export const SettingsSchema = z.looseObject({
   live_activity_current_tool: z.boolean().optional().describe('TAL-2341: Live Activities and push alerts name the current call (default true); off, the server sends Relay no `currentTool`, alerts keep their fixed bodies and calls carry `activity_unnamed`.'),
   show_busy_placeholder_hint: z.boolean().optional().describe('TAL-2148: while a chat is busy and the draft is empty, the composer placeholder names the busy action (default true).'),
   session_endless_scroll: z.boolean().optional().describe('TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them.'),
+  quota_chip_window: QuotaChipWindowSchema.optional().describe('TAL-2513: the window the composer quota chip headlines: the most constrained (default), the shortest or the longest.'),
   composer_controls_shown: z.number().int().nonnegative().optional().describe('TAL-2172, every settings read and save: how many of the composer controls Settings › Chat draws are shown (each `hide_composer_*` key while false, `show_quota_chip` while true).'),
   composer_controls_total: z.number().int().nonnegative().optional().describe('TAL-2172, every settings read and save: how many composer controls Settings › Chat draws.'),
   sidebar_items_shown: z.number().int().nonnegative().optional().describe('TAL-2175, every settings read and save: how many of the sidebar items Settings › Navigation draws are shown (each hideable destination `hidden_tabs` does not name, `show_sidebar_feedback` and `show_titlebar_profile` while true).'),
@@ -1390,6 +1394,7 @@ export const QuotaWindowSchema = z.looseObject({
   label: z.string().describe('The provider label; a generic "Session"/"Weekly" its provider duration contradicts names that duration instead (`24-hour`).'),
   used_percent: NullableNumber, remaining_percent: NullableNumber, reset_at: NullableString.describe('ISO-8601 UTC.'), detail: NullableString,
   window_seconds: NullableNumber.describe('The provider duration (`window_seconds`, else `limit_window_seconds`), which outranks the label; else 5h or weekly from the label; null when unknown.'),
+  scope: z.enum(['account', 'model']).optional().describe('TAL-2513: `model` for a window that caps only a model family (an Opus or Sonnet weekly limit), else `account`.'),
   pace: QuotaPaceSchema.nullable().describe('Null for a window without a future reset, a usage value, or a 5h/weekly length.'),
   forecast: QuotaForecastSchema.nullable(),
   projection_eligible: z.boolean().optional().describe('TAL-411, `/api/provider/quotas` only: the burn-rate breakpoints apply (enough elapsed time and use, and the projection empties the window before reset).'),
@@ -1450,9 +1455,15 @@ export const ProviderQuotasSchema = z.looseObject({ availability: CatalogAvailab
   sidebar_source_ids: z.array(z.string()).optional().describe('TAL-1870: the `sidebar_quota_sources` pins this read lists, in pinned order; the rows the expanded Web sidebar shows. Every pin while `availability.authoritative` is false.'),
   sidebar_can_pin: z.boolean().optional().describe('TAL-1870: whether another source can be pinned; a pin this read does not list does not count.'),
   composer: z.object({
-    source_id: z.string(), label: z.string().describe('The chip text: "21% left", else the window\'s detail, else the credit balance.'),
+    source_id: z.string(), name: z.string().describe('TAL-2513: the source\'s `display_name`, the detail\'s title.'),
+    label: z.string().describe('The chip text: "21% left", else the window\'s detail, else the credit balance.'),
     percent_remaining: z.number().nullable(), level: QuotaLevelSchema.describe('The window\'s `display_level`.'),
-  }).nullable().optional().describe('TAL-2151: the composer chip\'s quota for `?provider=`: that provider\'s `provider_headline` source and its headline window; null when it has no source or no figure. Absent without `?provider=`.'),
+    reset_at: NullableString.describe('TAL-2513: ISO-8601 UTC reset of the headline window; null for a credit balance or an unknown reset.'),
+    windows: z.array(z.object({
+      label: z.string(), percent_remaining: z.number().nullable(), detail: NullableString.describe('The window\'s own text, shown when it has no percent.'),
+      reset_at: NullableString.describe('ISO-8601 UTC.'), level: QuotaLevelSchema.describe('The window\'s `display_level`.'), headline: z.boolean().describe('The window the chip shows.'),
+    })).describe('TAL-2513: the detail the chip opens, rendered in this order: each window with a percent or detail, account windows before model-only ones, shortest first, unknown lengths last. Empty for a credit balance.'),
+  }).nullable().optional().describe('TAL-2151: the composer chip\'s quota for `?provider=`: that provider\'s `provider_headline` source, headlined by the window `quota_chip_window` selects (TAL-2513): the most constrained account window, else the shortest or longest, falling back to the most constrained when an eligible window\'s length is unknown; model-only windows count only without an account figure. Null when it has no source or no figure. Absent without `?provider=`.'),
   summary: z.object({
     connected: z.number().int().describe('Configured providers.'),
     lowest: z.object({ source_id: z.string(), percent_remaining: z.number(), level: QuotaLevelSchema.describe('The window\'s `display_level`.') }).nullable().describe('The quota window with the least remaining across every source; null without a remaining percent.'),

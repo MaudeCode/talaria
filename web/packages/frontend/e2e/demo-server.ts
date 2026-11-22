@@ -79,7 +79,13 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   sidecar.respond('plugins.settings', () => ({ supported: true, plugins: [{ key: 'meshy', fields: [{ key: 'quality', type: 'enum', label: 'Quality', description: '', required: false, choices: ['draft', 'final'], value: 'draft' }] }, { key: 'image_gen/fal', fields: [{ key: 'model', type: 'string', label: 'Model', description: '', required: false, value: 'flux-2-pro' }] }] }))
   sidecar.respond('plugins.auto_update', () => ({ supported: true, auto_apply: true, check_hours: 6 }))
   // TAL-2151: an Anthropic 5h window at 79% used, and the composer's quota chip on, so the chat page shows "21% left".
-  sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', plan: 'max', windows: [{ label: '5h', used_percent: 79 }], details: [] } }))
+  // TAL-2513: a weekly and a model-only Opus window too, so the chip's detail lists windows with their resets.
+  const resetIn = (hours: number) => new Date(Date.now() + hours * 3_600_000).toISOString()
+  sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', plan: 'max', details: [], windows: [
+    { label: '5h', used_percent: 79, window_seconds: 18_000, reset_at: resetIn(2) },
+    { label: 'Opus week', used_percent: 64, window_seconds: 604_800, reset_at: resetIn(100), scope: 'model' },
+    { label: 'Weekly', used_percent: 38, window_seconds: 604_800, reset_at: resetIn(100) },
+  ] } }))
   await server.deps.settings.save({ show_quota_chip: true })
   server.deps.agentConfig.invalidate()
   server.deps.catalog.invalidate()

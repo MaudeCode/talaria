@@ -79,7 +79,13 @@ async function dataPages(page: Page, info: TestInfo, theme: Theme) {
     }
     await visit('chat', `/session/${DEMO_SESSION_ID}`, 'Filed two tickets and ordered them so they cannot conflict.')
     if (desktop) {
-      await expect(page.getByRole('button', { name: 'Provider quota: 21% left' })).toBeVisible()
+      // TAL-2513: the chip opens its windows, account before model-only, with the provider's Settings link.
+      await page.getByRole('button', { name: 'Provider quota: 21% left' }).click()
+      const detail = page.getByRole('dialog', { name: 'Provider quota' })
+      await expect(detail.locator('[data-quota-window]')).toHaveText([/^5h/, /^Weekly/, /^Opus week/])
+      await expect(detail.getByRole('button', { name: 'Provider settings' })).toBeVisible()
+      if (process.env.TOUR_SHOTS) { await settle(page); await page.screenshot({ path: `${process.env.TOUR_SHOTS}/quota-detail-${theme}.png` }) }
+      await page.keyboard.press('Escape')
       await page.locator('#composerModelChip').click()
       await expect(page.getByRole('option', { name: /^Claude Sonnet 4\.6/ }).first()).toBeVisible()
       await check('model-menu', false)

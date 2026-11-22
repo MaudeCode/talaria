@@ -597,6 +597,15 @@
                               "type": "boolean",
                               "description": "TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them."
                             },
+                            "quota_chip_window": {
+                              "enum": [
+                                "most_constrained",
+                                "shortest",
+                                "longest"
+                              ],
+                              "type": "string",
+                              "description": "TAL-2513: the window the composer quota chip headlines: the most constrained (default), the shortest or the longest."
+                            },
                             "composer_controls_shown": {
                               "type": "integer",
                               "minimum": 0,
@@ -119860,6 +119869,15 @@
                       "type": "boolean",
                       "description": "TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them."
                     },
+                    "quota_chip_window": {
+                      "enum": [
+                        "most_constrained",
+                        "shortest",
+                        "longest"
+                      ],
+                      "type": "string",
+                      "description": "TAL-2513: the window the composer quota chip headlines: the most constrained (default), the shortest or the longest."
+                    },
                     "composer_controls_shown": {
                       "type": "integer",
                       "minimum": 0,
@@ -120398,6 +120416,15 @@
                     "session_endless_scroll": {
                       "type": "boolean",
                       "description": "TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them."
+                    },
+                    "quota_chip_window": {
+                      "enum": [
+                        "most_constrained",
+                        "shortest",
+                        "longest"
+                      ],
+                      "type": "string",
+                      "description": "TAL-2513: the window the composer quota chip headlines: the most constrained (default), the shortest or the longest."
                     },
                     "composer_controls_shown": {
                       "type": "integer",
@@ -129222,6 +129249,14 @@
                                     ],
                                     "description": "The provider duration (`window_seconds`, else `limit_window_seconds`), which outranks the label; else 5h or weekly from the label; null when unknown."
                                   },
+                                  "scope": {
+                                    "enum": [
+                                      "account",
+                                      "model"
+                                    ],
+                                    "type": "string",
+                                    "description": "TAL-2513: `model` for a window that caps only a model family (an Opus or Sonnet weekly limit), else `account`."
+                                  },
                                   "pace": {
                                     "anyOf": [
                                       {
@@ -129924,6 +129959,14 @@
                                   ],
                                   "description": "The provider duration (`window_seconds`, else `limit_window_seconds`), which outranks the label; else 5h or weekly from the label; null when unknown."
                                 },
+                                "scope": {
+                                  "enum": [
+                                    "account",
+                                    "model"
+                                  ],
+                                  "type": "string",
+                                  "description": "TAL-2513: `model` for a window that caps only a model family (an Opus or Sonnet weekly limit), else `account`."
+                                },
                                 "pace": {
                                   "anyOf": [
                                     {
@@ -130290,6 +130333,10 @@
                             "source_id": {
                               "type": "string"
                             },
+                            "name": {
+                              "type": "string",
+                              "description": "TAL-2513: the source's `display_name`, the detail's title."
+                            },
                             "label": {
                               "type": "string",
                               "description": "The chip text: \"21% left\", else the window's detail, else the credit balance."
@@ -130314,20 +130361,101 @@
                               ],
                               "type": "string",
                               "description": "The window's `display_level`."
+                            },
+                            "reset_at": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-2513: ISO-8601 UTC reset of the headline window; null for a credit balance or an unknown reset."
+                            },
+                            "windows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "percent_remaining": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "detail": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The window's own text, shown when it has no percent."
+                                  },
+                                  "reset_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "ISO-8601 UTC."
+                                  },
+                                  "level": {
+                                    "enum": [
+                                      "healthy",
+                                      "warning",
+                                      "critical",
+                                      "stale",
+                                      "unavailable"
+                                    ],
+                                    "type": "string",
+                                    "description": "The window's `display_level`."
+                                  },
+                                  "headline": {
+                                    "type": "boolean",
+                                    "description": "The window the chip shows."
+                                  }
+                                },
+                                "required": [
+                                  "label",
+                                  "percent_remaining",
+                                  "detail",
+                                  "reset_at",
+                                  "level",
+                                  "headline"
+                                ]
+                              },
+                              "description": "TAL-2513: the detail the chip opens, rendered in this order: each window with a percent or detail, account windows before model-only ones, shortest first, unknown lengths last. Empty for a credit balance."
                             }
                           },
                           "required": [
                             "source_id",
+                            "name",
                             "label",
                             "percent_remaining",
-                            "level"
+                            "level",
+                            "reset_at",
+                            "windows"
                           ]
                         },
                         {
                           "type": "null"
                         }
                       ],
-                      "description": "TAL-2151: the composer chip's quota for `?provider=`: that provider's `provider_headline` source and its headline window; null when it has no source or no figure. Absent without `?provider=`."
+                      "description": "TAL-2151: the composer chip's quota for `?provider=`: that provider's `provider_headline` source, headlined by the window `quota_chip_window` selects (TAL-2513): the most constrained account window, else the shortest or longest, falling back to the most constrained when an eligible window's length is unknown; model-only windows count only without an account figure. Null when it has no source or no figure. Absent without `?provider=`."
                     },
                     "summary": {
                       "type": "object",

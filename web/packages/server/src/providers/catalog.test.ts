@@ -1276,11 +1276,52 @@ describe('Settings › Providers figures (TAL-2135)', () => {
       account('or', 'openrouter', [], { quota: { limit_remaining: 12.345 }, display_level: 'healthy' }),
       account('glm', 'zai', [], { supported: false, display_level: 'unavailable' }),
     ])
-    expect(composerQuota(rows, 'anthropic')).toEqual({ source_id: 'a-work', label: '21% left', percent_remaining: 21.4, level: 'warning' })
-    expect(composerQuota(rows, 'openai-codex')).toEqual({ source_id: 'codex', label: '8% left', percent_remaining: 8, level: 'stale' })
-    expect(composerQuota(rows, 'openrouter')).toEqual({ source_id: 'or', label: '12.35 credits left', percent_remaining: null, level: 'healthy' })
+    expect(composerQuota(rows, 'anthropic')).toMatchObject({ source_id: 'a-work', label: '21% left', percent_remaining: 21.4, level: 'warning' })
+    expect(composerQuota(rows, 'openai-codex')).toMatchObject({ source_id: 'codex', label: '8% left', percent_remaining: 8, level: 'stale' })
+    // TAL-2513: a credit balance stays the headline whatever window the setting asks for, with no window detail.
+    for (const pick of ['most_constrained', 'shortest', 'longest'] as const) {
+      expect(composerQuota(rows, 'openrouter', pick)).toEqual({ source_id: 'or', name: 'or', label: '12.35 credits left', percent_remaining: null, level: 'healthy', reset_at: null, windows: [] })
+    }
     expect(composerQuota(rows, 'zai')).toBeNull()
     expect(composerQuota(rows, 'deepseek')).toBeNull()
+  })
+
+  describe('the composer chip window setting (TAL-2513)', () => {
+    const w = (label: string, remaining: number | null, seconds: number | null, extra: Json = {}) => ({
+      label, remaining_percent: remaining, window_seconds: seconds, reset_at: `2026-10-0${String(label.length % 9 + 1)}T00:00:00Z`, detail: null, scope: 'account', display_level: 'healthy', urgency: { remaining: 'healthy', pace: 'healthy' }, ...extra,
+    })
+    const chip = (windows: Json[], pick: 'most_constrained' | 'shortest' | 'longest') => composerQuota(withProviderHeadlines([{ ...source('claude', windows), provider_id: 'anthropic', headline_window_index: 0 }]), 'anthropic', pick)
+    // The provider's order is not the duration order: monthly first, then 5h, then weekly.
+    const known = [w('Monthly', 70, 2_592_000), w('Session', 40, 18_000), w('Weekly', 55, 604_800), w('Opus week', 5, 604_800, { scope: 'model' })]
+
+    it.each([
+      ['most_constrained', 'Session'], ['shortest', 'Session'], ['longest', 'Monthly'],
+    ] as const)('%s picks the %s account window; a model-only window never wins while an account window has a figure', (pick, label) => {
+      expect(chip(known, pick)?.windows.find((x) => x.headline)?.label).toBe(label)
+    })
+
+    it('falls back to the most constrained window when an eligible window has no known duration, and to model windows without an account figure', () => {
+      const unknown = [w('Monthly', 70, null), w('Session', 40, 18_000), w('Weekly', 55, 604_800)]
+      expect(chip(unknown, 'longest')).toMatchObject({ label: '40% left', percent_remaining: 40 })
+      expect(chip(unknown, 'shortest')).toMatchObject({ label: '40% left', percent_remaining: 40 })
+      // An account window without a figure is not eligible, so its unknown length neither wins nor forces the fallback.
+      expect(chip([w('Usage limit', null, null), w('Session', 40, 18_000), w('Weekly', 55, 604_800)], 'longest')).toMatchObject({ percent_remaining: 55 })
+      expect(chip([w('Usage limit', null, null), w('Opus week', 30, 604_800, { scope: 'model' }), w('Sonnet day', 60, 86_400, { scope: 'model' })], 'longest')).toMatchObject({ label: '30% left' })
+    })
+
+    it('ships every window with a figure or detail as ordered detail: account before model, shortest first, unknown lengths last', () => {
+      const quota = chip([...known, w('Monthly extra', 90, null), w('Blank', null, null), w('Credits', null, null, { detail: '$4 of $10', reset_at: null })], 'most_constrained')
+      expect(quota?.windows.map((x) => [x.label, x.percent_remaining, x.reset_at, x.headline])).toEqual([
+        ['Session', 40, '2026-10-08T00:00:00Z', true],
+        ['Weekly', 55, '2026-10-07T00:00:00Z', false],
+        ['Monthly', 70, '2026-10-08T00:00:00Z', false],
+        ['Monthly extra', 90, '2026-10-05T00:00:00Z', false],
+        ['Credits', null, null, false],
+        ['Opus week', 5, '2026-10-01T00:00:00Z', false],
+      ])
+      expect(quota).toMatchObject({ reset_at: '2026-10-08T00:00:00Z', level: 'healthy' })
+      expect(quota?.windows.find((x) => x.label === 'Credits')).toMatchObject({ detail: '$4 of $10' })
+    })
   })
 
   it.each([

@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { providerIcon } from './icons.js'
-import type { CatalogAvailability, ConfiguredModelRole, QuotaCredits, ModelAllowance, ModelFavorite, SettingsModelPicker, SettingsModelPickerQuery, PlanUsage, ProviderIcon, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { CatalogAvailability, ConfiguredModelRole, QuotaChipWindow, QuotaCredits, ModelAllowance, ModelFavorite, SettingsModelPicker, SettingsModelPickerQuery, PlanUsage, ProviderIcon, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { BALANCE_PROVIDERS, ModelsLiveSchema, SettingsModelPickerSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
@@ -360,22 +360,49 @@ export function quotaSummary(providers: Dict[], defaultProvider: string | null, 
   }
 }
 
+type ChipWindow = ClassifiedQuotaWindow & { display_level?: QuotaLevel }
+
 /**
- * TAL-2151: the composer chip's quota for `provider`: its `provider_headline` source's headline window as "21% left", else
- * the window's own detail, else its credit balance, at the level that window's meter shows. Null when the provider has no
- * source, or its source has no figure (an unsupported provider, or an unavailable read with nothing cached).
+ * TAL-2513: the window the chip headlines. Account windows with a finite remaining share are eligible, else model-only
+ * ones (an Opus weekly cap never outranks the account's own limit). `shortest`/`longest` pick by `window_seconds`, and
+ * fall back to the most constrained when any eligible window's length is unknown; ties keep the provider's order.
  */
-export function composerQuota(rows: QuotaSourceRow[], provider: string): { source_id: string; label: string; percent_remaining: number | null; level: QuotaLevel } | null {
+function chipWindow(windows: ChipWindow[], pick: QuotaChipWindow): ChipWindow | undefined {
+  const figured = windows.filter((w) => finite(w.remaining_percent) !== null)
+  const account = figured.filter((w) => w.scope !== 'model')
+  const eligible = account.length ? account : figured
+  const by = (key: (w: ChipWindow) => number) => eligible.reduce<ChipWindow | undefined>((a, w) => (a === undefined || key(w) < key(a) ? w : a), undefined)
+  if (pick !== 'most_constrained' && eligible.every((w) => w.window_seconds !== null)) return by((w) => (pick === 'shortest' ? 1 : -1) * w.window_seconds!)
+  return by((w) => w.remaining_percent!)
+}
+
+/**
+ * TAL-2151, TAL-2513: the composer chip's quota for `provider`: its `provider_headline` source, headlined by the window
+ * `pick` selects as "21% left", else the headline window's own detail, else its credit balance, at the level that
+ * window's meter shows. `windows` is the detail the chip opens: each window with a figure or detail, account before
+ * model-only, shortest first and unknown lengths last. Null when the provider has no source, or its source has no figure
+ * (an unsupported provider, or an unavailable read with nothing cached).
+ */
+export function composerQuota(rows: QuotaSourceRow[], provider: string, pick: QuotaChipWindow = 'most_constrained') {
   const id = canonicaliseProviderId(provider)
   const s = rows.find((r) => r.provider_headline === true && canonicaliseProviderId(r.provider_id) === id)
   if (!s) return null
+  const all = (s.windows as ChipWindow[] | undefined) ?? []
+  const chosen = chipWindow(all, pick)
   const i = s.headline_window_index as number | null | undefined
-  const w = i == null ? undefined : (s.windows as (ClassifiedQuotaWindow & { display_level?: QuotaLevel; detail?: unknown })[] | undefined)?.[i]
+  const w = chosen ?? (i == null ? undefined : all[i])
   const left = finite(w?.remaining_percent)
   const credits = finite(dict(s.quota).limit_remaining)
   const label = left !== null ? `${String(Math.round(left))}% left` : str(w?.detail) || (credits !== null ? `${credits.toLocaleString('en-US', { maximumFractionDigits: 2 })} credits left` : '')
   if (!label) return null
-  return { source_id: s.source_id, label, percent_remaining: left, level: w?.display_level ?? (s.display_level as QuotaLevel | undefined) ?? 'unavailable' }
+  const sourceLevel = (s.display_level as QuotaLevel | undefined) ?? 'unavailable'
+  const rank = (x: ChipWindow) => (x.scope === 'model' ? 2 : 0) + (x.window_seconds === null ? 1 : 0)
+  const order = (a: ChipWindow, b: ChipWindow) => rank(a) - rank(b) || (a.window_seconds ?? 0) - (b.window_seconds ?? 0)
+  const windows = all.filter((x) => finite(x.remaining_percent) !== null || str(x.detail)).toSorted(order).map((x) => ({
+    label: x.label, percent_remaining: finite(x.remaining_percent), detail: str(x.detail) || null, reset_at: x.reset_at,
+    level: x.display_level ?? sourceLevel, headline: x === w,
+  }))
+  return { source_id: s.source_id, name: str(s.display_name) || s.source_id, label, percent_remaining: left, level: w?.display_level ?? sourceLevel, reset_at: w?.reset_at ?? null, windows }
 }
 
 /**
@@ -458,7 +485,7 @@ export function isoUtc(value: unknown): string | null {
 
 export interface QuotaPace { expected_remaining_percent: number; expected_used_percent: number; pace_delta_percent: number; burn_rate: number; minutes_to_reset: number; projected_minutes_to_empty: number | null; elapsed_minutes: number; valid_until: string }
 export interface QuotaForecast { outcome: 'safe' | 'warning'; budget_unit: 'hour' | 'day'; budget_percent: number | null; depletion_margin_minutes: number | null }
-export interface QuotaWindow { label: string; used_percent: number | null; remaining_percent: number | null; reset_at: string | null; detail: string | null; window_seconds: number | null; pace: QuotaPace | null; forecast: QuotaForecast | null }
+export interface QuotaWindow { label: string; used_percent: number | null; remaining_percent: number | null; reset_at: string | null; detail: string | null; window_seconds: number | null; scope: 'account' | 'model'; pace: QuotaPace | null; forecast: QuotaForecast | null }
 export interface QuotaWindows { windows: QuotaWindow[]; pace_window_index: number | null; session_window_index: number | null; weekly_window_index: number | null }
 
 /** The forecast a pace implies: per-hour or per-day budget until reset, and whether the projection empties the window first. */
@@ -526,7 +553,8 @@ export function normalizeQuotaWindows(raw: unknown, nowSeconds: number): QuotaWi
     windows.push({
       // Both percents are the normalized pair, so a client in Used mode never derives one from the other (TAL-1782).
       label, used_percent: used, remaining_percent: remaining, reset_at: resetAt, detail: typeof entry.detail === 'string' ? entry.detail : null,
-      window_seconds: windowSeconds, pace, forecast: pace ? quotaForecast(pace, remaining) : null,
+      // TAL-2513: the Agent marks a window that caps only a model family (Opus or Sonnet weekly); anything else caps the account.
+      window_seconds: windowSeconds, scope: entry.scope === 'model' ? 'model' : 'account', pace, forecast: pace ? quotaForecast(pace, remaining) : null,
     })
   }
   const index = (match: (w: QuotaWindow) => boolean): number | null => { const i = windows.findIndex(match); return i < 0 ? null : i }

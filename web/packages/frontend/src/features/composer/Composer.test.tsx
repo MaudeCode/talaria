@@ -578,7 +578,7 @@ describe('Composer', () => {
     const chat = (optionId: string): Session => ({ ...writable, is_streaming: false, model: optionId, model_option_id: optionId })
     beforeEach(() => {
       vi.mocked(api.fetchModels).mockResolvedValue(catalog)
-      vi.mocked(api.fetchProviderQuotas).mockReset().mockImplementation((_refresh, provider) => Promise.resolve(quotas(provider === 'anthropic' ? { source_id: 'qsrc_a', label: '21% left', percent_remaining: 21, level: 'warning' } : null) as never))
+      vi.mocked(api.fetchProviderQuotas).mockReset().mockImplementation((_refresh, provider) => Promise.resolve(quotas(provider === 'anthropic' ? { source_id: 'qsrc_a', name: 'Anthropic', label: '21% left', percent_remaining: 21, level: 'warning', reset_at: null, windows: [] } : null) as never))
     })
 
     it('shows the server\'s label and level for the chat\'s provider while the setting is on', async () => {
