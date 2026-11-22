@@ -2125,16 +2125,32 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
 
     it('TAL-2656: a create whose answer was lost after the home was made keeps the profile and warns, without a second create', async () => {
       const call = vi.spyOn(sidecar, 'call')
-      sidecar.respond('profiles.create', (params) => { mkdirSync(home(params.name), { recursive: true }); throw new SidecarError('sidecar exited', { condition: 'sidecar_unavailable' }) })
-      const before = sidecar.calls.filter((c) => c.method === 'profiles.create').length
-      const res = await post(s, '/api/profile/create', { name: 'lost' })
-      expect(call.mock.calls.find(([method]) => method === 'profiles.create')?.[2], 'no client timeout cuts a create that is still provisioning short').toEqual({ timeoutMs: 0 })
-      call.mockRestore()
-      expect(res.status).toBe(200)
-      const body = await json(res)
-      expect((body.profile as Json).name).toBe('lost')
-      expect(body.warnings).toEqual(['The profile was created, but its setup did not report back: sidecar exited'])
-      expect(sidecar.calls.filter((c) => c.method === 'profiles.create').length - before).toBe(1)
+      // As `SidecarClient` after an exit: restarting, so every later call is refused until it is ready again.
+      const exit = (params: { name: string }) => { mkdirSync(home(params.name), { recursive: true }); sidecar.status = 'restarting'; throw new SidecarError('sidecar exited', { condition: 'sidecar_unavailable' }) }
+      sidecar.respond('profiles.create', exit)
+      const creates = () => sidecar.calls.filter((c) => c.method === 'profiles.create').length
+      const before = creates()
+      try {
+        const res = await post(s, '/api/profile/create', { name: 'lost' })
+        expect(call.mock.calls.find(([method]) => method === 'profiles.create')?.[2], 'no client timeout cuts a create that is still provisioning short').toEqual({ timeoutMs: 0 })
+        expect(res.status).toBe(200)
+        const body = await json(res)
+        expect((body.profile as Json).name).toBe('lost')
+        expect(body.warnings).toEqual(['The profile was created, but its setup did not report back: sidecar exited'])
+        // Requested settings cannot be written while the sidecar restarts: the answer says to retry, and the retry applies
+        // them to the profile already made instead of creating it again.
+        sidecar.status = 'ready'
+        sidecar.respond('profiles.create', exit)
+        const pending = await post(s, '/api/profile/create', { name: 'keyed', api_key: 'sk-synthetic-key' })
+        expect(pending.status).toBe(500)
+        expect(String((await json(pending)).error)).toContain('retry the create to apply the settings')
+        sidecar.status = 'ready'
+        expect((await post(s, '/api/profile/create', { name: 'keyed', api_key: 'sk-synthetic-key' })).status).toBe(200)
+        expect(creates() - before, 'neither the lost create nor its retry ran a second sidecar create').toBe(2)
+      } finally {
+        sidecar.status = 'ready'
+        call.mockRestore()
+      }
       // Any other failure is the sidecar's answer, never a lost one, even with the home on disk.
       sidecar.respond('profiles.create', (params) => { mkdirSync(home(params.name), { recursive: true }); throw new SidecarError('disk full', { condition: 'sidecar_error' }) })
       expect((await post(s, '/api/profile/create', { name: 'answered' })).status).toBe(400)

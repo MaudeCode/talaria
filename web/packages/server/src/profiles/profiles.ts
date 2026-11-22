@@ -348,7 +348,10 @@ export class ProfileService {
       if (this.deleted.has(opts.name)) (await this.clearTombstoneDurably(opts.name))
       return row
     }).finally(() => { releaseSource?.() })
-    const rows = await this.list('default')
+    // The profile exists from here on: a sidecar still restarting after a lost answer cannot list it yet, so the created
+    // row stands in rather than answering a failure a retry would turn into a duplicate.
+    let rows: Dict[] = []
+    try { rows = await this.list('default') } catch { rows = [] }
     const profile = rows.find((r) => str(r.name) === opts.name) ?? { ...withAvatarUrl(created), is_active: false }
     // An explicit model pick replaced the inherited one, so the profile did not take the main profile's model.
     return { profile, warnings: boundedWarnings(warnings), inherited: model || provider ? inherited.filter((item) => item !== 'model') : inherited }
