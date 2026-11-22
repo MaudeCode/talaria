@@ -661,8 +661,7 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertTrue(opened)
         // Count only reveal work: wait until the send's own updates (stream start, the status chip's measured
         // height) have rendered. A fixed delay let a late layout pass on a loaded CI runner land in the window.
-        let quiet = await awaitQuiet { evaluations.counts.values.reduce(0, +) }
-        XCTAssertNotNil(quiet, "The chat must stop re-evaluating after the send before measuring reveal work")
+        await awaitQuietWork(of: evaluations, phase: "Post-send settle before measuring reveal work")
         // Snapshot capture can enqueue layout updates. Keep its diagnostics after
         // the measured reveal window so those updates aren't counted as reveal work.
         evaluations.reset()
