@@ -38,7 +38,7 @@ export type XlsxCell = string | { v: string; t?: string; s?: number }
 
 /**
  * A `.xlsx` of `sheets`, each a name and rows of cells keyed by reference (`A1`). Styles: 0 General, 1 built-in date
- * (`numFmtId` 14), 2 custom `yyyy-mm-dd`.
+ * (`numFmtId` 14), 2 custom `yyyy-mm-dd`, 3 built-in elapsed time `[h]:mm:ss` (`numFmtId` 46).
  */
 export function xlsx(sheets: { name: string; rows: Record<string, XlsxCell>[] }[], shared: string[] = []): Promise<Buffer> {
   const sheetXml = (rows: Record<string, XlsxCell>[]) => `${DECL}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows.map((cells, i) => `<row r="${String(i + 1)}">${Object.entries(cells).map(([ref, cell]) => {
@@ -49,7 +49,7 @@ export function xlsx(sheets: { name: string; rows: Record<string, XlsxCell>[] }[
     ['xl/workbook.xml', Buffer.from(`${DECL}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ${R}><sheets>${sheets.map((sheet, i) => `<sheet name="${xmlEscape(sheet.name)}" sheetId="${String(i + 1)}" r:id="rId${String(i + 1)}"/>`).join('')}</sheets></workbook>`)],
     ['xl/_rels/workbook.xml.rels', Buffer.from(`${DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${String(i + 1)}" Type="${REL}/worksheet" Target="worksheets/sheet${String(i + 1)}.xml"/>`).join('')}</Relationships>`)],
     ['xl/sharedStrings.xml', Buffer.from(`${DECL}<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${shared.map((text) => `<si><t>${xmlEscape(text)}</t></si>`).join('')}</sst>`)],
-    ['xl/styles.xml', Buffer.from(`${DECL}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy\\-mm\\-dd"/></numFmts><cellXfs count="3"><xf numFmtId="0"/><xf numFmtId="14"/><xf numFmtId="164"/></cellXfs></styleSheet>`)],
+    ['xl/styles.xml', Buffer.from(`${DECL}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy\\-mm\\-dd"/></numFmts><cellXfs count="4"><xf numFmtId="0"/><xf numFmtId="14"/><xf numFmtId="164"/><xf numFmtId="46"/></cellXfs></styleSheet>`)],
     ...sheets.map((sheet, i): [string, Buffer] => [`xl/worksheets/sheet${String(i + 1)}.xml`, Buffer.from(sheetXml(sheet.rows))]),
   ])
 }

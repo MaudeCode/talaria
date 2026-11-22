@@ -335,7 +335,8 @@ export function isDateFormat(code: string): boolean {
   return false
 }
 
-const BUILTIN_DATE_FORMATS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22])
+/** Built-in date and time format ids: 14–22 dates and times, 45–47 `mm:ss`, `[h]:mm:ss` and `mmss.0`. */
+const BUILTIN_DATE_FORMATS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47])
 
 /** An Excel serial as an ISO date, time or date-time; Excel's phantom 1900-02-29 shifts serials below 60 by a day. */
 export function excelSerialIso(serial: number, date1904: boolean): string | null {

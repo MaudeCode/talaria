@@ -72,9 +72,9 @@ describe('xlsx preview', () => {
   it('shows shared strings, booleans, numbers and date-styled serials as ISO dates', async () => {
     const book = await xlsx([{ name: 'Budget', rows: [
       { A1: '0', B1: { v: '1', t: 'b' }, C1: { v: '42.5' } },
-      { A2: { v: '45306', s: 1 }, B2: { v: '45307', s: 2 }, C2: { v: '45306' } },
+      { A2: { v: '45306', s: 1 }, B2: { v: '45307', s: 2 }, C2: { v: '45306' }, D2: { v: '0.5', s: 3 } },
     ] }], ['Rent'])
-    expect(previewOffice('b.xlsx', book)).toEqual({ path: 'b.xlsx', size: book.length, office_format: 'xlsx', content: 'Sheet: Budget\nRent\tTRUE\t42.5\n2024-01-15\t2024-01-16\t45306', lines: 3, editable: false, edit_blocked_reason: 'xlsx preview is read-only' })
+    expect(previewOffice('b.xlsx', book)).toEqual({ path: 'b.xlsx', size: book.length, office_format: 'xlsx', content: 'Sheet: Budget\nRent\tTRUE\t42.5\n2024-01-15\t2024-01-16\t45306\t12:00:00', lines: 3, editable: false, edit_blocked_reason: 'xlsx preview is read-only' })
   })
 
   it('keeps the tab of each empty cell before a value, so values stay under their columns', async () => {
