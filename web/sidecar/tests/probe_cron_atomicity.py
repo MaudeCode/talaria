@@ -3,8 +3,9 @@
 ``create``: Create is held between its two Agent writes while cron.list, cron.get and the run lookup read the store.
 No reader may observe the job without the requested ownership/profile/notification fields, and a refused second
 write leaves no job. ``resume``: Resume is held after it derived ``next_run_at`` while an external Agent writer edits
-the schedule; the saved schedule and ``next_run_at`` must describe the same job state. Every exit releases the store
-transaction. Disposable homes only; no job executes."""
+the schedule; the saved schedule and ``next_run_at`` must describe the same job state. ``update`` (TAL-2297): an external
+writer changes the endpoint between admission and the write; the edit is refused, never stored on an unchecked pair.
+Every exit releases the store transaction. Disposable homes only; no job executes."""
 
 from __future__ import annotations
 
@@ -288,5 +289,43 @@ def resume() -> None:
     _resume_exit("exception", boom, lambda exc: isinstance(exc, RuntimeError) and "synthetic" in str(exc))
 
 
-{"create": create, "resume": resume}[sys.argv[2]]()
+# ── update (TAL-2297) ───────────────────────────────────────────────────────
+
+def update() -> None:
+    """An Agent writer gives the job an endpoint after update admitted a provider-only edit: the edit must not land on
+    a provider/base_url pair it never checked."""
+    home = ROOT / "update"
+    home.mkdir(parents=True)
+    endpoint = "https://synthetic.example/v1"
+    with jobs.use_cron_store(home):
+        job_id = jobs.create_job(prompt="fixture-only", schedule="every 2h", model="fixture-model", provider="synthetic")["id"]
+    real_admit, raced = cron._admit_job, []
+
+    def admit_then_race(*args, **kwargs):
+        real_admit(*args, **kwargs)
+        def edit():
+            with jobs.use_cron_store(home):  # an Agent store writer that never takes a Talaria lock
+                return jobs.update_job(job_id, {"base_url": endpoint})
+        writer = _Reader(edit)
+        writer.start()
+        writer.join(HOLD_S)
+        raced.append(writer.error)
+
+    cron._admit_job = admit_then_race
+    try:
+        METHODS["cron.update"](_Ctx(), {"profile_home": str(home), "job_id": job_id, "updates": {"provider": "openai"}})
+    except RpcError as exc:
+        refusal = exc
+    else:
+        refusal = None
+    finally:
+        cron._admit_job = real_admit
+    assert raced == [None], raced
+    saved = next(job for job in _stored(home) if job["id"] == job_id)
+    assert (saved.get("provider"), saved.get("base_url")) == ("synthetic", endpoint), f"unchecked pair stored: {saved}"
+    assert refusal is not None and refusal.data.get("condition") == "cron_conflict", refusal
+    _assert_released(home)
+
+
+{"create": create, "resume": resume, "update": update}[sys.argv[2]]()
 print(f"{sys.argv[2]}: ok")

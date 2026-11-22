@@ -884,10 +884,18 @@ def register(registry) -> None:
             # Resolve ``pinned`` here, in the owning profile's runtime, so the pair checked is the pair update_job stores.
             jobs._apply_pin_update(dict(existing), updates)
             _admit_job({**existing, **updates}, updates)
-            try:
-                job = jobs.update_job(job_id, updates)
-            except ValueError as exc:
-                raise InvalidParams(str(exc)) from exc
+            # Admission reads profile config, so it runs before the store transaction; under it, a provider or endpoint
+            # another writer changed since then would pair the edit with a route nobody checked.
+            with jobs._jobs_lock():
+                current = jobs.get_job(job_id)
+                if not current:
+                    raise RpcError("Job not found", condition="not_found")
+                if any(current.get(key) != existing.get(key) for key in ("provider", "base_url") if key not in updates):
+                    raise RpcError("This task's provider or endpoint changed while saving. Reload it and save again.", condition="cron_conflict")
+                try:
+                    job = jobs.update_job(job_id, updates)
+                except ValueError as exc:
+                    raise InvalidParams(str(exc)) from exc
         if not job:
             raise RpcError("Job not found", condition="not_found")
         return {"job": job_for_api(job)}
