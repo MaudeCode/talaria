@@ -110,12 +110,15 @@ export const gitRouter = os.router({
     return { git: gitBadge(await ctx.deps.git.status(workspace, { useCache: true })) }
   })),
   git: {
-    status: os.git.status.handler(({ input, context: { ctx } }) => guard(async () => ({ git: asStatus(await ctx.deps.git.status((await gitSession(ctx, input.session_id)).workspace, { useCache: true })) }))),
+    status: os.git.status.handler(({ input, context: { ctx } }) => guard(async () => {
+      const { workspace } = (await gitSession(ctx, input.session_id))
+      return { git: asStatus(input.scope === 'branch' ? await ctx.deps.git.branchStatus(workspace) : await ctx.deps.git.status(workspace, { useCache: true })) }
+    })),
     branches: os.git.branches.handler(({ input, context: { ctx } }) => guard(async () => ({ branches: await ctx.deps.git.branches((await gitSession(ctx, input.session_id)).workspace) }))),
     diff: os.git.diff.handler(({ input, context: { ctx } }) => guard(async () => {
       const { workspace } = (await gitSession(ctx, input.session_id))
       if (!input.path) throw new HttpError(400, 'path required')
-      const kind = input.kind ?? (input.staged === '1' ? 'staged' : 'unstaged')
+      const kind = input.scope === 'branch' ? 'branch' : input.kind ?? (input.staged === '1' ? 'staged' : 'unstaged')
       return { diff: await ctx.deps.git.diff(workspace, input.path, kind) }
     })),
     stage: os.git.stage.handler(({ input, context: { ctx } }) => guard(async () => {

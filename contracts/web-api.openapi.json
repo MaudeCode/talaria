@@ -86284,6 +86284,20 @@
             },
             "allowEmptyValue": true,
             "allowReserved": true
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "uncommitted",
+                "branch"
+              ],
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
           }
         ],
         "responses": {
@@ -86412,10 +86426,11 @@
                               "diff_kind": {
                                 "enum": [
                                   "staged",
-                                  "unstaged"
+                                  "unstaged",
+                                  "branch"
                                 ],
                                 "type": "string",
-                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status."
                               },
                               "ignored": {
                                 "type": "boolean"
@@ -86480,6 +86495,21 @@
                             "crlf_only",
                             "active"
                           ]
+                        },
+                        "detached": {
+                          "type": "boolean",
+                          "description": "Branch scope only: HEAD is not on a branch."
+                        },
+                        "base_ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD."
                         }
                       },
                       "required": [
@@ -86721,6 +86751,20 @@
             "in": "query",
             "required": false,
             "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "uncommitted",
+                "branch"
+              ],
               "type": "string"
             },
             "allowEmptyValue": true,
@@ -87068,10 +87112,11 @@
                               "diff_kind": {
                                 "enum": [
                                   "staged",
-                                  "unstaged"
+                                  "unstaged",
+                                  "branch"
                                 ],
                                 "type": "string",
-                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status."
                               },
                               "ignored": {
                                 "type": "boolean"
@@ -87136,6 +87181,21 @@
                             "crlf_only",
                             "active"
                           ]
+                        },
+                        "detached": {
+                          "type": "boolean",
+                          "description": "Branch scope only: HEAD is not on a branch."
+                        },
+                        "base_ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD."
                         }
                       },
                       "required": [
@@ -87321,10 +87381,11 @@
                               "diff_kind": {
                                 "enum": [
                                   "staged",
-                                  "unstaged"
+                                  "unstaged",
+                                  "branch"
                                 ],
                                 "type": "string",
-                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status."
                               },
                               "ignored": {
                                 "type": "boolean"
@@ -87389,6 +87450,21 @@
                             "crlf_only",
                             "active"
                           ]
+                        },
+                        "detached": {
+                          "type": "boolean",
+                          "description": "Branch scope only: HEAD is not on a branch."
+                        },
+                        "base_ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD."
                         }
                       },
                       "required": [
@@ -87575,10 +87651,11 @@
                               "diff_kind": {
                                 "enum": [
                                   "staged",
-                                  "unstaged"
+                                  "unstaged",
+                                  "branch"
                                 ],
                                 "type": "string",
-                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status."
                               },
                               "ignored": {
                                 "type": "boolean"
@@ -87643,6 +87720,21 @@
                             "crlf_only",
                             "active"
                           ]
+                        },
+                        "detached": {
+                          "type": "boolean",
+                          "description": "Branch scope only: HEAD is not on a branch."
+                        },
+                        "base_ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD."
                         }
                       },
                       "required": [
@@ -87821,10 +87913,11 @@
                               "diff_kind": {
                                 "enum": [
                                   "staged",
-                                  "unstaged"
+                                  "unstaged",
+                                  "branch"
                                 ],
                                 "type": "string",
-                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status."
                               },
                               "ignored": {
                                 "type": "boolean"
@@ -87889,6 +87982,21 @@
                             "crlf_only",
                             "active"
                           ]
+                        },
+                        "detached": {
+                          "type": "boolean",
+                          "description": "Branch scope only: HEAD is not on a branch."
+                        },
+                        "base_ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD."
                         }
                       },
                       "required": [
@@ -88088,10 +88196,11 @@
                               "diff_kind": {
                                 "enum": [
                                   "staged",
-                                  "unstaged"
+                                  "unstaged",
+                                  "branch"
                                 ],
                                 "type": "string",
-                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status."
                               },
                               "ignored": {
                                 "type": "boolean"
@@ -88156,6 +88265,21 @@
                             "crlf_only",
                             "active"
                           ]
+                        },
+                        "detached": {
+                          "type": "boolean",
+                          "description": "Branch scope only: HEAD is not on a branch."
+                        },
+                        "base_ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD."
                         }
                       },
                       "required": [
@@ -88455,10 +88579,11 @@
                               "diff_kind": {
                                 "enum": [
                                   "staged",
-                                  "unstaged"
+                                  "unstaged",
+                                  "branch"
                                 ],
                                 "type": "string",
-                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status."
                               },
                               "ignored": {
                                 "type": "boolean"
@@ -88523,6 +88648,21 @@
                             "crlf_only",
                             "active"
                           ]
+                        },
+                        "detached": {
+                          "type": "boolean",
+                          "description": "Branch scope only: HEAD is not on a branch."
+                        },
+                        "base_ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD."
                         }
                       },
                       "required": [
@@ -88698,10 +88838,11 @@
                               "diff_kind": {
                                 "enum": [
                                   "staged",
-                                  "unstaged"
+                                  "unstaged",
+                                  "branch"
                                 ],
                                 "type": "string",
-                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status."
                               },
                               "ignored": {
                                 "type": "boolean"
@@ -88766,6 +88907,21 @@
                             "crlf_only",
                             "active"
                           ]
+                        },
+                        "detached": {
+                          "type": "boolean",
+                          "description": "Branch scope only: HEAD is not on a branch."
+                        },
+                        "base_ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD."
                         }
                       },
                       "required": [
@@ -88941,10 +89097,11 @@
                               "diff_kind": {
                                 "enum": [
                                   "staged",
-                                  "unstaged"
+                                  "unstaged",
+                                  "branch"
                                 ],
                                 "type": "string",
-                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status."
                               },
                               "ignored": {
                                 "type": "boolean"
@@ -89009,6 +89166,21 @@
                             "crlf_only",
                             "active"
                           ]
+                        },
+                        "detached": {
+                          "type": "boolean",
+                          "description": "Branch scope only: HEAD is not on a branch."
+                        },
+                        "base_ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD."
                         }
                       },
                       "required": [
@@ -89203,10 +89375,11 @@
                               "diff_kind": {
                                 "enum": [
                                   "staged",
-                                  "unstaged"
+                                  "unstaged",
+                                  "branch"
                                 ],
                                 "type": "string",
-                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status."
                               },
                               "ignored": {
                                 "type": "boolean"
@@ -89271,6 +89444,21 @@
                             "crlf_only",
                             "active"
                           ]
+                        },
+                        "detached": {
+                          "type": "boolean",
+                          "description": "Branch scope only: HEAD is not on a branch."
+                        },
+                        "base_ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD."
                         }
                       },
                       "required": [
@@ -89615,10 +89803,11 @@
                               "diff_kind": {
                                 "enum": [
                                   "staged",
-                                  "unstaged"
+                                  "unstaged",
+                                  "branch"
                                 ],
                                 "type": "string",
-                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files."
+                                "description": "The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status."
                               },
                               "ignored": {
                                 "type": "boolean"
@@ -89683,6 +89872,21 @@
                             "crlf_only",
                             "active"
                           ]
+                        },
+                        "detached": {
+                          "type": "boolean",
+                          "description": "Branch scope only: HEAD is not on a branch."
+                        },
+                        "base_ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD."
                         }
                       },
                       "required": [

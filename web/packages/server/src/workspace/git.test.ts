@@ -533,6 +533,77 @@ describe('destructive gate', () => {
   })
 })
 
+describe('branch scope (TAL-2646)', () => {
+  const env = { TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' }
+  const statusOf = async (s: TestServer, sid: string, scope?: string): Promise<Json> => {
+    const res = await s.get(`/api/git/status?session_id=${sid}${scope ? `&scope=${scope}` : ''}`)
+    expect(res.status).toBe(200)
+    return (await json(res)).git as Json
+  }
+  let s: TestServer
+  let sid: string
+  beforeAll(async () => {
+    s = await bootTestServer({ env })
+    const ws = s.workspace
+    git(ws, 'init', '-q', '-b', 'main')
+    writeFileSync(join(ws, 'README.md'), 'hello\n')
+    git(ws, 'add', '.')
+    git(ws, 'commit', '-q', '-m', 'init')
+    // A fetched origin whose HEAD names main, so the first base candidate is a symbolic ref.
+    git(ws, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    git(ws, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+    git(ws, 'switch', '-q', '-c', 'feature')
+    writeFileSync(join(ws, 'feature.txt'), 'one\ntwo\n')
+    git(ws, 'add', '.')
+    git(ws, 'commit', '-q', '-m', 'one')
+    writeFileSync(join(ws, 'README.md'), 'hello\nworld\n')
+    git(ws, 'commit', '-q', '-am', 'two')
+    sid = (await repoSession(s)).sid
+  })
+  afterAll(() => s.close())
+
+  it('lists what a clean branch committed since its base, while the default scope stays the uncommitted read', async () => {
+    const shared = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/git-branch-status.json', import.meta.url), 'utf8')) as Json
+    expect(await statusOf(s, sid, 'branch')).toEqual(shared.git)
+    const uncommitted = await statusOf(s, sid)
+    expect(uncommitted).toMatchObject({ is_git: true, branch: 'feature', files: [] })
+    expect(uncommitted).not.toHaveProperty('base_ref')
+    expect(uncommitted).not.toHaveProperty('detached')
+  })
+
+  it('diffs a committed file against the merge base', async () => {
+    const res = await s.get(`/api/git/diff?session_id=${sid}&path=README.md&scope=branch`)
+    expect(res.status).toBe(200)
+    const diff = (await json(res)).diff as Json
+    expect(diff).toMatchObject({ path: 'README.md', kind: 'branch', additions: 1, deletions: 0, binary: false })
+    expect(diff.diff).toContain('+world')
+    expect(((await json(await s.get(`/api/git/diff?session_id=${sid}&path=README.md`))).diff as Json).diff).toBe('')
+  })
+
+  it('reports a detached HEAD', async () => {
+    git(s.workspace, 'switch', '-q', '--detach')
+    try {
+      expect(await statusOf(s, sid, 'branch')).toMatchObject({ detached: true, base_ref: 'origin/main', totals: { changed: 2 } })
+    } finally {
+      git(s.workspace, 'switch', '-q', 'feature')
+    }
+  })
+
+  it('answers no base and no files when no candidate base ref exists', async () => {
+    const lone = await bootTestServer({ env })
+    try {
+      git(lone.workspace, 'init', '-q', '-b', 'trunk')
+      writeFileSync(join(lone.workspace, 'a.txt'), 'a\n')
+      git(lone.workspace, 'add', '.')
+      git(lone.workspace, 'commit', '-q', '-m', 'init')
+      const status = await statusOf(lone, (await repoSession(lone)).sid, 'branch')
+      expect(status).toMatchObject({ is_git: true, branch: 'trunk', detached: false, base_ref: null, files: [] })
+    } finally {
+      await lone.close()
+    }
+  })
+})
+
 describe('git diff reads', () => {
   it('leave the index untouched even when the repository asks diff to refresh it (TAL-1603)', async () => {
     const ws = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-diff-index-')))

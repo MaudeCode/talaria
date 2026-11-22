@@ -71,13 +71,32 @@ function gitDeadline(timeoutMs: number): () => number {
 export interface GitContext { workspace: string; repoRoot: string; workspacePrefix: string }
 export type GitChangeKind = 'conflict' | 'untracked' | 'added' | 'deleted' | 'renamed' | 'modified'
 export interface GitFile {
-  path: string; old_path: string | null; workspace_path: string; status: string; change_kind: GitChangeKind; diff_kind: 'staged' | 'unstaged'; staged: boolean; unstaged: boolean; untracked: boolean
+  path: string; old_path: string | null; workspace_path: string; status: string; change_kind: GitChangeKind; diff_kind: 'staged' | 'unstaged' | 'branch'; staged: boolean; unstaged: boolean; untracked: boolean
   ignored: boolean; conflict: boolean; additions: number; deletions: number; binary: boolean
 }
 export interface GitTotals { changed: number; staged: number; unstaged: number; untracked: number; conflicts: number; additions: number; deletions: number }
 export interface GitStatus {
   is_git: boolean; branch?: string; upstream?: string; ahead?: number; behind?: number; totals?: GitTotals; files?: GitFile[]; truncated?: boolean
   noise_filtering?: { filemode_only: number; crlf_only: number; active: boolean }
+  /** Branch scope only (TAL-2646). */
+  detached?: boolean; base_ref?: string | null
+}
+/** A branch-scope status compares HEAD with the first of these refs that exists (TAL-2646). */
+const BRANCH_BASE_REFS = ['refs/remotes/origin/HEAD', 'refs/remotes/origin/main', 'refs/remotes/origin/master', 'refs/heads/main', 'refs/heads/master']
+
+/** Files sorted by case-folded path, with their totals. */
+function summarizeFiles(files: Iterable<GitFile>): { files: GitFile[]; totals: GitTotals } {
+  const fileList = [...files].sort((a, b) => (a.path.toLowerCase() < b.path.toLowerCase() ? -1 : a.path.toLowerCase() > b.path.toLowerCase() ? 1 : 0))
+  const totals: GitTotals = { changed: fileList.length, staged: 0, unstaged: 0, untracked: 0, conflicts: 0, additions: 0, deletions: 0 }
+  for (const item of fileList) {
+    totals.additions += item.additions
+    totals.deletions += item.deletions
+    if (item.staged) totals.staged += 1
+    if (item.unstaged) totals.unstaged += 1
+    if (item.untracked) totals.untracked += 1
+    if (item.conflict) totals.conflicts += 1
+  }
+  return { files: fileList, totals }
 }
 /**
  * Python `git_info_for_workspace`: the branch badge for a status, null outside a repo. `indicator` is `changes` while there is
@@ -1031,16 +1050,7 @@ export class GitRunner {
     await Promise.all(Array.from({ length: 8 }, async () => {
       for (let file = queue.shift(); file; file = queue.shift()) Object.assign(file, await GitRunner.countUntrackedFile(ctx.workspace, file.path))
     }))
-    const fileList = [...files.values()].sort((a, b) => (a.path.toLowerCase() < b.path.toLowerCase() ? -1 : a.path.toLowerCase() > b.path.toLowerCase() ? 1 : 0))
-    const totals: GitTotals = { changed: fileList.length, staged: 0, unstaged: 0, untracked: 0, conflicts: 0, additions: 0, deletions: 0 }
-    for (const item of fileList) {
-      totals.additions += item.additions
-      totals.deletions += item.deletions
-      if (item.staged) totals.staged += 1
-      if (item.unstaged) totals.unstaged += 1
-      if (item.untracked) totals.untracked += 1
-      if (item.conflict) totals.conflicts += 1
-    }
+    const { files: fileList, totals } = summarizeFiles(files.values())
     if (!branch) branch = (await this.run(ctx, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
     const payload: GitStatus = {
       is_git: true, branch: branch || 'HEAD', upstream, ahead, behind, totals, files: fileList, truncated,
@@ -1048,6 +1058,61 @@ export class GitRunner {
     }
     this.storeStatus(ctx, generation, this.statusFingerprint(ctx.repoRoot), payload)
     return payload
+  }
+
+  // ── branch scope ─────────────────────────────────────────────────────────
+
+  /**
+   * The branch's base: the first `BRANCH_BASE_REFS` entry that exists, named as the user knows it (`origin/HEAD` by the
+   * branch it points at), and its merge base with HEAD; null when none exists or none shares history with HEAD.
+   */
+  private async branchBase(ctx: GitContext): Promise<{ ref: string; mergeBase: string } | null> {
+    const listed = await this.run(ctx, ['for-each-ref', '--format=%(refname)%00%(refname:short)%00%(symref:short)', ...BRANCH_BASE_REFS])
+    const found = new Map<string, string>()
+    for (const line of listed.stdout.split('\n')) {
+      const [full = '', short = '', target = ''] = line.split('\0')
+      if (full) found.set(full, target || short)
+    }
+    const full = BRANCH_BASE_REFS.find((ref) => found.has(ref))
+    if (!full) return null
+    const base = await this.run(ctx, ['merge-base', full, 'HEAD'])
+    return base.status === 0 ? { ref: found.get(full) ?? full, mergeBase: base.stdout.trim() } : null
+  }
+
+  /** What HEAD committed since its merge base with the branch's base (`base...HEAD`), file by file (TAL-2646). */
+  async branchStatus(workspace: string): Promise<GitStatus> {
+    const ctx = await this.resolveContext(workspace)
+    if (!ctx) return { is_git: false }
+    const [current, base] = await Promise.all([this.run(ctx, ['branch', '--show-current']).then((r) => r.stdout.trim()), this.branchBase(ctx)])
+    const branch = current || (await this.run(ctx, ['rev-parse', '--short', 'HEAD'])).stdout.trim() || 'HEAD'
+    const files = new Map<string, GitFile>()
+    let truncated = false
+    if (base) {
+      const range = ['--no-ext-diff', '--no-textconv', '-M', '-z', base.mergeBase, 'HEAD', '--', GitRunner.workspacePathspec(ctx)]
+      const read: RunOptions = { check: true, neutralizeFilterPrograms: true }
+      const [names, numstat] = await Promise.all([this.run(ctx, ['diff', '--name-status', ...range], read), this.run(ctx, ['diff', '--numstat', ...range], read)])
+      const stats = this.parseNumstat(numstat.stdout, ctx)
+      const tokens = names.stdout.split('\0')
+      for (let i = 0; i < tokens.length;) {
+        const code = (tokens[i++] ?? '').charAt(0)
+        if (!code) continue
+        const renamed = code === 'R' || code === 'C'
+        const oldPath = renamed ? (tokens[i++] ?? '') : null
+        const path = GitRunner.workspaceRel(ctx, tokens[i++] ?? '')
+        if (path === null) continue
+        const status = gitStatusCode(code, false, code === 'R')
+        const [additions, deletions, binary] = stats.get(path) ?? [0, 0, false]
+        files.set(path, {
+          path, old_path: oldPath === null ? null : GitRunner.workspaceRel(ctx, oldPath), workspace_path: path, status, change_kind: gitChangeKind(status, false), diff_kind: 'branch',
+          staged: false, unstaged: false, untracked: false, ignored: false, conflict: false, additions, deletions, binary,
+        })
+        if (files.size >= STATUS_FILE_LIMIT) {
+          truncated = true
+          break
+        }
+      }
+    }
+    return { is_git: true, branch, detached: !current, base_ref: base?.ref ?? null, ...summarizeFiles(files.values()), truncated }
   }
 
   // ── branches ─────────────────────────────────────────────────────────────
@@ -1284,10 +1349,11 @@ export class GitRunner {
     return { binary: false, too_large: tooLarge, diff, ...diffFields(diff, !tooLarge) }
   }
 
+  /** `kind` `branch` diffs the committed file against the branch's merge base, empty without a base (TAL-2646). */
   async diff(workspace: string, path: string, kind = 'unstaged'): Promise<GitDiff> {
     const ctx = await this.resolveContext(workspace)
     if (!ctx) throw new GitWorkspaceError('Workspace is not a Git repository')
-    if (kind !== 'unstaged' && kind !== 'staged') throw new GitWorkspaceError('kind must be staged or unstaged')
+    if (kind !== 'unstaged' && kind !== 'staged' && kind !== 'branch') throw new GitWorkspaceError('kind must be staged, unstaged or branch')
     const repoRel = GitRunner.repoRel(ctx, path)
     const workspaceRel = GitRunner.workspaceRel(ctx, repoRel) ?? path
     if (kind === 'unstaged') {
@@ -1296,6 +1362,11 @@ export class GitRunner {
     }
     const args = ['diff', '--no-ext-diff', '--no-textconv', '--unified=3']
     if (kind === 'staged') args.push('--cached')
+    if (kind === 'branch') {
+      const base = await this.branchBase(ctx)
+      if (!base) return { path: workspaceRel, kind, binary: false, too_large: false, additions: 0, deletions: 0, diff: '', hunks: [] }
+      args.push(base.mergeBase, 'HEAD')
+    }
     args.push('--', repoRel)
     let diff = (await this.run(ctx, args, { check: true, neutralizeFilterPrograms: true })).stdout
     const binary = diff.includes('Binary files ') || diff.includes('GIT binary patch')

@@ -1,0 +1,20 @@
+{
+  "git": {
+    "is_git": true,
+    "branch": "feature",
+    "detached": false,
+    "base_ref": "origin/main",
+    "totals": { "changed": 2, "staged": 0, "unstaged": 0, "untracked": 0, "conflicts": 0, "additions": 3, "deletions": 0 },
+    "files": [
+      {
+        "path": "feature.txt", "old_path": null, "workspace_path": "feature.txt", "status": "A", "change_kind": "added", "diff_kind": "branch",
+        "staged": false, "unstaged": false, "untracked": false, "ignored": false, "conflict": false, "additions": 2, "deletions": 0, "binary": false
+      },
+      {
+        "path": "README.md", "old_path": null, "workspace_path": "README.md", "status": "M", "change_kind": "modified", "diff_kind": "branch",
+        "staged": false, "unstaged": false, "untracked": false, "ignored": false, "conflict": false, "additions": 1, "deletions": 0, "binary": false
+      }
+    ],
+    "truncated": false
+  }
+}
