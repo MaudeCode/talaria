@@ -1079,6 +1079,23 @@ export class GitRunner {
     return base.status === 0 ? { ref: found.get(full) ?? full, mergeBase: base.stdout.trim() } : null
   }
 
+  /** The branch's committed changes in the workspace as repo-relative `[code letter, path, renamed-from path]` rows. */
+  private async branchChanges(ctx: GitContext, range: string[], read: RunOptions): Promise<[string, string, string | null][]> {
+    const tokens = (await this.run(ctx, ['diff', '--name-status', ...range], read)).stdout.split('\0')
+    const rows: [string, string, string | null][] = []
+    for (let i = 0; i < tokens.length;) {
+      const code = (tokens[i++] ?? '').charAt(0)
+      if (!code) continue
+      const oldPath = code === 'R' || code === 'C' ? (tokens[i++] ?? '') : null
+      rows.push([code, tokens[i++] ?? '', oldPath])
+    }
+    return rows
+  }
+
+  private static branchRange(ctx: GitContext, mergeBase: string): string[] {
+    return ['--no-ext-diff', '--no-textconv', '-M', '-z', mergeBase, 'HEAD', '--', GitRunner.workspacePathspec(ctx)]
+  }
+
   /** What HEAD committed since its merge base with the branch's base (`base...HEAD`), file by file (TAL-2646). */
   async branchStatus(workspace: string): Promise<GitStatus> {
     const ctx = await this.resolveContext(workspace)
@@ -1088,17 +1105,12 @@ export class GitRunner {
     const files = new Map<string, GitFile>()
     let truncated = false
     if (base) {
-      const range = ['--no-ext-diff', '--no-textconv', '-M', '-z', base.mergeBase, 'HEAD', '--', GitRunner.workspacePathspec(ctx)]
+      const range = GitRunner.branchRange(ctx, base.mergeBase)
       const read: RunOptions = { check: true, neutralizeFilterPrograms: true }
-      const [names, numstat] = await Promise.all([this.run(ctx, ['diff', '--name-status', ...range], read), this.run(ctx, ['diff', '--numstat', ...range], read)])
+      const [changes, numstat] = await Promise.all([this.branchChanges(ctx, range, read), this.run(ctx, ['diff', '--numstat', ...range], read)])
       const stats = this.parseNumstat(numstat.stdout, ctx)
-      const tokens = names.stdout.split('\0')
-      for (let i = 0; i < tokens.length;) {
-        const code = (tokens[i++] ?? '').charAt(0)
-        if (!code) continue
-        const renamed = code === 'R' || code === 'C'
-        const oldPath = renamed ? (tokens[i++] ?? '') : null
-        const path = GitRunner.workspaceRel(ctx, tokens[i++] ?? '')
+      for (const [code, repoPath, oldPath] of changes) {
+        const path = GitRunner.workspaceRel(ctx, repoPath)
         if (path === null) continue
         const status = gitStatusCode(code, false, code === 'R')
         const [additions, deletions, binary] = stats.get(path) ?? [0, 0, false]
@@ -1349,7 +1361,10 @@ export class GitRunner {
     return { binary: false, too_large: tooLarge, diff, ...diffFields(diff, !tooLarge) }
   }
 
-  /** `kind` `branch` diffs the committed file against the branch's merge base, empty without a base (TAL-2646). */
+  /**
+   * `kind` `branch` diffs the committed file against the branch's merge base, from its renamed-from path when the branch
+   * renamed it, and is empty without a base (TAL-2646).
+   */
   async diff(workspace: string, path: string, kind = 'unstaged'): Promise<GitDiff> {
     const ctx = await this.resolveContext(workspace)
     if (!ctx) throw new GitWorkspaceError('Workspace is not a Git repository')
@@ -1365,9 +1380,11 @@ export class GitRunner {
     if (kind === 'branch') {
       const base = await this.branchBase(ctx)
       if (!base) return { path: workspaceRel, kind, binary: false, too_large: false, additions: 0, deletions: 0, diff: '', hunks: [] }
-      args.push(base.mergeBase, 'HEAD')
-    }
-    args.push('--', repoRel)
+      const read: RunOptions = { check: true, neutralizeFilterPrograms: true }
+      const source = (await this.branchChanges(ctx, GitRunner.branchRange(ctx, base.mergeBase), read)).find(([code, path]) => code === 'R' && path === repoRel)?.[2]
+      args.push('-M', base.mergeBase, 'HEAD', '--', ...(source ? [source] : []))
+    } else args.push('--')
+    args.push(repoRel)
     let diff = (await this.run(ctx, args, { check: true, neutralizeFilterPrograms: true })).stdout
     const binary = diff.includes('Binary files ') || diff.includes('GIT binary patch')
     const tooLarge = Buffer.byteLength(diff, 'utf8') > DIFF_SIZE_LIMIT

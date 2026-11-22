@@ -547,6 +547,7 @@ describe('branch scope (TAL-2646)', () => {
     const ws = s.workspace
     git(ws, 'init', '-q', '-b', 'main')
     writeFileSync(join(ws, 'README.md'), 'hello\n')
+    writeFileSync(join(ws, 'notes.txt'), 'a\nb\nc\nd\ne\n')
     git(ws, 'add', '.')
     git(ws, 'commit', '-q', '-m', 'init')
     // A fetched origin whose HEAD names main, so the first base candidate is a symbolic ref.
@@ -558,6 +559,9 @@ describe('branch scope (TAL-2646)', () => {
     git(ws, 'commit', '-q', '-m', 'one')
     writeFileSync(join(ws, 'README.md'), 'hello\nworld\n')
     git(ws, 'commit', '-q', '-am', 'two')
+    git(ws, 'mv', 'notes.txt', 'docs.txt')
+    writeFileSync(join(ws, 'docs.txt'), 'a\nb\nc\nd\ne\nf\n')
+    git(ws, 'commit', '-q', '-am', 'rename')
     sid = (await repoSession(s)).sid
   })
   afterAll(() => s.close())
@@ -578,12 +582,15 @@ describe('branch scope (TAL-2646)', () => {
     expect(diff).toMatchObject({ path: 'README.md', kind: 'branch', additions: 1, deletions: 0, binary: false })
     expect(diff.diff).toContain('+world')
     expect(((await json(await s.get(`/api/git/diff?session_id=${sid}&path=README.md`))).diff as Json).diff).toBe('')
+    const renamed = (await json(await s.get(`/api/git/diff?session_id=${sid}&path=docs.txt&scope=branch`))).diff as Json
+    expect(renamed).toMatchObject({ path: 'docs.txt', kind: 'branch', additions: 1, deletions: 0 })
+    expect(renamed.diff).toContain('rename from notes.txt')
   })
 
   it('reports a detached HEAD', async () => {
     git(s.workspace, 'switch', '-q', '--detach')
     try {
-      expect(await statusOf(s, sid, 'branch')).toMatchObject({ detached: true, base_ref: 'origin/main', totals: { changed: 2 } })
+      expect(await statusOf(s, sid, 'branch')).toMatchObject({ detached: true, base_ref: 'origin/main', totals: { changed: 3 } })
     } finally {
       git(s.workspace, 'switch', '-q', 'feature')
     }
