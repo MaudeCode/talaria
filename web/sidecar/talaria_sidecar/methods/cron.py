@@ -35,6 +35,21 @@ _OUTPUT_HEADER_CONTEXT = 200
 _RUN_HEAD_BYTES = 4096
 _PASSTHROUGH_FIELDS = ("script", "no_agent", "context_from", "reasoning_effort", "monitor_script", "monitor_url")
 _SCHEDULE_POLICY_FIELDS = ("timezone", "catch_up", "grace_minutes")
+# TAL-2297: what a create or update may carry. Updates take the Agent dashboard's editable set (its
+# ``_DASHBOARD_UPDATABLE_FIELDS``) without ``repeat``, which a task keeps from its create, plus Talaria's profile,
+# notification, monitor and continuity fields; creates take the fields ``create`` stores. Anything else, the
+# scheduler's own bookkeeping such as ``fire_claim`` and ``manual_run_prompt`` included, is refused rather than written
+# or silently dropped.
+_UPDATE_FIELDS = frozenset({
+    "name", "prompt", "schedule", "deliver", "failure_deliver", "skills", "skill", "enabled", "model",
+    "provider", "base_url", "reasoning_effort", "pinned", "script", "monitor_script", "monitor_url", "interpreter",
+    "context_from", "enabled_toolsets", "attach_to_session", "workdir", "no_agent", "timezone", "grace_minutes",
+    "catch_up", "wrap_response", "profile", "toast_notifications", "monitor", "continuity",
+})
+_CREATE_FIELDS = frozenset({
+    "prompt", "schedule", "name", "deliver", "skills", "model", "provider", "repeat", "profile", "toast_notifications",
+    "owner_profile", "monitor", "continuity", *_PASSTHROUGH_FIELDS, *_SCHEDULE_POLICY_FIELDS,
+})
 _RUNNING: dict[str, float] = {}
 _RUNNING_LOCK = threading.Lock()
 _SNAPSHOT_LOCK = threading.Lock()
@@ -138,6 +153,40 @@ def _settled_mutation(method):
                 raise Unverified("Schedule edits and deletion are blocked until the manual execution is reconciled.")
             return method(ctx, dict(params, job_id=job_id))
     return guarded
+
+
+# ── mutation admission (TAL-2297) ─────────────────────────────────────────
+
+def _admit_fields(body: dict, allowed: frozenset, verb: str) -> None:
+    refused = sorted(set(body) - allowed)
+    if refused:
+        raise InvalidParams(f"Cron job field(s) cannot be {verb}: {', '.join(refused)}")
+
+
+def _cron_guards():
+    """The installed Agent's own cron admission checks: ``cron.job_args``/``cron.prompt_scan`` from 0.23.2."""
+    try:
+        return importlib.import_module("cron.job_args"), importlib.import_module("cron.prompt_scan")
+    except ModuleNotFoundError as exc:  # agent-shim: cron-guard-modules
+        if exc.name not in ("cron.job_args", "cron.prompt_scan"):
+            raise
+        return importlib.import_module("tools.cronjob_job_args"), importlib.import_module("tools.cronjob_prompt_scan")
+
+
+def _admit_job(effective: dict, touched=None) -> None:
+    """Refuse what the Agent's ``cronjob`` tool refuses: a flagged prompt, a stored credential paired with an off-origin
+    ``base_url``, a Bot Chat target that does not exist here. Call it under the owning profile's runtime
+    (``_owned_store``) so that profile's providers and secrets decide. ``touched`` None (create) checks every field; an
+    update checks the prompt and delivery targets it edits, and always the effective provider/base_url pair."""
+    job_args, prompt_scan = _cron_guards()
+    prompt = str(effective.get("prompt") or "").strip()
+    error = (touched is None or "prompt" in touched) and prompt and prompt_scan._scan_cron_prompt(prompt)
+    error = error or job_args._validate_cron_base_url(effective.get("provider"), effective.get("base_url"))
+    for key in ("deliver", "failure_deliver"):
+        if not error and (touched is None or key in touched):
+            error = job_args._validate_bot_chat_deliver(job_args._normalize_deliver_param(effective.get(key)))
+    if error:
+        raise InvalidParams(error)
 
 
 # ── job payload shaping ───────────────────────────────────────────────────
@@ -751,6 +800,7 @@ def register(registry) -> None:
     @registry.method("cron.create")
     def create(ctx: CallContext, params: dict) -> dict:
         body = params.get("job") or {}
+        _admit_fields(body, _CREATE_FIELDS, "set")
         if not body.get("schedule"):
             raise InvalidParams("Missing required field(s): schedule")
         if not body.get("prompt") and not body.get("script") and not body.get("skills"):
@@ -786,6 +836,8 @@ def register(registry) -> None:
                 model = model or profile_model
             except Exception as exc:  # noqa: BLE001
                 raise RpcError(f"Cannot safely resolve cron model for profile {post['profile']!r}", condition="cron_snapshot_failed") from exc
+        with _owned_store(home):
+            _admit_job({"prompt": body.get("prompt"), "provider": provider, "deliver": body.get("deliver") or "local"})
         # create_job takes no profile or notification fields, so they land in a second write. One store transaction
         # spans both: readers and the scheduler see no job or the complete one, and a refused second write removes
         # the job before any of them can see or run it.
@@ -810,10 +862,14 @@ def register(registry) -> None:
         jobs = _jobs()
         job_id = _job_ref(params)
         body = params.get("updates") or {}
+        _admit_fields(body, _UPDATE_FIELDS, "updated")
         with _owned_store(profile_home_param(params)):
+            existing = jobs.get_job(job_id)
+            if not existing:
+                raise RpcError("Job not found", condition="not_found")
             updates = {}
             for key, value in body.items():
-                if key in ("monitor", "continuity", "repeat", *_SCHEDULE_POLICY_FIELDS):
+                if key in ("monitor", "continuity", *_SCHEDULE_POLICY_FIELDS):
                     continue
                 if key in ("model", "provider"):
                     updates[key] = value if value else None
@@ -823,8 +879,11 @@ def register(registry) -> None:
                     updates[key] = value
             current_refs = None
             if "continuity" in body and "context_from" not in body:
-                current_refs = (jobs.get_job(job_id) or {}).get("context_from")
+                current_refs = existing.get("context_from")
             updates.update(_field_updates(body, current_refs))
+            # Resolve ``pinned`` here, in the owning profile's runtime, so the pair checked is the pair update_job stores.
+            jobs._apply_pin_update(dict(existing), updates)
+            _admit_job({**existing, **updates}, updates)
             try:
                 job = jobs.update_job(job_id, updates)
             except ValueError as exc:

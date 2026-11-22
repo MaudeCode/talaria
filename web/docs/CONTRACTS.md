@@ -101,6 +101,12 @@ model and its `advanced.service_tier`, but a non-owner whose `advanced` carries
 `base_url`, `api_key` or `api_key_clear` gets the same 403: those re-point the
 route or write its credential.
 
+A cron create or update takes only the fields its route contract lists and
+answers 400 naming any other, the scheduler's run bookkeeping included; the
+sidecar also refuses what the Agent's own `cronjob` tool refuses (a flagged
+prompt, a stored credential sent to another origin, a missing Bot Chat
+profile) with the Agent's wording (TAL-2297).
+
 A cron create or update stays open to non-owners, except that a body carrying
 `script` or `no_agent`, giving the job a monitor script it does not already
 have (a `monitor` that is not a URL, or `monitor_script`), or delivering to a

@@ -62,7 +62,6 @@ it.each(['trusted', 'oidc'] as const)('keeps room catalogs, delivery writes and 
     ['update', { job_id: 'local-job', deliver: 'telegram, RoOm:discussion@helper' }],
     ['update', { job_id: 'local-job', deliver: 'telegram,\u001croom:discussion' }],
     ['update', { job_id: 'local-job', failure_deliver: ['local', 'room:discussion'] }],
-    ['update', { job_id: 'local-job', deliver: 'origin', origin: { platform: 'room', chat_id: 'discussion' } }],
     ['update', { job_id: 'room-job', prompt: 'Replaced content' }],
     ['resume', { job_id: 'room-job' }], ['run', { job_id: 'room-job' }],
     // TAL-2201: a script runs on the host, and `no_agent` runs it without the agent.
@@ -79,6 +78,9 @@ it.each(['trusted', 'oidc'] as const)('keeps room catalogs, delivery writes and 
     const response = await server!.get(`/api/crons/${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
     expect.soft(response.status, `${path} ${JSON.stringify(body)}`).toBe(403)
   }
+  // TAL-2297: `origin` is the scheduler's own record, so no caller can point an `origin` delivery at a room through it.
+  const origin = await server!.get('/api/crons/update', { method: 'POST', headers, body: JSON.stringify({ job_id: 'local-job', deliver: 'origin', origin: { platform: 'room', chat_id: 'discussion' } }) })
+  expect.soft([origin.status, (await origin.json() as { error: string }).error]).toEqual([400, 'Unrecognized key: "origin"'])
   expect.soft(sidecar.calls.filter((call) => ['gateway.groups', 'cron.create', 'cron.update', 'cron.resume', 'cron.run'].includes(call.method))).toEqual([])
   const local = await server!.get('/api/crons/create', { method: 'POST', headers, body: JSON.stringify({ schedule: 'every 1h', prompt: 'Digest', deliver: 'local' }) })
   expect(local.status).toBe(200)

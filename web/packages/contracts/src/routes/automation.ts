@@ -14,6 +14,12 @@ const tags = ['automation']
 const Ok = z.object({ ok: z.literal(true) })
 
 const JobId = z.object({ job_id: z.string().optional() })
+/** TAL-2297: the fields a task create or update may carry, values checked by the server and the Agent. Anything else, such as the scheduler's run bookkeeping (`fire_claim`, `manual_run_prompt`), is refused. */
+const cronFields = (keys: readonly string[]) => z.strictObject(Object.fromEntries(keys.map((key) => [key, Json.optional()])))
+const CRON_FIELDS = ['name', 'prompt', 'schedule', 'deliver', 'skills', 'model', 'provider', 'profile', 'toast_notifications', 'monitor', 'continuity', 'script', 'no_agent', 'context_from', 'reasoning_effort', 'timezone', 'catch_up', 'grace_minutes'] as const
+export const CronCreateInputSchema = cronFields([...CRON_FIELDS, 'repeat'])
+/** The Agent dashboard's editable set (`_DASHBOARD_UPDATABLE_FIELDS`) without `repeat`, which a task keeps from its create. */
+export const CronUpdateInputSchema = cronFields([...CRON_FIELDS, 'job_id', 'failure_deliver', 'skill', 'enabled', 'base_url', 'pinned', 'monitor_script', 'monitor_url', 'interpreter', 'enabled_toolsets', 'attach_to_session', 'workdir', 'wrap_response'])
 // The Agent move table a task arrives with stays on the server; clients get `available_actions` (TAL-796).
 const PolicyTaskSchema = KanbanTaskSchema.omit({ agent_move_targets: true }).extend(KanbanTaskPolicyShape)
 /** The newest Block or Unblock in the task's events (TAL-557); a client whose write outcome was lost compares `event_id` with the cursor it held when writing. */
@@ -47,8 +53,8 @@ export const automationContract = {
     status: oc.route({ method: 'GET', path: '/api/crons/status', tags }).input(JobId).output(CronStatusSchema),
     recent: oc.route({ method: 'GET', path: '/api/crons/recent', tags, summary: "Each active-profile job's latest completion after `since` (Unix seconds), newest first. Not a run archive." }).input(z.object({ since: z.string().optional() })).output(CronRecentSchema),
     deliveryOptions: oc.route({ method: 'GET', path: '/api/crons/delivery-options', tags }).output(z.object({ platforms: z.array(z.object({ value: z.string(), label: z.string() })) })),
-    create: oc.route({ method: 'POST', path: '/api/crons/create', tags }).input(Loose).output(CronMutationSchema),
-    update: oc.route({ method: 'POST', path: '/api/crons/update', tags }).input(Loose).output(CronMutationSchema),
+    create: oc.route({ method: 'POST', path: '/api/crons/create', tags }).input(CronCreateInputSchema).output(CronMutationSchema),
+    update: oc.route({ method: 'POST', path: '/api/crons/update', tags }).input(CronUpdateInputSchema).output(CronMutationSchema),
     delete: oc.route({ method: 'POST', path: '/api/crons/delete', tags }).input(JobId).output(CronMutationSchema),
     runNow: oc.route({ method: 'POST', path: '/api/crons/run', tags, summary: 'Start a manual run in the sidecar; answers immediately with `status: running` (or `already_running`).' }).input(JobId).output(CronMutationSchema),
     cancel: oc.route({ method: 'POST', path: '/api/crons/cancel', tags, summary: "Ask a task's live run to stop, whoever started it. Answers `status: stopping` (or `not_running`); the run books `cancelled` once it winds down and its schedule is untouched." }).input(JobId).output(CronMutationSchema),

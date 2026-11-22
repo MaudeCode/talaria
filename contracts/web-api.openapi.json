@@ -155235,10 +155235,28 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "propertyNames": {
-                  "type": "string"
+                "properties": {
+                  "name": {},
+                  "prompt": {},
+                  "schedule": {},
+                  "deliver": {},
+                  "skills": {},
+                  "model": {},
+                  "provider": {},
+                  "profile": {},
+                  "toast_notifications": {},
+                  "monitor": {},
+                  "continuity": {},
+                  "script": {},
+                  "no_agent": {},
+                  "context_from": {},
+                  "reasoning_effort": {},
+                  "timezone": {},
+                  "catch_up": {},
+                  "grace_minutes": {},
+                  "repeat": {}
                 },
-                "additionalProperties": {}
+                "additionalProperties": false
               }
             }
           }
@@ -155763,10 +155781,40 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "propertyNames": {
-                  "type": "string"
+                "properties": {
+                  "name": {},
+                  "prompt": {},
+                  "schedule": {},
+                  "deliver": {},
+                  "skills": {},
+                  "model": {},
+                  "provider": {},
+                  "profile": {},
+                  "toast_notifications": {},
+                  "monitor": {},
+                  "continuity": {},
+                  "script": {},
+                  "no_agent": {},
+                  "context_from": {},
+                  "reasoning_effort": {},
+                  "timezone": {},
+                  "catch_up": {},
+                  "grace_minutes": {},
+                  "job_id": {},
+                  "failure_deliver": {},
+                  "skill": {},
+                  "enabled": {},
+                  "base_url": {},
+                  "pinned": {},
+                  "monitor_script": {},
+                  "monitor_url": {},
+                  "interpreter": {},
+                  "enabled_toolsets": {},
+                  "attach_to_session": {},
+                  "workdir": {},
+                  "wrap_response": {}
                 },
-                "additionalProperties": {}
+                "additionalProperties": false
               }
             }
           }

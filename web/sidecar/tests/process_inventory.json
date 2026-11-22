@@ -1247,6 +1247,13 @@
         "[overrides3-openrouter-profile-model]"
       ]
     },
+    "tests/test_cron_parity.py::test_mutations_refuse_what_the_agents_cron_guards_refuse": {
+      "layer": "compatibility",
+      "reason": "TAL-2297: create and update reach the supported Agent's own prompt scanner, provider/base_url origin check and Bot Chat profile check (modules that moved in 0.23.2) under the owning profile's providers config, and a refusal leaves the real jobs.json bytes and run claim untouched. Synthetic providers and targets; no scheduler or vendor request.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_cron_parity.py::test_explicit_model_and_provider_skip_profile_resolution": {
       "layer": "compatibility",
       "reason": "An explicit model and provider skip the Agent's _main_model_pin even for an unconfigured profile, and the real store keeps the caller's pin.",

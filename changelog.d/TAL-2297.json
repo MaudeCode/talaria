@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Scheduled tasks created or edited in Talaria now pass the Agent's own checks: prompts that look like injection are refused, a provider's key can only be sent to that provider's endpoint, Bot Chat delivery must name a profile that exists, and fields the scheduler keeps for itself can no longer be written.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}
