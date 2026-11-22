@@ -46,6 +46,7 @@ enum VisualReference {
     ) throws {
         let rendered = try render(
             content,
+            named: name,
             size: size,
             colorScheme: colorScheme,
             dynamicTypeSize: dynamicTypeSize,
@@ -118,46 +119,65 @@ enum VisualReference {
 
     // MARK: - Rendering
 
+    /// Reads of one render, 0.5 s apart. 20 s covers the 12 to 17 s first GPU pipeline builds
+    /// seen on hosted runners (TAL-1281).
+    private static let settleReads = 41
+
+    /// Reads of the fresh render made once the first one timed out. The pipeline exists by
+    /// then, so the image draws within a second. Both renders together wait at most 25 s,
+    /// inside CI's 30 s per-test budget.
+    private static let freshRenderReads = 11
+
     @MainActor
     private static func render(
         _ content: some View,
+        named name: String,
         size: CGSize,
         colorScheme: ColorScheme,
         dynamicTypeSize: DynamicTypeSize,
         background: Color
     ) throws -> CGImage {
-        let renderer = ImageRenderer(
-            content: content
-                .frame(width: size.width, height: size.height)
-                .background(background)
-                .environment(\.colorScheme, colorScheme)
-                .environment(\.dynamicTypeSize, dynamicTypeSize)
-                .environment(\.locale, Locale(identifier: "en_US"))
-        )
-        renderer.scale = 2
-        renderer.isOpaque = true
-        let lazyImage = try XCTUnwrap(renderer.cgImage, "ImageRenderer produced no image")
-        return try settledPixels(of: lazyImage)
+        let framed = content
+            .frame(width: size.width, height: size.height)
+            .background(background)
+            .environment(\.colorScheme, colorScheme)
+            .environment(\.dynamicTypeSize, dynamicTypeSize)
+            .environment(\.locale, Locale(identifier: "en_US"))
+
+        // `ImageRenderer.cgImage` draws its pixels lazily on the GPU. On a cold simulator a
+        // slow pipeline build outlasts the image provider's wait, and reads return a blank,
+        // fully transparent image (TAL-675, TAL-1281). A renderer whose image timed out is
+        // replaced once rather than re-read.
+        for reads in [settleReads, freshRenderReads] {
+            let renderer = ImageRenderer(content: framed)
+            renderer.scale = 2
+            renderer.isOpaque = true
+            let lazyImage = try XCTUnwrap(renderer.cgImage, "ImageRenderer produced no image")
+            if var settled = try settle(
+                reads: reads,
+                read: { try pixels(of: lazyImage) },
+                wait: { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5)) }
+            ) {
+                return try image(from: &settled, width: lazyImage.width, height: lazyImage.height)
+            }
+        }
+        throw VisualReferenceError.renderUnfinished(name: name)
     }
 
-    /// `ImageRenderer.cgImage` draws its pixels lazily on the GPU. On a cold simulator a slow
-    /// pipeline build outlasted the image provider's wait, so the first read returned an
-    /// unfinished image (TAL-675). Reads until two in a row agree, turning the run loop in
-    /// between, so comparison, attachments and recording all see the finished pixels.
-    /// ponytail: two equal unfinished reads would still pass; a bounded wait covers the
-    /// observed 10 s pipeline build.
-    @MainActor
-    private static func settledPixels(of lazyImage: CGImage) throws -> CGImage {
-        var previous = try pixels(of: lazyImage)
-        for _ in 0..<20 {
-            var current = try pixels(of: lazyImage)
-            if current == previous {
-                return try image(from: &current, width: lazyImage.width, height: lazyImage.height)
+    /// Reads up to `reads` times, calling `wait` between reads, and returns the first read
+    /// that equals the one before it and is not blank; nil when the reads run out. The
+    /// renderer is opaque, so a finished image always has a pixel with nonzero alpha.
+    static func settle(reads: Int, read: () throws -> [UInt8], wait: () -> Void) rethrows -> [UInt8]? {
+        var previous: [UInt8]?
+        for attempt in 0..<reads {
+            if attempt > 0 { wait() }
+            let current = try read()
+            if current == previous, stride(from: 3, to: current.count, by: 4).contains(where: { current[$0] != 0 }) {
+                return current
             }
             previous = current
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
         }
-        throw VisualReferenceError.renderNeverSettled
+        return nil
     }
 
     private static var isRecording: Bool {
@@ -269,14 +289,17 @@ enum VisualReference {
 
 enum VisualReferenceError: Error, CustomStringConvertible {
     case bitmapContextUnavailable
-    case renderNeverSettled
+    case renderUnfinished(name: String)
 
     var description: String {
         switch self {
         case .bitmapContextUnavailable:
             "Could not create the bitmap context used to compare visual references."
-        case .renderNeverSettled:
-            "ImageRenderer kept returning different pixels for 10 seconds."
+        case let .renderUnfinished(name):
+            """
+            Visual reference "\(name)" never finished rendering: ImageRenderer returned no \
+            stable opaque image within 20 seconds, nor from a fresh renderer after that.
+            """
         }
     }
 }
@@ -297,5 +320,19 @@ extension XCTestCase {
             MainActor.assumeIsolated { window.isHidden = true }
         }
         return window
+    }
+}
+
+final class VisualReferenceSettleTests: XCTestCase {
+    /// A slow GPU pipeline build leaves `ImageRenderer` returning a fully transparent image
+    /// for several reads (TAL-1281). Equal blank reads must not count as the finished render.
+    func testBlankReadsWaitForTheOpaqueRender() {
+        let blank = [UInt8](repeating: 0, count: 8)
+        let opaque: [UInt8] = [10, 20, 30, 255, 40, 50, 60, 255]
+        var samples = [blank, blank, opaque, opaque]
+
+        let settled = VisualReference.settle(reads: samples.count, read: { samples.removeFirst() }, wait: {})
+
+        XCTAssertEqual(settled, opaque)
     }
 }
