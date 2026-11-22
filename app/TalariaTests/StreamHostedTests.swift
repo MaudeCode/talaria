@@ -331,7 +331,15 @@ final class StreamHostedTests: XCTestCase {
 
         _ = try await requireElement(in: window, label: "Run the deterministic fixture")
         _ = try await requireElement(in: window, label: "Approval required")
-        // TAL-625: the live turn shows each streamed text once, not only the settled one after the reopen.
+        let opening = try await requireElement(in: window, label: "Fixture opening.")
+        let liveThinking = try await requireElement(in: window, where: labelContaining("Thinking, Inspecting fixture"))
+        let liveProgress = try await requireElement(in: window, label: "Fixture progress.")
+        let liveTool = try await requireElement(in: window, where: labelContaining("Calling a tool, Running"))
+        XCTAssertLessThan(opening.accessibilityFrame.minY, liveThinking.accessibilityFrame.minY)
+        XCTAssertLessThan(liveThinking.accessibilityFrame.minY, liveProgress.accessibilityFrame.minY)
+        XCTAssertLessThan(liveProgress.accessibilityFrame.minY, liveTool.accessibilityFrame.minY)
+        // TAL-625: with every live row drawn and the approval still open, each streamed text shows once, not only after
+        // the reopen.
         for once in ["Fixture opening.", "Fixture progress."] {
             let shown = HostedAccessibility.elements(in: window).filter(label(once))
             XCTAssertEqual(shown.count, 1, """
@@ -343,13 +351,6 @@ final class StreamHostedTests: XCTestCase {
             tool=\(viewModel.toolCallAnchorMessageID ?? "nil")
             """)
         }
-        let opening = try await requireElement(in: window, label: "Fixture opening.")
-        let liveThinking = try await requireElement(in: window, where: labelContaining("Thinking, Inspecting fixture"))
-        let liveProgress = try await requireElement(in: window, label: "Fixture progress.")
-        let liveTool = try await requireElement(in: window, where: labelContaining("Calling a tool, Running"))
-        XCTAssertLessThan(opening.accessibilityFrame.minY, liveThinking.accessibilityFrame.minY)
-        XCTAssertLessThan(liveThinking.accessibilityFrame.minY, liveProgress.accessibilityFrame.minY)
-        XCTAssertLessThan(liveProgress.accessibilityFrame.minY, liveTool.accessibilityFrame.minY)
 
         HostedAccessibility.activate(try await requireElement(in: window, label: "Allow once"))
         _ = try await requireElement(in: window, label: "Clarification Required")
