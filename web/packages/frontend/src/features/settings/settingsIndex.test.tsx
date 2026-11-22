@@ -28,7 +28,7 @@ import { renderRouted } from '../../test/router'
 
 /** Rows whose settings fields the server sends, so each conditional row shows. */
 const SETTINGS = {
-  compression_prepare_ahead: false, group_discussion_max_rounds: 3, group_discussion_max_messages: 10, agent_approvals: false, hidden_tabs: [], trusted_link_hosts: [], auth_enabled: false,
+  compression_prepare_ahead: false, redact_phone_numbers: true, group_discussion_max_rounds: 3, group_discussion_max_messages: 10, agent_approvals: false, hidden_tabs: [], trusted_link_hosts: [], auth_enabled: false,
   provider_quota_thresholds: { warning_remaining_percent: 20, critical_remaining_percent: 5, pace_tolerance_percent: 5, pace_warning_burn_rate_percent: 120, pace_critical_burn_rate_percent: 150, pace_minimum_elapsed_hours: 6 },
 }
 const GROUP_OF_SCOPE: Record<SettingScope, string> = { device: 'interface', interface: 'interface', profile: 'profile', server: 'server' }

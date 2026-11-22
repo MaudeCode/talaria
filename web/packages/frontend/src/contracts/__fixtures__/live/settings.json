@@ -11,6 +11,7 @@
     "check_for_updates": true,
     "composer_control_order": [],
     "compression_prepare_ahead": false,
+    "redact_phone_numbers": true,
     "group_discussion_max_rounds": 3,
     "group_discussion_max_messages": 10,
     "group_discussion_restart_required": false,

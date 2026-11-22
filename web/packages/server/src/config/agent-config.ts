@@ -672,6 +672,46 @@ export async function compressionPrepareAhead(store: AgentConfig, home: string):
   }
 }
 
+// ── chat phone numbers ────────────────────────────────────────────────
+
+export const REDACT_PHONE_NUMBERS_KEY = 'security.redact_phone_numbers'
+
+/**
+ * TAL-2651: `security.redact_phone_numbers` as the Agent reads it (`agent/redact_phone_policy.py`): only a YAML `false`
+ * keeps phone numbers in assistant replies; anything else, absent and malformed included, masks them.
+ */
+const redactsPhoneNumbers = (config: Config): boolean => dict(config.security).redact_phone_numbers !== false
+
+/** TAL-2651: an administrator's pin of `security.redact_phone_numbers`, when the managed config sets it. */
+export function managedPhoneRedaction(managed: Config): boolean | undefined {
+  return 'redact_phone_numbers' in dict(managed.security) ? redactsPhoneNumbers(managed) : undefined
+}
+
+/**
+ * TAL-2651: the profile opted out of masking phone numbers in assistant replies, on an Agent that offers it, with no
+ * administrator pin overriding it. Every transcript read asks, so a profile on the default costs only the cached config read.
+ */
+export async function chatKeepsPhoneNumbers(store: AgentConfig, home: string): Promise<boolean> {
+  try {
+    if (redactsPhoneNumbers(await store.read(home)) || !(await store.declaresKey(REDACT_PHONE_NUMBERS_KEY))) return false
+    const { config, managed } = await store.readWithManaged(home)
+    return !(managedPhoneRedaction(managed) ?? redactsPhoneNumbers(config))
+  } catch {
+    return false
+  }
+}
+
+/** TAL-2651: the Settings value: whether assistant replies mask phone numbers; null when the Agent does not offer the opt-out or the config cannot be read. */
+export async function phoneRedaction(store: AgentConfig, home: string): Promise<boolean | null> {
+  if (!(await store.declaresKey(REDACT_PHONE_NUMBERS_KEY))) return null
+  try { await store.read(home) } catch { return null }
+  return !(await chatKeepsPhoneNumbers(store, home))
+}
+
+export async function setPhoneRedaction(store: AgentConfig, home: string, enabled: boolean): Promise<void> {
+  await store.update(home, (c) => { c.security = { ...dict(c.security), redact_phone_numbers: enabled } })
+}
+
 // ── agent approvals ───────────────────────────────────────────────────
 
 export function managedAgentApprovals(managed: Config): boolean | undefined {

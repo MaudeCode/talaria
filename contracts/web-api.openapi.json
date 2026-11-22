@@ -927,6 +927,17 @@
                               ],
                               "description": "TAL-1825: the profile's `compression.prepare_ahead`; null when the Agent does not offer it."
                             },
+                            "redact_phone_numbers": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-2651: the active profile's `security.redact_phone_numbers` (default true): false keeps phone numbers readable in assistant replies, while tool calls, exports and every other secret stay masked. Null when the Agent does not offer it or the config cannot be read. Changing it needs an owner session."
+                            },
                             "group_discussion_max_rounds": {
                               "anyOf": [
                                 {
@@ -120199,6 +120210,17 @@
                       ],
                       "description": "TAL-1825: the profile's `compression.prepare_ahead`; null when the Agent does not offer it."
                     },
+                    "redact_phone_numbers": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-2651: the active profile's `security.redact_phone_numbers` (default true): false keeps phone numbers readable in assistant replies, while tool calls, exports and every other secret stay masked. Null when the Agent does not offer it or the config cannot be read. Changing it needs an owner session."
+                    },
                     "group_discussion_max_rounds": {
                       "anyOf": [
                         {
@@ -120746,6 +120768,17 @@
                         }
                       ],
                       "description": "TAL-1825: the profile's `compression.prepare_ahead`; null when the Agent does not offer it."
+                    },
+                    "redact_phone_numbers": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-2651: the active profile's `security.redact_phone_numbers` (default true): false keeps phone numbers readable in assistant replies, while tool calls, exports and every other secret stay masked. Null when the Agent does not offer it or the config cannot be read. Changing it needs an owner session."
                     },
                     "group_discussion_max_rounds": {
                       "anyOf": [

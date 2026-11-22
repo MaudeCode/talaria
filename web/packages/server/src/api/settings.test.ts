@@ -203,6 +203,35 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('round-trips security.redact_phone_numbers through the profile config, on by default, and reports it unavailable on an Agent without it (TAL-2651)', async () => {
+    const before = structuredClone(configs.get(s.state))
+    configs.set(s.state, { ...before, security: { redact_secrets: true } })
+    s.deps.agentConfig.invalidate(s.state)
+    sidecar.respond('config.declares_key', (params) => ({ declared: params.key === 'security.redact_phone_numbers' }))
+    try {
+      expect((await json(await s.get('/api/settings'))).redact_phone_numbers).toBe(true)
+      for (const value of [false, true]) {
+        const saved = await post(s, '/api/settings', { redact_phone_numbers: value })
+        expect(saved.status).toBe(200)
+        expect((await json(saved)).redact_phone_numbers).toBe(value)
+        expect(configs.get(s.state)?.security).toEqual({ redact_secrets: true, redact_phone_numbers: value })
+      }
+      expect(await s.deps.settings.readRaw()).not.toHaveProperty('redact_phone_numbers')
+      expect((await post(s, '/api/settings', { redact_phone_numbers: 'false' })).status).toBe(400)
+      sidecar.respond('config.declares_key', () => ({ declared: false }))
+      expect((await json(await s.get('/api/settings'))).redact_phone_numbers).toBeNull()
+      const refused = await post(s, '/api/settings', { redact_phone_numbers: false, bot_name: 'Refused' })
+      expect(refused.status).toBe(409)
+      expect(await json(refused)).toMatchObject({ condition: 'setting_unavailable' })
+      expect(configs.get(s.state)?.security).toEqual({ redact_secrets: true, redact_phone_numbers: true })
+      expect((await json(await s.get('/api/settings'))).bot_name).not.toBe('Refused')
+    } finally {
+      sidecar.respond('config.declares_key', undefined)
+      configs.set(s.state, before ?? {})
+      s.deps.agentConfig.invalidate(s.state)
+    }
+  })
+
   it('round-trips talaria.agent_approvals through the profile config, off by default, keeping the section\'s other keys (TAL-1169)', async () => {
     const before = structuredClone(configs.get(s.state))
     configs.set(s.state, { ...before, talaria: { other: 1 } })

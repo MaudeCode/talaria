@@ -507,6 +507,17 @@ def _reads_discussion_limit(key: str) -> bool:
     return field in {limit.name for limit in dataclasses.fields(DiscussionLimits)}
 
 
+def _reads_phone_policy(key: str) -> bool:
+    """TAL-2651: the Agent reads ``security.redact_phone_numbers`` in ``agent.redact_phone_policy``, with no ``DEFAULT_CONFIG`` entry."""
+    if key != "security.redact_phone_numbers":
+        return False
+    try:
+        from agent.redact_phone_policy import chat_keeps_phone_numbers  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def declares_key(key: str) -> bool:
     """TAL-1825: whether the installed Agent reads a dotted key: its ``DEFAULT_CONFIG`` holds it, or a code default does (TAL-1828)."""
     from hermes_cli.config import DEFAULT_CONFIG
@@ -514,7 +525,7 @@ def declares_key(key: str) -> bool:
     node = DEFAULT_CONFIG
     for part in key.split("."):
         if not isinstance(node, dict) or part not in node:
-            return _reads_discussion_limit(key)
+            return _reads_discussion_limit(key) or _reads_phone_policy(key)
         node = node[part]
     return True
 
