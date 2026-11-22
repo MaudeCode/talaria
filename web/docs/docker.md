@@ -495,7 +495,10 @@ What the override sets up:
   refused.
 - `hermes-webui` mounts the socket directory read-only. Nothing else may mount
   it: access to the socket is operator access to the listed profiles'
-  conversations and tools.
+  conversations and tools, for every process of that UID in the Web
+  container, including commands a chat runs there. The shared `hermes-home`
+  already gives those processes every profile's files; list only profiles that
+  every Web user may control, and keep the rest on another deployment.
 
 Both ends check Linux peer credentials, so the helper, the Gateway and Web must
 run as the same UID (`UID`/`GID` in `.env`, as for the shared home). The socket

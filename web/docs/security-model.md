@@ -517,6 +517,13 @@ origins but never requests them. Every exchange starts at the Web server
   (`workspace/media.ts` `mediaAccessFor`, `sessionMediaGrant`).
 - Tool approvals need only session visibility, not owner authority
   (`api/chat-router.ts` `approvalRespond`).
+- The Agent's control socket and the optional session bridge trust every
+  process of their UID. A command a chat runs in the Web container under that
+  UID (a local terminal tool) can reach any profile the helper lists, as it can
+  already read every profile's home, credentials and cron jobs in the shared
+  `hermes-home`, and reach `gateway.sock` in a single-container install. Keep
+  profiles that must stay apart on separate UIDs or deployments
+  (`web/sidecar/talaria_sidecar/gateway_bridge.py` `check_peer`).
 - Remote-image relay ids live in memory, so an old relay URL answers 404 after
   a restart (`http/remote-image.ts` `vouchRemoteImage`).
 - Apple sign-in budgets key on the client address, so users behind one NAT
