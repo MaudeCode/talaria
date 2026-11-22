@@ -2498,6 +2498,14 @@ describe('session detail classifies the rows the Agent types for display (TAL-81
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
     expect(served).toEqual(fixture.messages)
   })
+
+  it('serves a cron run\'s prompt as the shared scheduled task example records it (TAL-2638)', async () => {
+    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).scheduled_task_session as Json
+    const sid = String((await newSession(s)).session_id)
+    await writeMessages(s, sid, (fixture.stored as Json[]))
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
+    expect(served).toEqual(fixture.messages)
+  })
 })
 
 describe('session detail shows mirrored deliveries in a messaging session as delivery notices (TAL-816)', () => {

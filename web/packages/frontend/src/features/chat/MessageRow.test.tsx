@@ -268,6 +268,23 @@ describe('refused asks (TAL-2057)', () => {
   })
 })
 
+describe('scheduled task runs (TAL-2638)', () => {
+  it('opens with the job\'s own prompt and skills, not the Agent\'s cron instructions, and copies the stored prompt', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const example = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { scheduled_task_session: { messages: Message[] } }).scheduled_task_session.messages
+    const view = render(<Transcript rows={projectMessages(example)} live={null} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{ onEdit: vi.fn(), onRegenerate: vi.fn(), onBranch: vi.fn() }} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
+    const task = view.container.querySelector<HTMLElement>('[data-role="marker"]')!
+    expect(task).toHaveTextContent(/^Scheduled task with daily-brief and inbox-triage/)
+    expect(within(task).getByRole('note')).toHaveAccessibleName('Scheduled task with daily-brief and inbox-triage')
+    expect(task.querySelector('.msg-body')?.textContent).toBe('Summarize what changed in the repo since yesterday.\nList open pull requests.')
+    expect(view.container).not.toHaveTextContent('scheduled cron job')
+    fireEvent.click(within(task).getByRole('button', { name: 'Copy' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(example[0]!.content))
+  })
+})
+
 describe('Agent notices (TAL-815)', () => {
   it('renders a session closing notice without reply controls or a warning icon (TAL-937)', () => {
     const row = { index: 0, key: 'closing', message: { role: 'local_notice', content: 'bye', _notice_kind: 'session_finalize' as const } }

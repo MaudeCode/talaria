@@ -1391,6 +1391,8 @@
 	"markdown_table_sort_column": "Sort column",
 	"marker_context_compaction": "Context compaction",
 	"marker_preserved_task_list": "Preserved task list",
+	"marker_scheduled_task": "Scheduled task",
+	"marker_scheduled_task_skills": "Scheduled task with {skills}",
 	"mcp_add_server": "+ Add Server",
 	"mcp_cancel": "Cancel",
 	"mcp_command_required": "Command is required for stdio transport.",
