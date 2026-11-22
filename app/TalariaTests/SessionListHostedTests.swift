@@ -3496,6 +3496,30 @@ extension RegularSplitHostedTests {
         XCTAssertTrue(collapsed)
         XCTAssertEqual(composerDraftText(in: window), "Keep the primary draft")
         attachHostedScreenshot(window, name: "duo-two-chats-closed")
+        foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: false)
+        _ = try await requireSplitAction("Make Primary", in: window)
+        _ = try await requireElement(in: window, "Unfolding must restore the secondary session, not the primary transcript") {
+            $0.accessibilityLabel == "Fixture Session 01 reply" && $0.accessibilityFrame.midX > window.bounds.midX
+        }
+        XCTAssertTrue(splitComposers(in: window).contains { $0.text == "Keep the primary draft" })
+        attachHostedScreenshot(window, name: "duo-two-chats-restored")
+        HostedAccessibility.activate(try await requireSplitAction("Close", in: window))
+        let companionAfter = await companionTitle("Alpha.swift", in: window)
+        XCTAssertNotNil(companionAfter, "Close must restore the companion page")
+        attachHostedScreenshot(window, name: "duo-companion-restored")
+    }
+
+    func testDuoOuterLandscapeShowsOnlyThePrimaryChatAndDraft() async throws {
+        try requireArrangement()
+        let display = HostedDuoDisplay()
+        let window = try await openCompanionChat([], size: HostedSize.duoInnerLandscape, writes: false, display: display)
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        try await typeIntoComposer("Keep the primary draft", in: window)
+        window.endEditing(true)
+        try await openSecondChat(in: window)
+        _ = try await requireSplitAction("Make Primary", in: window)
+        _ = try await requireElement(in: window, label: "Fixture Session 01 reply")
+        foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: true)
         let scene = try XCTUnwrap(window.windowScene)
         addTeardownBlock { @MainActor in
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
@@ -3518,21 +3542,6 @@ extension RegularSplitHostedTests {
         XCTAssertFalse(elements(in: window).contains { $0.accessibilityLabel == "Fixture Session 01 reply" })
         XCTAssertEqual(composerDraftText(in: window), "Keep the primary draft")
         attachHostedScreenshot(window, name: "duo-two-chats-outer-landscape")
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
-        let portrait = await awaitCondition { scene.interfaceOrientation == .portrait }
-        XCTAssertTrue(portrait)
-        window.traitOverrides.verticalSizeClass = .regular
-        foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: false)
-        _ = try await requireSplitAction("Make Primary", in: window)
-        _ = try await requireElement(in: window, "Unfolding must restore the secondary session, not the primary transcript") {
-            $0.accessibilityLabel == "Fixture Session 01 reply" && $0.accessibilityFrame.midX > window.bounds.midX
-        }
-        XCTAssertTrue(splitComposers(in: window).contains { $0.text == "Keep the primary draft" })
-        attachHostedScreenshot(window, name: "duo-two-chats-restored")
-        HostedAccessibility.activate(try await requireSplitAction("Close", in: window))
-        let companionAfter = await companionTitle("Alpha.swift", in: window)
-        XCTAssertNotNil(companionAfter, "Close must restore the companion page")
-        attachHostedScreenshot(window, name: "duo-companion-restored")
     }
 
     func testTwoChatsOccupySeparateBookFoldRegions() async throws {
