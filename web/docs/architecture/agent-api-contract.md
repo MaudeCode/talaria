@@ -101,6 +101,53 @@ creates the primary LOCAL adapter first, and checks the secondary model pick,
 workspace, credentials, tool policy and transcript during a concurrent primary
 turn and after owner replacement. Other supported revisions exercise refusal.
 
+## Canonical sessions through a private socket (containers)
+
+A profile whose `config.yaml` sets `talaria.gateway_session_socket` reaches its
+canonical owner through `talaria_sidecar.gateway_bridge` instead of the Agent's
+local discovery (TAL-1977). `gateway_sessions._discover` picks the transport once
+per call from the session's owning profile; the endpoint it returns carries that
+transport to `_connect`, which also serves `_with_owner` and the watch's restart
+probe. A configured but unusable bridge is a refusal (`state: unavailable` with a
+`bridge_*` reason), never a fallback to local discovery. Without the setting
+nothing changes.
+
+The helper runs in the Gateway's network namespace on the Agent's own
+interpreter, with one or more allowlisted profile names. Its handshake takes a
+profile name only, never a path: `default` maps to its `--home`, a named profile
+to `<home>/profiles/<name>`, and Web derives the name from where the session's
+home sits in its own layout, so one profile's config cannot name another. The
+helper discovers that home's owner with `gateway_runtime.discover_gateway_endpoint`,
+mints the native ticket itself with the Agent's `_session_ticket`, dials the
+loopback WebSocket and relays frames unchanged. Its reply attests the owner's
+profile id, instance, authority epoch, protocol, supervisor, capabilities, boot
+revision and, for a served profile, its control home. It sends no ticket, origin
+or diagnostic. Web rebuilds a `GatewayEndpoint` from it, so the existing served,
+boot-revision and `runtime.describe` profile/instance/epoch/capability checks run
+unchanged.
+
+Two checks bind the attestation to Web's own view of the profile. The attested
+profile id (the helper's home path) must end in `profiles/<name>` for a named
+profile and must not for `default` (`bridge_profile_mismatch`). The
+`runtime_epoch` row of the `state.db` Web reads through its own mount must name
+the attested instance, and for an owner serving its own home its epoch
+(`bridge_owner_unbound`). That row is the store the owner's durable admissions
+live in, so a resubmitted `submission_id`, a receipt read or a generation-fenced
+control reaches the store that holds the original admission or is refused before
+it is sent; a socket repointed at another deployment or profile cannot admit work
+twice. Rooms need a subject-scoped ticket and stay unavailable over the socket
+(`bridge_subject_unsupported`).
+
+Both ends require Linux `SO_PEERCRED` with the same UID, a canonical absolute
+socket path with no symlink, a `0700` parent and a `0600` socket owned by that
+UID. The helper refuses to start over an existing node and removes only the
+inode it bound. Closing the relay detaches the viewer; the owner keeps its
+turns and admissions. `tests/test_gateway_bridge.py` owns the socket boundary
+and lifecycle with synthetic owners; the `[bridge]` mode of the shared native
+owner proves attach, submit, a stale-generation refusal, helper shutdown during
+a turn, lost-ACK recovery and an unbound store against the installed owner.
+Operator wiring and rollback: [docker.md](../docker.md).
+
 At handshake the sidecar reports `{agent_revision, agent_version, pinned_revision,
 pinned_version, compatible, stale, update_state}`. `compatible` means the Agent
 imported; a different revision than the pin gets a warning and can attempt Agent

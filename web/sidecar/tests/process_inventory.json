@@ -1441,6 +1441,22 @@
         ""
       ]
     },
+    "tests/test_gateway_bridge.py::test_bridge_socket_boundary_and_lifecycle": {
+      "layer": "compatibility",
+      "reason": "Real Linux Unix sockets between the bridge helper and the Web client, on the supported Agent's websockets and native GatewayClient, with synthetic owners, one check per case over its own homes and socket: config and profile-name mapping, canonical and private path and mode refusals, existing-socket and unsafe-home startup refusals, an unsupported platform, the canonical relay in both directions with a closed attestation and no ticket, crossed and unlisted profiles, an owner that does not hold this side's store, foreign peers on either end (kernel peer credentials), malformed handshakes and another protocol, shutdown detaching viewers without sending the owner anything, and removal of only the helper's own inode. Fakes cannot establish peer credentials or socket lifecycle; no owner, network or provider.",
+      "cases": [
+        "[config]",
+        "[paths]",
+        "[platform]",
+        "[relay]",
+        "[profiles]",
+        "[binding]",
+        "[peers]",
+        "[framing]",
+        "[shutdown]",
+        "[cleanup]"
+      ]
+    },
     "tests/test_gateway_sessions.py::test_stopped_owner_is_an_explicit_refusal_without_starting": {
       "layer": "compatibility",
       "reason": "The installed Agent's gateway_runtime discovery, run by a real sidecar in a disposable home with no daemon, must report a session snapshot as stopped and never write gateway.pid; only the release's discovery decides a stopped owner.",
@@ -1450,7 +1466,7 @@
     },
     "tests/test_gateway_sessions.py::test_real_native_owner_shared_admission_and_detach": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility on one disposable owner served once per worker, one test per mode, each on its own sessions: native admission, detach and display negotiation. [shared] proves deduplicated and cancelled admissions, a detachable watch while inference is held, stale-revision refusal, compression, read-only exports and reset against the actual owner and SessionDB. [reactions] proves message.react persistence, toggle/removal, foreign-row refusal, another native viewer's reaction kept, the compression tip resolved through its logical owner and reset retirement; fakes cannot prove these owner storage semantics. [reaction-watch] proves a watching Web viewer reads another native viewer's reaction on its idle poll, since the owner emits no event for it, and the reaction survives the watch's cancel. [approval-tell] proves a steer rides on the denied tool result of the turn parked on that approval. [batch], [approval] and [clarify] prove parked prompts answered through Web on the actual owner. The detail mode proves actual reasoning callback installation, child lifecycle forwarding, turn-end usage and pre-build/resident context inspection on the owner WebSocket with a loopback model, including no extra provider call for inspection. [queued-controls] proves an actual native owner consumes steering in the running turn and replaces queued text before execution; boundary fakes cannot establish owner execution behavior. [model] proves the real native owner preserves a running-turn model mutation receipt and publishes its unstamped idle session.updated outcome; only the installed release proves this owner protocol. [voice-stop] proves a real native owner consumes a typed stop with no admission after another viewer enables voice, and the real Web HTTP boundary accepts its exact receipt, with no audio hardware or provider request. [connections] proves a real manage_connections card reaches Web's snapshot and watch through the private-field allowlist and that status, wake, foreign and stale refusals and an answer reach this exact owner; only the installed release proves this owner protocol. [work] proves Web's process and subagent list, tail, stop and steer reach the installed owner's session-scoped verbs by their actual names and parameters, with the owner's own not-found and rejected verdicts; only the installed release proves those verbs. [transcript] proves the owner's stored read pages a rotated chat oldest-first and newest-first across its compression lineage with its handoff as a row, behind the private-field allowlist, and that an owner without it refuses unsent; only the installed release proves which rows its lineage read returns.",
+      "reason": "Supported-Agent API compatibility on one disposable owner served once per worker, one test per mode, each on its own sessions: native admission, detach and display negotiation. [shared] proves deduplicated and cancelled admissions, a detachable watch while inference is held, stale-revision refusal, compression, read-only exports and reset against the actual owner and SessionDB. [reactions] proves message.react persistence, toggle/removal, foreign-row refusal, another native viewer's reaction kept, the compression tip resolved through its logical owner and reset retirement; fakes cannot prove these owner storage semantics. [reaction-watch] proves a watching Web viewer reads another native viewer's reaction on its idle poll, since the owner emits no event for it, and the reaction survives the watch's cancel. [approval-tell] proves a steer rides on the denied tool result of the turn parked on that approval. [batch], [approval] and [clarify] prove parked prompts answered through Web on the actual owner. The detail mode proves actual reasoning callback installation, child lifecycle forwarding, turn-end usage and pre-build/resident context inspection on the owner WebSocket with a loopback model, including no extra provider call for inspection. [queued-controls] proves an actual native owner consumes steering in the running turn and replaces queued text before execution; boundary fakes cannot establish owner execution behavior. [model] proves the real native owner preserves a running-turn model mutation receipt and publishes its unstamped idle session.updated outcome; only the installed release proves this owner protocol. [voice-stop] proves a real native owner consumes a typed stop with no admission after another viewer enables voice, and the real Web HTTP boundary accepts its exact receipt, with no audio hardware or provider request. [connections] proves a real manage_connections card reaches Web's snapshot and watch through the private-field allowlist and that status, wake, foreign and stale refusals and an answer reach this exact owner; only the installed release proves this owner protocol. [work] proves Web's process and subagent list, tail, stop and steer reach the installed owner's session-scoped verbs by their actual names and parameters, with the owner's own not-found and rejected verdicts; only the installed release proves those verbs. [transcript] proves the owner's stored read pages a rotated chat oldest-first and newest-first across its compression lineage with its handoff as a row, behind the private-field allowlist, and that an owner without it refuses unsent; only the installed release proves which rows its lineage read returns. [bridge] (Linux) proves a Web sidecar whose home is another path, with no owner it can reach, attaches and submits to the canonical owner only through the opt-in private socket helper: today's refusal without the setting, a refusal while the helper is absent, a stale-generation interrupt refused, the helper's shutdown leaving the owner's turn running, and the lost ACK recovered under the same durable submission after the helper returns, with one provider call; only the installed owner proves admission and its fences.",
       "cases": [
         "[shared]",
         "[reactions]",
@@ -1465,7 +1481,8 @@
         "[voice-stop]",
         "[connections]",
         "[work]",
-        "[transcript]"
+        "[transcript]",
+        "[bridge]"
       ]
     },
     "tests/test_gateway_sessions.py::test_real_native_owner_on_its_own_daemon": {

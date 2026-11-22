@@ -95,7 +95,7 @@ def shared_owner(tmp_path_factory):
 
 @requires_agent
 @pytest.mark.parametrize("mode", ["shared", "reactions", "reaction-watch", "batch", "approval", "approval-tell", "clarify", "detail",
-                                  "queued-controls", "model", "voice-stop", "connections", "work", "transcript"])
+                                  "queued-controls", "model", "voice-stop", "connections", "work", "transcript", "bridge"])
 def test_real_native_owner_shared_admission_and_detach(request, shared_owner, mode):
     shared_owner(request, mode)
 
@@ -1386,3 +1386,105 @@ def test_work_transcript_needs_the_stored_read(work_owner):
     result = work_owner.run(None, {"session_id": "native", "action": "work_transcript", "work_kind": "subagent", "work_id": "sa-done", "authority_epoch": 1})
     assert result == {"state": "incompatible", "reason": "owner_transcript_unsupported", "snapshot": None, "receipt": None}
     assert "transcripts" not in work_owner.run(None, {"session_id": "native", "action": "work_list"})["work"]
+
+
+@pytest.fixture
+def owner_transports(tmp_path, monkeypatch):
+    """The adapter's real discovery and connector seams (TAL-1977) over a recorded local runtime and bridge."""
+    import asyncio
+    from contextlib import asynccontextmanager, nullcontext
+    import sys
+    from types import SimpleNamespace
+    from talaria_sidecar import gateway_bridge
+    from talaria_sidecar.methods import gateway_sessions as adapter
+
+    used = []
+    local = SimpleNamespace(state="ready", reason_code=None, endpoint=SimpleNamespace(profile_id="local"))
+    runtime = SimpleNamespace(
+        GatewayDiscovery=lambda state, endpoint=None, reason_code=None: SimpleNamespace(state=state, endpoint=endpoint, reason_code=reason_code),
+        discover_gateway_endpoint=lambda home: used.append(("local-discovery", home)) or local,
+        attachable=lambda found: found.endpoint is not None and found.state in {"ready", "draining"})
+
+    @asynccontextmanager
+    async def connect_gateway(endpoint, **kw):
+        used.append(("local-attach", endpoint, kw))
+        yield SimpleNamespace(events=asyncio.Queue(), websocket=None)
+    client = SimpleNamespace(GatewayClientError=ConnectionError, connect_gateway=connect_gateway)
+    monkeypatch.setitem(sys.modules, "hermes_cli", SimpleNamespace(gateway_runtime=runtime, gateway_client=client))
+    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_runtime", runtime)
+    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", client)
+    monkeypatch.setitem(sys.modules, "hermes_constants", SimpleNamespace(get_hermes_home=lambda: tmp_path))
+    monkeypatch.setattr(adapter, "scoped_home", lambda home: nullcontext())
+
+    state = SimpleNamespace(used=used, bridge=None, bridged=None, adapter=adapter, home=tmp_path.resolve())
+    def configured(home):
+        if isinstance(state.bridge, Exception):
+            raise state.bridge
+        return state.bridge
+    monkeypatch.setattr(gateway_bridge, "configured", configured)
+    monkeypatch.setattr(gateway_bridge, "discover", lambda home, bridge: used.append(("bridge-discovery", home, bridge)) or state.bridged)
+
+    @asynccontextmanager
+    async def attach(home, endpoint):
+        used.append(("bridge-attach", home, endpoint))
+        yield SimpleNamespace(events=asyncio.Queue(), websocket=None)
+    monkeypatch.setattr(gateway_bridge, "attach", attach)
+    return state
+
+
+def test_unconfigured_profile_keeps_the_local_owner_transport(owner_transports):
+    t = owner_transports
+    assert t.adapter._discover(t.home).endpoint.profile_id == "local"
+    assert t.adapter._restart_wait(t.home) is False
+    assert t.used == [("local-discovery", t.home)] * 2
+
+
+def test_a_configured_bridge_is_the_only_transport_for_discovery_attach_and_restart_probe(owner_transports):
+    import asyncio
+    from types import SimpleNamespace
+    from talaria_sidecar.gateway_bridge import Bridge
+    t = owner_transports
+    t.bridge = Bridge(Path("/run/talaria-session/session.sock"), "default")
+    endpoint = SimpleNamespace(profile_id="/gateway/home", bridge=t.bridge)
+    t.bridged = SimpleNamespace(state="draining", reason_code="restart_wait", endpoint=endpoint)
+    assert t.adapter._discover(t.home) is t.bridged
+    assert t.adapter._restart_wait(t.home) is True
+
+    async def attach():
+        async with t.adapter._connect(t.home, endpoint):
+            pass
+    asyncio.run(attach())
+    assert t.used == [("bridge-discovery", t.home, t.bridge)] * 2 + [("bridge-attach", t.home, endpoint)]
+
+
+def test_rooms_never_name_a_principal_over_the_bridge(owner_transports):
+    """A room's subject-scoped ticket would be taken on trust by the helper; the bridge refuses it before attaching."""
+    import asyncio
+    from types import SimpleNamespace
+    from talaria_sidecar.gateway_bridge import Bridge
+    t = owner_transports
+    endpoint = SimpleNamespace(profile_id="/gateway/home", bridge=Bridge(Path("/run/s.sock"), "default"))
+
+    async def attach():
+        async with t.adapter._connect(t.home, endpoint, subject="auth:v1:room-principal"):
+            pass
+    with pytest.raises(ConnectionError, match="bridge_subject_unsupported"):
+        asyncio.run(attach())
+    assert t.used == []
+
+
+@pytest.mark.parametrize("bridge,discovered,reason", [
+    pytest.param("invalid", None, "bridge_config_invalid", id="invalid-config"),
+    pytest.param("socket", "bridge_socket_missing", "bridge_socket_missing", id="helper-absent"),
+    pytest.param("socket", "bridge_owner_unbound", "bridge_owner_unbound", id="store-unbound"),
+])
+def test_an_unusable_bridge_refuses_without_local_fallback(owner_transports, bridge, discovered, reason):
+    from types import SimpleNamespace
+    from talaria_sidecar.gateway_bridge import Bridge, BridgeRefused
+    t = owner_transports
+    t.bridge = BridgeRefused("bridge_config_invalid") if bridge == "invalid" else Bridge(Path("/run/s.sock"), "default")
+    t.bridged = SimpleNamespace(state="inaccessible", reason_code=discovered, endpoint=None)
+    result = t.adapter.session(None, {"profile_home": str(t.home), "session_id": "native", "action": "submit",
+                                      "request_id": "durable", "text": "hello"})
+    assert result == {"state": "unavailable", "reason": reason, "snapshot": None, "receipt": None}
+    assert not any(kind.startswith("local") or kind == "bridge-attach" for kind, *_ in t.used), t.used

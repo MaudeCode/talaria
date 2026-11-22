@@ -457,6 +457,82 @@ the minor below the exclusive `requires-python` ceiling. Older Agent sources wit
 package downloads on a fresh start. A custom source mount requiring another Python
 minor needs an image with that interpreter installed under `/opt/uv/python`.
 
+## Continue Gateway chats from Web across containers (optional)
+
+The Gateway's native bootstrap answers on its own loopback only. In the two- and
+three-container setups Web shares the Gateway's home but not its network
+namespace, so a chat the Gateway owns (CLI, Telegram, cron) stays read-only in
+Web. The opt-in override `docker-compose.session-bridge.yml` adds a helper that
+runs in the Gateway's network namespace with the Gateway's own image and UID,
+and gives Web a private Unix socket to it:
+
+```bash
+docker compose -f docker-compose.two-container.yml -f docker-compose.session-bridge.yml up -d
+```
+
+Then, in the `config.yaml` of each profile Web should continue Gateway chats in:
+
+```yaml
+talaria:
+  gateway_session_socket: /run/talaria-session/session.sock
+```
+
+Without that setting nothing changes: Web discovers the Gateway as before and
+Gateway chats stay read-only. The Gateway still owns execution, history,
+approvals and every admission; the helper only relays its canonical session
+frames. It opens no port, starts or restarts nothing, and never sends Web a
+ticket or path. Rooms stay unavailable over the socket.
+
+What the override sets up:
+
+- `talaria-session-dirs` creates `/run/talaria-session` and `/run/hermes-runtime`
+  once, owned by `${UID}:${GID}` with mode `0700`.
+- `talaria-session-bridge` runs `python -m talaria_sidecar.gateway_bridge` from
+  the checkout's `sidecar/`, with `--home /home/hermes/.hermes`, `--socket
+  /run/talaria-session/session.sock` and one `--profile` per allowed profile
+  (`default` is the root profile; add `--profile work` for `profiles/work`). Web
+  names the profile from its own layout; a profile the helper does not list is
+  refused.
+- `hermes-webui` mounts the socket directory read-only. Nothing else may mount
+  it: access to the socket is operator access to the listed profiles'
+  conversations and tools.
+
+Both ends check Linux peer credentials, so the helper, the Gateway and Web must
+run as the same UID (`UID`/`GID` in `.env`, as for the shared home). The socket
+must be `0600` in a `0700` directory owned by that UID, at a canonical path with
+no symlink. Web also checks that the owner the helper reached holds the
+`state.db` Web reads through its own mount; a socket that answers for another
+deployment or profile is refused (`bridge_owner_unbound`,
+`bridge_profile_mismatch`) before anything is sent. The chat's
+`owner_attachment.reason` names the refusal: `bridge_socket_missing` (helper not running), `bridge_path_unsafe`
+(owner or mode), `bridge_peer_foreign` (another UID), `bridge_profile_unlisted`
+(no `--profile` for it), `bridge_unsupported_platform` (not Linux).
+
+Stopping or restarting the helper only detaches Web: running turns continue on
+the Gateway, and a message whose reply was lost is reconciled under its same
+submission when Web reconnects, never sent twice. Recreating the `hermes-agent`
+container also recreates the helper, because it joins that container's network
+namespace.
+
+The helper removes its socket when it stops, but never removes an existing one
+when it starts. After a crash it refuses to start (`bridge_socket_exists`). Make
+sure no helper is running, then remove only that socket:
+
+```bash
+docker compose -f docker-compose.two-container.yml -f docker-compose.session-bridge.yml run --rm --entrypoint rm talaria-session-bridge /run/talaria-session/session.sock
+```
+
+**Rollback**: let running turns finish, remove `talaria.gateway_session_socket`
+from each profile's `config.yaml`, then start without the override:
+
+```bash
+docker compose -f docker-compose.two-container.yml up -d --remove-orphans
+```
+
+Gateway chats return to read-only in Web. No Gateway state changes, so nothing
+else needs undoing; `docker volume rm` the `talaria-session` and
+`hermes-runtime` volumes if you want them gone.
+
 ## Upgrading the agent container
 
 The Agent runs from the image's `/opt/hermes`. Its shared startup wrapper copies
@@ -540,6 +616,7 @@ volumes:
 - [`docker-compose.yml`](../docker-compose.yml) — single container (recommended)
 - [`docker-compose.two-container.yml`](../docker-compose.two-container.yml) — agent + webui
 - [`docker-compose.three-container.yml`](../docker-compose.three-container.yml) — agent + dashboard + webui
+- [`docker-compose.session-bridge.yml`](../docker-compose.session-bridge.yml) — optional: continue Gateway chats from Web across containers
 - [`.env.docker.example`](../.env.docker.example) — environment variable template
 - [`Dockerfile`](../Dockerfile) — single-container build
 - [`docker_init.bash`](../docker_init.bash) — container entrypoint script

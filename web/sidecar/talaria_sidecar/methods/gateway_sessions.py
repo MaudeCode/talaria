@@ -53,12 +53,27 @@ _SUPPORT_RECORD = Path(__file__).resolve().parents[2] / "agent_support.json"
 _CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
 
 
+def _discover(home: Path):
+    """The owner of ``home`` through its one transport: the Agent's local discovery, or the profile's opt-in private
+    bridge (TAL-1977), whose endpoint then carries that transport to ``_connect``. A bridge that is configured but
+    unusable is a refusal, never a fallback to local discovery."""
+    from hermes_cli import gateway_runtime
+    from .. import gateway_bridge
+    try:
+        bridge = gateway_bridge.configured(home)
+    except gateway_bridge.BridgeRefused as refused:
+        return gateway_runtime.GatewayDiscovery("inaccessible", reason_code=str(refused))
+    if bridge is None:
+        return gateway_runtime.discover_gateway_endpoint(home)
+    return gateway_bridge.discover(home, bridge)
+
+
 def _restart_wait(home: Path) -> bool:
     """Whether the owner has entered a restart's after-turn wait since a watch attached. The owner announces
     it on no socket, and the watch must not send on its own: a socket opened before the wait is cut when it does."""
     from hermes_cli import gateway_runtime
     try:
-        found = gateway_runtime.discover_gateway_endpoint(home)
+        found = _discover(home)
     except Exception:  # noqa: BLE001 - a failed probe leaves the watch as it was; every action rediscovers anyway
         return False
     return found.state != "ready" and gateway_runtime.attachable(found)
@@ -202,7 +217,7 @@ def _refused(state: str, reason: str) -> dict:
 
 
 @asynccontextmanager
-async def _connect(home: Path, endpoint, *, subject: str | None = None):
+async def _native_client(home: Path, endpoint, subject: str | None):
     from hermes_constants import get_hermes_home
     from hermes_cli.gateway_client import GatewayClientError, connect_gateway
 
@@ -210,7 +225,21 @@ async def _connect(home: Path, endpoint, *, subject: str | None = None):
     # override is mandatory so its bootstrap ticket cannot fall back to the launch profile.
     if Path(get_hermes_home()).resolve() != home:
         raise GatewayClientError("profile_mismatch")
+    if getattr(endpoint, "bridge", None) is not None:
+        from .. import gateway_bridge
+        # The helper mints its own socket identity's ticket; a principal named by this side would be taken on trust.
+        if subject is not None:
+            raise GatewayClientError("bridge_subject_unsupported")
+        async with gateway_bridge.attach(home, endpoint) as client:
+            yield client
+        return
     async with connect_gateway(endpoint, **({"subject": subject} if subject is not None else {})) as client:
+        yield client
+
+
+@asynccontextmanager
+async def _connect(home: Path, endpoint, *, subject: str | None = None):
+    async with _native_client(home, endpoint, subject) as client:
         websocket = client.websocket
         # GatewayClient queues server requests as events. Drain continuously, including
         # during an RPC, so unsupported sudo/secure inputs never wait for a Web renderer.
@@ -784,7 +813,7 @@ def _with_owner(home: Path, run) -> dict:
     from hermes_cli import gateway_runtime
 
     with scoped_home(home):
-        discovery = gateway_runtime.discover_gateway_endpoint(home)
+        discovery = _discover(home)
         # A restart's after-turn wait is attachable too, so a parked approval or clarify can still be answered.
         if discovery.endpoint is None or not gateway_runtime.attachable(discovery):
             return _refused("stopped" if discovery.state in {"stopped", "absent"} else "unavailable", discovery.reason_code or discovery.state)

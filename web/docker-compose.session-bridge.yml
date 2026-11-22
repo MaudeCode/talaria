@@ -1,0 +1,75 @@
+# Opt-in: continue canonical Gateway chats from Talaria Web across the two containers (TAL-1977).
+#
+#   docker compose -f docker-compose.two-container.yml -f docker-compose.session-bridge.yml up -d
+#
+# The Gateway's native bootstrap is loopback-only, so the Web container cannot attach to its chats
+# even though both share hermes-home. This override runs a helper in the Gateway's network namespace,
+# with the Gateway's own image and UID, and gives Web a private Unix socket to it. No ports open.
+# Then set, in each profile's config.yaml that Web should attach through it:
+#
+#   talaria:
+#     gateway_session_socket: /run/talaria-session/session.sock
+#
+# Socket access is operator access to the listed profiles' conversations and tools: never mount
+# talaria-session into another container. Rollback and details: docs/docker.md.
+services:
+  hermes-agent:
+    environment:
+      # The control socket the helper discovers the owner through, at the same path in both containers.
+      - XDG_RUNTIME_DIR=/run/hermes-runtime
+    volumes:
+      - hermes-runtime:/run/hermes-runtime
+    depends_on:
+      talaria-session-dirs:
+        condition: service_completed_successfully
+
+  # Creates the two shared directories once, owned by the service UID and private to it.
+  talaria-session-dirs:
+    extends:
+      file: sidecar/agent_dependency.json
+      service: hermes-agent
+    user: "0:0"
+    entrypoint: ["install", "-d", "-m", "0700", "-o", "${UID:-1000}", "-g", "${GID:-1000}", "/run/hermes-runtime", "/run/talaria-session"]
+    command: []
+    network_mode: none
+    volumes:
+      - hermes-runtime:/run/hermes-runtime
+      - talaria-session:/run/talaria-session
+    restart: "no"
+
+  talaria-session-bridge:
+    extends:
+      file: sidecar/agent_dependency.json
+      service: hermes-agent
+    container_name: talaria-session-bridge
+    depends_on:
+      hermes-agent:
+        condition: service_healthy
+    # The Gateway's network namespace: its loopback is the helper's loopback.
+    network_mode: service:hermes-agent
+    user: "${UID:-1000}:${GID:-1000}"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: ["/opt/hermes/.venv/bin/python", "-m", "talaria_sidecar.gateway_bridge"]
+    # One --profile per profile Web may attach to; default is the root profile.
+    command: ["--home", "/home/hermes/.hermes", "--socket", "/run/talaria-session/session.sock", "--profile", "default"]
+    environment:
+      - HERMES_HOME=/home/hermes/.hermes
+      - XDG_RUNTIME_DIR=/run/hermes-runtime
+      - PYTHONPATH=/talaria-sidecar:/opt/hermes
+      - PYTHONDONTWRITEBYTECODE=1
+    volumes:
+      # The Gateway home at the Gateway's own path, read-only.
+      - hermes-home:/home/hermes/.hermes:ro
+      - hermes-runtime:/run/hermes-runtime:ro
+      - talaria-session:/run/talaria-session
+      - ./sidecar:/talaria-sidecar:ro
+    restart: unless-stopped
+
+  hermes-webui:
+    volumes:
+      - talaria-session:/run/talaria-session:ro
+
+volumes:
+  hermes-runtime:
+  talaria-session:

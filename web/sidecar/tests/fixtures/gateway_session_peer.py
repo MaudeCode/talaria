@@ -10,7 +10,10 @@ import json
 import os
 from pathlib import Path
 import queue
+import socket
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -51,6 +54,8 @@ def unsupported(mode):
     """Why this Agent release cannot run a mode, or None. Read from its source: nothing here imports the release yet."""
     if mode == "session-open" and not (agent / "gateway/session_open.py").exists():
         return "this supported Agent has no on_session_open hook"
+    if mode == "bridge" and not (sys.platform.startswith("linux") and hasattr(socket, "SO_PEERCRED")):
+        return "the private session bridge needs Linux peer credentials"
     return None
 
 
@@ -347,6 +352,79 @@ async def probe_work(home, peer, desc):
             assert tail["work_tail"]["available"] is False, tail
     finally:
         sidecar.close()
+
+
+SIDECAR = Path(__file__).resolve().parents[2]
+
+
+def start_bridge(home, path):
+    """The Gateway-side helper as an operator runs it: the owner's Agent interpreter, its home, one allowed profile."""
+    env = dict(child_env(), HOME=os.environ["HOME"], HERMES_HOME=str(home), PYTHONPATH=f"{SIDECAR}:{agent}")
+    helper = subprocess.Popen([sys.executable, "-m", "talaria_sidecar.gateway_bridge", "--socket", str(path), "--home", str(home),
+                               "--profile", "default"], cwd=SIDECAR, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    lines = queue.Queue()
+    threading.Thread(target=lambda: [*map(lines.put, helper.stdout), lines.put(None)], daemon=True).start()
+    assert lines.get(timeout=20) == "gateway session bridge listening\n", "the helper did not start"
+    return helper
+
+
+async def probe_bridge(home, peer, desc):
+    """TAL-1977: a Web sidecar whose home is another path, with no owner it can reach, attaches to the canonical owner
+    only through the helper's private socket; durable admission, fences and the owner outlive the helper. The socket
+    boundary itself, including an owner that does not hold Web's store, is test_gateway_bridge.py's."""
+    home = home.resolve()
+    private = Path(tempfile.mkdtemp(prefix="bridge-")).resolve()
+    path = private / "session.sock"
+    web = Path(tempfile.mkdtemp(prefix="web-")).resolve() / "home"
+    web.mkdir(mode=0o700)
+    # Both mounts of one profile: the Web side reads the owner's store under its own path.
+    (web / "state.db").symlink_to(home / "state.db")
+    configured = json.dumps({"talaria": {"gateway_session_socket": str(path)}})
+    async with websocket(home, desc) as native:
+        sid = (await rpc(native, "session.create", request_id="bridge-create", source="cli", toolsets=[]))["result"]["session_id"]
+    sidecar, helper = SidecarProcess(web), None
+    def call(action, **params):
+        return sidecar.result("gateway.session", {"profile_home": str(web), "session_id": sid, "action": action, **params})
+    try:
+        # Unconfigured, the Web namespace keeps today's refusal: it has no owner of its own to discover.
+        assert (await asyncio.to_thread(call, "snapshot"))["state"] == "stopped"
+        (web / "config.yaml").write_text(configured)
+        absent = await asyncio.to_thread(call, "snapshot")
+        assert (absent["state"], absent["reason"]) == ("unavailable", "bridge_socket_missing"), absent
+        helper = start_bridge(home, path)
+        assert oct(path.lstat().st_mode & 0o777) == oct(0o600)
+        attached = await asyncio.to_thread(call, "snapshot")
+        assert attached["state"] == "attached" and attached["snapshot"]["session_id"] == sid, attached
+        first = await asyncio.to_thread(call, "submit", request_id="bridge-lost-ack", text="BLOCK_STARTED")
+        assert first["state"] == "attached" and first["receipt"]["admission_id"], first
+        assert await asyncio.to_thread(peer.blocked.wait, 25), "the bridged turn did not reach the provider"
+        running = await asyncio.to_thread(call, "snapshot")
+        stale = await asyncio.to_thread(call, "interrupt", execution_generation=running["snapshot"]["execution_generation"] - 1)
+        assert (stale["state"], stale["reason"]) == ("refused", "stale_generation"), stale
+        # Helper shutdown detaches; it removes its own socket and never stops the owner's turn.
+        helper.terminate()
+        assert helper.wait(10) == 0
+        assert not os.path.lexists(path)
+        gone = await asyncio.to_thread(call, "snapshot")
+        assert (gone["state"], gone["reason"]) == ("unavailable", "bridge_socket_missing"), gone
+        async with websocket(home, desc) as native:
+            assert (await rpc(native, "session.resume", session_id=sid))["result"]["running"] is True
+        helper = start_bridge(home, path)
+        # The ACK the caller lost is recovered under the same durable submission, never admitted again.
+        again = await asyncio.to_thread(call, "submit", request_id="bridge-lost-ack", text="BLOCK_STARTED")
+        assert again["receipt"]["admission_id"] == first["receipt"]["admission_id"], (first, again)
+        peer.release.set()
+        final = await drained(call)
+        assert json.dumps(final["snapshot"]["messages"]).count("RECOVERY_ACK_BLOCK_STARTED") == 1, final
+        assert [m["content"] for body in peer.requests for m in body["messages"][-1:]] == ["BLOCK_STARTED"], peer.requests
+        receipt = await asyncio.to_thread(call, "receipt", admission_id=first["receipt"]["admission_id"])
+        assert receipt["receipt"]["status"] == "terminal", receipt
+    finally:
+        peer.release.set()
+        sidecar.close()
+        if helper is not None and helper.poll() is None:
+            helper.terminate()
+            helper.wait(10)
 
 
 async def probe_transcript(home, peer, desc):
@@ -1479,6 +1557,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_transcript(home, peer, desc)
     if mode == "session-open":
         return probe_session_open(home, peer, desc)
+    if mode == "bridge":
+        return probe_bridge(home, peer, desc)
     return probe(home, peer, desc, require_gap=mode == "replay")
 
 
