@@ -385,7 +385,7 @@ function parseState(
   const title = stringField(value, "title", 120);
   const phase = value.phase;
   const activityPhase = value.activityPhase;
-  const startedAt = value.startedAt === undefined ? undefined : numberField(value, "startedAt");
+  const startedAt = numberField(value, "startedAt");
   const updatedAt = numberField(value, "updatedAt");
   const toolCount = value.toolCount;
   const activityAt = value.activityAt;
@@ -419,7 +419,7 @@ function parseState(
     !title ||
     !isSessionPhase(phase) ||
     (activityPhase !== undefined && !isSessionPhase(activityPhase)) ||
-    (startedAt !== undefined && (startedAt === null || !Number.isSafeInteger(startedAt) || startedAt < 0)) ||
+    startedAt === null || !Number.isSafeInteger(startedAt) || startedAt < 0 ||
     (toolCount !== undefined && !isCount(toolCount)) ||
     (activityAt !== undefined && !isCount(activityAt)) ||
     // A plan's two counts travel together, and none of it can be done beyond its total.
@@ -440,7 +440,7 @@ function parseState(
     title,
     phase,
     ...(isSessionPhase(activityPhase) ? { activityPhase } : {}),
-    ...(startedAt === undefined ? {} : { startedAt }),
+    startedAt,
     updatedAt,
     ...(isCount(toolCount) ? { toolCount } : {}),
     ...(isCount(activityAt) ? { activityAt } : {}),

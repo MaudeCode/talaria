@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Relay requires each published session to carry its run's start, so Live Activity timers never count from when the phone registered.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

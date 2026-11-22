@@ -171,7 +171,7 @@ including tombstones awaiting cleanup. A request that would exceed it fails with
 `too_many_states` and commits no partial updates; existing rows can still be
 updated or revoked at the limit.
 
-Each state may carry `startedAt`, the run's start in epoch milliseconds (a non-negative integer). Relay copies it onto the aggregate row and uses it as the native Live Activity's timer start, so the lock screen counts from the same instant as the chat. Publishers that omit it fall back to when Relay registered the activity.
+Each state must carry `startedAt`, the run's start in epoch milliseconds (a non-negative integer); a state without it fails the request with 400 `invalid_snapshot`, or `invalid_state` on the per-session route. Relay copies it onto the aggregate row and uses it as the native Live Activity's timer start, so the lock screen counts from the same instant as the chat.
 
 Each state may carry `toolCount`, the tool calls the run started, and `activityAt`, the run's last phase change or tool event in epoch milliseconds; both are non-negative integers. Unlike `updatedAt`, `activityAt` does not move when the publisher republishes an unchanged run. Relay copies both onto the aggregate row and into the native Live Activity's content state, where the lock screen shows the count and how long ago the run last changed.
 

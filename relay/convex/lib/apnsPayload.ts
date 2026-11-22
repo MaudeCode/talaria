@@ -30,8 +30,7 @@ function notificationAlertText(alert: ActivityAlert) {
 const maximumContentStateBytes = 3_500;
 const liveActivityStaleAfterSeconds = 10 * 60;
 
-// `registeredAt` times an activity only for older publishers that do not send the run's start.
-export function nativeSessionRequest(request: ApnsRequest, registeredAt: number): ApnsRequest {
+export function nativeSessionRequest(request: ApnsRequest): ApnsRequest {
   const aps = request.payload.aps as Record<string, unknown>;
   const aggregate = aps["content-state"] as ActivityAggregate | undefined;
   const row = aggregate?.rows[0];
@@ -44,9 +43,10 @@ export function nativeSessionRequest(request: ApnsRequest, registeredAt: number)
   };
   // Swift's default Codable Date representation is seconds since 2001-01-01.
   const swiftDate = (milliseconds: number) => milliseconds / 1_000 - 978_307_200;
+  // TAL-1666: only a state stored before publishers had to send the run's start lacks it, until that state expires.
   return { ...request, payload: { aps: { ...aps, "content-state": {
     sessionID: row.sessionId, sessionTitle: row.title, status: statuses[row.phase],
-    currentActivity: row.status, responseExcerpt: "", startedAt: swiftDate(row.startedAt ?? registeredAt),
+    currentActivity: row.status, responseExcerpt: "", startedAt: swiftDate(row.startedAt ?? row.updatedAt),
     updatedAt: swiftDate(row.updatedAt), isStale: row.phase === "stale", isFinal: terminal,
     ...(row.toolCount === undefined ? {} : { toolCount: row.toolCount }),
     ...(row.activityAt === undefined ? {} : { activityAt: swiftDate(row.activityAt) }),

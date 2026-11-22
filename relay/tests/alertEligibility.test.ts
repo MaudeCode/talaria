@@ -124,7 +124,7 @@ describe("publisher alert eligibility", () => {
     });
     await backend.mutation(internal.publishers.acceptState, {
       ...publish, nonce: "n1", receivedAt: now + 1, sessionId: "session-1", eventId: "session-1-event-2", revision: 2,
-      state: { sessionId: "session-1", title: "session-1", phase: "failed", updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
+      state: { sessionId: "session-1", title: "session-1", phase: "failed", startedAt: now, updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
     });
     await runScheduledRecomputes(backend);
     const delivered = await jobs(backend);
@@ -139,7 +139,7 @@ describe("publisher alert eligibility", () => {
     const backend = await seed({ pushToStartToken: "start-token", activity: false });
     await backend.mutation(internal.publishers.acceptState, {
       ...publish, nonce: "n1", receivedAt: now + 1, sessionId: "session-1", eventId: "session-1-event-2", revision: 2,
-      state: { sessionId: "session-1", title: "session-1", phase: "completed", updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
+      state: { sessionId: "session-1", title: "session-1", phase: "completed", startedAt: now, updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
     });
     await runScheduledRecomputes(backend);
     expect(await jobs(backend)).toEqual([]);
@@ -154,7 +154,7 @@ describe("publisher alert eligibility", () => {
     // The next eligible transition starts the activity with its own alert and consumes the deferral.
     await backend.mutation(internal.publishers.acceptState, {
       ...publish, nonce: "n2", receivedAt: now + 2, sessionId: "session-2", eventId: "session-2-event-2", revision: 2,
-      state: { sessionId: "session-2", title: "session-2", phase: "waiting_for_input", updatedAt: now + 2, deepLink: "/sessions/session-2" },
+      state: { sessionId: "session-2", title: "session-2", phase: "waiting_for_input", startedAt: now, updatedAt: now + 2, deepLink: "/sessions/session-2" },
     });
     await runScheduledRecomputes(backend);
     expect(await jobs(backend)).toEqual([
@@ -259,7 +259,7 @@ describe("publisher alert eligibility", () => {
     // Same phase, same aggregate fields, now suppressed: the aggregate fingerprint is unchanged.
     await backend.mutation(internal.publishers.acceptState, {
       ...publish, nonce: "n2", receivedAt: now + 3, sessionId: "session-1", eventId: "session-1-event-3", revision: 3,
-      state: { sessionId: "session-1", title: "session-1", phase: "waiting_for_approval", updatedAt: now + 2, deepLink: "/sessions/session-1", alertEligible: false },
+      state: { sessionId: "session-1", title: "session-1", phase: "waiting_for_approval", startedAt: now, updatedAt: now + 2, deepLink: "/sessions/session-1", alertEligible: false },
     });
     await runScheduledRecomputes(backend);
     await expect(backend.mutation(internal.delivery.claimJob, { jobId: queued!._id, now: now + 4 })).resolves.toEqual({ status: "stale" });
@@ -375,7 +375,7 @@ describe("publisher alert eligibility", () => {
     const backend = await seed({ pushToStartToken: "start-token", activity: false });
     await backend.mutation(internal.publishers.acceptState, {
       ...publish, nonce: "n1", receivedAt: now + 1, sessionId: "session-1", eventId: "session-1-event-2", revision: 2,
-      state: { sessionId: "session-1", title: "session-1", phase: "completed", updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
+      state: { sessionId: "session-1", title: "session-1", phase: "completed", startedAt: now, updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
     });
     await runScheduledRecomputes(backend);
     expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeDefined();
@@ -408,11 +408,11 @@ describe("publisher alert eligibility", () => {
     const backend = await seed({ activity: true });
     await backend.mutation(internal.publishers.acceptState, {
       ...publish, nonce: "n1", receivedAt: now + 1, sessionId: "session-1", eventId: "session-1-event-2", revision: 2,
-      state: { sessionId: "session-1", title: "session-1", phase: "waiting_for_approval", updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
+      state: { sessionId: "session-1", title: "session-1", phase: "waiting_for_approval", startedAt: now, updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
     });
     await backend.mutation(internal.publishers.acceptState, {
       ...publish, nonce: "n2", receivedAt: now + 2, sessionId: "session-2", eventId: "session-2-event-2", revision: 2,
-      state: { sessionId: "session-2", title: "session-2", phase: "waiting_for_input", updatedAt: now + 2, deepLink: "/sessions/session-2" },
+      state: { sessionId: "session-2", title: "session-2", phase: "waiting_for_input", startedAt: now, updatedAt: now + 2, deepLink: "/sessions/session-2" },
     });
     // Both recomputes run after both states are stored, so they compute the same aggregate fingerprint.
     await runScheduledRecomputes(backend);

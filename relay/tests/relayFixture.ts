@@ -62,7 +62,7 @@ export async function runScheduledRecomputes(backend: Backend) {
 }
 
 export function snapshotState(sessionId: string, revision: number, phase: SessionPhase, alertEligible?: boolean, streamId?: string) {
-  return { sessionId, eventId: `${sessionId}-event-${revision}`, revision, title: sessionId, phase, updatedAt: now + revision, deepLink: `/sessions/${sessionId}`, ...(alertEligible === undefined ? {} : { alertEligible }), ...(streamId === undefined ? {} : { streamId }) };
+  return { sessionId, eventId: `${sessionId}-event-${revision}`, revision, title: sessionId, phase, startedAt: now, updatedAt: now + revision, deepLink: `/sessions/${sessionId}`, ...(alertEligible === undefined ? {} : { alertEligible }), ...(streamId === undefined ? {} : { streamId }) };
 }
 
 // The session state Relay committed for one publisher session, or null once it is gone or deleted.

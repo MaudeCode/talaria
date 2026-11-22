@@ -72,10 +72,10 @@ async function relayWithPublisher() {
 const publisherPath = (profileId: string, rest: string) =>
   `/v1/publishers/${encodeURIComponent("https://contract.example")}/profiles/${profileId}/${rest}`;
 
-// TAL-868, TAL-874, TAL-1422, TAL-2336: fields an older Web publisher does not send; Relay copies each onto the App's row
-// only when sent.
-const optionalRunFields = ["startedAt", "toolCount", "activityAt", "currentTool", "planCompleted", "planTotal", "workerCount"] as const;
-type PublisherSnapshot = { states: Partial<Record<(typeof optionalRunFields)[number], unknown>>[] };
+// TAL-874, TAL-1422, TAL-2336: fields an older Web publisher does not send; Relay copies each onto the App's row only when
+// sent. Every supported Web sends the run's start (TAL-868, TAL-1666).
+const optionalRunFields = ["toolCount", "activityAt", "currentTool", "planCompleted", "planTotal", "workerCount"] as const;
+type PublisherSnapshot = { states: Partial<Record<"startedAt" | (typeof optionalRunFields)[number], unknown>>[] };
 
 function withoutRunFields(body: string) {
   const snapshot = JSON.parse(body) as PublisherSnapshot;
@@ -89,7 +89,7 @@ function expectedAppSnapshot(publisherBody: string) {
   const { states } = JSON.parse(publisherBody) as PublisherSnapshot;
   const expected = JSON.parse(fixture("relay-snapshot")) as { aggregate: { rows: PublisherSnapshot["states"] } };
   for (const [index, row] of expected.aggregate.rows.entries()) {
-    for (const field of optionalRunFields) {
+    for (const field of ["startedAt", ...optionalRunFields] as const) {
       const value = states[index]?.[field];
       if (value === undefined) delete row[field];
       else row[field] = value;
@@ -198,6 +198,16 @@ describe("relay-pushed Live Activity run fields", () => {
     { startedAt: 1.5 }, { toolCount: -1 }, { toolCount: 1.5 }, { activityAt: 1.5 },
   ])("refuses a run field that is not a whole count or time: %o", async (fields) => {
     expect(await refused(fields)).toBe(400);
+  });
+
+  // TAL-1666: every supported Web sends the run's start, so Relay never times an activity from its registration.
+  it("refuses a snapshot state without the run's start", async () => {
+    const { signedPut } = await relayWithPublisher();
+    const body = runSnapshot(3);
+    delete body.states[0]!.startedAt;
+    const response = await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(body));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_snapshot" });
   });
 
   // TAL-2336: the current call's words and texts are bounded, and it carries no field Relay does not know.

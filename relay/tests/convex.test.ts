@@ -398,7 +398,7 @@ describe("Convex relay state", () => {
       backend.mutation(internal.publishers.acceptState, {
         publisherOwnerUserId: "user-1", publisherId, profileId, keyId, nonce: `activate-${keyId}`, nonceExpiresAt: now + 60_000,
         receivedAt, sessionId: "session-1", eventId: "event-1", revision: 1,
-        state: { sessionId: "session-1", title: "Activate", phase: "running" as const, updatedAt: receivedAt, deepLink: "/sessions/session-1" },
+        state: { sessionId: "session-1", title: "Activate", phase: "running" as const, startedAt: now, updatedAt: receivedAt, deepLink: "/sessions/session-1" },
       });
     // A publisher enrolled with key-1, then given replacement key-2 through a second invitation.
     async function replacedKey() {
@@ -618,7 +618,7 @@ describe("Convex relay state", () => {
           revision: 1,
           title: `Title ${sessionId}`,
           phase: "running" as const,
-          updatedAt: now + 2,
+          startedAt: now, updatedAt: now + 2,
           deepLink: `/sessions/${sessionId}`,
         }],
       });
@@ -936,6 +936,7 @@ describe("Convex relay state", () => {
         revision: 1,
         title: "Private B",
         phase: "running",
+        startedAt: now,
         updatedAt: now,
         deepLink: "/sessions/session-b",
         alertEligible: false,
@@ -1063,7 +1064,7 @@ describe("Convex relay state", () => {
         revision: 2,
         title: "Needs approval",
         phase: "waiting_for_approval",
-        updatedAt: now + 1,
+        startedAt: now, updatedAt: now + 1,
         deepLink: "/sessions/session-1",
       }],
     });
@@ -1082,7 +1083,7 @@ describe("Convex relay state", () => {
         revision: 2,
         title: "Needs approval",
         phase: "waiting_for_approval",
-        updatedAt: now + 1,
+        startedAt: now, updatedAt: now + 1,
         deepLink: "/sessions/session-1",
       }],
     });
@@ -1272,7 +1273,7 @@ describe("Convex relay state", () => {
         sessionId: "session-1",
         title: "Still working",
         phase: "running",
-        updatedAt: now + 1,
+        startedAt: now, updatedAt: now + 1,
         deepLink: "/sessions/session-1",
       },
     })).resolves.toEqual({ status: "stale" });
@@ -1306,7 +1307,7 @@ describe("Convex relay state", () => {
         sessionId: "session-1",
         title: "Working again",
         phase: "running",
-        updatedAt: now + 3,
+        startedAt: now, updatedAt: now + 3,
         deepLink: "/sessions/session-1",
       },
     })).resolves.toEqual({ status: "accepted" });
@@ -1462,7 +1463,7 @@ describe("Convex relay state", () => {
         revision: 2,
         title: "Finished",
         phase: "completed",
-        updatedAt: now,
+        startedAt: now, updatedAt: now,
         deepLink: "/sessions/session-1",
       }],
     });
@@ -1544,7 +1545,7 @@ describe("Convex relay state", () => {
         revision: 3,
         title: "Finished",
         phase: "completed",
-        updatedAt: now,
+        startedAt: now, updatedAt: now,
         deepLink: "/sessions/session-1",
       }],
     });
@@ -1572,7 +1573,7 @@ describe("Convex relay state", () => {
         revision: 4,
         title: "Finished again",
         phase: "completed",
-        updatedAt: now + 120_000,
+        startedAt: now, updatedAt: now + 120_000,
         deepLink: "/sessions/session-1",
       }],
     });
@@ -1598,7 +1599,7 @@ describe("Convex relay state", () => {
         revision: 5,
         title: "Finished without stream identity",
         phase: "completed",
-        updatedAt: now + 180_000,
+        startedAt: now, updatedAt: now + 180_000,
         deepLink: "/sessions/session-1",
       }],
     });
@@ -1877,6 +1878,7 @@ describe("Convex relay state", () => {
       streamId: "stream-1",
       title: "Relay",
       phase: "running" as const,
+      startedAt: now,
       updatedAt: now,
       deepLink: "/sessions/session-1",
     };
@@ -2179,6 +2181,7 @@ describe("Convex relay state", () => {
       sessionId: "same-session",
       title: "Private",
       phase: "running" as const,
+      startedAt: now,
       updatedAt: now,
       deepLink: "/sessions/same-session",
     };
@@ -2938,6 +2941,8 @@ describe("Convex relay state", () => {
       revision,
       title: "Fixture session",
       phase,
+      // Each run started a minute before its first update.
+      startedAt: now - 60_000 + revision,
       updatedAt: now + revision,
       deepLink: "/sessions/session-1",
       expiresAt: now + 15 * 60_000,
@@ -3006,9 +3011,9 @@ describe("Convex relay state", () => {
     const secondRunJobs = (await queuedJobs()).filter((job) => !firstRunJobs.some((first) => first._id === job._id));
     expect(secondRunJobs).toHaveLength(1);
     expect(secondRunJobs[0]?.aggregate?.rows[0]).toMatchObject({ streamId: "stream-2", phase: "running" });
-    // Without a publisher run start, the card's timer counts from run 2's registration, not run 1's.
+    // The card's timer counts from run 2's start, not run 1's or either registration.
     const contentState = JSON.parse(secondRunJobs[0]!.request.payloadJson).aps["content-state"];
-    expect(contentState).toMatchObject({ status: "thinking", isFinal: false, startedAt: (now + 4) / 1_000 - 978_307_200 });
+    expect(contentState).toMatchObject({ status: "thinking", isFinal: false, startedAt: (now - 60_000 + 3) / 1_000 - 978_307_200 });
     await expect(backend.mutation(internal.delivery.claimJob, { jobId: secondRunJobs[0]!._id, now: now + 6 }))
       .resolves.toMatchObject({ status: "ready", kind: "live_activity_update" });
   });
