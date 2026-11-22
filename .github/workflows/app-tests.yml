@@ -408,17 +408,24 @@ jobs:
         run: |
           set -euo pipefail
           others() {
-            xcrun simctl runtime list -j |
-              jq -r '.[] | select(.platformIdentifier != "com.apple.platform.iphonesimulator") | .identifier'
+            xcrun simctl runtime list -j | jq -r '.[] | select(.platformIdentifier != "com.apple.platform.iphonesimulator")
+              | "\(.identifier) \(.runtimeIdentifier) \(.state)"'
           }
           runtimes=$(others)
-          for runtime in ${runtimes}; do
+          while read -r runtime _; do
+            [[ -n "${runtime}" ]] || continue
             # A refusal shows in the check below, after every runtime had its try.
-            xcrun simctl runtime delete "${runtime}" || sudo -n xcrun simctl runtime delete "${runtime}" || true
+            xcrun simctl runtime delete "${runtime}" < /dev/null || sudo -n xcrun simctl runtime delete "${runtime}" < /dev/null || true
+          done <<< "${runtimes}"
+          # simctl returns before the deletion finishes: every deleted runtime was still listed right after it, with no
+          # error (run 45059253953). Wait up to two minutes for the list to drop them.
+          for _ in $(seq 60); do
+            remaining=$(others)
+            [[ -n "${remaining}" ]] || break
+            sleep 2
           done
           { echo "### Simulator runtimes"; echo '```'; xcrun simctl runtime list -v; echo '```'; } >> "${GITHUB_STEP_SUMMARY}"
-          remaining=$(others)
-          [[ -z "${remaining}" ]] || { echo "::error::Non-iOS simulator runtimes remain: ${remaining//$'\n'/ }"; exit 1; }
+          [[ -z "${remaining}" ]] || { echo "::error::Non-iOS simulator runtimes remain: ${remaining//$'\n'/; }"; exit 1; }
 
       # The image's own iPhone 17 on the newest runtime the SDK runs (setup-xcode's IOS_SIMULATOR_OS), or the native Duo
       # shard's iPhone Duo, booted to completion before the wait and the download so nothing competes with its first

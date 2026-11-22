@@ -239,28 +239,36 @@ class TestIOSRunnerTest < Minitest::Test
 
   def test_hosted_tests_delete_the_non_ios_simulator_runtimes_before_booting
     # CoreSimulator timed out personalizing the watchOS, tvOS and xrOS runtimes mid-run and detached the iOS runtime
-    # under a running shard (TAL-2385): every other platform's runtime goes before the boot, through sudo when refused.
+    # under a running shard (TAL-2385): every other platform's runtime goes before the boot, through sudo when refused,
+    # and the step waits out simctl's background deletion.
     steps = workflow_jobs("app-tests.yml").fetch("app-test")["steps"]
     names = steps.map { |step| step["name"] }
     assert_equal("Delete the other simulator runtimes", names[names.index("Boot the simulator") - 1])
     script = steps[names.index("Boot the simulator") - 1]["run"]
-    runtime = ->(id, platform) { { id => { "identifier" => id, "platformIdentifier" => "com.apple.platform.#{platform}" } } }
+    runtime = lambda do |id, platform|
+      { id => { "identifier" => id, "runtimeIdentifier" => "#{id}-27", "state" => "Ready",
+                "platformIdentifier" => "com.apple.platform.#{platform}" } }
+    end
     Dir.mktmpdir("runtime-delete-test") do |root|
       inventory, summary = File.join(root, "runtimes.json"), File.join(root, "summary.md")
       File.write(File.join(root, "sudo"), %(#!/bin/sh\n[ "$1" = -n ] && shift\nSUDO=1 exec "$@"\n))
-      # Deletes from the inventory; a runtime listed in $REFUSE is deleted only as root.
+      File.write(File.join(root, "sleep"), "#!/bin/sh\n")
+      # Like simctl, a deletion returns at once and the runtime stays listed, "Deleting", until a later listing; a runtime
+      # listed in $REFUSE is deleted only as root.
       File.write(File.join(root, "xcrun"), <<~'SH')
         #!/bin/sh
         case "$*" in
-          'simctl runtime list -j') cat "$INVENTORY" ;;
+          'simctl runtime list -j')
+            cat "$INVENTORY"
+            jq 'with_entries(select(.value.state != "Deleting"))' "$INVENTORY" > "$INVENTORY.next" && mv "$INVENTORY.next" "$INVENTORY" ;;
           'simctl runtime list -v') jq -r 'keys[]' "$INVENTORY" ;;
           "simctl runtime delete $4")
             case " $REFUSE " in *" $4 "*) [ "$SUDO" = 1 ] || { echo "refused $4" >&2; exit 1; } ;; esac
-            jq --arg id "$4" 'del(.[$id])' "$INVENTORY" > "$INVENTORY.next" && mv "$INVENTORY.next" "$INVENTORY" ;;
+            jq --arg id "$4" '.[$id].state = "Deleting"' "$INVENTORY" > "$INVENTORY.next" && mv "$INVENTORY.next" "$INVENTORY" ;;
           *) echo "Unexpected xcrun arguments: $*" >&2; exit 1 ;;
         esac
       SH
-      %w[sudo xcrun].each { |name| File.chmod(0o755, File.join(root, name)) }
+      %w[sudo sleep xcrun].each { |name| File.chmod(0o755, File.join(root, name)) }
       run = lambda do |refuse, sudo_works = true|
         File.write(File.join(root, "sudo"), "#!/bin/sh\nexit 1\n") unless sudo_works
         File.write(inventory, JSON.generate([runtime.call("IOS-A", "iphonesimulator"), runtime.call("WATCH", "watchsimulator"),
@@ -277,7 +285,7 @@ class TestIOSRunnerTest < Minitest::Test
       # A runtime that stays even through sudo fails the job before the boot.
       output, _, status = run.call("WATCH TV", false)
       refute(status.success?)
-      assert_includes(output, "::error::Non-iOS simulator runtimes remain: WATCH TV")
+      assert_includes(output, "::error::Non-iOS simulator runtimes remain: WATCH WATCH-27 Ready; TV TV-27 Ready")
     end
   end
 
