@@ -105,6 +105,20 @@ final class ChatMarkdownLinkGeometryTests: XCTestCase {
         XCTAssertEqual(store.regions(), [], "A streaming paragraph must leave its fade renderer in place")
     }
 
+    /// TAL-2024: a paragraph past the inline limit draws as one `Text` and still reports its Markdown and bare links.
+    func testParagraphPastTheInlineLimitReportsItsLinkRects() throws {
+        let content = "Lead [FixtureLinkTarget](https://example.invalid/md) and https://example.invalid/bare then "
+            + (0..<160).map { "`c\($0)`" }.joined(separator: " ")
+        XCTAssertTrue(MarkdownContentRenderingPolicy.hasTooManyInlineElements(content))
+
+        let regions = try renderRegions(content: content).regions()
+
+        XCTAssertEqual(
+            Set(regions.map(\.url)),
+            [URL(string: "https://example.invalid/md"), URL(string: "https://example.invalid/bare")]
+        )
+    }
+
     func testParagraphWithoutLinksReportsNoRegions() throws {
         let store = try renderRegions(content: "FixturePlainLead words with no link at all in this paragraph.")
         XCTAssertEqual(store.regions(), [])
@@ -140,4 +154,45 @@ final class ChatMarkdownLinkGeometryTests: XCTestCase {
         )
         commitDisplay(of: window)
     }
+}
+
+/// One paragraph with hundreds of inline elements, laid out and committed with an iPhone's 1 MB main-thread stack left
+/// (TAL-2024). MarkdownUI joins a paragraph's inlines with `Text` `+`, which SwiftUI resolves recursively; the
+/// simulator's 8 MB stack hides the overflow, so each render runs with only the phone's stack remaining.
+@MainActor
+final class ChatMarkdownInlineStackDepthTests: XCTestCase {
+    func testInlineCodeHeavyParagraphRendersOnAPhoneStack() throws {
+        try renderOnPhoneStack((0..<400).map { "`path/file\($0).swift`" }.joined(separator: " "))
+    }
+
+    func testBareURLParagraphRendersOnAPhoneStack() throws {
+        try renderOnPhoneStack((0..<400).map { "https://example.invalid/p/\($0)" }.joined(separator: " "))
+    }
+
+    private func renderOnPhoneStack(_ markdown: String) throws {
+        let window = try HostedScene.window(size: CGSize(width: 390, height: 900))
+        addTeardownBlock { MainActor.assumeIsolated { window.isHidden = true; window.rootViewController = nil } }
+        let thread = pthread_self()
+        let bottom = Int(bitPattern: pthread_get_stackaddr_np(thread)) - pthread_get_stacksize_np(thread)
+        withStack(left: 1_008 * 1024, above: bottom) {
+            window.rootViewController = UIHostingController(
+                rootView: ScrollView {
+                    MarkdownRenderer(content: markdown)
+                        .environment(\.chatMessageLinkRegionStore, ChatMessageLinkRegionStore())
+                }
+                .coordinateSpace(.named(ChatMessageInteraction.rowCoordinateSpace))
+            )
+            window.isHidden = false
+            commitDisplay(of: window)
+        }
+    }
+}
+
+/// Recurses until about `limit` bytes of stack remain, then runs `body`.
+@inline(never)
+private func withStack(left limit: Int, above bottom: Int, _ body: () -> Void) {
+    var marker = 0
+    let sp = withUnsafeMutablePointer(to: &marker) { Int(bitPattern: $0) }
+    if sp - bottom > limit { withStack(left: limit, above: bottom, body) } else { body() }
+    withExtendedLifetime(marker) {}
 }

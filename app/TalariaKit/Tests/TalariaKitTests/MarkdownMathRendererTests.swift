@@ -604,6 +604,23 @@ final class MarkdownMathRendererTests: XCTestCase {
         XCTAssertNil(MarkdownContentRenderingPolicy.fallbackReason(for: "**Hello** world"))
     }
 
+    /// TAL-2024: only a paragraph whose inline elements would overflow the phone's stack leaves MarkdownUI.
+    func testInlineElementLimitKeepsOrdinaryProseOnMarkdownUI() {
+        let prose = Array(
+            repeating: "Read **this** and `that`, then see [docs](https://example.invalid/docs) at noon.",
+            count: 6
+        ).joined(separator: " ")
+        XCTAssertFalse(MarkdownContentRenderingPolicy.hasTooManyInlineElements(prose))
+
+        for markdown in [
+            (0..<400).map { "`path/file\($0).swift`" }.joined(separator: " "),
+            (0..<400).map { "https://example.invalid/p/\($0)" }.joined(separator: " "),
+            (0..<400).map { "www.example.invalid/p/\($0)" }.joined(separator: " "),
+        ] {
+            XCTAssertTrue(MarkdownContentRenderingPolicy.hasTooManyInlineElements(markdown), String(markdown.prefix(30)))
+        }
+    }
+
     func testMarkdownContentRenderingPolicyFallsBackForVeryLargeMarkdown() {
         let content = String(
             repeating: "a",

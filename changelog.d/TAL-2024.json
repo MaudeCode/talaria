@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A chat whose reply holds one very long paragraph full of code spans or links now opens instead of crashing the app.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

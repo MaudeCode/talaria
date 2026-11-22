@@ -143,16 +143,12 @@ extension MarkdownUI.Theme {
             .text {
                 ForegroundColor(.primary)
                 BackgroundColor(nil)
-                FontSize(16)
+                FontSize(ChatMarkdownInlineStyle.fontSize)
             }
             .code {
                 FontFamilyVariant(.monospaced)
-                FontSize(.em(0.85))
-                BackgroundColor(
-                    colorScheme == .dark
-                        ? SwiftUI.Color(red: 0.08, green: 0.09, blue: 0.12)
-                        : SwiftUI.Color(.tertiarySystemGroupedBackground)
-                )
+                FontSize(.em(ChatMarkdownInlineStyle.codeFontScale))
+                BackgroundColor(ChatMarkdownInlineStyle.codeBackground(colorScheme))
             }
             // Paragraphs and headings restate the base theme's own metrics; the
             // blocks exist so their text can report where links landed (TAL-49).
