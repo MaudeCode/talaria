@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A Talaria Web task can wrap the results it sends to a chat, send them as written, or follow the profile's default, with Hermes Agent 0.23.2 or later.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}

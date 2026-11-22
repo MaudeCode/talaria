@@ -8167,6 +8167,9 @@
                   "type": "null"
                 }
               ]
+            },
+            "wrap_response_supported": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -8178,6 +8181,9 @@
           ],
           "additionalProperties": {}
         }
+      },
+      "wrap_response_supported": {
+        "type": "boolean"
       },
       "store_health": {
         "anyOf": [
@@ -8277,6 +8283,9 @@
                     "type": "null"
                   }
                 ]
+              },
+              "wrap_response_supported": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -8358,6 +8367,9 @@
                 "type": "null"
               }
             ]
+          },
+          "wrap_response_supported": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -8434,6 +8446,9 @@
                 "type": "null"
               }
             ]
+          },
+          "wrap_response_supported": {
+            "type": "boolean"
           }
         },
         "required": [

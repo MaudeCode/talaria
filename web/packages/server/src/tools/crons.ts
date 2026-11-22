@@ -42,7 +42,7 @@ const ROOM_DELIVERY_RE = /^room:\s*([A-Za-z0-9][A-Za-z0-9._:-]*)(?:@([A-Za-z0-9_
  * the owner sets `script` or `no_agent`, or gives a job a monitor script it does not already have.
  */
 const OWNER_FIELDS = ['script', 'no_agent']
-const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort', 'timezone', 'catch_up', 'grace_minutes']
+const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort', 'timezone', 'catch_up', 'grace_minutes', 'wrap_response']
 interface StoredJob { home: string; profile: string; job: Dict; managed: boolean }
 /** What a probing list collects from each store: failing writes (TAL-810). */
 interface StoreProbe { unwritable: CronStoreHealth[] }
@@ -95,6 +95,9 @@ export function jobForApi(job: Dict, running = false): Dict {
   payload.timezone = str(job.timezone).trim() || null
   payload.catch_up = typeof job.catch_up === 'boolean' ? job.catch_up : null
   payload.grace_minutes = typeof job.grace_minutes === 'number' ? job.grace_minutes : null
+  // TAL-2634: the sidecar reports whether the Agent reads a task's own wrapping; a stored null or an unread key is no override.
+  payload.wrap_response_supported = job.wrap_response_supported === true
+  payload.wrap_response = payload.wrap_response_supported && typeof job.wrap_response === 'boolean' ? job.wrap_response : null
   Object.assign(payload, scheduleText(job))
   // TAL-2479: the status a row shows, with a live run or a stop on its way over the stored state.
   payload.shown_state = payload.stopping ? 'stopping' : payload.running ? 'running' : state
@@ -527,14 +530,14 @@ export class CronService {
     const probe: StoreProbe = { unwritable: [] }
     const all = reach === 'all'
     let rows: StoredJob[]
-    try { rows = await this.storedJobs(active, probe) } catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [] }; throw error }
+    try { rows = await this.storedJobs(active, probe) } catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [], wrap_response_supported: false }; throw error }
     // TAL-1381: hidden foreign rows are only counted, so they cost no projection.
     const managed = rows.filter((row) => row.managed)
     const others = rows.filter((row) => !row.managed)
     const shown = all ? [...managed, ...others] : managed
     // TAL-810: a failing store is reported for the active profile and for every store whose jobs this list shows.
     const shownStores = new Set([active, ...shown.map((row) => row.profile)])
-    return { jobs: (await this.views(shown, pickerHome)).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: reach === 'counted' ? others.length : 0, unwritable_stores: probe.unwritable.filter((store) => shownStores.has(store.profile)) }
+    return { jobs: (await this.views(shown, pickerHome)).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: reach === 'counted' ? others.length : 0, unwritable_stores: probe.unwritable.filter((store) => shownStores.has(store.profile)), wrap_response_supported: (await this.listStore(pickerHome)).wrap_response_supported === true }
   }
 
   /**
@@ -658,7 +661,8 @@ export class CronService {
     try {
       const result = await this.write(method, { profile_home: store.home, job_id: str(store.job.id), ...extra })
       // Python returned the raw `pause_job`/`resume_job` record and `{ok, job_id}` for delete.
-      return 'job' in result ? { ok: true, job: await this.view({ ...store, job: result.job }, home) } : { ok: true, job_id: jobId, ...('status' in result ? { status: result.status } : {}) }
+      // Pause and resume answer the raw store record; the Agent's capability (TAL-2634) is on the listed record.
+      return 'job' in result ? { ok: true, job: await this.view({ ...store, job: { ...result.job, wrap_response_supported: store.job.wrap_response_supported } }, home) } : { ok: true, job_id: jobId, ...('status' in result ? { status: result.status } : {}) }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'Job not found')
       // Python had no handler for `resume_job`'s ValueError (expired one-shot): it surfaced as a 500.

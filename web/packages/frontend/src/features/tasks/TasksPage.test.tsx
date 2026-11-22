@@ -31,6 +31,7 @@ const full: CronJob = {
   enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00', last_status: 'ok',
   last_error: null, last_delivery_error: null, deliver: 'telegram', workdir: '/srv/digest', reasoning_effort: 'high', profile: 'work', toast_notifications: false,
   derived_state: 'active', shown_state: 'active', diagnostics: '{"id": "ab12cd34ef56"}', needs_attention: false, resumable: false, last_failure: null, delivery_unconfirmed_platforms: [], timezone: null, catch_up: null, grace_minutes: null, can_stop: false, stopping: false, last_outcome: 'succeeded',
+  wrap_response_supported: false, wrap_response: null,
 }
 const feed: CronJob = { ...full, id: 'feed0000feed', name: 'Feed', context_from: [], continuity: false, monitor: '', skills: [], reasoning_effort: null, model: null, provider: null, model_option_id: null, workdir: null }
 const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', shown_state: 'needs_attention', diagnostics: '{"id": "a77e0000a77e", "state": "completed"}', needs_attention: true, resumable: true, attention_hint: 'croniter_missing' }
@@ -46,7 +47,8 @@ function Workbench() {
 }
 
 function cronList(jobs: CronJob[], unwritable_stores: CronStoreHealth[] = []): Awaited<ReturnType<typeof api.fetchCrons>> {
-  return { jobs, active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores }
+  // One Agent serves every store, so the list reports what its jobs report.
+  return { jobs, active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores, wrap_response_supported: jobs.some((job) => job.wrap_response_supported) }
 }
 
 let qc: QueryClient
@@ -329,6 +331,8 @@ describe('TasksPage', () => {
     await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
     const dialog = await screen.findByRole('form', { name: /edit job/i })
     await waitFor(() => expect(within(dialog).getByRole('combobox', { name: /model override/i })).toHaveTextContent('@openai-codex:gpt-5.6-sol'))
+    // TAL-2634: an Agent that never reads a task's own wrapping gets no control and no field.
+    expect(within(dialog).queryByRole('combobox', { name: /^wrap output$/i })).toBeNull()
     const name = within(dialog).getByLabelText(/^name$/i)
     await userEvent.clear(name)
     await userEvent.type(name, 'Digest v2')
@@ -395,6 +399,28 @@ describe('TasksPage', () => {
     await waitFor(() => expect(detail.getByText('0 9 * * *')).toBeInTheDocument())
     expect(detail.queryByText('0')).toBeNull()
     expect(showToast).toHaveBeenCalledWith("Unknown timezone 'Mars/Olympus'", 4000, 'error')
+  })
+
+  it('shows a task wrap override at once after Save and rolls it back on a refusal (TAL-2634)', async () => {
+    const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    vi.mocked(api.cronAction).mockImplementation(() => held.promise)
+    const detail = await openJob('Digest', [{ ...full, wrap_response_supported: true }, feed])
+    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
+    const form = within(await screen.findByRole('form', { name: /edit job/i }))
+    await userEvent.click(form.getByRole('combobox', { name: /^wrap output$/i }))
+    await userEvent.click(await screen.findByRole('option', { name: /^send as written$/i }))
+    await userEvent.click(form.getByRole('button', { name: /^save$/i }))
+    expect(api.cronAction).toHaveBeenCalledWith('update', expect.objectContaining({ wrap_response: false }))
+    expect(detail.getByText('Send as written')).toBeInTheDocument()
+    act(() => { held.resolve({ ok: false, error: 'wrap_response refused' }) })
+    await waitFor(() => expect(detail.queryByText('Send as written')).toBeNull())
+    expect(showToast).toHaveBeenCalledWith('wrap_response refused', 4000, 'error')
+  })
+
+  it("offers a new task the wrap override when the list says the Agent reads it (TAL-2634)", async () => {
+    renderPage([{ ...full, wrap_response_supported: true }])
+    await userEvent.click(await within(screen.getByTestId('main')).findByRole('button', { name: /new job/i }))
+    expect(within(await screen.findByRole('form', { name: /new job/i })).getByRole('combobox', { name: /^wrap output$/i })).toHaveTextContent('Default')
   })
 
   it('sends an explicit clear for a pinned zone and shows the bare schedule at once (TAL-1820)', async () => {
@@ -518,7 +544,7 @@ describe('TasksPage', () => {
     await openJob('Digest')
     await waitFor(() => expect(api.fetchCronHistory).toHaveBeenCalledTimes(1))
     // The next list poll (every 30s in the app) carries the new last_run_at; the status map never saw this run.
-    vi.mocked(api.fetchCrons).mockResolvedValue({ jobs: [{ ...full, last_run_at: '2026-09-18T09:00:00+02:00' }, feed], active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores: [] })
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, last_run_at: '2026-09-18T09:00:00+02:00' }, feed]))
     await qc.refetchQueries({ queryKey: keys.crons.list(false) })
     await waitFor(() => expect(api.fetchCronHistory).toHaveBeenCalledTimes(2))
   })

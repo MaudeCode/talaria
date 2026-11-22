@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import heapq
 import importlib
+import inspect
 import logging
 import multiprocessing
 import queue
@@ -34,7 +35,7 @@ _OUTPUT_CONTENT_LIMIT = 8000
 _OUTPUT_HEADER_CONTEXT = 200
 _RUN_HEAD_BYTES = 4096
 _PASSTHROUGH_FIELDS = ("script", "no_agent", "context_from", "reasoning_effort", "monitor_script", "monitor_url")
-_SCHEDULE_POLICY_FIELDS = ("timezone", "catch_up", "grace_minutes")
+_SCHEDULE_POLICY_FIELDS = ("timezone", "catch_up", "grace_minutes", "wrap_response")
 # TAL-2297: what a create or update may carry. Updates take the Agent dashboard's editable set (its
 # ``_DASHBOARD_UPDATABLE_FIELDS``) without ``repeat``, which a task keeps from its create, plus Talaria's profile,
 # notification, monitor and continuity fields; creates take the fields ``create`` stores. Anything else, the
@@ -217,8 +218,17 @@ def _continuity_refs(context_from, continuity: bool) -> list:
     return refs
 
 
+def _wraps_per_task() -> bool:
+    """Whether the installed Agent reads a task's own ``wrap_response`` (0.23.2 and later); older ones read only the
+    global ``cron.wrap_response``."""
+    return "wrap_response" in inspect.signature(_jobs().create_job).parameters  # agent-shim: cron-wrap-response
+
+
 def _field_updates(body: dict, current_context_from=None) -> dict:
     updates = {key: body[key] for key in _PASSTHROUGH_FIELDS + _SCHEDULE_POLICY_FIELDS if key in body}
+    # TAL-2634: an Agent that never reads the key must not store it; a null asks for the default it already applies.
+    if "wrap_response" in updates and not _wraps_per_task() and updates.pop("wrap_response") is not None:
+        raise InvalidParams("This Hermes Agent cannot set output wrapping per task; update it to 0.23.2 or later.")
     if "monitor" in body:
         updates.update(_monitor_storage(body["monitor"]))
     if "continuity" in body:
@@ -233,6 +243,7 @@ def job_for_api(job: dict) -> dict:
     payload["toast_notifications"] = payload.get("toast_notifications") is not False
     payload["monitor"] = payload.get("monitor_url") or payload.get("monitor_script") or ""
     payload["continuity"] = any(str(ref).strip().lower() == "self" for ref in (payload.get("context_from") or []))
+    payload["wrap_response_supported"] = _wraps_per_task()
     return payload
 
 
@@ -770,7 +781,7 @@ def register(registry) -> None:
         ids = {job["id"] for job in stored}
         stored.extend(job for jid, job in pending.items() if jid not in ids)
         listed = [job_for_api(job) for job in stored]
-        result: dict = {"jobs": listed}
+        result: dict = {"jobs": listed, "wrap_response_supported": _wraps_per_task()}
         if params.get("probe_store"):
             with _store(home):
                 from cron.store_health import probe_report

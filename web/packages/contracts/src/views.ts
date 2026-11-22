@@ -2111,6 +2111,8 @@ export const CronJobViewSchema = z.looseObject({
   delivery_unconfirmed_platforms: z.array(z.string()),
   /** Server-normalized (TAL-1820): the job's schedule policy, null when unset. `timezone` is the IANA zone the schedule runs in, also named in `schedule_display`, else the profile's zone. `catch_up` is true to run once for missed runs, false to skip them, else the Agent's default. `grace_minutes` overrides the catch-up window; 0 never catches up. */
   timezone: z.string().nullable(), catch_up: z.boolean().nullable(), grace_minutes: z.number().nullable(),
+  /** Server-normalized (TAL-2634): whether the installed Agent reads a task's own output wrapping (0.23.2 and later), and the task's override: true wraps delivered output in the task header and footer, false delivers it as written, null follows the profile's `cron.wrap_response`. Always null where unsupported; clients offer the control only when supported. */
+  wrap_response_supported: z.boolean(), wrap_response: z.boolean().nullable(),
 })
 export type CronJob = z.infer<typeof CronJobViewSchema>
 /** TAL-810: a listed profile's cron store whose writes fail (full disk, read-only mount, permissions), so its scheduler skips every run. `error` and `fix` are the Agent's text; `since` is the last write that landed (epoch seconds), null when unknown. */
@@ -2122,6 +2124,8 @@ export const CronsSchema = z.looseObject({
   ordered: z.boolean().optional(),
   active_profile: z.string().optional(), all_profiles: z.boolean().optional(), other_profile_count: z.number().optional(), cron_unavailable: z.boolean().optional(),
   unwritable_stores: z.array(CronStoreHealthSchema),
+  /** TAL-2634: whether the installed Agent reads a task's own `wrap_response`, so a new task's editor offers it. */
+  wrap_response_supported: z.boolean(),
 })
 export type Crons = z.infer<typeof CronsSchema>
 export const CronContextSourcesSchema = z.object({ profile: z.string(), sources: z.array(z.object({ job_id: z.string(), label: z.string(), selectable: z.boolean() })) })

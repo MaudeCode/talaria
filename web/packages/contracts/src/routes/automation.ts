@@ -16,10 +16,10 @@ const Ok = z.object({ ok: z.literal(true) })
 const JobId = z.object({ job_id: z.string().optional() })
 /** TAL-2297: the fields a task create or update may carry, values checked by the server and the Agent. Anything else, such as the scheduler's run bookkeeping (`fire_claim`, `manual_run_prompt`), is refused. */
 const cronFields = (keys: readonly string[]) => z.strictObject(Object.fromEntries(keys.map((key) => [key, Json.optional()])))
-const CRON_FIELDS = ['name', 'prompt', 'schedule', 'deliver', 'skills', 'model', 'provider', 'profile', 'toast_notifications', 'monitor', 'continuity', 'script', 'no_agent', 'context_from', 'reasoning_effort', 'timezone', 'catch_up', 'grace_minutes'] as const
+const CRON_FIELDS = ['name', 'prompt', 'schedule', 'deliver', 'skills', 'model', 'provider', 'profile', 'toast_notifications', 'monitor', 'continuity', 'script', 'no_agent', 'context_from', 'reasoning_effort', 'timezone', 'catch_up', 'grace_minutes', 'wrap_response'] as const
 export const CronCreateInputSchema = cronFields([...CRON_FIELDS, 'repeat'])
 /** The Agent dashboard's editable set (`_DASHBOARD_UPDATABLE_FIELDS`) without `repeat`, which a task keeps from its create. */
-export const CronUpdateInputSchema = cronFields([...CRON_FIELDS, 'job_id', 'failure_deliver', 'skill', 'enabled', 'base_url', 'pinned', 'monitor_script', 'monitor_url', 'interpreter', 'enabled_toolsets', 'attach_to_session', 'workdir', 'wrap_response'])
+export const CronUpdateInputSchema = cronFields([...CRON_FIELDS, 'job_id', 'failure_deliver', 'skill', 'enabled', 'base_url', 'pinned', 'monitor_script', 'monitor_url', 'interpreter', 'enabled_toolsets', 'attach_to_session', 'workdir'])
 // The Agent move table a task arrives with stays on the server; clients get `available_actions` (TAL-796).
 const PolicyTaskSchema = KanbanTaskSchema.omit({ agent_move_targets: true }).extend(KanbanTaskPolicyShape)
 /** The newest Block or Unblock in the task's events (TAL-557); a client whose write outcome was lost compares `event_id` with the cursor it held when writing. */

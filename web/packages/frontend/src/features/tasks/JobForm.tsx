@@ -35,7 +35,7 @@ const TIME_ZONES = Intl.supportedValuesOf('timeZone')
 interface FormValues {
   name: string; schedule: string; prompt: string; script: string; no_agent: boolean; deliver: string; repeat: string; profile: string
   model: string; model_provider: string | null; toast_notifications: boolean; skills: string; monitor: string; continuity: boolean; context_from: string[]; reasoning_effort: string
-  timezone: string; catch_up: string; grace_minutes: string
+  timezone: string; catch_up: string; grace_minutes: string; wrap_response: string
 }
 
 interface JobWrite { resource: string; body: Record<string, unknown>; shown: Record<string, unknown> }
@@ -43,8 +43,8 @@ const cronReads = () => [keys.crons.list(false), keys.crons.list(true), keys.cro
 // docs/scheduled-jobs.md: the server refuses a script-only job with a monitor; the toast names it in the user's language.
 const showError = (e: unknown) => { if (isApiError(e) && e.code === 'cron_monitor_no_agent') showToast(m.cron_monitor_no_agent_conflict(), 4000, 'error'); else showErrorToast(e) }
 
-/** `onSubmitted` closes the editor on submit; `onCreated` names the job the server created. */
-export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: { mode: EditorMode; job: CronJob | null; jobs: CronJob[]; onCancel: () => void; onSubmitted: (id?: string) => void; onCreated: (id?: string) => void }) {
+/** `onSubmitted` closes the editor on submit; `onCreated` names the job the server created. `wrapResponseSupported` is the task list's server field, for a new task. */
+export function JobForm({ mode, job, jobs, wrapResponseSupported, onCancel, onSubmitted, onCreated }: { mode: EditorMode; job: CronJob | null; jobs: CronJob[]; wrapResponseSupported: boolean; onCancel: () => void; onSubmitted: (id?: string) => void; onCreated: (id?: string) => void }) {
   // The list shows the submitted job at once and adopts the server's normalized schedule and next run on its reread.
   const update = useResourceMutation({
     resource: ({ resource }: JobWrite) => resource, queryKey: keys.crons.all, readKeys: cronReads,
@@ -64,6 +64,8 @@ export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: {
   const [blueprint, setBlueprint] = useState<CronBlueprint | null>(null)
   const [slotValues, setSlotValues] = useState<Record<string, string>>({})
   const isEdit = mode === 'edit'
+  // TAL-2634: the server says whether the Agent reads a task's own wrapping; an Agent that does not gets no control and no field.
+  const wrapSupported = job?.wrap_response_supported ?? wrapResponseSupported
   // TAL-2201: a script runs on the host and `no_agent` runs it without the agent, so only the owner sets either; the server
   // refuses both from anyone else, and keeps a task's stored values when they are left out.
   const canManage = useBootstrap().auth.can_manage_server
@@ -103,6 +105,7 @@ export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: {
       timezone: job?.timezone ?? '',
       catch_up: job?.catch_up == null ? '' : String(job.catch_up),
       grace_minutes: job?.grace_minutes == null ? '' : String(job.grace_minutes),
+      wrap_response: job?.wrap_response == null ? '' : String(job.wrap_response),
     } satisfies FormValues,
     onSubmit: ({ value }) => {
       setError(null)
@@ -119,7 +122,8 @@ export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: {
       const provider = model ? (untouched ? job?.provider ?? null : v.model_provider) : null
       const zone = v.timezone.trim() || null
       // Null clears a knob on edit; the server and Agent validate what is set.
-      const policy = { timezone: zone, catch_up: v.catch_up === '' ? null : v.catch_up === 'true', grace_minutes: v.grace_minutes === '' ? null : Number(v.grace_minutes) }
+      const policy = { timezone: zone, catch_up: v.catch_up === '' ? null : v.catch_up === 'true', grace_minutes: v.grace_minutes === '' ? null : Number(v.grace_minutes),
+        ...(wrapSupported ? { wrap_response: v.wrap_response === '' ? null : v.wrap_response === 'true' } : {}) }
       // Shown in the list until the server's reread replaces it.
       const shown = { ...policy, name: v.name, schedule_input: v.schedule, schedule_display: zone ? `${v.schedule} (${zone})` : v.schedule, prompt: v.prompt, script: v.script, no_agent: v.no_agent, monitor: v.monitor, continuity: v.continuity, context_from: v.context_from, deliver: v.deliver || 'local', deliver_label: platforms.find((p) => p.value === v.deliver)?.label ?? (v.deliver || 'local'), profile: v.profile, toast_notifications: v.toast_notifications, reasoning_effort: v.reasoning_effort || null,
         // A picked catalog entry shows as its bare model, as the server stores it.
@@ -278,7 +282,7 @@ export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: {
                 }}</form.Field>
                 <form.Field name="toast_notifications">{(f) => <FieldRow label={m.cron_toast_notifications_label()} hint={m.cron_toast_notifications_hint()} htmlFor="cronToast" inline><Switch id="cronToast" checked={f.state.value} onCheckedChange={(checked) => f.handleChange(checked)} /></FieldRow>}</form.Field>
               </div>
-              <details className="mt-6" open={!!(job && (job.monitor || job.continuity || job.reasoning_effort || contextFromList(job).length || job.catch_up != null || job.grace_minutes != null))}>
+              <details className="mt-6" open={!!(job && (job.monitor || job.continuity || job.reasoning_effort || contextFromList(job).length || job.catch_up != null || job.grace_minutes != null || job.wrap_response != null))}>
                 <summary className="cursor-pointer text-xs font-medium text-muted">{m.cron_advanced_label()}</summary>
                 <div className={group}>
                   <form.Field name="catch_up">{(f) => (
@@ -291,6 +295,15 @@ export function JobForm({ mode, job, jobs, onCancel, onSubmitted, onCreated }: {
                     </FieldRow>
                   )}</form.Field>
                   <form.Field name="grace_minutes">{(f) => <FieldRow label={m.cron_grace_minutes_label()} hint={m.cron_grace_minutes_hint()} htmlFor="cronGraceMinutes" inline><TextInput id="cronGraceMinutes" type="number" inputMode="numeric" className="w-28" value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} /></FieldRow>}</form.Field>
+                  {wrapSupported && <form.Field name="wrap_response">{(f) => (
+                    <FieldRow label={m.cron_wrap_response_label()} hint={m.cron_wrap_response_hint()} htmlFor="cronWrapResponse" inline>
+                      <Select id="cronWrapResponse" value={f.state.value} onValueChange={(v) => f.handleChange(v)} className="w-56 max-w-full">
+                        <option value="">{m.cron_wrap_response_default()}</option>
+                        <option value="true">{m.cron_wrap_response_on()}</option>
+                        <option value="false">{m.cron_wrap_response_off()}</option>
+                      </Select>
+                    </FieldRow>
+                  )}</form.Field>}
                   <form.Field name="monitor">{(f) => <FieldRow label={m.cron_monitor_label()} hint={noAgent ? m.cron_monitor_no_agent_hint() : m.cron_monitor_hint()} htmlFor="cronMonitor"><TextInput id="cronMonitor" value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} placeholder={m.cron_monitor_placeholder()} /></FieldRow>}</form.Field>
                   <form.Field name="continuity">{(f) => <FieldRow label={m.cron_continuity_label()} hint={m.cron_continuity_hint()} htmlFor="cronContinuity" inline><Switch id="cronContinuity" checked={f.state.value} onCheckedChange={(checked) => f.handleChange(checked)} disabled={noAgent} /></FieldRow>}</form.Field>
                   <form.Subscribe selector={(s) => s.values.profile}>{(profile) => (

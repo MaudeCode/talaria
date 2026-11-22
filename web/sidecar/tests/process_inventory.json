@@ -1238,6 +1238,20 @@
         ""
       ]
     },
+    "tests/test_cron_parity.py::test_wrap_response_round_trips_clears_and_refuses_malformed_values": {
+      "layer": "compatibility",
+      "reason": "The Agent's cron.jobs create_job and update_job accept, clear and refuse a per-task wrap_response, and a refused update leaves the record unchanged; an Agent without the field reports no capability and stores nothing. Disposable store.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_parity.py::test_a_stored_wrap_response_changes_the_bytes_the_agent_delivers": {
+      "layer": "compatibility",
+      "reason": "The Agent's cron.scheduler_delivery._deliver_result, with a recording local-chat transport, wraps a task's output by its stored wrap_response and, once cleared, by the profile's cron.wrap_response. The real Agent interpreter, store and config are required.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_cron_parity.py::test_create_pins_execution_profile_model": {
       "layer": "compatibility",
       "reason": "The Agent's cron.jobs._main_model_pin, bound to the execution profile's home, pins its main model and provider into the profile's real store, with caller model-only and provider-only overrides and whitespace normalization.",
