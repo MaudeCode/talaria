@@ -3,6 +3,7 @@ import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.
 import { toolsContract } from './routes/tools.js'
 import { SessionStreamEventSchema } from './sse.js'
 import { ScreenLeaseInputSchema, ScreenViewSchema } from './screen.js'
+import { AgentBackupStatusSchema } from './agent-backup.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
 import { SIDECAR_METHODS } from './sidecar/index.js'
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
@@ -312,6 +313,11 @@ describe('contracts package', () => {
     expect(hold.recovery_compatibility).toEqual({ manual_execution: false, bot_chat_delivery: false })
     expect(hold.message).toContain('Reconcile')
     expect(UpdateApplySchema.safeParse({ ...hold, recovery_compatibility: { manual_execution: 'false', bot_chat_delivery: false } }).success).toBe(false)
+  })
+  it('shares every Agent-home backup status the server answers (TAL-2661)', () => {
+    const fixture = shared('fixtures/agent-backup.json') as Record<string, unknown>
+    const states = Object.fromEntries(Object.entries(fixture).map(([name, value]) => [name, AgentBackupStatusSchema.parse(value).job?.state ?? null]))
+    expect(states).toEqual({ idle: null, running: 'running', ready: 'ready', failed: 'failed', named_profile: null })
   })
   it('preserves resolved duplicate skill identities in the shared fixture', () => {
     const parsed = SkillsSchema.parse(shared('fixtures/skills.json'))

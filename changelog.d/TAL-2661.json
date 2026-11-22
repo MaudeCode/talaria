@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Server owners can back up the whole Agent home from System settings and download the private archive.",
+      "highlight": true,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Agent home backup",
+        "description": "Back up every profile on your server in System settings and download the archive.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

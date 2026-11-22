@@ -144057,6 +144057,690 @@
         }
       }
     },
+    "/api/agent-backup": {
+      "get": {
+        "operationId": "agentBackup.status",
+        "summary": "Whether this request may back up the Agent home (`available`, else `unavailable_reason`), the host and root profile it covers, and the current or most recent backup.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "const": "agent_home"
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "unavailable_reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "named_profile",
+                            "isolated_profile",
+                            "agent_unavailable"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "server": {
+                      "type": "string"
+                    },
+                    "profile": {
+                      "type": "string"
+                    },
+                    "retention_seconds": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "exclusiveMinimum": 0
+                    },
+                    "job": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{32}$"
+                            },
+                            "state": {
+                              "enum": [
+                                "running",
+                                "ready",
+                                "failed",
+                                "cancelled"
+                              ],
+                              "type": "string"
+                            },
+                            "phase": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "starting",
+                                    "scanning",
+                                    "archiving"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "completed": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "total": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "started_at": {
+                              "type": "number"
+                            },
+                            "finished_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "complete": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "file_name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "size_bytes": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "download_url": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "expires_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "phase",
+                            "completed",
+                            "total",
+                            "started_at",
+                            "finished_at",
+                            "complete",
+                            "file_name",
+                            "size_bytes",
+                            "download_url",
+                            "expires_at",
+                            "error"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "scope",
+                    "available",
+                    "unavailable_reason",
+                    "server",
+                    "profile",
+                    "retention_seconds",
+                    "job"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "agentBackup.create",
+        "summary": "Start `hermes backup` for the whole Agent home, every profile included, into a private server directory, and answer at once with `job.state` `running`; read the status for progress and the outcome. A previous archive is deleted first. 403 `agent_backup_unavailable` with `unavailable_reason` from a named profile, isolated profile mode or without an Agent; 409 `agent_backup_running` while one runs.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "const": "agent_home"
+                  }
+                },
+                "required": [
+                  "scope"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "const": "agent_home"
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "unavailable_reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "named_profile",
+                            "isolated_profile",
+                            "agent_unavailable"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "server": {
+                      "type": "string"
+                    },
+                    "profile": {
+                      "type": "string"
+                    },
+                    "retention_seconds": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "exclusiveMinimum": 0
+                    },
+                    "job": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{32}$"
+                            },
+                            "state": {
+                              "enum": [
+                                "running",
+                                "ready",
+                                "failed",
+                                "cancelled"
+                              ],
+                              "type": "string"
+                            },
+                            "phase": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "starting",
+                                    "scanning",
+                                    "archiving"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "completed": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "total": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "started_at": {
+                              "type": "number"
+                            },
+                            "finished_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "complete": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "file_name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "size_bytes": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "download_url": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "expires_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "phase",
+                            "completed",
+                            "total",
+                            "started_at",
+                            "finished_at",
+                            "complete",
+                            "file_name",
+                            "size_bytes",
+                            "download_url",
+                            "expires_at",
+                            "error"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "scope",
+                    "available",
+                    "unavailable_reason",
+                    "server",
+                    "profile",
+                    "retention_seconds",
+                    "job"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-backup/{id}": {
+      "delete": {
+        "operationId": "agentBackup.discard",
+        "summary": "Cancel the running backup `id` (its child is stopped and its files removed) or delete its finished archive. An unknown id changes nothing. Answers the status as it now stands.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "const": "agent_home"
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "unavailable_reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "named_profile",
+                            "isolated_profile",
+                            "agent_unavailable"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "server": {
+                      "type": "string"
+                    },
+                    "profile": {
+                      "type": "string"
+                    },
+                    "retention_seconds": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "exclusiveMinimum": 0
+                    },
+                    "job": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{32}$"
+                            },
+                            "state": {
+                              "enum": [
+                                "running",
+                                "ready",
+                                "failed",
+                                "cancelled"
+                              ],
+                              "type": "string"
+                            },
+                            "phase": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "starting",
+                                    "scanning",
+                                    "archiving"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "completed": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "total": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "started_at": {
+                              "type": "number"
+                            },
+                            "finished_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "complete": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "file_name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "size_bytes": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "download_url": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "expires_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "phase",
+                            "completed",
+                            "total",
+                            "started_at",
+                            "finished_at",
+                            "complete",
+                            "file_name",
+                            "size_bytes",
+                            "download_url",
+                            "expires_at",
+                            "error"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "scope",
+                    "available",
+                    "unavailable_reason",
+                    "server",
+                    "profile",
+                    "retention_seconds",
+                    "job"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mcp/servers": {
       "get": {
         "operationId": "mcp.servers",
@@ -178102,6 +178786,48 @@
           },
           "413": {
             "description": "Folder exceeds the configured size or file-count cap.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-backup/download": {
+      "get": {
+        "summary": "TAL-2661, owner only: the ready Agent-home backup archive, streamed from its private server file with single byte ranges. Clients open the status's `job.download_url`.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "description": "The ready backup's `job.id`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ZIP attachment, `Cache-Control: no-store`.",
+            "content": {
+              "application/zip": {}
+            }
+          },
+          "206": {
+            "description": "Partial content."
+          },
+          "403": {
+            "description": "Not the owner, a named profile, or isolated profile mode.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "No ready backup with this id; it was deleted or expired.",
             "content": {
               "application/json": {}
             }

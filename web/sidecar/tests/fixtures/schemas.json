@@ -15261,6 +15261,39 @@
     ],
     "additionalProperties": false
   },
+  "backup.create": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "incomplete",
+          "failed",
+          "busy",
+          "cancelled"
+        ]
+      },
+      "reason": {
+        "type": "string"
+      },
+      "returncode": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
+      "size_bytes": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      }
+    },
+    "required": [
+      "status"
+    ],
+    "additionalProperties": false
+  },
   "gateway.groups": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

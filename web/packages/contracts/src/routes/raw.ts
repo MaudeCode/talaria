@@ -108,6 +108,11 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'ZIP stream.', contentType: 'application/zip' }, 404: { description: 'Folder missing.', contentType: 'application/json' }, 413: { description: 'Folder exceeds the configured size or file-count cap.', contentType: 'application/json' } },
   },
   {
+    method: 'GET', path: '/api/agent-backup/download', summary: 'TAL-2661, owner only: the ready Agent-home backup archive, streamed from its private server file with single byte ranges. Clients open the status\'s `job.download_url`.', tags: ['tools'],
+    query: { id: { description: 'The ready backup\'s `job.id`.', required: true } },
+    responses: { 200: { description: 'ZIP attachment, `Cache-Control: no-store`.', contentType: 'application/zip' }, 206: { description: 'Partial content.' }, 403: { description: 'Not the owner, a named profile, or isolated profile mode.', contentType: 'application/json' }, 404: { description: 'No ready backup with this id; it was deleted or expired.', contentType: 'application/json' } },
+  },
+  {
     method: 'GET', path: '/api/session/export', summary: 'Transcript download as JSON, Markdown, or a self-contained HTML page.', tags: ['sessions'],
     query: { session_id: { description: 'Session to export, including a canonical chat owned by an already-running Agent gateway.', required: true }, format: { description: '`json` (default), `markdown`, or `html`. Other values retain the legacy JSON fallback.' }, theme: { description: 'HTML only: `dark` (default) or `light`.' }, palette: { description: 'HTML only: base64 JSON map of CSS variables captured from the live UI.' } },
     responses: { 200: { description: 'Attachment named `hermes-<session_id>.<ext>`.' }, 400: { description: 'Session ID is required.', contentType: 'application/json' }, 404: { description: 'Session not found in the active profile.', contentType: 'application/json' }, 409: { description: 'The canonical Agent owner is unavailable or does not support transcript export.', contentType: 'application/json' }, 413: { description: 'The owner transcript exceeds the export limit.', contentType: 'application/json' } },

@@ -409,6 +409,9 @@ export const fetchConnectorOperation = (op_id: string, owner?: ConnectorOperatio
 export const respondConnectorOperation = (move: { op_id: string; action: 'skip' | 'retry' | 'approve' | 'continue' | 'wake'; target?: string; env?: Record<string, string>; session_id?: string; authority_epoch?: number }) =>
   orpc().connectors.respond(move, { signal: timeout(60_000) })
 export const shutdownServer = () => orpc().ops.shutdown({})
+export const fetchAgentBackup = () => orpc().agentBackup.status()
+export const createAgentBackup = () => orpc().agentBackup.create({ scope: 'agent_home' })
+export const discardAgentBackup = (id: string) => orpc().agentBackup.discard({ id })
 
 export const fetchContextDetail = (session_id: string, context_detail_key: string, signal?: AbortSignal) => orpc().session.contextDetail({ session_id, context_detail_key }, { ...(signal ? { signal } : {}) })
 

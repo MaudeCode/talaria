@@ -29,6 +29,10 @@ const ROUTES: { method: string; path: string; owner: boolean }[] = [
   { method: 'GET', path: '/api/providers', owner: false },
   ...['/api/providers', '/api/providers/self-hosted', '/api/providers/delete'].map((path) => ({ method: 'POST', path, owner: true })),
   { method: 'POST', path: '/api/kanban/dispatch', owner: true },
+  // TAL-2661: the Agent-home archive holds every profile.
+  ...['GET', 'POST'].map((method) => ({ method, path: '/api/agent-backup', owner: true })),
+  { method: 'DELETE', path: `/api/agent-backup/${'a'.repeat(32)}`, owner: true },
+  { method: 'GET', path: `/api/agent-backup/download?id=${'a'.repeat(32)}`, owner: true },
   { method: 'GET', path: '/api/dashboard/config', owner: true },
   { method: 'POST', path: '/api/dashboard/config', owner: true },
 ]
