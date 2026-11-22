@@ -1910,7 +1910,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
         expect(await row(result.notification_id)).toMatchObject({
           phase: 'waiting_for_idle', detail: message, can_dismiss: false,
           message: 'Waiting for 2 running gateway tasks to finish before restarting the gateway.',
-          actions: [{ id: 'restart_gateway_now', label: 'Restart now', style: 'destructive', acknowledges: false }],
+          actions: [{ id: expect.stringMatching(/^restart_gateway_now-[a-f0-9]{12}-2$/) as string, label: 'Restart now', style: 'destructive', acknowledges: false }],
         })
       }, { timeout: 15_000 })
       expect((await post(s, `/api/update-notifications/${String(result.notification_id)}/dismiss`, { dismiss: true })).status).toBe(409)
@@ -1923,7 +1923,14 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(stale.notification_id).toBe(result.notification_id)
       expect((await json(await s.get('/api/update-notifications?tab_id=tab-stale'))).tab_update).toMatchObject({ id: result.notification_id, phase: 'waiting_for_idle' })
       expect(restarts).toBe(0)
-      expect((await post(s, `/api/update-notifications/${String(result.notification_id)}/actions/restart_gateway_now`, { perform: true })).status).toBe(200)
+      const restartNow = ((await row(result.notification_id))?.actions as Json[])[0]?.id as string
+      // TAL-2625: Restart now shown for 2 tasks restarts nothing once a third starts; the record offers a fresh one.
+      writeFileSync(join(s.state, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', active_agents: 3, updated_at: new Date().toISOString() }))
+      expect((await post(s, `/api/update-notifications/${String(result.notification_id)}/actions/${restartNow}`, { perform: true })).status).toBe(409)
+      expect(restarts).toBe(0)
+      const fresh = ((await row(result.notification_id))?.actions as Json[])[0]?.id as string
+      expect(fresh).toMatch(/^restart_gateway_now-[a-f0-9]{12}-3$/)
+      expect((await post(s, `/api/update-notifications/${String(result.notification_id)}/actions/${fresh}`, { perform: true })).status).toBe(200)
       await vi.waitFor(async () => { expect(await row(result.notification_id)).toMatchObject({ phase: 'succeeded', detail: message, actions: [] }) }, { timeout: 15_000 })
       expect(restarts).toBe(1)
     } finally {

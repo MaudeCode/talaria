@@ -120,7 +120,20 @@ export const WEB_REFRESH_KIND = 'web_refresh'
 export const WEB_REFRESH_ACTION = 'reload'
 /** TAL-953: restart the gateway now instead of waiting for its running work to finish. */
 export const GATEWAY_RESTART_NOW = 'restart_gateway_now'
-const GATEWAY_RESTART_NOW_ACTION: UpdateNotificationAction = { id: GATEWAY_RESTART_NOW, label: 'Restart now', style: 'destructive', acknowledges: false }
+/** TAL-2625: what a Restart now action was shown for: the live gateways it replaces and the running tasks it interrupts. */
+export interface GatewayRestartOffer { target: string; tasks: number }
+const GATEWAY_RESTART_NOW_ID = /^restart_gateway_now-([a-f0-9]{12})-(\d{1,6})$/
+/** TAL-2625: the identity of the live gateway processes, so a replaced gateway gets a different Restart now. */
+export const gatewayTarget = (gateways: GatewayProcess[]): string => createHash('sha256').update(JSON.stringify(gateways.map((entry) => [entry.dir, entry.pid, entry.start_time]).sort())).digest('hex').slice(0, 12)
+/** TAL-2625: Restart now, versioned by the gateways and running task count it is shown for. */
+const gatewayRestartNowAction = (gateways: GatewayProcess[], tasks: number): UpdateNotificationAction => ({ id: `${GATEWAY_RESTART_NOW}-${gatewayTarget(gateways)}-${String(tasks)}`, label: 'Restart now', style: 'destructive', acknowledges: false })
+/** Any Restart now id, including an unversioned one from an older server, which never confirms a restart. */
+export const isGatewayRestartNow = (actionId: string): boolean => actionId === GATEWAY_RESTART_NOW || actionId.startsWith(`${GATEWAY_RESTART_NOW}-`)
+/** The offer a Restart now id was shown for, or null for an id that binds none. */
+export const gatewayRestartOffer = (actionId: string): GatewayRestartOffer | null => {
+  const match = GATEWAY_RESTART_NOW_ID.exec(actionId)
+  return match ? { target: match[1] ?? '', tasks: Number(match[2]) } : null
+}
 /** A closed tab stops checking in; its refresh notice is dropped once unseen this long. An open tab recreates it on its next check. */
 const TAB_TTL_MS = 60 * 60 * 1000
 const FAILED_MESSAGE = 'The update could not be completed.'
@@ -574,10 +587,10 @@ export class UpdateNotificationStore {
     row.detail = phase === 'applying' || phase === 'failed' || phase === 'blocked' || phase === 'succeeded' || phase === 'waiting_for_idle' || phase === 'verifying' || phase === 'recovering' || phase === 'unknown' ? safeDetail(detail) : null
     // The gateway restart is server-wide: every server owner sees the wait and can restart now, and a later update joins it.
     if (row.kind === 'update' && phase === 'waiting_for_idle' && row.visibility === 'server') row.owner = '*'
-    // Only a waiting gateway restart offers an action; entering the wait offers it afresh.
+    // Only a waiting gateway restart offers an action, once the wait has read the gateway it would restart (`gatewayWaiting`).
     if (row.kind === 'update') {
-      row.actions = phase === 'waiting_for_idle' ? [GATEWAY_RESTART_NOW_ACTION] : []
-      row.performed_action_ids = row.performed_action_ids.filter((action) => action !== GATEWAY_RESTART_NOW)
+      row.actions = []
+      row.performed_action_ids = row.performed_action_ids.filter((action) => !isGatewayRestartNow(action))
     }
     if (row.kind === 'update' && row.target && phase === 'succeeded') this.dropAvailable(row.target)
     if (verifiedIdentity) {
@@ -588,14 +601,20 @@ export class UpdateNotificationStore {
     return this.publish(row)
   }
 
-  /** TAL-953: update the waiting gateway restart's message as its running task count changes. */
-  async gatewayWaiting(id: string, tasks: number): Promise<void> {
+  /**
+   * TAL-953: update the waiting gateway restart's message as its running task count changes. TAL-2625: its Restart now
+   * is versioned by `gateways` and `tasks`, so an action shown before the gateway changed no longer matches it.
+   */
+  async gatewayWaiting(id: string, tasks: number, gateways: GatewayProcess[]): Promise<void> {
     const row = this.rows.find((entry) => entry.id === id && entry.kind === 'update' && entry.phase === 'waiting_for_idle')
     const message = gatewayWaitingMessage(tasks)
     const counted = tasks > 0 ? tasks : row?.gateway_tasks ?? null
-    if (!row || (row.message === message && row.gateway_tasks === counted)) return
+    const action = gatewayRestartNowAction(gateways, tasks)
+    if (!row || (row.message === message && row.gateway_tasks === counted && row.actions[0]?.id === action.id)) return
     row.message = message
     row.gateway_tasks = counted
+    row.actions = [action]
+    row.performed_action_ids = row.performed_action_ids.filter((performed) => !isGatewayRestartNow(performed))
     row.updated_at = this.now().toISOString()
     await this.save()
   }
@@ -674,7 +693,9 @@ export class UpdateNotificationStore {
   async action(scope: UpdateNotificationScope, id: string, actionId: string): Promise<PublicUpdateNotification | null> {
     const row = this.visible(scope, id)
     // A Reload in the Updating dialog is offered only while the tab is stale; the action itself never depends on it.
-    const action = row ? this.publish(row, scope.tab, true).actions.find((candidate) => candidate.id === actionId) : undefined
+    const offered = row ? this.publish(row, scope.tab, true).actions : []
+    // TAL-2625: a Restart now shown before the gateway changed still reaches the queue, which decides whether it still holds.
+    const action = offered.find((candidate) => candidate.id === actionId) ?? (isGatewayRestartNow(actionId) ? offered.find((candidate) => isGatewayRestartNow(candidate.id)) : undefined)
     if (!row || !action) return null
     if (row.performed_action_ids.includes(action.id)) return this.publish(row, scope.tab, true)
     const stamp = this.now().toISOString()

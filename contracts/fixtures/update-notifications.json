@@ -167,7 +167,7 @@
       "requires_acknowledgement": false,
       "actions": [
         {
-          "id": "restart_gateway_now",
+          "id": "restart_gateway_now-5e1f0a7c3b92-2",
           "label": "Restart now",
           "style": "destructive",
           "acknowledges": false
