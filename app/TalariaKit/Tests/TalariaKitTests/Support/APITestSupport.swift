@@ -21,6 +21,16 @@ class APIClientTestCase: XCTestCase {
         super.tearDown()
     }
 
+    /// A client whose requests `onRequest` answers, in any order, for this test only.
+    func deferredClient(_ onRequest: @escaping (DeferredMockURLProtocol) -> Void) -> APIClient {
+        let host = "deferred-\(UUID().uuidString.lowercased()).test"
+        DeferredMockURLProtocol.setOnRequest(onRequest, forHost: host)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        return APIClient(baseURL: URL(string: "https://\(host)")!, session: URLSession(configuration: configuration))
+    }
+
     func makeClient(
         baseURL: URL = APIClientTestCase.defaultServerURL,
         cookiePersistence: (@Sendable () throws -> Void)? = nil,

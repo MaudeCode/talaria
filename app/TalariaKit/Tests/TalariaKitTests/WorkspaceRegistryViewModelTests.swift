@@ -522,14 +522,4 @@ final class WorkspaceRegistryViewModelTests: APIClientTestCase {
         // The registry list itself must keep working.
         XCTAssertEqual(model.rows.count, 2)
     }
-
-    /// A client whose requests `onRequest` answers, in any order, for this test only.
-    private func deferredClient(_ onRequest: @escaping (DeferredMockURLProtocol) -> Void) -> APIClient {
-        let host = "workspaces-\(UUID().uuidString).test"
-        DeferredMockURLProtocol.setOnRequest(onRequest, forHost: host)
-        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [DeferredMockURLProtocol.self]
-        return APIClient(baseURL: URL(string: "https://\(host)")!, session: URLSession(configuration: configuration))
-    }
 }

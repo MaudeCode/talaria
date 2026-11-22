@@ -164,42 +164,36 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
     }
 
     func testLoadReturnsPartialStateAndStillRefreshesCommandsWhenConfigurationFails() async throws {
+        // TAL-2225: the failed models load cancels the un-awaited workspaces request, so models fails only once both
+        // have arrived; failing it at once let that cancellation land before workspaces was ever sent.
         let requestPaths = LockedTestValue<[String]>([])
-        let client = makeClient { request in
-            requestPaths.value.append(request.url?.path ?? "")
-
-            switch request.url?.path {
+        let heldModels = LockedTestValue<DeferredMockURLProtocol?>(nil)
+        let modelsArrived = expectation(description: "models requested")
+        let workspacesArrived = expectation(description: "workspaces requested alongside the models")
+        let client = deferredClient { request in
+            requestPaths.value.append(request.path)
+            switch request.path {
             case "/api/profiles":
-                return apiTestJSONResponse("""
-                {
-                  "active": "default",
-                  "profiles": [
-                    {"name": "default", "model": "gpt-5.4", "provider": "openai", "is_default": true}
-                  ]
-                }
-                """, for: request)
+                request.complete(withJSON: #"{"active": "default", "profiles": [{"name": "default", "model": "gpt-5.4", "provider": "openai", "is_default": true}]}"#)
             case "/api/models":
-                let response = HTTPURLResponse(
-                    url: try XCTUnwrap(request.url),
-                    statusCode: 500,
-                    httpVersion: nil,
-                    headerFields: ["Content-Type": "application/json"]
-                )
-                return (try XCTUnwrap(response), Data(#"{"error":"models unavailable"}"#.utf8))
+                heldModels.value = request
+                modelsArrived.fulfill()
             case "/api/commands":
-                return apiTestJSONResponse(#"{"commands": [{"name": "status"}]}"#, for: request)
+                request.complete(withJSON: #"{"commands": [{"name": "status"}]}"#)
             case "/api/workspaces":
                 // Requested alongside the models; a failed models load leaves the workspaces unapplied.
-                return apiTestJSONResponse(#"{"workspaces": [{"path": "/tmp/unapplied"}], "last": "/tmp/unapplied"}"#, for: request)
+                workspacesArrived.fulfill()
+                request.complete(withJSON: #"{"workspaces": [{"path": "/tmp/unapplied"}], "last": "/tmp/unapplied"}"#)
             default:
-                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
-                throw URLError(.badURL)
+                XCTFail("Unexpected request path: \(request.path)")
+                request.fail(with: URLError(.badURL))
             }
         }
 
-        let result = await ChatComposerConfigLoader(client: client).loadConfiguration(
-            from: ChatComposerConfigState()
-        )
+        let load = Task { await ChatComposerConfigLoader(client: client).loadConfiguration(from: ChatComposerConfigState()) }
+        await fulfillment(of: [modelsArrived, workspacesArrived], timeout: 10)
+        heldModels.value?.complete(withJSON: #"{"error":"models unavailable"}"#, statusCode: 500)
+        let result = await load.value
 
         XCTAssertNotNil(result.configurationError)
         XCTAssertEqual(result.state.selectedProfileName, "default")
@@ -250,13 +244,8 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
     /// TAL-839: the profile and its switch settle first; then models, workspaces and commands load together and
     /// reasoning follows the models it is scoped to.
     func testLoadOverlapsModelsWorkspacesAndCommandsAfterTheProfileSwitch() async throws {
-        let host = "composer-\(UUID().uuidString.lowercased()).test"
         let trips = HeldRoundTrips()
-        DeferredMockURLProtocol.setOnRequest(trips.hold, forHost: host)
-        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [DeferredMockURLProtocol.self]
-        let client = APIClient(baseURL: try XCTUnwrap(URL(string: "https://\(host)")), session: URLSession(configuration: configuration))
+        let client = deferredClient(trips.hold)
 
         let load = Task {
             await ChatComposerConfigLoader(client: client).loadConfiguration(from: ChatComposerConfigState(currentProfile: "work"))
