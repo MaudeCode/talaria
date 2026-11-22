@@ -338,13 +338,17 @@ class JsonlSessions implements SessionBackend {
   private async backupMeta(dir: string): Promise<BackupMeta | null> {
     try { return JSON.parse(await readFile(join(dir, BACKUP, BACKUP_META), 'utf8')) as BackupMeta } catch (error) { if (missing(error)) return null; throw error }
   }
+  /** The live meta, null when absent; `present` with a null meta when it exists but cannot be read, which recovery restores over. */
+  private async liveMeta(dir: string): Promise<{ meta: Meta | null; present: boolean }> {
+    try { const meta = await this.meta(dir); return { meta, present: meta !== null } } catch { return { meta: null, present: true } }
+  }
   /** The live session and its backup as the shared restore rule reads them; only transcript lengths matter to it. */
   private async backupState(dir: string, sid: string, stampingSince: number) {
     const backup = await this.backupMeta(dir)
     if (!backup) return null
-    const live = await this.meta(dir)
+    const { meta: live, present } = await this.liveMeta(dir)
     const withMessages = (meta: Meta) => ({ ...meta.doc, messages: Array.from({ length: meta.message_count }) })
-    return { live, backup, status: backupStatus(sid, live && withMessages(live), withMessages(backup), backup.saved_at, stampingSince) }
+    return { live, present, backup, status: backupStatus(sid, live && withMessages(live), withMessages(backup), backup.saved_at, stampingSince) }
   }
   private async restore(sid: string, guard?: (live: Meta | null, backup: BackupMeta) => boolean): Promise<boolean> {
     if (!isSafeSessionId(sid)) return false
@@ -396,14 +400,13 @@ class JsonlSessions implements SessionBackend {
     const counts = new Map<string, number>()
     for (const sid of names) {
       const dir = join(this.options.directory, sid)
-      let live: Meta | null = null
-      try { live = await this.meta(dir) } catch { /* unreadable: reported through its backup or the index */ }
-      if (live) counts.set(sid, live.message_count)
+      const { meta: live, present } = await this.liveMeta(dir)
+      if (present) counts.set(sid, live?.message_count ?? -1)
       // An unreadable backup cannot be restored.
       const found = await this.backupState(dir, sid, stampingSince).catch(() => null)
       if (!found) continue
       const base = { session_id: sid, live_messages: found.status.live_messages, bak_messages: found.status.bak_messages, profile: str((live ?? found.backup).doc.profile) || 'default', revision: live ? String(live.revision) : null, backupRevision: String(found.backup.revision) }
-      if (live) { const issue = backupIssue(found.status, base); if (issue) issues.push(issue) }
+      if (present) { const issue = backupIssue(found.status, base); if (issue) issues.push(issue) }
       else issues.push({ ...base, kind: 'orphan_backup', category: 'repairable', recommendation: 'restore_from_bak' })
     }
     if (await this.files.hasIndex()) {

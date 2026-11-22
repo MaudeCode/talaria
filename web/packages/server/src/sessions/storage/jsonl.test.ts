@@ -135,3 +135,15 @@ describe('cost in a 5,000-row session', () => {
     expect((await store.sessions.searchMessages(['chat'], sessionSearchTerms('row 4999'), 0)).get('chat')).toMatchObject({ idx: 4999 })
   })
 })
+
+it('restores the shrink backup over an unreadable live meta.json, as the JSON adapter restores over an unparseable file', async () => {
+  const { open, session } = fixture()
+  const store = open()
+  const revision = await write(store, { kind: 'replace', rows: rows(3) }, null)
+  await write(store, { kind: 'replace', rows: rows(1) }, revision)
+  fs.writeFileSync(join(session, 'meta.json'), '{"revision":')
+  const issues = await store.sessions.diagnose()
+  expect(issues).toMatchObject([{ session_id: 'chat', kind: 'shrunken_live', recommendation: 'restore_from_bak', live_messages: -1, bak_messages: 3 }])
+  expect(await store.sessions.repair(issues[0]!)).toBe(true)
+  expect(await open().sessions.readMessages('chat', { start: 0, end: Infinity })).toEqual(rows(3))
+})
