@@ -3,11 +3,16 @@ import TalariaKit
 import UIKit
 
 /// A notice above the composer in the status chip's look: its level's icon, up to two lines, and a dismiss button.
-/// The Agent's session notices and the chat's own short notices (TAL-1001) share it.
+/// The Agent's session notices and the chat's own short notices (TAL-1001) share it. A session notice opens to its
+/// full text on a tap and closes on the next (TAL-1016); the chat's own notice dismisses itself, so it stays two lines.
 struct NoticeChip: View {
     let text: String
     let level: SessionNotice.Level
+    var expandsOnTap = false
     let dismiss: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isExpanded = false
 
     var body: some View {
         let style = Self.style(level)
@@ -16,12 +21,18 @@ struct NoticeChip: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(style.tint)
                 .accessibilityHidden(true)
-            Text(text)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if expandsOnTap {
+                Button {
+                    withAnimation(ChatMotion.quickState(reduceMotion: reduceMotion)) { isExpanded.toggle() }
+                } label: {
+                    noticeText.contentShape(.rect)
+                }
+                .buttonStyle(.plain)
                 .accessibilityValue(style.name)
+                .accessibilityHint(isExpanded ? String(localized: "Show less") : String(localized: "Show full notice"))
+            } else {
+                noticeText.accessibilityValue(style.name)
+            }
             Button(action: dismiss) {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.bold))
@@ -36,6 +47,15 @@ struct NoticeChip: View {
         }
         .statusChipChrome()
         .accessibilityElement(children: .contain)
+    }
+
+    private var noticeText: some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(isExpanded ? nil : 2)
+            .fixedSize(horizontal: false, vertical: isExpanded)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// The level's icon, its tint, and the word VoiceOver reads for it.

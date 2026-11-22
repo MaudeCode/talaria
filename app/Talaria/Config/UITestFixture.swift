@@ -118,9 +118,12 @@ struct UITestFixtureEnvironment {
     nonisolated static var hasSessionNotices: Bool {
         ProcessInfo.processInfo.arguments.contains(sessionNoticesArgument)
     }
+    /// The fixture's memory warning, longer than a notice chip's two-line preview at 390 pt (TAL-1016).
+    nonisolated static let sessionNoticeWarning = "Memory provider 'honcho' could not be loaded, so memory is off for this "
+        + "session. Install its plugin with hermes plugins install honcho, then restart the gateway to turn memory back on."
     /// The Agent's notices the fixture serves: a memory warning, then a credit band (TAL-831).
     nonisolated static func sessionNotices(clearingWarning: Bool = false) -> [[String: Any]] {
-        let warning: [String: Any] = ["key": "startup-warning.fixture", "level": "warn", "text": "Memory provider 'honcho' could not be loaded; memory is off.", "expires_at": NSNull()]
+        let warning: [String: Any] = ["key": "startup-warning.fixture", "level": "warn", "text": sessionNoticeWarning, "expires_at": NSNull()]
         let band: [String: Any] = ["key": "credits.usage_band", "level": "info", "text": "You've used 90% of your credits.", "expires_at": NSNull()]
         return clearingWarning ? [band] : [warning, band]
     }

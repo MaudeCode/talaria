@@ -95,7 +95,7 @@ def shared_owner(tmp_path_factory):
 
 @requires_agent
 @pytest.mark.parametrize("mode", ["shared", "reactions", "reaction-watch", "batch", "approval", "approval-tell", "clarify", "detail",
-                                  "queued-controls", "model", "voice-stop", "connections", "work", "complete", "transcript", "bridge"])
+                                  "queued-controls", "model", "voice-stop", "connections", "work", "complete", "transcript", "bridge", "commands"])
 def test_real_native_owner_shared_admission_and_detach(request, shared_owner, mode):
     shared_owner(request, mode)
 
@@ -291,6 +291,11 @@ def native_owner_stub(tmp_path, monkeypatch):
             if isinstance(owner.completion, Exception):
                 raise owner.completion
             return owner.completion
+        if method in {"command.dispatch", "commands.catalog"}:
+            reply = owner.command if method == "command.dispatch" else owner.catalog
+            if isinstance(reply, BaseException):
+                raise reply
+            return reply
         if method in {"connection.respond", "connectors.operation.status", "connectors.operation.wake", "connectors.connect"}:
             reply = owner.connection[method]
             if isinstance(reply, Exception):
@@ -399,6 +404,105 @@ def test_idle_notice_replay_and_snapshot_warning(native_owner_stub, boundary):
     else:
         assert [data["payload"]["text"] for kind, data in frames if kind == "event"] == ["Plugin started", "Plugin finished"]
     assert not any(method.startswith("prompt.") for method, _ in owner.calls)
+
+
+DISPATCH = {"session_id": "native", "action": "command_dispatch", "name": "deploy", "arg": "now", "authority_epoch": 1, "replay_epoch": "epoch"}
+
+
+def test_native_command_runs_once_on_the_session_owner(native_owner_stub):
+    """TAL-1338: the owner resolves and runs the registered command for this session; nothing runs it locally."""
+    owner = native_owner_stub
+    owner.command = {"type": "exec", "output": "deployed", "private": "omit"}
+    result = owner.run(None, DISPATCH)
+    assert result["command_result"] == {"kind": "output", "output": "deployed"}
+    calls = owner.calls
+    dispatches = [call for call in calls if call[0] == "command.dispatch"]
+    # Name and argument only: the owner binds the session's profile, workspace and policy itself.
+    assert dispatches == [("command.dispatch", {"session_id": "native", "name": "deploy", "arg": "now", "_timeout": 115})]
+    assert calls.index(("session.resume", {"session_id": "native"})) < calls.index(dispatches[0])
+    assert calls[-1] == ("session.detach", {"session_id": "native", "subscription_id": "viewer"})
+    assert not any(method.startswith(("prompt.", "shell.", "slash.")) for method, _ in calls)
+
+
+@pytest.mark.parametrize("boundary", ["epoch", "replay", "session"])
+def test_native_command_refuses_a_stale_owner_before_dispatch(native_owner_stub, boundary):
+    owner = native_owner_stub
+    owner.snapshot_extra = {"authority_epoch": 2} if boundary == "epoch" else {"replay_epoch": "successor"} if boundary == "replay" else {"session_id": "successor"}
+    result = owner.run(None, DISPATCH)
+    assert (result["state"], result["reason"]) == ("refused", "owner_changed"), result
+    assert not any(method == "command.dispatch" for method, _ in owner.calls)
+
+
+@pytest.mark.parametrize("reply,outcome", [
+    pytest.param(RuntimeError("unsupported_command"), ("refused", "unsupported_command"), id="unavailable"),
+    pytest.param(RuntimeError("permission_denied"), ("refused", "permission_denied"), id="denied"),
+    pytest.param(RuntimeError("cwd_unavailable"), ("refused", "cwd_unavailable"), id="workspace-gone"),
+    pytest.param(RuntimeError("request_failed"), ("unavailable", "command_outcome_unknown"), id="unknown-refusal"),
+    pytest.param(TimeoutError(), ("unavailable", "command_outcome_unknown"), id="lost-ack"),
+    pytest.param({"type": "exec", "output": 7}, ("unavailable", "command_outcome_unknown"), id="invalid-reply"),
+])
+def test_native_command_refusal_or_unknown_outcome_is_never_resent(native_owner_stub, reply, outcome):
+    owner = native_owner_stub
+    owner.command = reply
+    result = owner.run(None, DISPATCH)
+    assert (result["state"], result["reason"]) == outcome, result
+    assert "command_result" not in result
+    assert sum(method == "command.dispatch" for method, _ in owner.calls) == 1
+
+
+@pytest.mark.parametrize("reply", [{"type": "send", "message": "Plan the deploy", "display": "/plan"},
+                                   {"type": "skill", "name": "deploy", "message": "Use the deploy skill"}])
+def test_native_command_turn_directive_is_never_forwarded(native_owner_stub, reply):
+    native_owner_stub.command = reply
+    result = native_owner_stub.run(None, DISPATCH)
+    assert result["command_result"] == {"kind": "prompt"}
+    assert not any(method == "prompt.submit" for method, _ in native_owner_stub.calls)
+
+
+@pytest.mark.parametrize("text,bounded", [
+    pytest.param("x" * 70000, "x" * 64000, id="ascii"),
+    pytest.param("😀" * 40000, "😀" * 32000, id="emoji"),
+    pytest.param("x" + "😀" * 40000, "x" + "😀" * 31999, id="split-pair"),
+])
+def test_native_command_output_is_bounded_in_utf16_units(native_owner_stub, text, bounded):
+    """The contract bounds JavaScript string length: an emoji is two units, and a split pair is dropped."""
+    native_owner_stub.command = {"type": "exec", "output": text}
+    assert native_owner_stub.run(None, DISPATCH)["command_result"]["output"] == bounded
+
+
+@pytest.mark.parametrize("change", [{"name": "deploy now"}, {"name": "/deploy"}, {"name": ""}, {"name": "déploy"}, {"arg": None}, {"arg": "x" * 8193},
+                                    {"authority_epoch": None}, {"replay_epoch": ""}, {"profile": "other"},
+                                    {"workspace": "/tmp"}, {"command": "rm -rf /"}])
+def test_native_command_dispatch_rejects_overrides_before_connecting(native_owner_stub, tmp_path, change):
+    from talaria_sidecar.errors import InvalidParams
+    params = {"profile_home": str(tmp_path), **DISPATCH, **change}
+    with pytest.raises(InvalidParams, match="command dispatch requires"):
+        native_owner_stub.session(None, {k: v for k, v in params.items() if v is not None})
+    assert native_owner_stub.calls == []
+
+
+def test_native_command_catalog_lists_only_owner_quick_commands(native_owner_stub):
+    owner = native_owner_stub
+    owner.catalog = {"categories": [
+        {"name": "Session", "pairs": [["/new", "Start a new session"]]},
+        {"name": "User commands", "pairs": [["/deploy", "exec: ./deploy.sh"], ["/bad name", "x"], ["/notes", "😀" * 150], "junk"]},
+    ], "skills": {"/private": {}}}
+    result = owner.run(None, {"session_id": "native", "action": "command_catalog"})
+    assert result["quick_commands"] == [{"name": "deploy", "description": "exec: ./deploy.sh"}, {"name": "notes", "description": "😀" * 100}]
+    assert ("commands.catalog", {"session_id": "native", "_timeout": 25}) in owner.calls
+    assert not any(method == "command.dispatch" for method, _ in owner.calls)
+
+
+def test_review_summary_replays_without_a_turn_stamp(native_owner_stub):
+    """TAL-1338: a /refine summary arrives after its command returned, stamped with no turn."""
+    from types import SimpleNamespace
+    owner = native_owner_stub
+    owner.replay = [{"type": "review.summary", "session_id": "native", "replay_epoch": "epoch", "seq": 3,
+                     "payload": {"text": "💾 Memory updated", "private": "omit"}}]
+    frames = []
+    ctx = SimpleNamespace(cancelled=True, emit=lambda kind, data: frames.append((kind, data)))
+    owner.run(ctx, {"session_id": "native", "action": "watch"})
+    assert [(data["type"], data["payload"]) for kind, data in frames if kind == "event"] == [("review.summary", {"text": "💾 Memory updated"})]
 
 
 @pytest.mark.parametrize("sha,attached", [

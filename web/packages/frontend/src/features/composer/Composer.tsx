@@ -349,7 +349,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const caret = caretAt?.sessionId === sessionId ? caretAt.at : null
   const setCaret = (at: number) => { if (!clarify) setCaretAt({ sessionId, at }) }
   const before = text.slice(0, caret ?? text.length)
-  const palette = useCommandPalette(clarify || room ? '' : text, nativeOwner && sessionId && !clarify && !room ? { sessionId, before } : null)
+  const palette = useCommandPalette(clarify || room ? '' : text, sessionId, nativeOwner && sessionId && !clarify && !room ? { sessionId, before } : null)
   // A newly resolved identity first adopts its text. Persisting the previous render would erase
   // the loaded draft or copy another owner's text; the identity state also preserves early typing.
   useDraftPersistence(draftIdentity === localStateId ? localStateId : null, text, !room && !session?.owner_attachment)

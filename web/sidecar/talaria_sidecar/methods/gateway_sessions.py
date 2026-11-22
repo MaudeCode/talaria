@@ -21,8 +21,16 @@ from .connectors import snapshot_view
 _ACTIONS = {"snapshot", "watch", "transcript", "context_detail", "submit", "receipt", "cancel", "steer", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
             "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec", "react",
             "connection_status", "connection_wake", "connection_respond", "connection_retry",
-            "work_list", "work_tail", "work_transcript", "work_stop", "work_steer", "launch_background", "launch_btw", "complete_path"}
+            "work_list", "work_tail", "work_transcript", "work_stop", "work_steer", "launch_background", "launch_btw",
+            "command_dispatch", "command_catalog", "complete_path"}
 _SIDE_EVENTS = {"background.complete", "btw.complete"}
+# TAL-1338: a review's summary (a ``/refine`` or a turn's own review) belongs to the session, not to a turn.
+_REVIEW_EVENT = "review.summary"
+# The owner's own refusals of a command it never ran; any other failure after the dispatch was sent leaves its outcome unknown.
+_COMMAND_REFUSALS = {"unsupported_command", "command_unavailable", "permission_denied", "profile_mismatch", "invalid_params",
+                     "cwd_unavailable", "runtime_draining", "gateway_restarting", "read_only", "not_found"}
+_COMMAND_NAME = re.compile(r"[A-Za-z][\w-]{0,63}", re.ASCII)
+_COMMAND_OUTPUT_MAX = 64000
 _CONNECTION_ACTIONS = {action for action in _ACTIONS if action.startswith("connection_")}
 _WORK_ACTIONS = {action for action in _ACTIONS if action.startswith("work_")}
 # The owner's own refusals for a row it no longer lists for this session (a cold session, an exited child or process).
@@ -141,6 +149,10 @@ def _connection(value: object) -> dict | None:
 
 
 def _event(value: dict) -> dict:
+    if value.get("type") == _REVIEW_EVENT:
+        payload = value.get("payload")
+        text = payload.get("text") if isinstance(payload, dict) else None
+        return {**value, "payload": {"text": _utf16(text, _COMMAND_OUTPUT_MAX) if isinstance(text, str) else ""}}
     if value.get("type") in _SIDE_EVENTS:
         payload = value.get("payload")
         if not isinstance(payload, dict):
@@ -212,6 +224,37 @@ def _wake_on_cancel(ctx, events: asyncio.Queue) -> None:
     add_waker = getattr(getattr(ctx, "cancel_event", None), "add_waker", None)
     if callable(add_waker):
         add_waker(waker)
+
+
+def _utf16(text: str, limit: int) -> str:
+    """``text`` cut to ``limit`` UTF-16 code units, the unit the contract bounds; a split surrogate pair is dropped."""
+    return text if len(text) <= limit // 2 else text.encode("utf-16-le")[:limit * 2].decode("utf-16-le", "ignore")
+
+
+def _quick_commands(catalog) -> list[dict]:
+    """The owner catalog's registered quick commands (its ``User commands`` rows), closed to a name and description."""
+    categories = catalog.get("categories") if isinstance(catalog, dict) else None
+    rows = []
+    for category in categories if isinstance(categories, list) else []:
+        if not isinstance(category, dict) or category.get("name") != "User commands" or not isinstance(category.get("pairs"), list):
+            continue
+        for pair in category["pairs"]:
+            if (isinstance(pair, list) and len(pair) == 2 and all(isinstance(v, str) for v in pair)
+                    and pair[0].startswith("/") and _COMMAND_NAME.fullmatch(pair[0][1:])):
+                rows.append({"name": pair[0][1:], "description": _utf16(pair[1], 200)})
+    return rows[:200]
+
+
+def _command_result(value) -> dict | None:
+    """``command.dispatch``'s reply as Talaria shows it: an ``exec`` reply's text, or a turn the client would send,
+    which Talaria never submits for a command. None for a reply outside the owner's contract."""
+    if not isinstance(value, dict):
+        return None
+    if value.get("type") == "exec" and isinstance(value.get("output"), str):
+        return {"kind": "output", "output": _utf16(value["output"], _COMMAND_OUTPUT_MAX)}
+    if value.get("type") in {"send", "skill"}:
+        return {"kind": "prompt"}
+    return None
 
 
 def _refused(state: str, reason: str) -> dict:
@@ -512,6 +555,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     **({"transcripts": True} if _TRANSCRIPT in described["capabilities"] else {})}
 
         receipt = lock = None
+        dispatched = False
         try:
             if params["action"] in _CONNECTION_ACTIONS:
                 return await _connection_action(client, params, described)
@@ -575,6 +619,22 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 except Exception:  # noqa: BLE001 - no native idempotency key: an uncertain reply must never be resent
                     launch = {"state": "unknown", "task_id": None}
                 return {**result, "launch": launch}
+            if action == "command_catalog":
+                # The owner lists the session profile's quick commands in that session's workspace scope.
+                value = await client.rpc("commands.catalog", **common, _timeout=25)
+                return {"state": "attached", "reason": None, "snapshot": None, "receipt": None, "quick_commands": _quick_commands(value)}
+            if action == "command_dispatch":
+                if (snap.get("session_id") != params["session_id"] or snap.get("authority_epoch") != params["authority_epoch"]
+                        or snap.get("replay_epoch") != params["replay_epoch"]):
+                    return _refused("refused", "owner_changed")
+                # The owner alone resolves the registered command, its access policy, workspace and environment.
+                # No policy override, retry identity or second dispatch: an unknown ACK is reported, never resent.
+                dispatched = True
+                value = await client.rpc("command.dispatch", **common, name=params["name"], arg=params["arg"], _timeout=115)
+                result = _command_result(value)
+                if result is None:
+                    return _refused("unavailable", "command_outcome_unknown")
+                return {"state": "attached", "reason": None, "snapshot": None, "receipt": None, "command_result": result}
             if action == "terminal_info":
                 return {"state": "attached", "reason": None, "snapshot": snap, "receipt": None}
             if action == "shell_exec":
@@ -664,7 +724,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 for event in replay["events"]:
                     if event.get("session_id") != sid or event.get("replay_epoch") != epoch:
                         continue
-                    if (event.get("type") in {"session.updated", "notification.show", "notification.clear", *_CONNECTION_EVENTS, *_SIDE_EVENTS}
+                    if (event.get("type") in {"session.updated", "notification.show", "notification.clear", _REVIEW_EVENT, *_CONNECTION_EVENTS, *_SIDE_EVENTS}
                             or event.get("execution_generation") == snap["execution_generation"]
                             or event.get("type") == "session.info" and event.get("payload", {}).get("execution_generation") == snap["execution_generation"]):
                         ctx.emit("event", _event(event))
@@ -746,6 +806,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 ctx.emit("event", _event(event))
             return result
         except GatewayRPCError as exc:
+            if dispatched and str(exc) not in _COMMAND_REFUSALS:
+                return _refused("unavailable", "command_outcome_unknown")
             if params["action"] == "react" and str(exc) not in {"invalid_params", "not_found", "permission_denied", "profile_mismatch"}:
                 return _refused("unavailable", "reaction_outcome_unknown")
             if str(exc) == _STATE_BUSY:
@@ -754,6 +816,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 return _refused("refused", "export_too_large" if str(exc) == "export_too_large" else "owner_export_unsupported")
             return {**_refused("incompatible" if str(exc) in _CONTROL_REFUSALS else "refused", str(exc)), "receipt": receipt}
         except Exception:  # noqa: BLE001 - native transport/contract failures never authorize another writer
+            if dispatched:
+                return _refused("unavailable", "command_outcome_unknown")
             # A received receipt remains admission proof even if the following observation
             # disconnects. Losing that ACK would invite a new request identity for admitted work.
             return {**_refused("unavailable", "owner_connection_lost"), "receipt": receipt}
@@ -808,6 +872,15 @@ def session(ctx, params: dict) -> dict:
             or type(params.get("authority_epoch")) is not int or params["authority_epoch"] < 0
             or not isinstance(params.get("replay_epoch"), str) or not params["replay_epoch"]):
         raise InvalidParams("captured command requires command and owner identity")
+    if action == "command_dispatch" and (
+            set(params) - {"profile_home", "session_id", "action", "name", "arg", "authority_epoch", "replay_epoch"}
+            or not isinstance(params.get("name"), str) or not _COMMAND_NAME.fullmatch(params["name"])
+            or not isinstance(params.get("arg"), str) or len(params["arg"]) > 8192
+            or type(params.get("authority_epoch")) is not int or params["authority_epoch"] < 0
+            or not isinstance(params.get("replay_epoch"), str) or not params["replay_epoch"]):
+        raise InvalidParams("a command dispatch requires one registered name, its argument and owner identity, without overrides")
+    if action == "command_catalog" and set(params) - {"profile_home", "session_id", "action"}:
+        raise InvalidParams("a command catalog read takes no other fields")
     if action == "transcript" and (params.get("order") not in ("oldest", "latest")
                                    or type(params.get("limit")) is not int or not 1 <= params["limit"] <= 500
                                    or not (params.get("cursor") is None or isinstance(params["cursor"], str) and 0 < len(params["cursor"]) <= 1024)):

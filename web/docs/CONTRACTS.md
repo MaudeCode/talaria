@@ -430,6 +430,15 @@ other boards. Profile switching clears the existing Query cache and closes the
 previous detail selection. The shared fixture is
 `contracts/fixtures/kanban-inspection.json` at the repository root.
 
+Every task on a board, detail, mutation reply or inspection node carries
+`selected_age_seconds` and `staleness` (`none`, `warning` or `critical`). The
+server selects the Agent's `started_age_seconds` for a running task and
+`created_age_seconds` for any other; an older Agent's scalar age is used as
+is, and a missing age is `null` and `none`. A running task warns at 600 s and
+is critical at 3,600 s, a ready task warns at 3,600 s, and a blocked task warns
+at 3,600 s and is critical at 86,400 s. The shared fixture is
+`contracts/fixtures/kanban-task-age.json`.
+
 Kanban requests carry an RPC-only `allowed_assignees` value derived from the
 authenticated session. Owners and auth-off requests use `null`. Restricted
 requests can read tasks assigned to their accessible profiles and unassigned

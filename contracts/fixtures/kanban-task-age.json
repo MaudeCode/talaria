@@ -1,0 +1,31 @@
+{
+  "sidecar_task": {
+    "id": "synthetic-ready",
+    "title": "Synthetic ready task",
+    "status": "ready",
+    "priority": 0,
+    "assignee": null,
+    "claim_live": false,
+    "has_completion_evidence": false,
+    "agent_move_targets": ["triage", "todo"],
+    "age_seconds": {"created_age_seconds": 7200, "started_age_seconds": null, "time_to_complete_seconds": null},
+    "age": {"created_age_seconds": 7200, "started_age_seconds": null, "time_to_complete_seconds": null},
+    "progress": null
+  },
+  "board_task": {
+    "id": "synthetic-ready",
+    "title": "Synthetic ready task",
+    "status": "ready",
+    "priority": 0,
+    "assignee": null,
+    "claim_live": false,
+    "has_completion_evidence": false,
+    "age_seconds": {"created_age_seconds": 7200, "started_age_seconds": null, "time_to_complete_seconds": null},
+    "age": {"created_age_seconds": 7200, "started_age_seconds": null, "time_to_complete_seconds": null},
+    "progress": null,
+    "available_actions": {"block": true, "unblock": false, "complete": false, "archive": true, "move_to": ["triage", "todo"]},
+    "requires_running_exit_confirmation": false,
+    "selected_age_seconds": 7200,
+    "staleness": "warning"
+  }
+}

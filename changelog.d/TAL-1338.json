@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Quick commands, plugin commands and /refine now run in chats an Agent gateway holds, on that gateway, and a review's summary shows above the composer when it finishes.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -1046,6 +1046,15 @@ describe('Composer', () => {
     expect(screen.queryByRole('listbox')).toBeNull()
   })
 
+
+  it("asks for the open chat's palette rows, which list its native owner's quick commands (TAL-1338)", async () => {
+    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'deploy', aliases: [], handler: 'agent', clients: ['web', 'ios'], exec: true }] })
+    renderComposer({ ...writable, is_streaming: false })
+    await userEvent.type(screen.getByRole('textbox'), '/dep')
+    await screen.findByRole('option', { name: /\/deploy/ })
+    expect(api.fetchCommands).toHaveBeenLastCalledWith('dep', writable.session_id, expect.any(AbortSignal))
+  })
+
   // TAL-2314: the server answers each typed prefix with its ranked rows; without a prefix it returns the whole catalog.
   const commandRows = (...names: string[]) => ({ commands: names.map((name): Command => ({ name, aliases: [], handler: 'client', clients: ['web', 'ios'], exec: false })) })
   const settled = () => waitFor(() => expect(screen.getByRole('listbox')).not.toHaveAttribute('aria-busy', 'true'))

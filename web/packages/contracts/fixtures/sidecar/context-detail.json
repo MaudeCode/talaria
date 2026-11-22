@@ -48,7 +48,26 @@
         ],
         "truncated": false,
         "current_turn_output_tokens": null,
-        "last_turn_output_tokens": null
+        "last_turn_output_tokens": null,
+        "prompt_cache": {
+          "state": "maybe_warm",
+          "confidence": "declared",
+          "reason": null,
+          "tier": "5m",
+          "guaranteed_until": 1763816700,
+          "estimated_until": 1763820000,
+          "remaining_seconds": null,
+          "coverage": [
+            {
+              "tier": "5m",
+              "until": 1763816700
+            },
+            {
+              "tier": "1h",
+              "until": 1763820000
+            }
+          ]
+        }
       }
     },
     {
@@ -72,7 +91,8 @@
         "files": [],
         "truncated": false,
         "current_turn_output_tokens": null,
-        "last_turn_output_tokens": null
+        "last_turn_output_tokens": null,
+        "prompt_cache": null
       }
     }
   ]

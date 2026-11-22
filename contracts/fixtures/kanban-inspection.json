@@ -160,7 +160,9 @@
               "ready"
             ]
           },
-          "requires_running_exit_confirmation": true
+          "requires_running_exit_confirmation": true,
+          "selected_age_seconds": null,
+          "staleness": "none"
         },
         "ancestors": [
           "default/plan"
@@ -204,7 +206,9 @@
               "ready"
             ]
           },
-          "requires_running_exit_confirmation": false
+          "requires_running_exit_confirmation": false,
+          "selected_age_seconds": null,
+          "staleness": "none"
         },
         "ancestors": [],
         "descendants": [
@@ -246,7 +250,9 @@
               "todo"
             ]
           },
-          "requires_running_exit_confirmation": false
+          "requires_running_exit_confirmation": false,
+          "selected_age_seconds": null,
+          "staleness": "none"
         },
         "ancestors": [
           "default/checks",
@@ -288,7 +294,9 @@
               "ready"
             ]
           },
-          "requires_running_exit_confirmation": false
+          "requires_running_exit_confirmation": false,
+          "selected_age_seconds": null,
+          "staleness": "none"
         },
         "ancestors": [
           "ops/cycle-b"
@@ -331,7 +339,9 @@
               "ready"
             ]
           },
-          "requires_running_exit_confirmation": false
+          "requires_running_exit_confirmation": false,
+          "selected_age_seconds": null,
+          "staleness": "none"
         },
         "ancestors": [
           "ops/cycle-a"
@@ -374,7 +384,9 @@
               "todo"
             ]
           },
-          "requires_running_exit_confirmation": false
+          "requires_running_exit_confirmation": false,
+          "selected_age_seconds": null,
+          "staleness": "none"
         },
         "ancestors": [],
         "descendants": [],

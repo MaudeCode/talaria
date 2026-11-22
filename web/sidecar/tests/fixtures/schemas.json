@@ -3098,6 +3098,92 @@
                     }
                   ]
                 },
+                "age_seconds": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "created_age_seconds": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "started_age_seconds": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "time_to_complete_seconds": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "created_age_seconds",
+                            "started_age_seconds",
+                            "time_to_complete_seconds"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "age": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "created_age_seconds": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "started_age_seconds": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "time_to_complete_seconds": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "created_age_seconds",
+                            "started_age_seconds",
+                            "time_to_complete_seconds"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "current_run_started_at": {
                   "type": [
                     "number",
@@ -3245,6 +3331,92 @@
                             "items": {
                               "type": "string"
                             }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "age_seconds": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "created_age_seconds": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "started_age_seconds": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "time_to_complete_seconds": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "created_age_seconds",
+                                  "started_age_seconds",
+                                  "time_to_complete_seconds"
+                                ],
+                                "additionalProperties": {}
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "age": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "created_age_seconds": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "started_age_seconds": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "time_to_complete_seconds": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "created_age_seconds",
+                                  "started_age_seconds",
+                                  "time_to_complete_seconds"
+                                ],
+                                "additionalProperties": {}
+                              }
+                            ]
                           },
                           {
                             "type": "null"
@@ -3561,6 +3733,92 @@
               }
             ]
           },
+          "age_seconds": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "created_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "started_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "time_to_complete_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "created_age_seconds",
+                      "started_age_seconds",
+                      "time_to_complete_seconds"
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "age": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "created_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "started_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "time_to_complete_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "created_age_seconds",
+                      "started_age_seconds",
+                      "time_to_complete_seconds"
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "current_run_started_at": {
             "type": [
               "number",
@@ -3712,6 +3970,92 @@
                 "type": "null"
               }
             ]
+          },
+          "age_seconds": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "created_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "started_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "time_to_complete_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "created_age_seconds",
+                      "started_age_seconds",
+                      "time_to_complete_seconds"
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "age": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "created_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "started_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "time_to_complete_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "created_age_seconds",
+                      "started_age_seconds",
+                      "time_to_complete_seconds"
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3777,6 +4121,92 @@
                 "type": "null"
               }
             ]
+          },
+          "age_seconds": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "created_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "started_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "time_to_complete_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "created_age_seconds",
+                      "started_age_seconds",
+                      "time_to_complete_seconds"
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "age": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "created_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "started_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "time_to_complete_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "created_age_seconds",
+                      "started_age_seconds",
+                      "time_to_complete_seconds"
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3837,6 +4267,92 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "age_seconds": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "created_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "started_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "time_to_complete_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "created_age_seconds",
+                      "started_age_seconds",
+                      "time_to_complete_seconds"
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "age": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "created_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "started_age_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "time_to_complete_seconds": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "created_age_seconds",
+                      "started_age_seconds",
+                      "time_to_complete_seconds"
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
               },
               {
                 "type": "null"
@@ -11554,6 +12070,195 @@
                 "type": "null"
               }
             ]
+          },
+          "prompt_cache": {
+            "description": "TAL-2647: null when the Agent has no window (before v0.23.2, or no cache touched yet); absent from older servers.",
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "warm",
+                          "maybe_warm",
+                          "expired"
+                        ]
+                      },
+                      "confidence": {
+                        "type": "string",
+                        "enum": [
+                          "proven",
+                          "declared",
+                          "assumed"
+                        ]
+                      },
+                      "reason": {
+                        "type": "null"
+                      },
+                      "tier": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "5m",
+                              "30m",
+                              "1h",
+                              "12h",
+                              "24h",
+                              "in_memory"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "guaranteed_until": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "description": "Epoch seconds."
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "estimated_until": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "description": "Epoch seconds."
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Null only on a `warm` window whose end is eviction, not a clock (a local endpoint)."
+                      },
+                      "remaining_seconds": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Seconds of guaranteed warmth left at the read; set only on a `warm` window."
+                      },
+                      "coverage": {
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "tier": {
+                              "type": "string",
+                              "enum": [
+                                "5m",
+                                "30m",
+                                "1h",
+                                "12h"
+                              ]
+                            },
+                            "until": {
+                              "type": "number",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "Epoch seconds."
+                            }
+                          },
+                          "required": [
+                            "tier",
+                            "until"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "One deadline per tier the cached prefix holds, earliest first."
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "confidence",
+                      "reason",
+                      "tier",
+                      "guaranteed_until",
+                      "estimated_until",
+                      "remaining_seconds",
+                      "coverage"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "const": "unknown"
+                      },
+                      "confidence": {
+                        "type": "string",
+                        "const": "unknown"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "session_rotated",
+                          "compacted",
+                          "route_changed",
+                          "storage_unavailable",
+                          "no_published_window",
+                          "invalid"
+                        ]
+                      },
+                      "tier": {
+                        "type": "null"
+                      },
+                      "guaranteed_until": {
+                        "type": "null"
+                      },
+                      "estimated_until": {
+                        "type": "null"
+                      },
+                      "remaining_seconds": {
+                        "type": "null"
+                      },
+                      "coverage": {
+                        "maxItems": 0,
+                        "type": "array",
+                        "items": {
+                          "not": {}
+                        }
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "confidence",
+                      "reason",
+                      "tier",
+                      "guaranteed_until",
+                      "estimated_until",
+                      "remaining_seconds",
+                      "coverage"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -12122,6 +12827,66 @@
           "status"
         ],
         "additionalProperties": false
+      },
+      "command_result": {
+        "description": "`command_dispatch`: what the owner did with the command.",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "output"
+              },
+              "output": {
+                "type": "string",
+                "maxLength": 64000
+              }
+            },
+            "required": [
+              "kind",
+              "output"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "prompt"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "quick_commands": {
+        "description": "`command_catalog`: the session profile's registered quick commands.",
+        "maxItems": 200,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][\\w-]*$"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "name",
+            "description"
+          ],
+          "additionalProperties": false
+        }
       }
     },
     "required": [
@@ -13003,6 +13768,195 @@
                 "type": "null"
               }
             ]
+          },
+          "prompt_cache": {
+            "description": "TAL-2647: null when the Agent has no window (before v0.23.2, or no cache touched yet); absent from older servers.",
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "warm",
+                          "maybe_warm",
+                          "expired"
+                        ]
+                      },
+                      "confidence": {
+                        "type": "string",
+                        "enum": [
+                          "proven",
+                          "declared",
+                          "assumed"
+                        ]
+                      },
+                      "reason": {
+                        "type": "null"
+                      },
+                      "tier": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "5m",
+                              "30m",
+                              "1h",
+                              "12h",
+                              "24h",
+                              "in_memory"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "guaranteed_until": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "description": "Epoch seconds."
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "estimated_until": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "description": "Epoch seconds."
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Null only on a `warm` window whose end is eviction, not a clock (a local endpoint)."
+                      },
+                      "remaining_seconds": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Seconds of guaranteed warmth left at the read; set only on a `warm` window."
+                      },
+                      "coverage": {
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "tier": {
+                              "type": "string",
+                              "enum": [
+                                "5m",
+                                "30m",
+                                "1h",
+                                "12h"
+                              ]
+                            },
+                            "until": {
+                              "type": "number",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "Epoch seconds."
+                            }
+                          },
+                          "required": [
+                            "tier",
+                            "until"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "One deadline per tier the cached prefix holds, earliest first."
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "confidence",
+                      "reason",
+                      "tier",
+                      "guaranteed_until",
+                      "estimated_until",
+                      "remaining_seconds",
+                      "coverage"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "const": "unknown"
+                      },
+                      "confidence": {
+                        "type": "string",
+                        "const": "unknown"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "session_rotated",
+                          "compacted",
+                          "route_changed",
+                          "storage_unavailable",
+                          "no_published_window",
+                          "invalid"
+                        ]
+                      },
+                      "tier": {
+                        "type": "null"
+                      },
+                      "guaranteed_until": {
+                        "type": "null"
+                      },
+                      "estimated_until": {
+                        "type": "null"
+                      },
+                      "remaining_seconds": {
+                        "type": "null"
+                      },
+                      "coverage": {
+                        "maxItems": 0,
+                        "type": "array",
+                        "items": {
+                          "not": {}
+                        }
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "confidence",
+                      "reason",
+                      "tier",
+                      "guaranteed_until",
+                      "estimated_until",
+                      "remaining_seconds",
+                      "coverage"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -13571,6 +14525,66 @@
           "status"
         ],
         "additionalProperties": false
+      },
+      "command_result": {
+        "description": "`command_dispatch`: what the owner did with the command.",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "output"
+              },
+              "output": {
+                "type": "string",
+                "maxLength": 64000
+              }
+            },
+            "required": [
+              "kind",
+              "output"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "prompt"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "quick_commands": {
+        "description": "`command_catalog`: the session profile's registered quick commands.",
+        "maxItems": 200,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][\\w-]*$"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "name",
+            "description"
+          ],
+          "additionalProperties": false
+        }
       }
     },
     "required": [
@@ -15054,6 +16068,195 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "prompt_cache": {
+        "description": "TAL-2647: null when the Agent has no window (before v0.23.2, or no cache touched yet); absent from older servers.",
+        "anyOf": [
+          {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "warm",
+                      "maybe_warm",
+                      "expired"
+                    ]
+                  },
+                  "confidence": {
+                    "type": "string",
+                    "enum": [
+                      "proven",
+                      "declared",
+                      "assumed"
+                    ]
+                  },
+                  "reason": {
+                    "type": "null"
+                  },
+                  "tier": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "5m",
+                          "30m",
+                          "1h",
+                          "12h",
+                          "24h",
+                          "in_memory"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "guaranteed_until": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Epoch seconds."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "estimated_until": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "Epoch seconds."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Null only on a `warm` window whose end is eviction, not a clock (a local endpoint)."
+                  },
+                  "remaining_seconds": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Seconds of guaranteed warmth left at the read; set only on a `warm` window."
+                  },
+                  "coverage": {
+                    "maxItems": 4,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tier": {
+                          "type": "string",
+                          "enum": [
+                            "5m",
+                            "30m",
+                            "1h",
+                            "12h"
+                          ]
+                        },
+                        "until": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "Epoch seconds."
+                        }
+                      },
+                      "required": [
+                        "tier",
+                        "until"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "description": "One deadline per tier the cached prefix holds, earliest first."
+                  }
+                },
+                "required": [
+                  "state",
+                  "confidence",
+                  "reason",
+                  "tier",
+                  "guaranteed_until",
+                  "estimated_until",
+                  "remaining_seconds",
+                  "coverage"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "const": "unknown"
+                  },
+                  "confidence": {
+                    "type": "string",
+                    "const": "unknown"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "session_rotated",
+                      "compacted",
+                      "route_changed",
+                      "storage_unavailable",
+                      "no_published_window",
+                      "invalid"
+                    ]
+                  },
+                  "tier": {
+                    "type": "null"
+                  },
+                  "guaranteed_until": {
+                    "type": "null"
+                  },
+                  "estimated_until": {
+                    "type": "null"
+                  },
+                  "remaining_seconds": {
+                    "type": "null"
+                  },
+                  "coverage": {
+                    "maxItems": 0,
+                    "type": "array",
+                    "items": {
+                      "not": {}
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "confidence",
+                  "reason",
+                  "tier",
+                  "guaranteed_until",
+                  "estimated_until",
+                  "remaining_seconds",
+                  "coverage"
+                ],
+                "additionalProperties": false
+              }
+            ]
           },
           {
             "type": "null"

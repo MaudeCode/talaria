@@ -381,6 +381,36 @@ async def probe_complete(home, peer, desc):
         sidecar.close()
 
 
+async def probe_commands(home, peer, desc):
+    """TAL-1338: a registered quick command and /refine run on the owner for their session, in that session's workspace,
+    as Web dispatches them; a stale fence or an unregistered name is the owner's refusal, and nothing runs locally."""
+    sidecar = SidecarProcess(home)
+    workspace = home / "commands-workspace"
+    workspace.mkdir(exist_ok=True)
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, "session.create", request_id="commands-create", source="cli", toolsets=[], cwd=str(workspace))
+            sid = created["result"]["session_id"]
+            def call(action, **params):
+                return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+            snap = (await asyncio.to_thread(call, "snapshot"))["snapshot"]
+            fence = {"authority_epoch": snap["authority_epoch"], "replay_epoch": snap["replay_epoch"]}
+            catalog = await asyncio.to_thread(call, "command_catalog")
+            assert {"name": "where", "description": "exec: pwd"} in catalog["quick_commands"], catalog
+            ran = await asyncio.to_thread(call, "command_dispatch", name="where", arg="", **fence)
+            assert ran["command_result"]["kind"] == "output" and str(workspace.resolve()) in ran["command_result"]["output"], ran
+            # A cold session with an empty transcript: the owner's own answer, no review and no local Agent.
+            empty = await asyncio.to_thread(call, "command_dispatch", name="refine", arg="", **fence)
+            assert empty["command_result"] == {"kind": "output", "output": "Nothing to refine yet — send a message first."}, empty
+            stale = await asyncio.to_thread(call, "command_dispatch", name="where", arg="", **dict(fence, authority_epoch=fence["authority_epoch"] + 1))
+            assert (stale["state"], stale["reason"]) == ("refused", "owner_changed"), stale
+            unknown = await asyncio.to_thread(call, "command_dispatch", name="nosuchcommand", arg="", **fence)
+            assert (unknown["state"], unknown["reason"]) == ("refused", "unsupported_command"), unknown
+            assert not peer.requests, "no command reached the model"
+    finally:
+        sidecar.close()
+
+
 SIDECAR = Path(__file__).resolve().parents[2]
 
 
@@ -1582,6 +1612,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_work(home, peer, desc)
     if mode == "complete":
         return probe_complete(home, peer, desc)
+    if mode == "commands":
+        return probe_commands(home, peer, desc)
     if mode == "transcript":
         return probe_transcript(home, peer, desc)
     if mode == "session-open":
@@ -1647,6 +1679,7 @@ def main():
         "model": {"provider": "custom", "default": "owner-fixture", "base_url": url},
         "compression": {"in_place": False, "protect_first_n": 0, "protect_last_n": 0, "min_tail_user_messages": 1},
         "auxiliary": {"title_generation": {"enabled": False}}, "approvals": {"mode": "manual", "timeout": 45}, "platform_toolsets": {"cli": []},
+        "quick_commands": {"where": {"type": "exec", "command": "pwd"}},
         **({"plugins": {"enabled": ["open-counter"]}} if alone == "session-open" else {})}))
     if alone == "session-open":
         plugin = home / "plugins/open-counter"

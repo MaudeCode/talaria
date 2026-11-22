@@ -40,11 +40,11 @@ function usePathCompletions(paths: { sessionId: string; before: string } | null)
  * previous prefix's rows stay shown as `stale` and no key, hover or click picks from them: Enter submits the typed text as
  * when nothing matches, and Tab and the arrows do nothing. A failed read leaves keys to the composer.
  */
-export function useCommandPalette(text: string, paths: { sessionId: string; before: string } | null = null) {
+export function useCommandPalette(text: string, sessionId: string | null, paths: { sessionId: string; before: string } | null = null) {
   const match = /^\/([\w-]*)$/.exec(text.trimStart())
   const slash = !!match
   const prefix = match?.[1] ?? ''
-  const commands = useQuery({ queryKey: keys.commandSuggestions(prefix), queryFn: ({ signal }) => api.fetchCommands(prefix, signal), enabled: slash, staleTime: 5 * 60_000, placeholderData: keepPreviousData })
+  const commands = useQuery({ queryKey: keys.commandSuggestions(prefix, sessionId), queryFn: ({ signal }) => api.fetchCommands(prefix, sessionId, signal), enabled: slash, staleTime: 5 * 60_000, placeholderData: keepPreviousData })
   const completions = usePathCompletions(slash ? null : paths)
   // Escape closes path completions until the draft changes.
   const [dismissed, setDismissed] = useState<string | null>(null)

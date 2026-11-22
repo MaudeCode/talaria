@@ -105,6 +105,26 @@ async function agentCommands(ctx: RequestContext): Promise<Parameters<typeof com
   }
 }
 
+/** TAL-1338: the Agent registry rows, plus the quick commands the native owner of `sessionId` registers. */
+async function sessionAgentCommands(ctx: RequestContext, sessionId: string | undefined): Promise<Parameters<typeof commandCatalog>[0] | null> {
+  const agent = await agentCommands(ctx)
+  const sid = str(sessionId).trim()
+  if (agent === null || !sid) return agent
+  const quick = await ctx.deps.sessions.owner?.quickCommands(sid).catch(() => null)
+  return quick?.length ? [...agent, ...quick] : agent
+}
+
+/** One running command per principal and per profile; null when either is taken. */
+function claimCommandSlots(ctx: RequestContext): (() => void) | null {
+  const releasePrincipal = ctx.deps.commandSlots.claim(JSON.stringify(['principal', ctx.notificationOwner ?? clientStreamKey(ctx)]))
+  const releaseProfile = releasePrincipal ? ctx.deps.commandSlots.claim(JSON.stringify(['profile', home(ctx)])) : null
+  if (!releaseProfile) {
+    releasePrincipal?.()
+    return null
+  }
+  return () => { releaseProfile(); releasePrincipal?.() }
+}
+
 /** A slash command's sidecar failure: `notFound` is 404, bad input 400, the rest as `failure` maps them. */
 function commandFailure(error: unknown, notFound: string, message: string): never {
   if (error instanceof SidecarError && error.condition === notFound) throw new HttpError(404, message)
@@ -636,14 +656,14 @@ export const toolsRouter = os.router({
   },
   commands: {
     list: os.commands.list.handler(({ input, context: { ctx } }) => run(async () => {
-      const commands = commandCatalog((await agentCommands(ctx)) ?? [], await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx)))
+      const commands = commandCatalog((await sessionAgentCommands(ctx, input.session_id)) ?? [], await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx)))
       return { commands: input.prefix === undefined && input.client === undefined ? commands : suggestCommands(commands, input.prefix ?? '', input.client) }
     })),
     // TAL-1927: plain text needs neither the registry nor the owner check; the request guard already checked `session_id`.
     classify: os.commands.classify.handler(({ input, context: { ctx } }) => run(async () => {
       if (!commandToken(input.text)) return { kind: 'text' as const }
       const owner = await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))
-      const decision = classifyCommand(input.text, await agentCommands(ctx), { owner, client: 'web' })
+      const decision = classifyCommand(input.text, await sessionAgentCommands(ctx, input.session_id), { owner, client: 'web' })
       if (!decision) throw new HttpError(503, COMMAND_REGISTRY_UNAVAILABLE)
       return decision
     })),
@@ -651,9 +671,27 @@ export const toolsRouter = os.router({
       const typed = str(input.command).trim()
       if (!typed) throw new HttpError(400, 'command is required')
       // TAL-1577: a catalog's generated `_`/`-` alias runs as the command it names; only a name with a separator can be one.
-      const command = /^\/?[^\s_-]*[_-]/.test(typed) ? canonicalExecCommand(typed, (await agentCommands(ctx)) ?? []) : typed
-      const [, name = '', args = ''] = /^\/?(\S*)\s*([\s\S]*)$/.exec(command) ?? []
       const sessionId = str(input.session_id).trim()
+      const command = /^\/?[^\s_-]*[_-]/.test(typed) ? canonicalExecCommand(typed, (await sessionAgentCommands(ctx, sessionId)) ?? []) : typed
+      const [, name = '', args = ''] = /^\/?(\S*)\s*([\s\S]*)$/.exec(command) ?? []
+      // TAL-1274: an /autoprune answer typed in the composer withdraws the profile's open auto-prune question.
+      const settled = async (output: string) => {
+        if (name.toLowerCase() === 'autoprune') {
+          const profile = activeProfileName(ctx)
+          await ctx.deps.pruneAdvice.check(ctx.deps.isRootProfile(profile) ? 'default' : profile, home(ctx))
+        }
+        return { output }
+      }
+      // TAL-1338: a chat its native owner holds runs every command there, `/refine` included, under the owner's policy and
+      // workspace. Nothing runs it here, and an outcome the owner did not confirm is never run again.
+      const owner = ctx.deps.sessions.owner
+      if (sessionId && owner && /^[A-Za-z][\w-]{0,63}$/.test(name)) {
+        const release = claimCommandSlots(ctx)
+        if (!release) throw new HttpError(429, 'Too many running commands; wait for one to finish.')
+        let native: string | null
+        try { native = await owner.command(sessionId, name, args.trim(), { serverOwner: await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx)) }) } finally { release() }
+        if (native !== null) return settled(native)
+      }
       if (sessionId) (await ctx.deps.sessions.assertWritable(sessionId))
       // TAL-902: a session command runs on the chat's own agent (the request guard already checked the chat's profile).
       if (SESSION_EXEC_COMMANDS.has(name.toLowerCase())) {
@@ -664,12 +702,8 @@ export const toolsRouter = os.router({
       const chat = sessionId ? { session_id: sessionId, workspace: (await ctx.deps.sessions.turnWorkspace((await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })))) } : {}
       // Workspace resolution can yield to native adoption; recheck at the local execution boundary.
       if (sessionId) await ctx.deps.sessions.assertWritable(sessionId)
-      const releasePrincipal = ctx.deps.commandSlots.claim(JSON.stringify(['principal', ctx.notificationOwner ?? clientStreamKey(ctx)]))
-      const releaseProfile = releasePrincipal ? ctx.deps.commandSlots.claim(JSON.stringify(['profile', home(ctx)])) : null
-      if (!releaseProfile) {
-        releasePrincipal?.()
-        throw new HttpError(429, 'Too many running commands; wait for one to finish.')
-      }
+      const releaseSlots = claimCommandSlots(ctx)
+      if (!releaseSlots) throw new HttpError(429, 'Too many running commands; wait for one to finish.')
       let output: string
       const controller = new AbortController()
       const prompts = new Set<string>()
@@ -700,18 +734,12 @@ export const toolsRouter = os.router({
       } catch (error) {
         return commandFailure(error, 'command_not_found', 'Plugin command not found')
       } finally {
-        releaseProfile()
-        releasePrincipal?.()
+        releaseSlots()
         signal?.removeEventListener('abort', cancel)
         ctx.res.off('close', cancel)
         for (const id of prompts) ctx.deps.pending.resolveClarify(sessionId, id)
       }
-      // TAL-1274: an /autoprune answer typed in the composer withdraws the profile's open auto-prune question.
-      if (name.toLowerCase() === 'autoprune') {
-        const profile = activeProfileName(ctx)
-        await ctx.deps.pruneAdvice.check(ctx.deps.isRootProfile(profile) ? 'default' : profile, home(ctx))
-      }
-      return { output }
+      return settled(output)
     })),
     bundles: os.commands.bundles.handler(({ context: { ctx } }) => run(async () => {
       const sidecar = ctx.deps.sidecar()
