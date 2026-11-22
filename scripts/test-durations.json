@@ -1,9 +1,7 @@
 {
   "budgetSeconds": 30,
   "overBudget": {
-    "session-entry.spec.ts::off-screen history halves long tasks during a 200-token stream": "TAL-2405: 56.0 s on main; now the 50-token stream, remove after two main runs under 20 s",
-    "demo-tour.spec.ts::every Settings section and Tools tab shows its heading without horizontal overflow": "TAL-2405: 37.1 s on main; now five groups of at most six pages, remove after two main runs under 20 s",
-    "feedback-media.spec.ts::video is re-encoded smaller, without audio, at most 1280 px wide and within maxVideoBytes": "TAL-2405: 30.6 s on main; now a 1 s clip, remove after two main runs under 20 s",
+    "session-entry.spec.ts::off-screen history halves long tasks during a 200-token stream": "TAL-2703: 21.4 s on main as the 50-token stream; now 20 tokens, remove after two main runs under 20 s",
     "SessionListHostedTests::testNavigationSectionSwitchesImmediatelyHideAndRestoreSidebarRows": "TAL-2405: 26.1 s on main; now one test per section, remove after two daily full runs under 20 s",
     "TranscriptHostedTests::testContinuousHistoryLoadsAllTwoThousandRowsAndPreservesPosition": "TAL-2405: 28.1 s on main; now three 650-row pages, remove after two daily full runs under 20 s",
     "SettingsPlacementHostedTests::testSettingsSearchButtonSitsInTheBottomBarOnPhoneAndTopTrailingOnPad": "TAL-2405: 24.8 s on main; now one test per size, remove after two daily full runs under 20 s"
