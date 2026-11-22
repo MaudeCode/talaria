@@ -27,6 +27,14 @@ describe('stream reducer: ordering and projection', () => {
     expect(s.turns[SID]!.tools.bg).toMatchObject({ done: true, processId: 'proc_0123456789ab' })
   })
 
+  it('keeps a live computer call\'s screen action through its completion, and gives no other call one (TAL-2380)', () => {
+    let s = ev(started(), 'tool', { name: 'computer_use', id: 'cu', screen_action: true })
+    s = ev(s, 'tool', { name: 'terminal', id: 'sh' })
+    s = ev(s, 'tool_complete', { name: 'computer_use', id: 'cu' })
+    expect(s.turns[SID]!.tools.cu).toMatchObject({ done: true, screenAction: true })
+    expect(s.turns[SID]!.tools.sh!.screenAction).toBeUndefined()
+  })
+
   it('replaces a native replay gap without duplicating old tokens or reviving a terminal turn', () => {
     let s = ev(started(), 'token', { text: 'old output' }, { id: `${STREAM}:1` })
     const snapshot = { session: sessionFixture({ session_id: SID }), replay_gap: true }

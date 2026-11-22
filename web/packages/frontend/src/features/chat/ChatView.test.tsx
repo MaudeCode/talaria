@@ -581,3 +581,12 @@ it.each([['fallback-model', 'fallback-model'], [null, 'configured-model']])('nam
   await waitFor(() => expect(container.querySelector('#topbarMeta')?.textContent).toMatch(new RegExp(`^${shown} · `)))
   expect(container.querySelector('#topbarMeta')?.textContent).not.toContain(served === null ? 'fallback-model' : 'configured-model')
 })
+
+it.each([[true, 1], [false, 0]] as const)('shows the Screen button in the header only while the server offers a screen (TAL-2380): available=%s', (available, count) => {
+  const session = sessionFixture({ session_id: 'screen-chat', screen: { available, state: available ? 'running' : 'unsupported', control: 'agent', install_command: null } })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session })
+  qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
+  expect(screen.queryAllByRole('button', { name: 'Screen' })).toHaveLength(count)
+})

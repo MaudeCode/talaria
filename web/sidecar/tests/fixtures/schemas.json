@@ -2877,6 +2877,169 @@
     ],
     "additionalProperties": false
   },
+  "display.status": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "state": {
+        "type": "string",
+        "enum": [
+          "ready",
+          "unavailable"
+        ]
+      },
+      "reason": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "status": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "supported": {
+                "type": "boolean"
+              },
+              "installed": {
+                "type": "boolean"
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "install_command": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lease": {
+                "type": "object",
+                "properties": {
+                  "holder": {
+                    "type": "string",
+                    "enum": [
+                      "agent",
+                      "human"
+                    ]
+                  },
+                  "viewer_hash": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "holder",
+                  "viewer_hash"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "supported",
+              "installed",
+              "running",
+              "install_command",
+              "lease"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "state",
+      "reason",
+      "status"
+    ],
+    "additionalProperties": false
+  },
+  "display.view": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ended": {
+        "type": "boolean",
+        "const": true
+      }
+    },
+    "required": [
+      "ended"
+    ],
+    "additionalProperties": false
+  },
+  "display.lease.acquire": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "lease": {
+        "type": "object",
+        "properties": {
+          "holder": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "human"
+            ]
+          },
+          "viewer_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "holder",
+          "viewer_hash"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "lease"
+    ],
+    "additionalProperties": false
+  },
+  "display.lease.release": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "lease": {
+        "type": "object",
+        "properties": {
+          "holder": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "human"
+            ]
+          },
+          "viewer_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "holder",
+          "viewer_hash"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "lease"
+    ],
+    "additionalProperties": false
+  },
   "kanban.inspection": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

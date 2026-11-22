@@ -135,6 +135,11 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 403: { description: 'Consent required or cross-origin request.', contentType: 'application/json' }, 409: { description: 'Sidecar unavailable.', contentType: 'application/json' }, 502: { description: 'Upstream failed or too large.', contentType: 'application/json' } },
   },
   {
+    method: 'GET', path: '/api/screen/ws', summary: 'TAL-2380: WebSocket upgrade carrying the active profile\'s Bot Screen as raw RFB (noVNC) in binary frames. The server dials the Agent owner\'s display socket with a ticket it never sends; input reaches the screen only while this viewer holds control. Closes 4000 when another viewer takes control, 4001 when the screen stops, 4401 when the login it opened with signs out or expires, 4503 when no screen can be viewed. Closing hands control back.', tags: ['tools'],
+    query: { view_id: { description: 'Client-chosen viewer id (8 to 64 of `A-Za-z0-9_-`) that `POST /api/screen/lease` names.', required: true } },
+    responses: { 101: { description: 'Switching to the RFB WebSocket.' }, 400: { description: 'Missing or malformed view_id.', contentType: 'application/json' }, 403: { description: 'Cross-origin browser request.', contentType: 'application/json' }, 426: { description: 'WebSocket upgrade required.', contentType: 'application/json' }, 503: { description: 'Too many viewers or no sidecar.', contentType: 'application/json' } },
+  },
+  {
     method: 'POST', path: '/api/transcribe', summary: 'Speech-to-text through the Agent (multipart `file`).', tags: ['tools'],
     requestBody: { contentType: 'multipart/form-data', description: 'Field `file` (audio).' },
     responses: { 200: { description: '`{ok, transcript, filtered, no_speech}`; `filtered` when a phrase Whisper invents on silent audio was emptied; `no_speech` when the provider ran cleanly and produced no transcript (absent from older servers: false).', contentType: 'application/json' }, 400: { description: 'No file or transcription failed.', contentType: 'application/json' }, 503: { description: 'Speech-to-text unavailable.', contentType: 'application/json' } },

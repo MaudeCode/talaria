@@ -1069,6 +1069,19 @@ export const toolsRouter = os.router({
       return notification as never
     })),
   },
+  screen: {
+    view: os.screen.view.handler(({ input, context: { ctx } }) => run(async () => {
+      const screen = await ctx.deps.screens.viewerView(home(ctx), input.view_id)
+      if (screen === 'not_open') throw new HttpError(404, 'That screen viewer is not open')
+      return screen
+    })),
+    lease: os.screen.lease.handler(({ input, context: { ctx } }) => run(async () => {
+      const screen = await ctx.deps.screens.lease(home(ctx), input.view_id, input.action)
+      if (screen === 'not_open') throw new HttpError(404, 'That screen viewer is not open')
+      if (screen === 'not_ready') throw new HttpError(409, 'The screen viewer is still connecting')
+      return screen
+    })),
+  },
   transcribeCapability: os.transcribeCapability.handler(({ context: { ctx } }) => run(async () => {
     const unavailable = { ok: true as const, available: false, provider: 'none', streaming: false, warm_supported: false }
     const sidecar = ctx.deps.sidecar()

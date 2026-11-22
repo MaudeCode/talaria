@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web can watch the agent's screen from a chat, take over its mouse and keyboard and hand control back, or shows the command that installs the desktop when the host lacks it.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

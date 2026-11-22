@@ -6,6 +6,7 @@ import { SkillReplayJobSchema, SkillReplayJobsSchema, SkillReplayPlanQuerySchema
 import { z } from 'zod'
 import { ConnectorSignInOfferSchema, SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, CommandClientSchema, CommandDecisionSchema, LogLevelFilterSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, ConnectorsPageSchema, ConnectorToolsViewSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema, SpeechPrepareSchema, PluginSettingViewSchema, PluginAutoUpdateViewSchema, OnboardingOAuthSchema } from '../views.js'
 import { ConnectorOperationViewSchema } from '../connector-operation.js'
+import { ScreenLeaseInputSchema, ScreenViewIdSchema, ScreenViewSchema } from '../screen.js'
 import { PluginCatalogQuerySchema, PluginCatalogSchema, PluginInstallInputSchema, PluginInstallResultSchema, PluginRuntimeApplicationSchema, PluginUpdateResultSchema, PluginUpdateAllResultSchema, ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar-shared.js'
 
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
@@ -208,6 +209,11 @@ export const toolsContract = {
     clear: oc.route({ method: 'POST', path: '/api/update-notifications/clear', tags }).input(z.object({ clear: z.literal(true), tab_id: TabIdSchema.optional(), loaded_build: FrontendBuildIdSchema.optional() })).output(UpdateNotificationsSchema),
     cancel: oc.route({ method: 'POST', path: '/api/update-notifications/{id}/cancel', tags }).input(z.object({ id: z.uuid(), cancel: z.literal(true) })).output(UpdateNotificationSchema),
     action: oc.route({ method: 'POST', path: '/api/update-notifications/{id}/actions/{action_id}', tags }).input(z.object({ id: z.uuid(), action_id: z.string().min(1).max(64), perform: z.literal(true), tab_id: TabIdSchema.optional() })).output(UpdateNotificationSchema),
+  },
+  /** TAL-2380: take over or hand back the active profile's Bot Screen through an open viewer (`SCREEN_STREAM_PATH`); answers the screen as it now stands. */
+  screen: {
+    view: oc.route({ method: 'GET', path: '/api/screen/view', tags, summary: 'The screen as an open viewer sees it now, read afresh: `control` is `you` only while that viewer holds it. A client whose take-over or hand-back outcome is unknown reads this before keeping or rolling back. 404 when that viewer is not open.' }).input(z.object({ view_id: ScreenViewIdSchema })).output(ScreenViewSchema),
+    lease: oc.route({ method: 'POST', path: '/api/screen/lease', tags, summary: 'Take over (`acquire`) or hand back (`release`) the screen an open viewer watches. 404 when that viewer is not open.' }).input(ScreenLeaseInputSchema).output(ScreenViewSchema),
   },
   transcribeCapability: oc.route({ method: 'GET', path: '/api/transcribe/capability', tags }).output(TranscribeCapabilitySchema),
   speech: {

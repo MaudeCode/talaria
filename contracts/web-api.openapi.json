@@ -7761,6 +7761,48 @@
                           },
                           "additionalProperties": {}
                         },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -15583,6 +15625,48 @@
                           },
                           "additionalProperties": {}
                         },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -22057,6 +22141,48 @@
                             }
                           },
                           "additionalProperties": {}
+                        },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -31817,6 +31943,48 @@
                           },
                           "additionalProperties": {}
                         },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -40910,6 +41078,48 @@
                             }
                           },
                           "additionalProperties": {}
+                        },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -50562,6 +50772,48 @@
                           },
                           "additionalProperties": {}
                         },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -56980,6 +57232,48 @@
                             }
                           },
                           "additionalProperties": {}
+                        },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -63462,6 +63756,48 @@
                           },
                           "additionalProperties": {}
                         },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -69940,6 +70276,48 @@
                             }
                           },
                           "additionalProperties": {}
+                        },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -89743,6 +90121,48 @@
                           },
                           "additionalProperties": {}
                         },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -96213,6 +96633,48 @@
                             }
                           },
                           "additionalProperties": {}
+                        },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -103392,6 +103854,48 @@
                           },
                           "additionalProperties": {}
                         },
+                        "screen": {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "unsupported",
+                                "not_installed",
+                                "stopped",
+                                "running"
+                              ],
+                              "type": "string"
+                            },
+                            "control": {
+                              "enum": [
+                                "agent",
+                                "you",
+                                "other"
+                              ],
+                              "type": "string"
+                            },
+                            "install_command": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "state",
+                            "control",
+                            "install_command"
+                          ],
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
+                        },
                         "source_references": {
                           "type": "array",
                           "items": {
@@ -110450,6 +110954,48 @@
                                 }
                               },
                               "additionalProperties": {}
+                            },
+                            "screen": {
+                              "type": "object",
+                              "properties": {
+                                "available": {
+                                  "type": "boolean"
+                                },
+                                "state": {
+                                  "enum": [
+                                    "unsupported",
+                                    "not_installed",
+                                    "stopped",
+                                    "running"
+                                  ],
+                                  "type": "string"
+                                },
+                                "control": {
+                                  "enum": [
+                                    "agent",
+                                    "you",
+                                    "other"
+                                  ],
+                                  "type": "string"
+                                },
+                                "install_command": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "available",
+                                "state",
+                                "control",
+                                "install_command"
+                              ],
+                              "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                             },
                             "source_references": {
                               "type": "array",
@@ -151233,6 +151779,164 @@
         }
       }
     },
+    "/api/screen/view": {
+      "get": {
+        "operationId": "screen.view",
+        "summary": "The screen as an open viewer sees it now, read afresh: `control` is `you` only while that viewer holds it. A client whose take-over or hand-back outcome is unknown reads this before keeping or rolling back. 404 when that viewer is not open.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "view_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,64}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "enum": [
+                        "unsupported",
+                        "not_installed",
+                        "stopped",
+                        "running"
+                      ],
+                      "type": "string"
+                    },
+                    "control": {
+                      "enum": [
+                        "agent",
+                        "you",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "install_command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "state",
+                    "control",
+                    "install_command"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/screen/lease": {
+      "post": {
+        "operationId": "screen.lease",
+        "summary": "Take over (`acquire`) or hand back (`release`) the screen an open viewer watches. 404 when that viewer is not open.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "view_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{8,64}$"
+                  },
+                  "action": {
+                    "enum": [
+                      "acquire",
+                      "release"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "view_id",
+                  "action"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "enum": [
+                        "unsupported",
+                        "not_installed",
+                        "stopped",
+                        "running"
+                      ],
+                      "type": "string"
+                    },
+                    "control": {
+                      "enum": [
+                        "agent",
+                        "you",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "install_command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "state",
+                    "control",
+                    "install_command"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/transcribe/capability": {
       "get": {
         "operationId": "transcribeCapability",
@@ -174683,6 +175387,54 @@
           },
           "502": {
             "description": "Upstream failed or too large.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/screen/ws": {
+      "get": {
+        "summary": "TAL-2380: WebSocket upgrade carrying the active profile's Bot Screen as raw RFB (noVNC) in binary frames. The server dials the Agent owner's display socket with a ticket it never sends; input reaches the screen only while this viewer holds control. Closes 4000 when another viewer takes control, 4001 when the screen stops, 4401 when the login it opened with signs out or expires, 4503 when no screen can be viewed. Closing hands control back.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "view_id",
+            "in": "query",
+            "required": true,
+            "description": "Client-chosen viewer id (8 to 64 of `A-Za-z0-9_-`) that `POST /api/screen/lease` names.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "Switching to the RFB WebSocket."
+          },
+          "400": {
+            "description": "Missing or malformed view_id.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Cross-origin browser request.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "426": {
+            "description": "WebSocket upgrade required.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "503": {
+            "description": "Too many viewers or no sidecar.",
             "content": {
               "application/json": {}
             }

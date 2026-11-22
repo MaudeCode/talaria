@@ -1,0 +1,21 @@
+{
+  "views": {
+    "running": { "available": true, "state": "running", "control": "agent", "install_command": null },
+    "not_installed": { "available": true, "state": "not_installed", "control": "agent", "install_command": "sudo apt-get install -y tigervnc-standalone-server xfce4" },
+    "unavailable": { "available": false, "state": "unsupported", "control": "agent", "install_command": null }
+  },
+  "live_tool": {
+    "event": "tool",
+    "data": {
+      "id": "call-screen",
+      "name": "computer_use",
+      "args": { "action": "click", "app": "Firefox", "element": 12 },
+      "args_fields": [{ "key": "action", "value": "click", "multiline": false }, { "key": "app", "value": "Firefox", "multiline": false }, { "key": "element", "value": "12", "multiline": false }],
+      "kind": "computer",
+      "verb": "click",
+      "raw_args": "{\n  \"action\": \"click\",\n  \"app\": \"Firefox\",\n  \"element\": 12\n}",
+      "screen_action": true
+    }
+  },
+  "lease": { "view_id": "viewer-01234567", "action": "acquire" }
+}

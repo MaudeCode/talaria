@@ -328,7 +328,7 @@ This only enriches display metadata and never changes Agent ownership or writes 
 
 `sidecar/talaria_sidecar` (`docs/architecture/sidecar-rpc.md`) is spawned as
 `<agent venv python> -m talaria_sidecar` with `PYTHONPATH` pointing at the sidecar package and the Agent
-appended to `sys.path`. Namespaces: `runtime`, `chat` (AIAgent turns with streamed callbacks, interrupt,
+appended to `sys.path`. Namespaces: `runtime`, `display` (the owner's Bot Screen), `chat` (AIAgent turns with streamed callbacks, interrupt,
 steer), `approval`, `goals`, `profiles`, `cron`, `kanban`, `skills`, `commands`, `plugins`, `providers`,
 `models`, `aux` (auxiliary LLM calls), `text` (image input routing, portal tags), `stt`, `mcp`, `process`
 (background completions), `state_db`, `gateway`, `worktree`, `config`. Each method has a Zod schema in

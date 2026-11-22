@@ -4,13 +4,11 @@
  * `stt.stream_audio`, its partials and final are relayed back, and every other exit (hang-up, error, shutdown) aborts the
  * call, which cancels the provider session. Provider keys never leave the sidecar.
  */
-import type { IncomingMessage } from 'node:http'
-import type { Duplex } from 'node:stream'
 import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 import { TranscribeStreamEndSchema, TranscribeStreamStartSchema, type TranscribeStreamEvent } from '@maudecode/talaria-web-contracts'
 import { activeProfileName } from '../auth/gate.js'
 import type { RequestContext } from '../http/context.js'
-import { checkSameOriginBrowserRequest, csrfRejectionError } from '../http/origin.js'
+import { acceptUpgrade, pendingUpgrade } from '../http/websocket.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 
 /** One PCM frame; a browser sends a few hundred milliseconds at a time. */
@@ -24,12 +22,6 @@ const MAX_STREAM_MS = 15 * 60_000
 export const MAX_TRANSCRIBE_STREAMS = 8
 
 const sockets = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES })
-const upgrades = new WeakMap<IncomingMessage, { socket: Duplex; head: Buffer }>()
-
-/** Record an upgrade's socket and buffered bytes before the request runs through the normal pipeline (auth, profile). */
-export function rememberUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
-  upgrades.set(req, { socket, head })
-}
 
 /** Close every open dictation at shutdown; each close cancels its session. */
 export function closeTranscribeStreams(): void {
@@ -37,17 +29,8 @@ export function closeTranscribeStreams(): void {
 }
 
 export async function handleTranscribeStream(ctx: RequestContext): Promise<void> {
-  const upgrade = upgrades.get(ctx.req)
-  if (!upgrade || (ctx.header('upgrade') ?? '').toLowerCase() !== 'websocket') {
-    await ctx.json({ error: 'WebSocket upgrade required' }, { status: 426, headers: { Upgrade: 'websocket' } })
-    return
-  }
-  // A browser cannot send the CSRF header on a handshake, so the origin check alone guards it (non-browser clients pass).
-  const failure = checkSameOriginBrowserRequest({ origin: ctx.header('origin'), referer: ctx.header('referer'), host: ctx.header('host'), secFetchSite: ctx.header('sec-fetch-site'), forwardedHost: ctx.header('x-forwarded-host'), realHost: ctx.header('x-real-host') }, ctx.deps.config.env)
-  if (failure) {
-    await ctx.json({ error: csrfRejectionError(failure) }, { status: 403 })
-    return
-  }
+  const upgrade = await pendingUpgrade(ctx)
+  if (!upgrade) return
   const sidecar = ctx.deps.sidecar()
   if (!sidecar) {
     await ctx.json({ error: 'Speech-to-text is unavailable on this server' }, { status: 503 })
@@ -59,9 +42,7 @@ export async function handleTranscribeStream(ctx: RequestContext): Promise<void>
   }
   const profileHome = ctx.deps.profileHome(activeProfileName(ctx))
   const log = ctx.deps.log
-  ctx.res.detachSocket(upgrade.socket as Parameters<typeof ctx.res.detachSocket>[0])
-  ctx.markFinished(101)
-  sockets.handleUpgrade(ctx.req, upgrade.socket, upgrade.head, (ws) => { relay(ws, sidecar, profileHome, log) })
+  acceptUpgrade(ctx, upgrade, sockets, (ws) => { relay(ws, sidecar, profileHome, log) })
 }
 
 function relay(ws: WebSocket, sidecar: SidecarLike, profileHome: string, log: (line: string) => void): void {

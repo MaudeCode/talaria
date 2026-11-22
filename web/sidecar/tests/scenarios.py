@@ -113,6 +113,8 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("mcp.registry_tools", {"profile_home": "{home}"}),
     ("mcp.events", {"profile_home": "{home}", "servers": {"events": {"command": "never-spawn", "events": True}}}),
     ("stt.capability", {"profile_home": "{home}"}),
+    # TAL-2380: a home whose owner is not running has no screen; the call never starts one.
+    ("display.status", {"profile_home": "{home}"}),
     ("stt.warm", {"profile_home": "{home}"}),
     ("usage.account", {"profile_home": "{home}", "provider": "zai"}),
     ("usage.pool", {"profile_home": "{home}", "provider": "deepseek"}),
@@ -193,7 +195,7 @@ SCENARIOS: list[tuple[str, dict]] = [
 # So does plugins.update_all, with plugins.auto_update and its set; their rows and refusals depend on the installed Agent.
 # plugins.catalog/install use the pinned local Git fixture in test_plugin_catalog, including typed replies and native publication.
 UNEXERCISED = {"plugins.catalog", "plugins.install", "plugins.update", "plugins.update_all", "plugins.auto_update", "plugins.auto_update_set", "models.selection_warnings", "runtime.agent_mutation", "runtime.sync_dependencies", "runtime.handshake", "runtime.shutdown",
-               "providers.resolve_runtime", "oauth.start", "oauth.poll", "oauth.cancel", "oauth.submit_redirect", "plugins.oauth_logout", "aux.complete", "tts.synthesize", "stt.transcribe", "stt.stream", "stt.stream_audio", "gateway.control", "gateway.restart", "mcp.reload", "cron.run",
+               "providers.resolve_runtime", "oauth.start", "oauth.poll", "oauth.cancel", "oauth.submit_redirect", "plugins.oauth_logout", "aux.complete", "tts.synthesize", "stt.transcribe", "stt.stream", "stt.stream_audio", "display.view", "display.lease.acquire", "display.lease.release", "gateway.control", "gateway.restart", "mcp.reload", "cron.run",
                "worktree.create", "worktree.retain", "chat.start", "chat.interrupt", "chat.steer", "chat.steer_withdraw", "chat.steer_now", "chat.evict_agent", "chat.commit_memory", "chat.refine", "chat.compress", "chat.compress_finalize", "approval.respond", "approval.pending", "approval.set_yolo", "clarify.respond", "config.set"}
 
 # Enabling a plugin is covered with synthetic profile fixtures by test_dashboard_plugins.py and test_dashboard_host_compat.py.

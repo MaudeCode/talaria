@@ -671,6 +671,15 @@ describe('publicToolFrame', () => {
     }
   })
 
+  it('offers the screen on a live computer_use frame, never on another call or a persisted one (TAL-2380)', () => {
+    const shared = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../contracts/fixtures/screen.json'), 'utf8')) as { live_tool: { data: Record<string, unknown> } }
+    expect(publicToolFrame({ id: 'call-screen', name: 'computer_use', args: { action: 'click', app: 'Firefox', element: 12 } }, true)).toEqual(shared.live_tool.data)
+    expect(publicToolFrame({ id: 'c1', name: 'computer_use', is_error: false, result: 'captured' }, true).screen_action).toBe(true)
+    expect(publicToolFrame({ id: 'b1', name: 'browser_exec', args: { code: 'page.title()' } }, true)).not.toHaveProperty('screen_action')
+    const history = redactSessionData({ tool_calls: [{ id: 'c1', name: 'computer_use', args: { action: 'capture' } }], messages: [{ role: 'assistant', tool_calls: [{ id: 'c1', function: { name: 'computer_use', arguments: '{"action":"capture"}' } }] }] }, true)
+    expect(JSON.stringify(history)).not.toContain('screen_action')
+  })
+
   it('masks argument values whose key names a credential', () => {
     const frame = publicToolFrame({ name: 'login', args: { user: 'bob', password: 'hunter2', auth: { apiKey: 'opaque', token: 12345 } } }, true)
     expect(frame.args).toEqual({ user: 'bob', password: '***', auth: { apiKey: '***', token: '***' } })

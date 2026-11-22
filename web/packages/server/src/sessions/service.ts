@@ -15,7 +15,7 @@ import type { MessageMatch } from './storage/backend.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
 import { buildActiveTurnToken, copyJson, rawToolText, redactedRunStatus, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
-import type { ContextWindowSource, DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionOutline, SessionSkills } from '@maudecode/talaria-web-contracts'
+import type { ScreenView, ContextWindowSource, DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionOutline, SessionSkills } from '@maudecode/talaria-web-contracts'
 import { addSkillUses, inheritedSkillUses, orderedSkillCounts, resetSkillUses, skillGeneration } from './skill-provenance.js'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
@@ -185,6 +185,8 @@ export interface SessionServiceDeps {
   activeProfile: () => string
   profilesMatch: (a: string | null | undefined, b: string | null | undefined) => boolean
   profileDisplayName?: (profile: string) => Promise<string | null>
+  /** TAL-2380: the profile's Bot Screen, which only the full session detail carries. */
+  screen?: (profile: string | null) => Promise<ScreenView>
   /** The agent's display name for a session's profile (`assistant_name`). */
   assistantName: (profile: string | null) => string
   redactEnabled: () => boolean
@@ -1288,16 +1290,25 @@ export class SessionService {
     const msgBefore = msgBeforeRaw ? (Number.isInteger(Number(msgBeforeRaw)) ? Number(msgBeforeRaw) : null) : null
     for (const owner of await this.store.inspectOwnership(sid, { metadataOnly: !loadMessages })) this.assertDetailVisible(sid, owner)
     let s: Session
+    let detail: Record<string, unknown>
     try {
       s = (await this.store.get(sid, { metadataOnly: !loadMessages }))
     } catch {
-      return (await this.foreignSessionDetail(sid, loadMessages, msgLimit, msgBefore))
+      detail = await this.foreignSessionDetail(sid, loadMessages, msgLimit, msgBefore)
+      return await this.withScreen(detail)
     }
     const revisionBefore = (await this.loadRevision(s))
     // The document can change owner after the inspection above.
     this.assertDetailVisible(sid, s)
     await this.clearStaleStreamState(s)
-    return this.detailPayload(s, loadMessages, msgLimit, msgBefore, revisionBefore)
+    detail = await this.detailPayload(s, loadMessages, msgLimit, msgBefore, revisionBefore)
+    return await this.withScreen(detail)
+  }
+
+  /** TAL-2380: the detail with its profile's Bot Screen; a server without the seam ships none. */
+  private async withScreen(detail: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const screen = await this.deps.screen?.(typeof detail.profile === 'string' && detail.profile ? detail.profile : null)
+    return screen ? { ...detail, screen } : detail
   }
 
   private assertDetailVisible(sid: string, owner: SessionOwnership): void {

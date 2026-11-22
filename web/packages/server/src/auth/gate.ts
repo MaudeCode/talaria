@@ -44,9 +44,10 @@ export const OPERATOR_ONLY_PATHS = new Set([
 
 /**
  * TAL-2201: every route under these prefixes is owner-only. The host terminal runs a shell outside the agent's approval
- * cards and the profile's toolsets; a device-code sign-in saves a provider credential.
+ * cards and the profile's toolsets; a device-code sign-in saves a provider credential. TAL-2380: the agent's screen shows
+ * what it works on and, taken over, drives its desktop as the agent's user.
  */
-export const OPERATOR_ONLY_PREFIXES = ['/api/terminal/', '/api/onboarding/oauth/', '/api/groups/']
+export const OPERATOR_ONLY_PREFIXES = ['/api/terminal/', '/api/onboarding/oauth/', '/api/groups/', '/api/screen/']
 
 /**
  * TAL-2201: reads stay open, every other method is owner-only. An MCP server's `command` runs on the host with the next
