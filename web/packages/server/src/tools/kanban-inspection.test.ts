@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { withKanbanPolicy } from './kanban.js'
+import { withKanbanPolicy, withTaskPolicy } from './kanban.js'
 
 const task = (board: string, id: string, status = 'todo', extra = {}) => ({ key: `${board}/${id}`, board, task: { id, title: id, status, priority: 0, claim_live: false, has_completion_evidence: false, agent_move_targets: null, ...extra } })
 const edge = (source: string, target: string) => ({ source, target })
@@ -68,4 +69,41 @@ describe('Kanban inspection projection', () => {
 it('offers no card mutations for a read-only Kanban task', () => {
   const result = withKanbanPolicy({ task: { status: 'ready', read_only: true, agent_move_targets: null } })
   expect(result.task).toMatchObject({ available_actions: { block: false, unblock: false, complete: false, archive: false, move_to: [] } })
+})
+
+describe('Kanban task age and staleness (TAL-2648)', () => {
+  const fixture = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/kanban-task-age.json', import.meta.url), 'utf8')) as { sidecar_task: Record<string, unknown>; board_task: Record<string, unknown> }
+  const agentAge = (created: number | null, started: number | null) => ({ created_age_seconds: created, started_age_seconds: started, time_to_complete_seconds: null })
+  const policy = (status: string, age: unknown) => withTaskPolicy({ status, agent_move_targets: null, age_seconds: age, age }) as { selected_age_seconds: number | null; staleness: string }
+
+  it('selects the Agent age object\'s created age for a Ready task and marks it stale', () => {
+    expect(withTaskPolicy(fixture.sidecar_task)).toEqual(fixture.board_task)
+  })
+
+  it.each([
+    ['running', 599, 'none'], ['running', 600, 'warning'], ['running', 3599, 'warning'], ['running', 3600, 'critical'],
+    ['ready', 3599, 'none'], ['ready', 3600, 'warning'], ['ready', 86400, 'warning'],
+    ['blocked', 3599, 'none'], ['blocked', 3600, 'warning'], ['blocked', 86399, 'warning'], ['blocked', 86400, 'critical'],
+    ['todo', 86400, 'none'], ['done', 86400, 'none'],
+  ])('classifies a %s task aged %i s as %s, from an Agent age object or a legacy scalar', (status, seconds, staleness) => {
+    const object = status === 'running' ? agentAge(1e9, seconds) : agentAge(seconds, 1e9)
+    expect(policy(status, object)).toMatchObject({ selected_age_seconds: seconds, staleness })
+    expect(policy(status, seconds)).toMatchObject({ selected_age_seconds: seconds, staleness })
+  })
+
+  it.each([
+    ['a missing age', 'ready', undefined], ['a null age', 'blocked', null], ['a running task never started', 'running', agentAge(7200, null)],
+    ['a ready task without a creation time', 'ready', agentAge(null, 7200)], ['a non-numeric age', 'ready', 'old'],
+  ])('reports no age and no staleness for %s', (_, status, age) => {
+    expect(policy(status, age)).toMatchObject({ selected_age_seconds: null, staleness: 'none' })
+  })
+
+  it('projects the same fields on board rows, task details, mutation replies and inspection nodes', () => {
+    const fields = { selected_age_seconds: 7200, staleness: 'warning' }
+    const board = withKanbanPolicy({ columns: [{ name: 'ready', label: 'Ready', tasks: [fixture.sidecar_task] }] }) as { columns: { tasks: unknown[] }[] }
+    expect(board.columns[0]!.tasks[0]).toMatchObject(fields)
+    expect((withKanbanPolicy({ task: fixture.sidecar_task, events: [], read_only: false }) as { task: unknown }).task).toMatchObject(fields)
+    expect((withKanbanPolicy({ task: fixture.sidecar_task, read_only: false }) as { task: unknown }).task).toMatchObject(fields)
+    expect(inspect([{ key: 'b/synthetic-ready', board: 'b', board_name: 'B', task: fixture.sidecar_task }] as never).nodes[0]!.task).toMatchObject(fields)
+  })
 })

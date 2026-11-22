@@ -1,8 +1,10 @@
 """Board and event polls against a disposable board database and stand-in Agent boundaries, with every statement traced."""
 
+import json
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -119,3 +121,12 @@ def test_scoped_board_links_include_authorized_tasks_outside_display_filter(boar
     columns = kanban.board_payload({"allowed_assignees": ["alpha"]})["columns"]
     live = next(task for column in columns for task in column["tasks"] if task["id"] == "live")
     assert live["link_counts"] == {"parents": 1, "children": 0}
+
+
+def test_a_task_row_matches_the_shared_age_fixture(monkeypatch) -> None:
+    # The Agent's task_age is an object; the row carries it unchanged and the server selects the age (TAL-2648).
+    fixture = json.loads((Path(__file__).resolve().parents[3] / "contracts" / "fixtures" / "kanban-task-age.json").read_text())["sidecar_task"]
+    monkeypatch.setattr(kanban, "_kb", lambda: SimpleNamespace(task_age=lambda task: dict(fixture["age_seconds"])))
+    monkeypatch.setattr(kanban, "_workflow", lambda: kanban._Workflow((), {"ready": fixture["agent_move_targets"]}))
+    row = {key: fixture[key] for key in ("id", "title", "status", "priority", "assignee")}
+    assert kanban._task_dict(row, None) == fixture

@@ -160575,12 +160575,32 @@
                               },
                               "requires_running_exit_confirmation": {
                                 "type": "boolean"
+                              },
+                              "selected_age_seconds": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "staleness": {
+                                "enum": [
+                                  "none",
+                                  "warning",
+                                  "critical"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
                               "id",
                               "available_actions",
-                              "requires_running_exit_confirmation"
+                              "requires_running_exit_confirmation",
+                              "selected_age_seconds",
+                              "staleness"
                             ],
                             "additionalProperties": {}
                           },
@@ -161115,12 +161135,32 @@
                                 },
                                 "requires_running_exit_confirmation": {
                                   "type": "boolean"
+                                },
+                                "selected_age_seconds": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "staleness": {
+                                  "enum": [
+                                    "none",
+                                    "warning",
+                                    "critical"
+                                  ],
+                                  "type": "string"
                                 }
                               },
                               "required": [
                                 "id",
                                 "available_actions",
-                                "requires_running_exit_confirmation"
+                                "requires_running_exit_confirmation",
+                                "selected_age_seconds",
+                                "staleness"
                               ],
                               "additionalProperties": {}
                             }
@@ -161316,12 +161356,32 @@
                                       },
                                       "requires_running_exit_confirmation": {
                                         "type": "boolean"
+                                      },
+                                      "selected_age_seconds": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "staleness": {
+                                        "enum": [
+                                          "none",
+                                          "warning",
+                                          "critical"
+                                        ],
+                                        "type": "string"
                                       }
                                     },
                                     "required": [
                                       "id",
                                       "available_actions",
-                                      "requires_running_exit_confirmation"
+                                      "requires_running_exit_confirmation",
+                                      "selected_age_seconds",
+                                      "staleness"
                                     ],
                                     "additionalProperties": {}
                                   }
@@ -162019,6 +162079,116 @@
                         "has_completion_evidence": {
                           "type": "boolean"
                         },
+                        "age_seconds": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "age": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -162051,6 +162221,24 @@
                         },
                         "requires_running_exit_confirmation": {
                           "type": "boolean"
+                        },
+                        "selected_age_seconds": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "staleness": {
+                          "enum": [
+                            "none",
+                            "warning",
+                            "critical"
+                          ],
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -162061,7 +162249,9 @@
                         "claim_live",
                         "has_completion_evidence",
                         "available_actions",
-                        "requires_running_exit_confirmation"
+                        "requires_running_exit_confirmation",
+                        "selected_age_seconds",
+                        "staleness"
                       ],
                       "additionalProperties": {}
                     },
@@ -162251,6 +162441,116 @@
                         "has_completion_evidence": {
                           "type": "boolean"
                         },
+                        "age_seconds": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "age": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -162284,6 +162584,24 @@
                         "requires_running_exit_confirmation": {
                           "type": "boolean"
                         },
+                        "selected_age_seconds": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "staleness": {
+                          "enum": [
+                            "none",
+                            "warning",
+                            "critical"
+                          ],
+                          "type": "string"
+                        },
                         "current_run_started_at": {
                           "anyOf": [
                             {
@@ -162304,6 +162622,8 @@
                         "has_completion_evidence",
                         "available_actions",
                         "requires_running_exit_confirmation",
+                        "selected_age_seconds",
+                        "staleness",
                         "current_run_started_at"
                       ],
                       "additionalProperties": {}
@@ -162458,6 +162778,116 @@
                         "has_completion_evidence": {
                           "type": "boolean"
                         },
+                        "age_seconds": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "age": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -162490,6 +162920,24 @@
                         },
                         "requires_running_exit_confirmation": {
                           "type": "boolean"
+                        },
+                        "selected_age_seconds": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "staleness": {
+                          "enum": [
+                            "none",
+                            "warning",
+                            "critical"
+                          ],
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -162500,7 +162948,9 @@
                         "claim_live",
                         "has_completion_evidence",
                         "available_actions",
-                        "requires_running_exit_confirmation"
+                        "requires_running_exit_confirmation",
+                        "selected_age_seconds",
+                        "staleness"
                       ],
                       "additionalProperties": {}
                     },
@@ -162692,6 +163142,116 @@
                         "has_completion_evidence": {
                           "type": "boolean"
                         },
+                        "age_seconds": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "age": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -162724,6 +163284,24 @@
                         },
                         "requires_running_exit_confirmation": {
                           "type": "boolean"
+                        },
+                        "selected_age_seconds": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "staleness": {
+                          "enum": [
+                            "none",
+                            "warning",
+                            "critical"
+                          ],
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -162734,7 +163312,9 @@
                         "claim_live",
                         "has_completion_evidence",
                         "available_actions",
-                        "requires_running_exit_confirmation"
+                        "requires_running_exit_confirmation",
+                        "selected_age_seconds",
+                        "staleness"
                       ],
                       "additionalProperties": {}
                     },
@@ -162803,6 +163383,116 @@
                         "has_completion_evidence": {
                           "type": "boolean"
                         },
+                        "age_seconds": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "age": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -162835,6 +163525,24 @@
                         },
                         "requires_running_exit_confirmation": {
                           "type": "boolean"
+                        },
+                        "selected_age_seconds": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "staleness": {
+                          "enum": [
+                            "none",
+                            "warning",
+                            "critical"
+                          ],
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -162845,7 +163553,9 @@
                         "claim_live",
                         "has_completion_evidence",
                         "available_actions",
-                        "requires_running_exit_confirmation"
+                        "requires_running_exit_confirmation",
+                        "selected_age_seconds",
+                        "staleness"
                       ],
                       "additionalProperties": {}
                     },
@@ -162930,6 +163640,116 @@
                         "has_completion_evidence": {
                           "type": "boolean"
                         },
+                        "age_seconds": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "age": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "created_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "started_age_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "time_to_complete_seconds": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "created_age_seconds",
+                                    "started_age_seconds",
+                                    "time_to_complete_seconds"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -162962,6 +163782,24 @@
                         },
                         "requires_running_exit_confirmation": {
                           "type": "boolean"
+                        },
+                        "selected_age_seconds": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "staleness": {
+                          "enum": [
+                            "none",
+                            "warning",
+                            "critical"
+                          ],
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -162972,7 +163810,9 @@
                         "claim_live",
                         "has_completion_evidence",
                         "available_actions",
-                        "requires_running_exit_confirmation"
+                        "requires_running_exit_confirmation",
+                        "selected_age_seconds",
+                        "staleness"
                       ],
                       "additionalProperties": {}
                     },

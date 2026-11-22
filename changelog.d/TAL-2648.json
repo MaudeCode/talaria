@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Kanban tasks again carry their age and a stale warning from the server, now that the Agent reports a task's age as separate creation and start times.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
