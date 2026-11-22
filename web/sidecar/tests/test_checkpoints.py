@@ -160,7 +160,7 @@ def test_a_restore_over_an_uncaptured_nested_repository_is_refused(handshaken: S
 
 def test_undo_names_the_files_the_undone_span_changed(handshaken: SidecarProcess, hermes_home: pathlib.Path, workspace: pathlib.Path) -> None:
     """TAL-2069: the Agent's own ``/undo`` hint names, at most 8, the files changed since the first snapshot the undone span
-    took, and nothing for a span with no snapshot. An Agent without the hint names nothing."""
+    took, and nothing for a span with no snapshot."""
     (hermes_home / "config.yaml").write_text("checkpoints:\n  enabled: true\n")
     _take_checkpoint(hermes_home, workspace, "before write_file")
     (workspace / "notes.txt").write_text("edited by the agent\n")
@@ -171,11 +171,8 @@ def test_undo_names_the_files_the_undone_span_changed(handshaken: SidecarProcess
     # A span from the epoch holds the snapshot; one starting in 2100 holds none.
     named = handshaken.result("checkpoints.undo_changed_files", {**params, "since": 1})["files"]
     after = handshaken.result("checkpoints.undo_changed_files", {**params, "since": 4102444800})["files"]
-    if (AGENT_DIR / "agent" / "checkpoints" / "undo_hint.py").exists() or (AGENT_DIR / "tools" / "checkpoint_undo_hint.py").exists():  # agent-shim: undo-changed-files
-        assert named == ["notes.txt", *(f"z{n}.txt" for n in range(7))]
-        assert after == []
-    else:
-        assert named == after == []
+    assert named == ["notes.txt", *(f"z{n}.txt" for n in range(7))]
+    assert after == []
 
 
 class _WriteFile(OneToolCallModel):

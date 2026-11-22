@@ -235,7 +235,7 @@ def _aux_request(task: str, client, model: str, messages: list, *, main_runtime:
     from .chat import _require_data_use_support
 
     if _require_data_use_support(messages):
-        # agent-shim: aux-effective-provider
+        # The Agent tags only an auto route's client with its effective provider; an explicit route keeps the selected one.
         route = _privacy_request_kwargs(messages, provider=getattr(client, "_hermes_aux_effective_provider", None) or selected_provider, model=model, base_url=getattr(client, "base_url", None), api_key=getattr(client, "api_key", None))
         return (lambda **_: _call_llm(task, ctx, **route, **kwargs, stream=True)), True
     stream = hasattr(client.chat.completions, "with_streaming_response")

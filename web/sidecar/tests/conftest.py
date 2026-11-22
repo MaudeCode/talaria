@@ -62,9 +62,24 @@ requires_agent = pytest.mark.skipif(AGENT_DIR is None or AGENT_PYTHON is None, r
 # TAL-2591: Agent v0.23.3+ keeps sessions behind its storage interface and carries only a limited ``SessionDB`` stand-in.
 NATIVE_STORE = AGENT_DIR is not None and (AGENT_DIR / "persistence_assembly.py").is_file()
 
+# ``ledger_db()``: a committing connection to ``$HERMES_HOME/state.db``, where every supported Agent keeps its
+# ``async_delegations`` ledger; Agent v0.23.3 dropped ``tools.async_delegation._transaction``.
+LEDGER_PRELUDE = """
+import contextlib, os, sqlite3
+
+@contextlib.contextmanager
+def ledger_db():
+    conn = sqlite3.connect(os.path.join(os.environ["HERMES_HOME"], "state.db"), timeout=5)
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+"""
+
 # A seeding script's opening on the Agent's interpreter: ``db`` is the ``SessionDB`` of ``$HERMES_HOME/state.db`` (on
 # v0.23.3+ the stand-in, which carries the session and message verbs), ``store`` the storage interface handle on that
-# Agent and None before it, and the verbs below write the same rows on either.
+# Agent and None before it, and the verbs below write the same rows on either.  # agent-shim: pre-persistence-store
 STORE_PRELUDE = """
 import os
 from pathlib import Path
@@ -92,7 +107,22 @@ def hide(sid):
 
 def archive(sid):
     return store.sessions.set_archived(sid, True) if store else db.set_session_archived(sid, True)
-"""
+
+def deliver(sid, text, metadata):
+    if store is None:
+        return db.append_delegation_delivery(sid, text, metadata)
+    from persistence.conversation.messages import DelegationDelivery
+    return store.messages.append_delegation_delivery(sid, DelegationDelivery(text, metadata))
+
+# The api_server surface gateway.wake.persist_delegation_delivery reads: the storage handle on v0.23.3+, SessionDB before.
+class DeliveryAdapter:
+    def _ensure_session_db(self):
+        return db
+    def _ensure_store(self):
+        return store
+    def _store_beside(self, handle):
+        return store
+""" + LEDGER_PRELUDE
 
 
 def run_store_script(hermes_home: pathlib.Path, body: str, *, sidecar: bool = False, **extra: str) -> None:

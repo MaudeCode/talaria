@@ -160,8 +160,7 @@ def request_prompt_refresh(db) -> None:
 
 
 def retain_refused_turn(db, session_id: str, *, notice: str, boundary_row_id) -> bool:
-    """Take a refused turn out of the model context while keeping the user's ask on screen with ``notice``. Raises
-    ``ImportError`` on an Agent without the retention (before v0.23.1)."""
+    """Take a refused turn out of the model context while keeping the user's ask on screen with ``notice``."""
     if native():
         return bool(db.messages.retain_refused_turn_for_display(session_id, notice=notice, boundary_row_id=boundary_row_id))
     from hermes_state_rewind import retain_refused_turn_for_display

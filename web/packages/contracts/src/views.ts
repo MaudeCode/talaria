@@ -169,11 +169,6 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   x_search: { kind: 'search', presentation: 'links' },
   xai_video_edit: { kind: 'video', presentation: 'media' },
   xai_video_extend: { kind: 'video', presentation: 'media' },
-  yb_query_group_info: { kind: 'unknown', presentation: 'generic' },
-  yb_query_group_members: { kind: 'unknown', presentation: 'generic' },
-  yb_search_sticker: { kind: 'search', presentation: 'generic' },
-  yb_send_dm: { kind: 'unknown', presentation: 'generic' },
-  yb_send_sticker: { kind: 'unknown', presentation: 'generic' },
 }
 export { DiffLineSchema } from './diff-line.js'
 /**

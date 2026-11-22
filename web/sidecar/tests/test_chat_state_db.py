@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, NATIVE_STORE, SidecarProcess, isolated_env, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
 
 pytestmark = requires_agent
 
@@ -170,9 +170,6 @@ def _model_rows(home, session_id: str) -> list[dict]:
 
 
 def test_a_refused_turn_leaves_the_model_context_and_stays_on_screen(home) -> None:
-    # Agent v0.23.1 added the owner retention; an older Agent keeps the refused turn as it always has.
-    # agent-shim: content-refused-retention
-    retains = NATIVE_STORE or "def retain_refused_turn_for_display" in (AGENT_DIR / "hermes_state_rewind.py").read_text()
     proc = SidecarProcess(home)
     try:
         _turn(proc, home, "web-refused", "ping")
@@ -181,10 +178,6 @@ def test_a_refused_turn_leaves_the_model_context_and_stays_on_screen(home) -> No
                   "workspace": str(home.parent), "enabled_toolsets": []}
         refused = proc.result("chat.start", params, timeout=120)
         assert refused["status"] == "error", (refused, proc.stderr_lines[-20:])
-        if not retains:
-            assert "content_refused_notice" not in refused and "failure_reason" not in refused
-            assert {"role": "user", "content": _REFUSED_ASK} in _model_rows(home, "web-refused")
-            return
         assert _model_rows(home, "web-refused") == [{"role": "user", "content": "ping"}, {"role": "assistant", "content": "pong"}]
         assert refused.get("failure_reason") == "content_policy_blocked" and refused.get("content_refused_notice")
         with closing(sqlite3.connect(home / "state.db")) as db:

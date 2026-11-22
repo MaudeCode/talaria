@@ -9,7 +9,10 @@ from unittest.mock import patch
 
 sys.path.insert(0, sys.argv[1])
 from gateway import session_shell as shell
-from hermes_state_runtime import RuntimeStoreError
+try:  # v0.23.3 renamed the store's refusal and moved it under the storage interface  # agent-shim: pre-persistence-store
+    from persistence.core.errors import AuthorityRefusal as RuntimeStoreError
+except ImportError:
+    from hermes_state_runtime import RuntimeStoreError
 
 root = Path(sys.argv[2])
 first, second = root / 'first', root / 'second'

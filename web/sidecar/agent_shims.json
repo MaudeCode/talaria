@@ -2,28 +2,10 @@
   "schemaVersion": 1,
   "shims": [
     {
-      "id": "aux-effective-provider",
-      "lastRequired": "0.23.0",
-      "summary": "The auxiliary client's _hermes_aux_effective_provider is new in 0.23.1; older clients route by the selected provider.",
-      "tests": ["web/sidecar/tests/test_aux_fallback.py"]
-    },
-    {
-      "id": "content-refused-retention",
-      "lastRequired": "0.23.0",
-      "summary": "hermes_state_rewind.retain_refused_turn_for_display is new in 0.23.1; older Agents keep a refused turn in context.",
-      "tests": ["web/sidecar/tests/test_chat_state_db.py"]
-    },
-    {
-      "id": "session-open-on-resume",
-      "lastRequired": "0.23.0",
-      "summary": "gateway.session_open is new in 0.23.1; older owners never fire on_session_open on resume.",
-      "tests": ["web/sidecar/tests/test_gateway_sessions.py"]
-    },
-    {
-      "id": "undo-changed-files",
-      "lastRequired": "0.23.0",
-      "summary": "tools.checkpoint_undo_hint is new in 0.23.1; older Agents name no files an undo changed.",
-      "tests": ["web/sidecar/tests/test_checkpoints.py"]
+      "id": "pre-persistence-store",
+      "lastRequired": "0.23.2",
+      "summary": "Agent 0.23.3 moved sessions, the runtime store's refusal and admissions, and hosted rooms behind persistence_assembly; tests seed older Agents through SessionDB, hermes_state_runtime and room store paths.",
+      "tests": ["web/sidecar/tests/conftest.py", "web/sidecar/tests/fixtures/gateway_cron_refusal.py", "web/sidecar/tests/fixtures/gateway_shell_policy.py", "web/sidecar/tests/test_cron_room_delivery.py"]
     },
     {
       "id": "compaction-progress-kind",

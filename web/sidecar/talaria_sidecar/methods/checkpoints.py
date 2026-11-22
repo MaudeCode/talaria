@@ -109,15 +109,11 @@ def register(registry) -> None:
     def undo_changed_files(ctx: CallContext, params: dict) -> dict:
         """TAL-2069: the files the turns an undo removed changed under ``workspace``, by the Agent's own ``/undo`` hint
         (``agent/checkpoints/undo_hint.py``) over this profile's store; ``since`` is when the undone span began, in epoch
-        seconds. Best effort and read-only: an empty list when checkpoints are off, no snapshot was taken in the span, or
-        the Agent predates the hint."""
+        seconds. Best effort and read-only: an empty list when checkpoints are off or no snapshot was taken in the span."""
         workspace, since = _param(params, "workspace"), params.get("since")
         if isinstance(since, bool) or not isinstance(since, (int, float)):
             raise InvalidParams("since is required")
-        try:
-            changed = agent_checkpoints("undo_hint").undo_changed_files
-        except ImportError:  # Agent v0.23.0 has no undo hint  # agent-shim: undo-changed-files
-            return {"files": []}
+        changed = agent_checkpoints("undo_hint").undo_changed_files
         with scoped_home(profile_home_param(params)):
             return {"files": [str(f) for f in changed(_manager(), workspace, since)][:UNDO_NAMED_FILES]}
 

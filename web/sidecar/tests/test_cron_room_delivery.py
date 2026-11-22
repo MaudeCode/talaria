@@ -4,26 +4,26 @@ import contextlib
 import subprocess
 
 from talaria_sidecar.methods import cron
-from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, STORE_PRELUDE, isolated_env, requires_agent
 
 
 @requires_agent
 def test_real_agent_room_delivery_posts_one_scheduled_message(handshaken, hermes_home):
     options = handshaken.result('cron.delivery_options', {'profile_home': str(hermes_home)})
     assert options['room_delivery_supported'] is True
-    code = """
-import sys
-sys.path.insert(0, sys.argv[1])
+    # From v0.23.3 the install's room store sits behind the storage handle and each call names its placement.
+    # agent-shim: pre-persistence-store
+    code = "import sys\nsys.path.insert(0, sys.argv[1])\n" + STORE_PRELUDE + """
 from cron.scheduler_delivery import _deliver_result
 from gateway.hosted_rooms import create_room, default_db_path, local_authority_gateway_id, read_events
-store = default_db_path()
-create_room(store, room_id='digest-room', name='Digest', authority_gateway_id=local_authority_gateway_id(), members=[
+rooms, placement = (store, {'placement': 'shared'}) if store else (default_db_path(), {})
+create_room(rooms, **placement, room_id='digest-room', name='Digest', authority_gateway_id=local_authority_gateway_id(), members=[
     {'member_id': 'one', 'profile': 'default', 'handle': 'one'},
     {'member_id': 'two', 'profile': 'helper', 'handle': 'two'},
 ])
 job = {'id': 'nightly', 'name': 'Nightly digest', 'deliver': 'room:digest-room'}
 assert _deliver_result(job, 'Synthetic scheduled result') is None
-events = read_events(store, room_id='digest-room')['events']
+events = read_events(rooms, **placement, room_id='digest-room')['events']
 posts = [event for event in events if event['kind'] == 'message.user']
 assert len(posts) == 1, posts
 assert posts[0]['actor']['id'] == 'cron:nightly', posts
