@@ -21,8 +21,8 @@ const ProjectName = ({ color, name }: { color: string | null | undefined; name: 
   <span className="min-w-0 truncate">{name}</span>
 </>
 
-/** The Chats heading's one filter control, after the App's `SessionFilterControls`: source, project, the selected project's actions, archived rows and import (TAL-1869). */
-export function SessionFilterMenu({ source, onSource, webuiCount, cliCount, project, onProject, projects, hasUnprojected, showArchived, onShowArchived, onImport }: {
+/** The Chats heading's one filter control, after the App's `SessionFilterControls`: source, project, the selected project's actions, archived rows, select mode (TAL-606) and import (TAL-1869). */
+export function SessionFilterMenu({ source, onSource, webuiCount, cliCount, project, onProject, projects, hasUnprojected, showArchived, onShowArchived, onSelect, onImport }: {
   source: SessionSource
   onSource: (source: SessionSource) => void
   webuiCount: number
@@ -33,6 +33,7 @@ export function SessionFilterMenu({ source, onSource, webuiCount, cliCount, proj
   hasUnprojected: boolean
   showArchived: boolean
   onShowArchived: (show: boolean) => void
+  onSelect: () => void
   onImport: () => void
 }) {
   const [dialog, setDialog] = useState<{ id: string; kind: ProjectDialog } | null>(null)
@@ -82,6 +83,7 @@ export function SessionFilterMenu({ source, onSource, webuiCount, cliCount, proj
         {selected && <MenuSubmenu trigger={m.project_selected()}><ProjectMenuItems project={selected} onDialog={(kind) => setDialog({ id: selected.project_id, kind })} /></MenuSubmenu>}
         <MenuSeparator />
         <FilterCheckboxItem checked={showArchived} onCheckedChange={onShowArchived}>{m.session_show_archived()}</FilterCheckboxItem>
+        <MenuItem onClick={onSelect}>{m.session_select_mode()}</MenuItem>
         <MenuItem onClick={onImport}>{m.import_session_json_tooltip()}</MenuItem>
       </FilterMenu>
       {projects.map((p) => <ProjectDialogs key={p.project_id} project={p} dialog={dialog?.id === p.project_id ? dialog.kind : null} onDialog={(kind) => setDialog(kind ? { id: p.project_id, kind } : null)} onDeleted={() => { if (project === p.project_id) onProject(null) }} />)}

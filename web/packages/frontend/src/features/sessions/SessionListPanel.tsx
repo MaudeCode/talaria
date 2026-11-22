@@ -14,8 +14,9 @@ import { SectionHeader } from '../../ui/List'
 import { Dialog } from '../../ui/Dialog'
 import { useProjectsQuery } from '../../app/queries'
 import { useSettingsQuery } from '../../app/settings'
-import { OUTSIDE_SOURCE_SETTING_KEYS } from '@maudecode/talaria-web-contracts'
+import { OUTSIDE_SOURCE_SETTING_KEYS, SESSIONS_BULK_MAX } from '@maudecode/talaria-web-contracts'
 import { SessionActions, SessionContextMenu, SessionMenuItems } from './SessionContextMenu'
+import { SessionSelectionBar } from './SessionSelectionBar'
 import { ContextMenu } from '../../ui/Menu'
 import { NO_PROJECT, SessionFilterMenu, type SessionSource } from './SessionFilterMenu'
 import { closeMobileSidebar } from '../../shell/useShellState'
@@ -156,9 +157,11 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
         {preview && <div className="session-search-preview truncate text-[11px] text-muted" title={m.session_search_content_matches()}>{preview}</div>}
       </div>
   </>)
-  if (selection) return <button type="button" role="checkbox" aria-checked={selection.selected} disabled={selection.disabled} onClick={selection.onSelect} className={cn('session-item min-h-11 w-full text-left', nested && 'session-item-nested', selection.selected && 'active')} data-sid={row.session_id}>
-    {content}<span aria-hidden="true">{selection.selected ? '✓' : ''}</span>
-  </button>
+  if (selection) return <div role="listitem" data-motion-key={row.session_id}>
+    <button type="button" role="checkbox" aria-checked={selection.selected} disabled={selection.disabled} onClick={selection.onSelect} className={cn('session-item w-full text-left pointer-coarse:min-h-11', nested && 'session-item-nested', selection.selected && 'active')} data-sid={row.session_id}>
+      {content}<span aria-hidden="true">{selection.selected ? '✓' : ''}</span>
+    </button>
+  </div>
   // TAL-1120: the wrapper is the list item, so the anchor keeps its link role; its name skips the nested action buttons.
   // TAL-699: right-click or long-press on the row opens the kebab's items; a click still navigates.
   return (
@@ -202,6 +205,11 @@ export function SessionListPanel() {
   const [source, setSource] = useState<SessionSource>('webui')
   const [project, setProject] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
+  // TAL-606: select mode and its chosen ids, device-local; only rows the list shows count as selected. `session` names one
+  // visit to select mode, so a bulk result that lands after Done and Select again leaves the new selection alone.
+  const [select, setSelect] = useState<{ session: string; ids: string[] } | null>(null)
+  const selected = select?.ids ?? []
+  const setSelected = (next: (ids: string[]) => string[]) => setSelect((cur) => cur && { ...cur, ids: next(cur.ids) })
   // TAL-2478: the server lists only the chosen source tab, project and archive state.
   const projectParam = project === NO_PROJECT ? 'none' : (project ?? undefined)
   const listParams: api.SessionListParams = { sidebar_source: source, ...(projectParam ? { project_id: projectParam } : {}), ...(showArchived ? { include_archived: true } : {}) }
@@ -335,6 +343,19 @@ export function SessionListPanel() {
     onError: (e) => showErrorToast(e),
   })
   const mutateArchive = archive.mutate
+  const withNested = (r: SessionRow) => [r, ...(children.get(r.session_id) ?? [])]
+  const selectedRows = filtered.flatMap(withNested).filter((r) => canSelect(r) && selected.includes(r.session_id))
+  // Select all covers the dated groups, never the collapsed Scheduled and Webhook groups (as in the App).
+  // One bulk call takes at most SESSIONS_BULK_MAX ids, so Select all stops there and other rows wait until one is cleared.
+  const selectAll = groups.filter((g) => !isDisclosure(g.id)).flatMap((g) => g.rows.flatMap(withNested)).filter(canSelect).slice(0, SESSIONS_BULK_MAX).map((r) => r.session_id)
+  // A bulk result settles only the ids it sent: the refused come back selected, rows chosen since stay chosen, and the
+  // mode ends once nothing is left selected.
+  const onBulkResult = (session: string, sent: readonly string[], failed: readonly string[]) => setSelect((cur) => {
+    if (cur?.session !== session) return cur
+    const ids = [...new Set([...cur.ids.filter((id) => !sent.includes(id)), ...failed])]
+    return ids.length ? { session, ids } : null
+  })
+  const selection = select ? { ids: selected, full: selectedRows.length >= SESSIONS_BULK_MAX, onToggle: (id: string) => setSelected((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])) } : undefined
   const onArchive = (id: string, archived: boolean) => mutateArchive({ id, archived })
   const navigate = useNavigate()
   // Legacy J/K: open the next or previous shown session in sidebar order, unless typing, modified, or inside a dialog or menu (TAL-613).
@@ -372,11 +393,12 @@ export function SessionListPanel() {
     <div className="panel-view active" id="panelChat">
       <PanelSearch
         title={<SectionHeader detail={filterDetail ? <span data-chats-detail title={filterDetail}>{filterDetail}</span> : null}>{m.sidebar_chats()}</SectionHeader>}
-        actions={<SessionFilterMenu source={source} onSource={setSource} webuiCount={webuiCount} cliCount={cliCount} project={project} onProject={setProject} projects={projectList} hasUnprojected={data?.has_unprojected ?? false} showArchived={showArchived} onShowArchived={setShowArchived} onImport={() => importInput.current?.click()} />}
+        actions={<SessionFilterMenu source={source} onSource={setSource} webuiCount={webuiCount} cliCount={cliCount} project={project} onProject={setProject} projects={projectList} hasUnprojected={data?.has_unprojected ?? false} showArchived={showArchived} onShowArchived={setShowArchived} onSelect={() => setSelect((cur) => cur ?? { session: randomHex(), ids: [] })} onImport={() => importInput.current?.click()} />}
         open={searchOpen} onOpenChange={setSearchOpen} value={filter} onValueChange={setFilter} clearLabel={m.clear_conversation_filter()} className="session-search"
         id="sessionSearch" placeholder={m.filter_conversations()} aria-label={m.filter_conversations()}
       />
       <input ref={importInput} type="file" accept=".json,application/json" hidden aria-label={m.import_session_json_tooltip()} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) importSession.mutate(file) }} />
+      {select && <SessionSelectionBar session={select.session} rows={selectedRows} selectable={selectAll} onSelected={(ids) => setSelected(() => ids)} onResult={onBulkResult} showArchived={showArchived} activeId={activeId} onDone={() => setSelect(null)} />}
       <MotionList items={groups.flatMap((g) => g.rows.flatMap((r) => [r, ...(children.get(r.session_id) ?? [])]))} itemKey={(r) => r.session_id}
         scope={JSON.stringify([scope, q, collapsedGroups, data?.active_profile, q.length >= 2 ? search.dataUpdatedAt : null])} context={context} ready={list.isSuccess}
         className="session-list" id="sessionList" selection={{ key: activeId, className: 'session-selection' }}>
@@ -415,7 +437,7 @@ export function SessionListPanel() {
                       {disclosure && <span className="session-disclosure-count">{disclosureCount[g.id as DisclosureId]}</span>}
                     </div>
                     <div className="session-date-body" style={collapsed ? { display: 'none' } : undefined}>
-                      {shownRows(g).map((row) => <SessionTreeItem key={row.session_id} row={row} nested={tree.children.get(row.session_id)} activeId={activeId} projectsById={projectsById} previews={previews} onArchive={onArchive} timeMotion={timeMotion} {...(disclosure ? {} : { onDragStart: startDrag, onDragEnd: endDrag })} />)}
+                      {shownRows(g).map((row) => <SessionTreeItem key={row.session_id} row={row} nested={tree.children.get(row.session_id)} activeId={activeId} projectsById={projectsById} previews={previews} onArchive={onArchive} timeMotion={timeMotion} selection={selection} {...(disclosure ? {} : { onDragStart: startDrag, onDragEnd: endDrag })} />)}
                       {disclosure && !searching && g.rows.length > DISCLOSURE_PREVIEW && <button type="button" className="session-view-all" onClick={() => setViewAll({ id: g.id as DisclosureId, at: activeId })}>{m.session_group_view_all()}</button>}
                     </div>
                   </div>
@@ -431,10 +453,13 @@ export function SessionListPanel() {
   )
 }
 
+/** TAL-606: select mode offers a row the server lets the user archive or delete. */
+const canSelect = (r: SessionRow) => r.can_archive || r.can_delete
+
 type ProjectsById = Map<string, Awaited<ReturnType<typeof api.fetchProjects>>['projects'][number]>
 
 /** A top-level sidebar row followed by the rows the server nests under it (TAL-1151). */
-function SessionTreeItem({ row, nested, activeId, projectsById, previews, onArchive, onDragStart, onDragEnd, timeMotion }: {
+function SessionTreeItem({ row, nested, activeId, projectsById, previews, onArchive, onDragStart, onDragEnd, timeMotion, selection }: {
   row: SessionRow
   nested: SessionRow[] | undefined
   timeMotion?: { previous: Map<string, SessionRow>; enabled: boolean }
@@ -444,8 +469,15 @@ function SessionTreeItem({ row, nested, activeId, projectsById, previews, onArch
   onArchive: (id: string, archived: boolean) => void
   onDragStart?: (event: DragEvent<HTMLAnchorElement>, row: SessionRow) => void
   onDragEnd?: () => void
+  /** TAL-606: select mode's chosen ids; a row the server lets neither archive nor delete is not selectable. */
+  selection?: { ids: readonly string[]; full: boolean; onToggle: (id: string) => void } | undefined
 }) {
-  const item = (r: SessionRow, isNested: boolean) => <SessionListItem key={r.session_id} row={r} nested={isNested} active={r.session_id === activeId} proj={r.project_id ? projectsById.get(r.project_id) : undefined} preview={previews.get(r.session_id)} timeLabel={relativeTime(r.sort_ts)} timeMotion={timeMotion ? { previous: relativeTime(timeMotion.previous.get(r.session_id)?.sort_ts ?? r.sort_ts), enabled: timeMotion.enabled } : undefined} onArchive={onArchive} {...(onDragStart ? { onDragStart, onDragEnd } : {})} />
+  const pick = (r: SessionRow) => {
+    if (!selection) return {}
+    const selected = selection.ids.includes(r.session_id)
+    return { selection: { selected, disabled: !canSelect(r) || (!selected && selection.full), onSelect: () => selection.onToggle(r.session_id) } }
+  }
+  const item = (r: SessionRow, isNested: boolean) => <SessionListItem key={r.session_id} row={r} nested={isNested} active={r.session_id === activeId} proj={r.project_id ? projectsById.get(r.project_id) : undefined} preview={previews.get(r.session_id)} timeLabel={relativeTime(r.sort_ts)} timeMotion={timeMotion ? { previous: relativeTime(timeMotion.previous.get(r.session_id)?.sort_ts ?? r.sort_ts), enabled: timeMotion.enabled } : undefined} onArchive={onArchive} {...(onDragStart ? { onDragStart, onDragEnd } : {})} {...pick(r)} />
   return <Fragment>{item(row, false)}{nested?.map((child) => item(child, true))}</Fragment>
 }
 

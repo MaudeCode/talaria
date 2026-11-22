@@ -2358,6 +2358,7 @@
 	"session_batch_delete_confirm": "Delete {a0} conversations?",
 	"session_batch_delete_worktree_confirm": "Delete {a0} conversations? {a1} worktree-backed conversation(s) will leave their worktree directories on disk.",
 	"session_batch_move": "Move to project",
+	"session_batch_unarchive": "Unarchive",
 	"session_child_toggle_hint": "{a0} — child conversations spawned from this session. Click to show or hide them.",
 	"session_copy_link": "Copy conversation link",
 	"session_copy_link_desc": "Copy a direct link to this conversation",

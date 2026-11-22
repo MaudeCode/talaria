@@ -33,7 +33,7 @@ export function SessionReferences({ profile, selected, onChange }: {
       {candidates.isError && <ErrorState error={candidates.error} onRetry={() => { void candidates.refetch() }} />}
       {candidates.isPending && <p role="status">{m.loading()}</p>}
       {candidates.data && <>
-        <div className="max-h-[50dvh] overflow-y-auto" role="group" aria-label={m.session_references()}>
+        <div className="max-h-[50dvh] overflow-y-auto" role="list" aria-label={m.session_references()}>
           {candidates.data.sessions.map((row) => {
             const ref = row.source_reference
             const chosen = selected.some((s) => s.session_id === ref.session_id)
