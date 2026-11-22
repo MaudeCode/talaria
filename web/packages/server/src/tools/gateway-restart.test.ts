@@ -32,6 +32,8 @@ const flush = async (): Promise<void> => { for (let idle = 0; idle < 10; idle = 
 /** The gateway process a restart replaces, and the one that replaces it: both live, so only identity tells them apart. */
 const OLD_PID = process.pid
 const NEW_PID = process.ppid
+/** TAL-2625: Restart now, versioned by the gateway and running task count it is shown for. */
+const RESTART_NOW = { id: expect.stringMatching(/^restart_gateway_now-[a-f0-9]{12}-\d+$/) as string }
 
 /**
  * A Hermes home with a synthetic gateway, a notification store, and a queue whose polls advance only on `tick()`. The
@@ -80,7 +82,9 @@ async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-rest
     return row.id
   }
   const row = async (id: string) => (await store.list(OWNER)).notifications.find((entry) => entry.id === id)
-  return { stateDir, home, gateway, replaced, store, queue, calls, interrupts, profiles, tick, waiting, row, clock, ready, control, lifecycles }
+  /** The Restart now id a client is shown for that record now. */
+  const shown = async (id: string): Promise<string> => (await row(id))?.actions[0]?.id ?? ''
+  return { shown, stateDir, home, gateway, replaced, store, queue, calls, interrupts, profiles, tick, waiting, row, clock, ready, control, lifecycles }
 }
 
 describe('gatewayRestartBlockers', () => {
@@ -139,7 +143,7 @@ describe('GatewayRestartQueue', () => {
     await flush()
     expect(t.queue.pendingId()).toBeNull()
     expect(t.queue.restarting()).toBe(false)
-    expect(t.queue.restartNow(first)).toBe(false)
+    expect(await t.queue.restartNow(first, GATEWAY_RESTART_NOW)).toBe('not_waiting')
     expect(t.calls).toEqual([])
     const next = await t.waiting()
     expect(await t.queue.schedule(next, 'default')).toBe(next)
@@ -157,7 +161,7 @@ describe('GatewayRestartQueue', () => {
     await flush()
     expect(t.queue.pendingId()).toBe(id)
     expect(t.queue.restarting()).toBe(false)
-    expect((await t.row(id))).toMatchObject({ phase: 'waiting_for_idle', detail: 'kept update detail', actions: [{ id: GATEWAY_RESTART_NOW }] })
+    expect((await t.row(id))).toMatchObject({ phase: 'waiting_for_idle', detail: 'kept update detail', actions: [RESTART_NOW] })
     expect(t.interrupts).toEqual([false])
     busy = false
     await t.tick()
@@ -172,7 +176,7 @@ describe('GatewayRestartQueue', () => {
     const id = await t.waiting()
     await t.queue.schedule(id, 'default')
     await flush()
-    expect(t.queue.restartNow(id)).toBe(true)
+    expect(await t.queue.restartNow(id, await t.shown(id))).toBe('restarting')
     await flush()
     expect(t.interrupts).toEqual([false, true])
     expect((await t.row(id))?.phase).toBe('succeeded')
@@ -189,7 +193,7 @@ describe('GatewayRestartQueue', () => {
     expect((await t.row(id))).toMatchObject({
       phase: 'waiting_for_idle', can_dismiss: false,
       message: 'Waiting for 2 running gateway tasks to finish before restarting the gateway.',
-      actions: [{ id: GATEWAY_RESTART_NOW, label: 'Restart now', style: 'destructive', acknowledges: false }],
+      actions: [{ ...RESTART_NOW, label: 'Restart now', style: 'destructive', acknowledges: false }],
     })
     t.gateway({ active_agents: 1 })
     await t.tick()
@@ -222,26 +226,27 @@ describe('GatewayRestartQueue', () => {
     await t.queue.schedule(id, 'default')
     await t.tick()
     expect(t.calls).toEqual([])
-    expect(t.queue.restartNow('another-id')).toBe(false)
-    expect(t.queue.restartNow(id)).toBe(true)
+    expect(await t.queue.restartNow('another-id', await t.shown(id))).toBe('not_waiting')
+    expect(await t.queue.restartNow(id, await t.shown(id))).toBe('restarting')
     await flush()
     expect(t.calls).toEqual(['gateway.restart'])
     expect((await t.row(id))?.phase).toBe('succeeded')
     await t.tick()
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart'])
-    expect(t.queue.restartNow(id)).toBe(false)
+    expect(await t.queue.restartNow(id, GATEWAY_RESTART_NOW)).toBe('not_waiting')
     expect(t.interrupts).toEqual([true])
   })
 
   it('starts no restart, even a forced one, while another update changes the Agent source', async () => {
-    const updating = { now: true }
+    const updating = { now: false }
     const t = (await setup(undefined, undefined, updating))
-    t.gateway({ active_agents: 0 })
+    t.gateway({ active_agents: 1 })
     const id = (await t.waiting())
     await t.queue.schedule(id, 'default')
     await t.tick()
-    t.queue.restartNow(id)
+    updating.now = true
+    expect(await t.queue.restartNow(id, await t.shown(id))).toBe('restarting')
     await t.tick()
     await t.tick()
     expect(t.calls).toEqual([])
@@ -249,6 +254,7 @@ describe('GatewayRestartQueue', () => {
     updating.now = false
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart'])
+    expect(t.interrupts).toEqual([true])
     expect((await t.row(id))?.phase).toBe('succeeded')
   })
 
@@ -293,7 +299,7 @@ describe('GatewayRestartQueue', () => {
     expect(before.calls).toEqual([])
     const after = (await setup(before.stateDir))
     after.gateway({ active_agents: 2 })
-    expect((await after.row(id))).toMatchObject({ phase: 'waiting_for_idle', actions: [{ id: GATEWAY_RESTART_NOW }] })
+    expect((await after.row(id))).toMatchObject({ phase: 'waiting_for_idle', actions: [RESTART_NOW] })
     await after.queue.resume()
     await after.tick()
     expect(after.calls).toEqual([])
@@ -334,10 +340,11 @@ describe('GatewayRestartQueue', () => {
     t.gateway({ active_agents: 1 })
     const id = (await t.waiting())
     await t.queue.schedule(id, 'default')
+    await t.tick()
     const other: UpdateNotificationScope = { owner: 'oidc:other', profile: 'default', serverOwner: true, tab: 'tab-other-owner' }
     await t.store.watch(other, id)
     expect((await t.store.list(other)).tab_update).toMatchObject({ id, phase: 'waiting_for_idle' })
-    expect((await t.store.action(other, id, GATEWAY_RESTART_NOW))).toMatchObject({ id })
+    expect((await t.store.action(other, id, await t.shown(id)))).toMatchObject({ id })
     expect((await t.store.list({ owner: 'member', profile: 'default', serverOwner: false })).notifications.some((row) => row.id === id)).toBe(false)
   })
 
@@ -389,7 +396,7 @@ describe('GatewayRestartQueue lifecycle capability', () => {
     expect(row).toMatchObject({ phase: 'failed', detail: `${NOT_CONTROLLED}\n\nkept update detail` })
     expect(row?.steps.find((step) => step.id === 'gateway_restart')?.state).toBe('failed')
     expect(t.queue.pendingId()).toBeNull()
-    expect(t.queue.restartNow(id)).toBe(false)
+    expect(await t.queue.restartNow(id, GATEWAY_RESTART_NOW)).toBe('not_waiting')
   })
 
   it('rereads the capability when the wait ends, so a target changed during the wait is not restarted', async () => {
@@ -520,5 +527,80 @@ describe('GatewayRestartQueue readiness', () => {
     await t.queue.resume()
     await t.tick()
     expect((await t.row(id))).toMatchObject({ phase: 'failed', detail: expect.stringContaining('could not be verified') as string })
+  })
+})
+
+/** TAL-2625: Restart now is bound to the gateway and the running work it showed; the restart rechecks both before each launch. */
+describe('GatewayRestartQueue Restart now confirmation', () => {
+  /** What a client does: perform the action id it was shown, as the router routes it to the queue. */
+  const perform = async (t: Awaited<ReturnType<typeof setup>>, id: string, actionId: string) => {
+    expect(await t.store.action(OWNER, id, actionId)).toMatchObject({ id })
+    return t.queue.restartNow(id, actionId)
+  }
+
+  it('refuses an action shown for a gateway that was replaced, and offers a fresh one', async () => {
+    const t = await setup()
+    t.gateway({ active_agents: 2 })
+    const id = await t.waiting()
+    await t.queue.schedule(id, 'default')
+    await t.tick()
+    const stale = await t.shown(id)
+    t.gateway({ pid: NEW_PID, active_agents: 2 })
+    expect(await perform(t, id, stale)).toBe('stale')
+    await flush()
+    expect(t.calls).toEqual([])
+    const fresh = await t.shown(id)
+    expect(fresh).not.toBe(stale)
+    expect(await perform(t, id, fresh)).toBe('restarting')
+    await flush()
+    expect(t.interrupts).toEqual([true])
+    expect((await t.row(id))?.phase).toBe('succeeded')
+  })
+
+  it('refuses an action shown for less running work, and keeps one shown for more', async () => {
+    const t = await setup()
+    t.gateway({ active_agents: 1 })
+    const id = await t.waiting()
+    await t.queue.schedule(id, 'default')
+    await t.tick()
+    const one = await t.shown(id)
+    t.gateway({ active_agents: 3 })
+    expect(await perform(t, id, one)).toBe('stale')
+    await flush()
+    expect(t.calls).toEqual([])
+    expect((await t.row(id))?.message).toBe('Waiting for 3 running gateway tasks to finish before restarting the gateway.')
+    const three = await t.shown(id)
+    t.gateway({ active_agents: 2 })
+    expect(await perform(t, id, three)).toBe('restarting')
+    await flush()
+    expect(t.interrupts).toEqual([true])
+  })
+
+  it('a forced restart refused by the gateway does not retry with force once its work grows', async () => {
+    const t = await setup(undefined, (interrupt) => { if (interrupt) t.gateway({ active_agents: 2 }); return Promise.resolve({ status: 'busy_live_work' }) })
+    t.gateway({ active_agents: 1 })
+    const id = await t.waiting()
+    await t.queue.schedule(id, 'default')
+    await t.tick()
+    await perform(t, id, await t.shown(id))
+    await flush()
+    expect(t.interrupts).toEqual([true])
+    await t.tick()
+    await t.tick()
+    expect(t.interrupts).toEqual([true])
+    expect((await t.row(id))).toMatchObject({ phase: 'waiting_for_idle', message: 'Waiting for 2 running gateway tasks to finish before restarting the gateway.' })
+  })
+
+  it('a forced restart does not relaunch with force after a transient failure replaced the gateway', async () => {
+    const t = await setup(undefined, (interrupt) => { if (interrupt) t.gateway({ pid: NEW_PID, active_agents: 1 }); return Promise.resolve({ status: 'failed', message: 'launchd rotating' }) })
+    t.gateway({ active_agents: 1 })
+    const id = await t.waiting()
+    await t.queue.schedule(id, 'default')
+    await t.tick()
+    await perform(t, id, await t.shown(id))
+    await t.tick()
+    await t.tick()
+    expect(t.interrupts).toEqual([true])
+    expect((await t.row(id))?.phase).toBe('waiting_for_idle')
   })
 })

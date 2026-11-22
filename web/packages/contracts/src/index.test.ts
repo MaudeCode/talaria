@@ -398,7 +398,7 @@ describe('contracts package', () => {
     expect(parsed.tab_update).toEqual(parsed.notifications[0])
     expect(parsed.notifications[1]).toMatchObject({ requires_interaction: true, can_dismiss: false, destination: { key: 'settings.system' }, steps: [], dialog_close: 'close' })
     expect(parsed.notifications[2]).toMatchObject({ verified_revision: 'a'.repeat(40), verified_version: 'web-v1.2.3', dialog_close: 'auto' })
-    expect(parsed.notifications[3]).toMatchObject({ target: 'agent', phase: 'waiting_for_idle', can_dismiss: false, actions: [{ id: 'restart_gateway_now', style: 'destructive', acknowledges: false }], dialog_close: 'restart_later' })
+    expect(parsed.notifications[3]).toMatchObject({ target: 'agent', phase: 'waiting_for_idle', can_dismiss: false, actions: [{ id: 'restart_gateway_now-5e1f0a7c3b92-2', style: 'destructive', acknowledges: false }], dialog_close: 'restart_later' })
     expect(UpdateNotificationsSchema.safeParse({ ...parsed, tab_update: { ...parsed.tab_update, steps: [{ id: 'install', label: 'Installing', state: 'running' }] } }).success).toBe(false)
   })
 })

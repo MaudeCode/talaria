@@ -43,7 +43,7 @@ import { isWebChannel, normalizeWebChannel, updatesCheckView, type WebChannel } 
 import { pyBool } from '../settings.js'
 import { filterAsync, str } from '../util.js'
 import { redactString } from '../redact.js'
-import { GATEWAY_RESTART_NOW, updateNotificationOwner, type UpdateNotificationScope } from '../tools/update-notifications.js'
+import { isGatewayRestartNow, updateNotificationOwner, type UpdateNotificationScope } from '../tools/update-notifications.js'
 
 const os = implement(toolsContract).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -1053,7 +1053,8 @@ export const toolsRouter = os.router({
       if (answer) return answer.notification as never
       const notification = (await ctx.deps.updateNotifications.action(scope, input.id, input.action_id))
       if (!notification) throw new HttpError(404, 'Notification action not found')
-      if (input.action_id === GATEWAY_RESTART_NOW) ctx.deps.gatewayRestarts.restartNow(notification.id)
+      // TAL-2625: a Restart now shown for another gateway or less running work restarts nothing; the record offers a fresh one.
+      if (isGatewayRestartNow(input.action_id) && (await ctx.deps.gatewayRestarts.restartNow(notification.id, input.action_id)) === 'stale') throw new HttpError(409, 'The gateway or its running work changed since Restart now was shown. Check the waiting restart and try again.')
       return notification as never
     })),
   },

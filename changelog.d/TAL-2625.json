@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Restart now on a gateway restart that waits after an Agent update no longer interrupts a replaced gateway or more running tasks than it showed; Talaria offers an updated Restart now instead.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
