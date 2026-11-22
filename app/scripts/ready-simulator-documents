@@ -14,12 +14,13 @@ simulator_id=$1
 log_file=$(mktemp "${TMPDIR:-/tmp}/talaria-files-log.XXXXXX")
 stream_pid=""
 launch_pid=""
+info_pid=""
 started=$SECONDS
 deadline=$(( started + 60 ))
 cleanup() {
     local exit_status=$?
     set +e
-    for pid in "$stream_pid" "$launch_pid"; do
+    for pid in "$info_pid" "$stream_pid" "$launch_pid"; do
         [[ -z "$pid" ]] || kill "$pid" 2>/dev/null
     done
     # Termination is part of the same deadline; a stuck simctl must not stall the shard either.
@@ -32,7 +33,7 @@ cleanup() {
     }; do
         sleep 0.1
     done
-    for pid in "$stream_pid" "$launch_pid" "$terminate_pid"; do
+    for pid in "$info_pid" "$stream_pid" "$launch_pid" "$terminate_pid"; do
         [[ -z "$pid" ]] && continue
         kill -KILL "$pid" 2>/dev/null
         wait "$pid" 2>/dev/null
@@ -44,6 +45,25 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
+
+# Some simulator images ship no Files app, such as the iPhone Duo's iOS 27.1 (TAL-1456): nothing there warms the
+# picker, and launching it fails. The lookup takes under a second; one stalled behind a busy CoreSimulator gets 15 s of
+# the deadline, and then, like any other lookup failure, the launch below goes ahead and reports what it finds.
+xcrun simctl appinfo "$simulator_id" com.apple.DocumentsApp >"$log_file" 2>&1 &
+info_pid=$!
+while kill -0 "$info_pid" 2>/dev/null && (( SECONDS < started + 15 )); do
+    sleep 0.1
+done
+if ! kill -0 "$info_pid" 2>/dev/null; then
+    info_status=0
+    wait "$info_pid" || info_status=$?
+    info_pid=""
+    if (( info_status != 0 )) && grep -q "No application record found" "$log_file"; then
+        echo "Simulator $simulator_id has no Files app; the document picker has nothing to warm."
+        exit 0
+    fi
+fi
+: >"$log_file"
 
 xcrun simctl spawn "$simulator_id" log stream --style ndjson --level debug --timeout 60 \
     --predicate 'process == "Files" AND eventMessage CONTAINS "collectionDidFinishGathering"' >"$log_file" 2>&1 &
