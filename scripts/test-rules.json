@@ -171,6 +171,19 @@
         "pattern": "\\.newPage\\(\\)"
       },
       "message": "test-audit ready: build a stand-in image from data (canvasImage in e2e/fixtures.ts), never by capturing a page the test just opened; a fresh page has no compositor surface yet (docs/testing.md)"
+    },
+    "leak-closing-release": {
+      "paths": [
+        "app/TalariaTests/"
+      ],
+      "patterns": [
+        "UITestFixtureURLProtocol\\.advanceCompanionRun\\(\\)"
+      ],
+      "nearby": {
+        "lines": 3,
+        "pattern": "^    \\}$"
+      },
+      "message": "test-audit leak: never release a held fixture run in a test's last lines; the app applies what it sends after the test returns, into the next test. Leave it held for teardown's fixture reset to end (docs/testing.md)"
     }
   }
 }
