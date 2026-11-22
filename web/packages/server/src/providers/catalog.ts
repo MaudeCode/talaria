@@ -26,8 +26,8 @@ import {
   ACCOUNT_USAGE_PROVIDERS, FALLBACK_MODELS, OAUTH_PROVIDERS, PORTAL_PROVIDERS, PROVIDER_DISPLAY, PROVIDER_ENV_VAR, PROVIDER_ENV_VAR_ALIASES, PROVIDER_MODELS, SELF_HOSTED_PROVIDER_IDS,
 } from './tables.js'
 import {
-  activeProviderFromConfig, canonicaliseProviderId, configuredModelIds, configuredModelOptions, customProviderEntries, customProviderOwner, customProviderSlug, dict, isNativeCustomEntry, isNativeCustomProviderKey, effectiveDefaultModel, isDict,
-  modelSection, parseProviderQualifiedModel, pluginAliasTargets, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict, type SpeedTier,
+  activeProviderFromConfig, canonicaliseProviderId, configuredModelIds, configuredModelOptions, customProviderEntries, customProviderOwner, customProviderSlug, dict, isNativeCustomEntry, isNativeCustomProviderKey, effectiveDefaultModel, isDict, isReference,
+  modelSection, parseProviderQualifiedModel, pinnedModelIds, pluginAliasTargets, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict, type SpeedTier,
 } from '../config/agent-config.js'
 
 export interface ModelEntry { id: string; label: string; favorite?: boolean; hidden?: boolean; preferences_editable?: boolean; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; allowance?: ModelAllowance; limit?: { scope: 'model'; resets_at: string }; configured_role?: ConfiguredModelRole }
@@ -151,6 +151,29 @@ export function repairSessionModel(catalog: ModelsCatalog, model: string, provid
   const defaultModel = str(catalog.default_bare_id).trim()
   const defaultProvider = canonicaliseProviderId(catalog.default_provider_id) || active
   return defaultModel && defaultProvider && (defaultModel !== model || defaultProvider !== pid) ? [defaultModel, defaultProvider] : null
+}
+
+/**
+ * TAL-1132 (Python `_repair_removed_qualified_custom_provider_model`): a named custom provider's removed model starts on
+ * that provider's default when its `models` list pins the default, else on the first pinned id. Only that list proves a
+ * removal, and a model it pins (also under a namespace) or the provider's singular default stays. `config` is the session's
+ * own profile file; the default is read from `resolved`, its references expanded in that profile's scope, so an unresolved
+ * one falls back to the list. `undefined`: no evidence (no pinned list, an unresolved entry, an ambiguous slug).
+ */
+export function pinnedCustomRepair(config: Config, resolved: Config, model: string, provider: string | null): [string, string] | null | undefined {
+  const pid = str(provider).trim().toLowerCase()
+  if (!pid.startsWith('custom:') || !model.trim()) return undefined
+  const legacy = Array.isArray(config.custom_providers) ? config.custom_providers.filter((e) => isDict(e) && customProviderSlug(e.name) === pid) : []
+  const entry = legacy.length > 1 ? null : customProviderOwner(config, pid).entry
+  const listed = entry ? pinnedModelIds(entry) : []
+  if (!listed.length || listed.some(isReference)) return undefined
+  // Only this provider's own `@custom:<slug>:` wrapper is unwrapped; any other id stays verbatim.
+  const own = (id: string): string => { const parsed = parseProviderQualifiedModel(id); return parsed && customProviderSlug(parsed[1]) === pid ? parsed[0] : id }
+  const pinned = listed.map(own)
+  if (pinned.some((id) => id === model || id.endsWith(`/${model}`))) return null
+  const fallbackDefault = own(str(customProviderOwner(resolved, pid).entry?.model).trim())
+  if (fallbackDefault === model) return null
+  return [pinned.includes(fallbackDefault) ? fallbackDefault : pinned[0]!, pid]
 }
 
 export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }>; favorites?: ModelFavorite[] | null; favorite_option_ids?: string[]; favorite_models?: ModelEntry[]; hidden_models?: ModelFavorite[] }
@@ -885,12 +908,19 @@ export class ProviderCatalog {
    * fingerprint, so the repair also needs a catalog no older than the providers listing it read (`PROVIDERS_TTL_S`);
    * a cold or stale one keeps the pair and starts a rebuild.
    */
-  sessionModelRepair(profileHome: string, model: string, provider: string | null): [string, string] | null {
+  sessionModelRepair(profileHome: string, model: string, provider: string | null, qualified = false): [string, string] | null {
     const catalog = this.currentModels(profileHome, PROVIDERS_TTL_S)
     const pid = canonicaliseProviderId(provider) || canonicaliseProviderId(catalog?.active_provider)
-    if (!catalog || this.lastModelsMeta.get(profileHome)?.unconfirmed.has(pid)) void this.models(profileHome).catch(() => undefined)
-    if (!catalog) return null
-    return repairSessionModel(catalog, model, provider, this.lastModelsMeta.get(profileHome)?.unconfirmed)
+    const unconfirmed = this.lastModelsMeta.get(profileHome)?.unconfirmed
+    if (!catalog || unconfirmed?.has(pid)) void this.models(profileHome).catch(() => undefined)
+    if (!catalog || unconfirmed?.has(pid)) return null
+    // TAL-1132: the catalog's own config read, whose fingerprint `currentModels` just matched.
+    const config = this.deps.config.peek(profileHome, { refresh: false })
+    const resolved = this.deps.config.peekResolved(profileHome)
+    const pinned = config && resolved ? pinnedCustomRepair(config, resolved, model, provider) : undefined
+    if (pinned !== undefined) return pinned
+    // A provider-qualified id names its route: only pinned evidence moves it.
+    return qualified ? null : repairSessionModel(catalog, model, provider, unconfirmed)
   }
 
   /**

@@ -259,7 +259,8 @@ export interface SessionServiceDeps {
   /** TAL-1040: the explicit launch route for `provider`: its configured endpoint (model, providers or custom_providers), else null. */
   profileLaunchRoute?: (profile: string, provider: string) => { provider: string; baseUrl: string | null }
   /** TAL-542: the pair a stale session model starts on, from the profile's catalog; `null` keeps it. */
-  repairSessionModel?: (profile: string | null, model: string, provider: string | null) => [string, string] | null
+  /** `qualified`: the model was unwrapped from a provider-qualified id, whose route only pinned-list evidence moves (TAL-1132). */
+  repairSessionModel?: (profile: string | null, model: string, provider: string | null, qualified: boolean) => [string, string] | null
   /** Explicit discovery for auxiliary title generation; ordinary turn admission uses only fresh cached repair evidence. */
   warmSessionModelRepair?: (profile?: string | null) => Promise<void>
   yolo: { isEnabled: (sid: string) => boolean; set: (sid: string, enabled: boolean) => void }
@@ -361,9 +362,10 @@ export class SessionService {
     const requestedModel = str(body.model) || s.model
     const requestedProvider = 'model_provider' in body ? (body.model_provider as string | null) : s.model_provider
     const [model, provider] = this.deps.modelStateFromRequest(requestedModel, requestedProvider, s.model_provider)
-    if (model !== requestedModel || !model || body.explicit_model_pick === true) return [model, provider, model !== requestedModel]
-    const repaired = this.deps.repairSessionModel?.(s.profile ?? null, model, provider)
-    return repaired ? [repaired[0], repaired[1], true] : [model, provider, false]
+    const unwrapped = model !== requestedModel
+    if (!model || body.explicit_model_pick === true) return [model, provider, unwrapped]
+    const repaired = this.deps.repairSessionModel?.(s.profile ?? null, model, provider, unwrapped)
+    return repaired ? [repaired[0], repaired[1], true] : [model, provider, unwrapped]
   }
 
   /**

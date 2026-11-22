@@ -388,13 +388,12 @@ export function parseProviderQualifiedModel(modelId: unknown): [string, string] 
 }
 
 const DISABLED_WORDS = new Set(['false', '0', 'no', 'off'])
+/** A config switch that is on unless it says `false`, `0`, `no` or `off`, as a word or a value. */
+const flagOn = (flag: unknown): boolean => (typeof flag === 'string' ? !DISABLED_WORDS.has(flag.trim().toLowerCase()) : Boolean(flag))
 
 /** Agent `is_provider_enabled`: a `providers.<key>` block is on unless `enabled` says otherwise. */
 export function providerRecordEnabled(record: unknown): boolean {
-  if (!isDict(record) || !('enabled' in record)) return true
-  const flag = record.enabled
-  if (typeof flag === 'string') return !DISABLED_WORDS.has(flag.trim().toLowerCase())
-  return Boolean(flag)
+  return !isDict(record) || !('enabled' in record) || flagOn(record.enabled)
 }
 
 /** Agent `_pick_provider_base_url`: the first non-empty of `base_url`, `url` and `api`. */
@@ -510,15 +509,50 @@ export function customProviderOwner(config: Config, provider: unknown, plugins?:
   return nativeCustomOwner(identity, nativeCustomIdentities(config, plugins).get(identity))
 }
 
+/** Markers older Agents wrote inside a `models` mapping; never model ids (Agent `_declared_model_ids`). */
+const MODEL_LIST_SENTINELS = new Set(['__explicit_model_allowlist__', '__discovered_model_catalog__'])
+const PY_STRING_ITEM = /\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")\s*(?:,|$)/y
+
+/**
+ * A `models` string as `hermes config set` and the JSON editor save a list (Agent `parse_config_string_list`): a JSON
+ * array, a Python literal list of strings, else one id. A string that opens a list but does not decode lists nothing.
+ */
+function decodedModelList(raw: string): unknown[] {
+  const text = raw.trim()
+  if (!text.startsWith('[')) return [text]
+  try { const parsed: unknown = JSON.parse(text); return Array.isArray(parsed) ? parsed : [] } catch { /* a Python literal */ }
+  const inner = text.endsWith(']') ? text.slice(1, -1) : null
+  if (inner === null) return []
+  const items: string[] = []
+  PY_STRING_ITEM.lastIndex = 0
+  while (PY_STRING_ITEM.lastIndex < inner.length && inner.slice(PY_STRING_ITEM.lastIndex).trim()) {
+    const match = PY_STRING_ITEM.exec(inner)
+    if (!match) return []
+    items.push((match[1] ?? match[2] ?? '').replace(/\\(.)/g, '$1'))
+  }
+  return items
+}
+
 export function configuredModelIds(raw: unknown): string[] {
-  const candidates: unknown[] = isDict(raw) ? Object.keys(raw) : Array.isArray(raw) ? raw : []
+  const list = typeof raw === 'string' ? decodedModelList(raw) : raw
+  const candidates: unknown[] = isDict(list) ? Object.keys(list) : Array.isArray(list) ? list : []
   const ids: string[] = []
   for (const item of candidates) {
     const candidate = isDict(item) ? (item.id ?? item.model ?? item.name) : item
     const id = str(candidate).trim()
-    if (id && !ids.includes(id)) ids.push(id)
+    if (id && !MODEL_LIST_SENTINELS.has(id) && !ids.includes(id)) ids.push(id)
   }
   return ids
+}
+
+/**
+ * TAL-1132 (Python `_custom_provider_allowlist_ids`): the ids a custom record's `models` pins. A discovery snapshot and a
+ * per-model metadata mapping pin nothing, because the live catalog may serve more; `discover_models: false` pins either.
+ */
+export function pinnedModelIds(entry: Dict): string[] {
+  const discovers = !('discover_models' in entry) || flagOn(entry.discover_models)
+  if (discovers && (entry.models_discovered === true || isDict(entry.models))) return []
+  return configuredModelIds(entry.models)
 }
 
 export function configuredModelOptions(raw: unknown): { id: string; label: string }[] {
