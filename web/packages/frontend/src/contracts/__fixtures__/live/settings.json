@@ -80,6 +80,7 @@
     "show_kanban_sessions": false,
     "show_previous_messaging_sessions": false,
     "show_quota_chip": false,
+    "quota_chip_window": "most_constrained",
     "show_sidebar_feedback": false,
     "sidebar_quota_sources": [],
     "show_thinking": true,

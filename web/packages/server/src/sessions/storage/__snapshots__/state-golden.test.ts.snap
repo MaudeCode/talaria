@@ -50,6 +50,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "send_key": "enter",
   "show_token_usage": false,
   "show_quota_chip": false,
+  "quota_chip_window": "most_constrained",
   "show_sidebar_feedback": false,
   "sidebar_quota_sources": [],
   "show_conversation_outline": false,

@@ -12,7 +12,7 @@ import { withDocumentQueue } from './sessions/storage/document.js'
 import { resolveDefaultWorkspace, type Env } from './config.js'
 import { normalizeTrustedLinkHosts } from './links.js'
 import { DISPLAY_SETTING_DEFAULTS } from './sessions/display-settings.js'
-import { KanbanPinnedBoardsSchema, MODEL_FAVORITES_MAX, ModelFavoritesSchema, HiddenModelsSchema, OUTSIDE_SOURCE_SETTING_KEYS, WebUpdateChannelSchema, type ModelFavorite } from '@maudecode/talaria-web-contracts'
+import { KanbanPinnedBoardsSchema, MODEL_FAVORITES_MAX, ModelFavoritesSchema, HiddenModelsSchema, OUTSIDE_SOURCE_SETTING_KEYS, QuotaChipWindowSchema, WebUpdateChannelSchema, type ModelFavorite } from '@maudecode/talaria-web-contracts'
 
 export type Settings = Record<string, unknown>
 
@@ -62,6 +62,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     send_key: 'enter',
     show_token_usage: false,
     show_quota_chip: false,
+    quota_chip_window: 'most_constrained',
     show_sidebar_feedback: false,
     sidebar_quota_sources: [],
     show_conversation_outline: false,
@@ -168,6 +169,7 @@ const ENUM_VALUES: Record<string, Set<string>> = {
   // TAL-2160: `shift+enter` sent like `enter`; a stored one reads as `enter` and new writes of it are refused.
   send_key: new Set(['enter', 'ctrl+enter']),
   sidebar_density: new Set(['compact', 'detailed']),
+  quota_chip_window: new Set(QuotaChipWindowSchema.options),
   update_channel: new Set(WebUpdateChannelSchema.options),
   agent_update_channel: new Set(['stable', 'experimental']),
   font_size: new Set(['small', 'default', 'large', 'xlarge']),

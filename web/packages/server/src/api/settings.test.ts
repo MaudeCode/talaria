@@ -1161,12 +1161,35 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(anthropic?.source_id).toBe(anthropicId)
     // TAL-2151: `?provider=` adds the composer chip's quota for that provider, null for one without a source; a plain read has none.
     expect(body).not.toHaveProperty('composer')
-    expect((await json(await s.get('/api/provider/quotas?provider=anthropic'))).composer).toEqual({ source_id: anthropicId, label: '88% left', percent_remaining: 88, level: 'healthy' })
+    expect((await json(await s.get('/api/provider/quotas?provider=anthropic'))).composer).toMatchObject({ source_id: anthropicId, label: '88% left', percent_remaining: 88, level: 'healthy' })
     expect((await json(await s.get('/api/provider/quotas?provider=zai'))).composer).toBeNull()
     const missing = await json(await s.get('/api/provider/quotas?source=qsrc_unknown'))
     expect(missing).toMatchObject({ requested_source_id: 'qsrc_unknown', missing_source: true, sources: [] })
     // The scope survives restarts: a second read answers the same id.
     expect((await json(await s.get(`/api/provider/quotas?source=${anthropicId}`))).sources).toHaveLength(1)
+  })
+
+  it('the composer chip headlines the window the saved quota_chip_window selects (TAL-2513)', async () => {
+    const reset = (h: number) => `2026-12-0${String(h)}T00:00:00Z`
+    sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', details: [], windows: [
+      { label: 'Session', used_percent: 20, window_seconds: 18_000, reset_at: reset(1) },
+      { label: 'Opus week', used_percent: 99, window_seconds: 604_800, reset_at: reset(2), scope: 'model' },
+      { label: 'Weekly', used_percent: 60, window_seconds: 604_800, reset_at: reset(3) },
+      { label: '30-day', used_percent: 10, window_seconds: 2_592_000, reset_at: reset(4) },
+    ] } }))
+    const chip = async () => dictOf((await json(await s.get('/api/provider/quotas?provider=anthropic&refresh=1'))).composer)
+    const headlines: unknown[] = []
+    for (const pick of ['most_constrained', 'shortest', 'longest']) {
+      expect((await json(await post(s, '/api/settings', { quota_chip_window: pick }))).quota_chip_window).toBe(pick)
+      const { label, reset_at } = await chip()
+      headlines.push([pick, label, reset_at])
+    }
+    expect(headlines).toEqual([['most_constrained', '40% left', reset(3)], ['shortest', '80% left', reset(1)], ['longest', '90% left', reset(4)]])
+    expect(((await chip()).windows as Json[]).map((w) => w.label)).toEqual(['Session', 'Weekly', '30-day', 'Opus week'])
+    // An unknown value is dropped like any enum outside its set; the saved choice stands.
+    await post(s, '/api/settings', { quota_chip_window: 'monthly' })
+    expect((await json(await s.get('/api/settings'))).quota_chip_window).toBe('longest')
+    await post(s, '/api/settings', { quota_chip_window: 'most_constrained' })
   })
 
   it('an available Agent snapshot, as the sidecar serialises it, loads as available (TAL-508)', async () => {
@@ -2842,19 +2865,20 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
   })
 
   const session = {
-    label: 'Session', used_percent: 10, remaining_percent: 90, reset_at: '2026-09-28T12:00:00Z', detail: null, window_seconds: 18_000,
+    label: 'Session', used_percent: 10, remaining_percent: 90, reset_at: '2026-09-28T12:00:00Z', detail: null, window_seconds: 18_000, scope: 'account',
     pace: { expected_remaining_percent: 80, expected_used_percent: 20, pace_delta_percent: 10, burn_rate: 0.5, minutes_to_reset: 240, projected_minutes_to_empty: 540, elapsed_minutes: 60, valid_until: '2026-09-28T12:00:00Z' },
     forecast: { outcome: 'safe', budget_unit: 'hour', budget_percent: 22.5, depletion_margin_minutes: 300 },
   }
   const weekly = {
-    label: 'Weekly', used_percent: 32, remaining_percent: 68, reset_at: '2026-10-03T08:00:00Z', detail: null, window_seconds: 604_800,
+    label: 'Weekly', used_percent: 32, remaining_percent: 68, reset_at: '2026-10-03T08:00:00Z', detail: null, window_seconds: 604_800, scope: 'account',
     pace: { expected_remaining_percent: 71.4, expected_used_percent: 28.6, pace_delta_percent: -3.4, burn_rate: 1.12, minutes_to_reset: 7200, projected_minutes_to_empty: 6120, elapsed_minutes: 2880, valid_until: '2026-10-03T08:00:00Z' },
     forecast: { outcome: 'warning', budget_unit: 'day', budget_percent: 13.6, depletion_margin_minutes: -1080 },
   }
-  const monthly = { label: 'Monthly', used_percent: 5, remaining_percent: 95, reset_at: '2026-10-15T00:00:00Z', detail: null, window_seconds: null, pace: null, forecast: null }
+  const monthly = { label: 'Monthly', used_percent: 5, remaining_percent: 95, reset_at: '2026-10-15T00:00:00Z', detail: null, window_seconds: null, scope: 'account', pace: null, forecast: null }
 
   it('both quota endpoints normalise windows and ship pace, forecast, window indexes and computed_at', async () => {
-    const quotas = await json(await s.get('/api/provider/quotas'))
+    // TAL-2513: the composer chip's read, so the fixture carries `composer` too.
+    const quotas = await json(await s.get('/api/provider/quotas?provider=anthropic'))
     const anthropic = (quotas.sources as Json[]).find((q) => q.provider_id === 'anthropic')
     // TAL-411 classifies the quotas windows at the default thresholds; the singular route's are unclassified.
     expect(anthropic?.windows).toEqual([

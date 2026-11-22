@@ -72,11 +72,11 @@ function toolsetsCatalog(choice: string[] | null, q = '') {
 }
 
 let modes: unknown = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }], selectable: true }
-vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn((choice: string[] | null, _session?: string, q?: string) => Promise.resolve(toolsetsCatalog(choice, q))), fetchModels: vi.fn((_freshness?: string, q?: string) => Promise.resolve(q ? searched(q) : catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn(), fetchProviderQuotas: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn((choice: string[] | null, _session?: string, q?: string) => Promise.resolve(toolsetsCatalog(choice, q))), fetchModels: vi.fn((_freshness?: string, q?: string) => Promise.resolve(q ? searched(q) : catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn(), fetchProviderQuotas: vi.fn(), fetchSettings: vi.fn(), saveSettings: vi.fn() }))
 vi.mock('../toast/errorToast', () => ({ showErrorToast: vi.fn() }))
 import { ExecutionModeChip, ModelChip, QuotaChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { Dialog } from '../../ui/Dialog'
-import { fetchExecutionModes, fetchModels, fetchProviderQuotas, fetchToolsetsCatalog, setModelFavorite } from '../../api/endpoints'
+import { fetchExecutionModes, fetchModels, fetchProviderQuotas, fetchSettings, fetchToolsetsCatalog, saveSettings, setModelFavorite } from '../../api/endpoints'
 import { showErrorToast } from '../toast/errorToast'
 import { ApiError } from '../../contracts/common'
 
@@ -665,19 +665,55 @@ describe('ExecutionModeChip (TAL-1040)', () => {
   })
 })
 
-describe('QuotaChip (TAL-2151)', () => {
-  it('opens the provider\'s Settings page for the chat\'s model with the server\'s label', async () => {
+describe('QuotaChip (TAL-2151, TAL-2513)', () => {
+  const composer = { source_id: 'qsrc_a', name: 'Anthropic · Work', label: '62% left', percent_remaining: 62, level: 'healthy' as const, reset_at: '2030-01-01T03:00:00Z', windows: [
+    { label: 'Session', percent_remaining: 62, detail: null, reset_at: '2030-01-01T03:00:00Z', level: 'healthy' as const, headline: true },
+    { label: 'Weekly', percent_remaining: 80, detail: null, reset_at: '2030-01-03T12:00:00Z', level: 'healthy' as const, headline: false },
+    { label: 'Extra usage', percent_remaining: null, detail: '$4 of $10', reset_at: null, level: 'healthy' as const, headline: false },
+  ] }
+  const mount = async (row = false) => {
     catalog = PLUGIN_CATALOG
-    vi.mocked(fetchProviderQuotas).mockResolvedValue({ version: 1, computed_at: '2026-11-10T00:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'anthropic', requested_source_id: null, missing_source: false, sources: [], composer: { source_id: 'qsrc_a', label: '62% left', percent_remaining: 62, level: 'healthy' } })
+    vi.mocked(fetchSettings).mockResolvedValue({ quota_chip_window: 'most_constrained' })
+    vi.mocked(fetchProviderQuotas).mockResolvedValue({ version: 1, computed_at: '2026-11-10T00:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'anthropic', requested_source_id: null, missing_source: false, sources: [], composer })
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const root = createRootRoute({ component: () => <QueryClientProvider client={qc}><Outlet /></QueryClientProvider> })
-    const chat = createRoute({ getParentRoute: () => root, path: '/session/$sessionId', component: () => <QuotaChip model="claude-sonnet-4-6" optionId="@fake-sub:claude-sonnet-4-6" /> })
+    const chat = createRoute({ getParentRoute: () => root, path: '/session/$sessionId', component: () => <QuotaChip model="claude-sonnet-4-6" optionId="@fake-sub:claude-sonnet-4-6" row={row} /> })
     const provider = createRoute({ getParentRoute: () => root, path: '/settings/providers/$providerId', component: () => <p>provider page</p> })
     const router = createRouter({ routeTree: root.addChildren([chat, provider]), history: createMemoryHistory({ initialEntries: ['/session/s1'] }) })
     await router.load()
     render(<RouterProvider router={router} />)
-    await userEvent.click(await screen.findByRole('button', { name: 'Provider quota: 62% left' }))
+    return router
+  }
+  const windows = (scope: HTMLElement) => Array.from(scope.querySelectorAll('[data-quota-window]'), (li) => li.textContent)
+
+  it('opens the server\'s windows in order from the keyboard, with resets, and links to the provider\'s Settings page', async () => {
+    const router = await mount()
+    const chip = await screen.findByRole('button', { name: 'Provider quota: 62% left' })
+    chip.focus()
+    await userEvent.keyboard('{Enter}')
+    const popup = await screen.findByRole('dialog', { name: 'Provider quota' })
+    expect(within(popup).getByText('Anthropic · Work')).toBeInTheDocument()
+    expect(windows(popup)).toEqual([expect.stringMatching(/^Session62%Remaining.*Resets /), expect.stringMatching(/^Weekly80%Remaining.*Resets /), 'Extra usage$4 of $10'])
+    expect(popup.querySelector('[data-headline]')?.getAttribute('data-quota-window')).toBe('Session')
+    // Picking which window the chip shows saves the setting and shows the pick at once; the server then headlines it.
+    const reads = vi.mocked(fetchProviderQuotas).mock.calls.length
+    let save!: (value: Record<string, unknown>) => void
+    vi.mocked(saveSettings).mockReturnValueOnce(new Promise((resolve) => { save = resolve }))
+    await userEvent.click(within(popup).getByRole('radio', { name: 'Longest' }))
+    expect(within(popup).getByRole('radio', { name: 'Longest' })).toHaveAttribute('aria-checked', 'true')
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ quota_chip_window: 'longest' }))
+    await act(async () => { save({ quota_chip_window: 'longest' }); await Promise.resolve() })
+    await waitFor(() => expect(vi.mocked(fetchProviderQuotas).mock.calls.length).toBeGreaterThan(reads))
+    await userEvent.click(within(popup).getByRole('button', { name: 'Provider settings' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/settings/providers/fake-sub'))
     expect(fetchProviderQuotas).toHaveBeenCalledWith(false, 'fake-sub')
+  })
+
+  it('lists the same windows inline in the phone\'s overflow row, with the Settings link a tap away', async () => {
+    const router = await mount(true)
+    const row = await screen.findByRole('group', { name: 'Provider quota: 62% left' })
+    expect(windows(row).map((t) => t?.split(/\d/)[0])).toEqual(['Session', 'Weekly', 'Extra usage$'])
+    await userEvent.click(within(row).getByRole('button', { name: 'Provider settings' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/settings/providers/fake-sub'))
   })
 })

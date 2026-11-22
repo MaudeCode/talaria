@@ -143,10 +143,12 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
   publish()
   // Settings the server reads into other payloads: once one is stored (or a reread settles an unknown outcome) those
   // queries re-read, even after the page that wrote it has closed: open transcripts read `SESSION_DETAIL_SETTINGS`, the
-  // chat list and sidebar searches `SESSION_LIST_SETTINGS`.
+  // chat list and sidebar searches `SESSION_LIST_SETTINGS`, the composer quota chip `quota_chip_window`.
   const refreshDependents = () => {
     if (fields.some((key) => SESSION_DETAIL_SETTINGS.has(key))) void qc.invalidateQueries({ queryKey: [...keys.sessions.all, 'detail'] })
     if (fields.some((key) => SESSION_LIST_SETTINGS.has(key))) void invalidateSessionQueries(qc)
+    // TAL-2513: the composer chip's window is the server's pick from `quota_chip_window`.
+    if (fields.includes('quota_chip_window')) void qc.invalidateQueries({ queryKey: keys.providerQuotas })
   }
   let unknown = false
   try {

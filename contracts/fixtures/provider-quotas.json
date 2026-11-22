@@ -32,6 +32,7 @@
           "reset_at": "2026-09-28T12:00:00Z",
           "detail": null,
           "window_seconds": 18000,
+          "scope": "account",
           "pace": {
             "expected_remaining_percent": 80,
             "expected_used_percent": 20,
@@ -64,6 +65,7 @@
           "reset_at": "2026-10-03T08:00:00Z",
           "detail": null,
           "window_seconds": 604800,
+          "scope": "account",
           "pace": {
             "expected_remaining_percent": 71.4,
             "expected_used_percent": 28.6,
@@ -96,6 +98,7 @@
           "reset_at": "2026-10-15T00:00:00Z",
           "detail": null,
           "window_seconds": null,
+          "scope": "account",
           "pace": null,
           "forecast": null,
           "projection_eligible": false,
@@ -174,6 +177,40 @@
   "retained_display_level": null,
   "sidebar_source_ids": [],
   "sidebar_can_pin": true,
+  "composer": {
+    "source_id": "qsrc_69e3029fba20a8b0ea82fff362e093f5",
+    "name": "Anthropic",
+    "label": "68% left",
+    "percent_remaining": 68,
+    "level": "warning",
+    "reset_at": "2026-10-03T08:00:00Z",
+    "windows": [
+      {
+        "label": "Session",
+        "percent_remaining": 90,
+        "detail": null,
+        "reset_at": "2026-09-28T12:00:00Z",
+        "level": "healthy",
+        "headline": false
+      },
+      {
+        "label": "Weekly",
+        "percent_remaining": 68,
+        "detail": null,
+        "reset_at": "2026-10-03T08:00:00Z",
+        "level": "warning",
+        "headline": true
+      },
+      {
+        "label": "Monthly",
+        "percent_remaining": 95,
+        "detail": null,
+        "reset_at": "2026-10-15T00:00:00Z",
+        "level": "healthy",
+        "headline": false
+      }
+    ]
+  },
   "summary": {
     "connected": 2,
     "lowest": {

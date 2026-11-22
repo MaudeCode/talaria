@@ -3,7 +3,7 @@ import { feedbackDiagnostics, feedbackOptions, submitFeedback } from '../feedbac
 import { dashboardScope } from '../tools/dashboard-plugins.js'
 import { implement } from '@orpc/server'
 import { RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
-import { settingsContract } from '@maudecode/talaria-web-contracts'
+import { QuotaChipWindowSchema, settingsContract } from '@maudecode/talaria-web-contracts'
 import { WEB_UPDATE_CHANNELS } from '../tools/updates.js'
 import { gatewayRecordedAt, type GatewayProcess } from '../tools/health.js'
 import { HttpError, type ApiContext } from './router.js'
@@ -266,12 +266,17 @@ async function saveGroupDiscussionLimits(ctx: RequestContext, patch: Partial<Dis
   }, { profileFile: true, afterWrite: async () => { await ctx.deps.settings.save({ group_discussion_restart_baseline: { limits: loaded, saved_at: Date.now() } }) } })
 }
 
-/** TAL-1870: a quota read with the sidebar's pins projected over its rows; TAL-2151: with `provider`, also the composer chip's quota for it. */
+/**
+ * TAL-1870: a quota read with the sidebar's pins projected over its rows; TAL-2151: with `provider`, also the composer chip's
+ * quota for it, headlined by the `quota_chip_window` setting (TAL-2513).
+ */
 async function quotasWithSidebar(ctx: RequestContext, opts: { sourceId?: string | null; refresh?: boolean; provider?: string | null }) {
   const body = await ctx.deps.catalog.quotas(home(ctx), activeProfileName(ctx), opts)
+  const settings = await ctx.deps.settings.load()
+  const pick = QuotaChipWindowSchema.catch('most_constrained').parse(settings.quota_chip_window)
   return {
-    ...body, ...sidebarQuotaProjection((await ctx.deps.settings.load()).sidebar_quota_sources, body.sources, (body.availability as { authoritative: boolean }).authoritative),
-    ...(opts.provider ? { composer: composerQuota(body.sources as QuotaSourceRow[], opts.provider) } : {}),
+    ...body, ...sidebarQuotaProjection(settings.sidebar_quota_sources, body.sources, (body.availability as { authoritative: boolean }).authoritative),
+    ...(opts.provider ? { composer: composerQuota(body.sources as QuotaSourceRow[], opts.provider, pick) } : {}),
   }
 }
 
