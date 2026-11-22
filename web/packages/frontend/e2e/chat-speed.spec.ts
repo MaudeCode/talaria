@@ -21,12 +21,17 @@ test('a chat picks its own speed from the effort chip and keeps it across a relo
   const shot = (name: string) => shots ? page.screenshot({ path: `${shots}/${testInfo.project.name}-${name}.png` }).then(() => undefined) : Promise.resolve()
   await page.goto(`/session/${sid}`)
   await settle(page)
-  // A phone composer shows its controls once focused, and a narrow one moves the chip into its settings panel.
+  // A phone composer shows its controls once focused and folds the chip into its settings panel once it fits its footer,
+  // so wait for that layout instead of reading the chip mid-refit.
   const chip = (name: string) => page.getByRole('button', { name, exact: true }).filter({ visible: true })
   const open = async (name: string) => {
     await page.getByRole('textbox').click()
-    const panel = page.locator('#composerMobileConfigBtn')
-    if (!await chip(name).count() && await panel.getAttribute('aria-expanded') !== 'true') await panel.click()
+    if (testInfo.project.name === 'mobile') {
+      await expect(page.locator('.composer-footer.cf-burger')).toBeVisible()
+      const panel = page.locator('#composerMobileConfigBtn')
+      if (await panel.getAttribute('aria-expanded') !== 'true') await panel.click()
+      await expect(panel).toHaveAttribute('aria-expanded', 'true')
+    }
     await chip(name).click()
   }
   await open('Reasoning effort: High')
