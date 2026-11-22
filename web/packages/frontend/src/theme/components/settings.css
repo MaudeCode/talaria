@@ -1,23 +1,6 @@
 /* settings: component rules for this feature, in @layer app (after utilities). Colours, radii and
    fonts come from the token vocabulary in src/theme/skins.ts; no rule mentions a skin or a theme. */
 @layer app{
-.onboarding-card{width:min(980px,100%);max-height:min(760px,94vh);overflow:auto;border:1px solid var(--accent-bg-strong);border-radius:24px;background:var(--dialog-bg);box-shadow:0 24px 80px rgba(0,0,0,.45)}
-.onboarding-step{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border-radius:14px;border:1px solid transparent;background:var(--overlay-faint)}
-.onboarding-step.active{border-color:var(--accent-bg-strong);background:var(--accent-bg)}
-.onboarding-step.done{background:var(--accent-bg)}
-.onboarding-check{padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--overlay-faint);display:flex;flex-direction:column;gap:5px}
-.onboarding-check strong{font-size:13px;color:var(--text)}
-.onboarding-check span{font-size:12px;color:var(--muted);line-height:1.5}
-.onboarding-check.ok{border-color:var(--accent-bg);background:var(--accent-bg)}
-.onboarding-check.warn{border-color:var(--accent-bg-strong);background:var(--accent-bg)}
-.onboarding-field{display:flex;flex-direction:column;gap:6px}
-.onboarding-field span{font-size:12px;font-weight:700;color:var(--text)}
-.onboarding-field input,.onboarding-field select{margin-bottom:0;padding:10px 12px;border-radius:10px;font-size:13px;background:var(--input-bg);border:1px solid var(--border2);color:var(--text)}
-.onboarding-copy{font-size:12px;color:var(--muted);line-height:1.7}
-.onboarding-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-.onboarding-summary div{padding:14px;border-radius:14px;background:var(--overlay-faint);border:1px solid var(--border);display:flex;flex-direction:column;gap:5px}
-.onboarding-summary strong{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
-.onboarding-summary span{font-size:13px;color:var(--text);word-break:break-word}
 #mainSettings{overflow-y:auto}
 #mainSettings select,#mainSettings input[type="text"],#mainSettings input[type="password"]{background:var(--bg) !important;color:var(--text) !important;border:1px solid var(--border) !important;border-radius:8px !important;padding:8px 12px !important;font-size:13px !important;width:100%;transition:border-color .15s,box-shadow .15s}
 #mainSettings select:focus,#mainSettings input[type="text"]:focus,#mainSettings input[type="password"]:focus{border-color:var(--accent) !important;box-shadow:0 0 0 3px var(--accent-bg);outline:none}

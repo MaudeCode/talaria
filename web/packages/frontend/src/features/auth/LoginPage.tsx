@@ -55,7 +55,7 @@ export function LoginPage({ next }: { next: string | undefined }) {
 
   return (
     <main className="flex h-full items-center justify-center bg-bg p-4 text-text">
-      <div className="w-80 rounded-2xl border border-border bg-surface p-8 text-center shadow-md">
+      <div className="w-80 max-w-full text-center">
         <div className="brandmark mx-auto mb-3 h-12 w-12" aria-hidden="true" />
         <h1 className="mb-1 text-lg font-semibold text-strong">{bootstrap.bot_name}</h1>
         <p className="mb-6 text-xs text-muted">{m.login_subtitle()}</p>
