@@ -325,11 +325,24 @@ final class StreamHostedTests: XCTestCase {
     func testChatStreamPreservesChronologyAndSettlesWithoutDuplication() async throws {
         let fixture = try FixtureApp(["--ui-test-chat-full"], for: self)
         let session = try await fixture.session()
-        let window = try hostWindow(fixture.chat(session))
+        let viewModel = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client, networkPath: nil)
+        let window = try hostWindow(fixture.chat(session, viewModel: viewModel))
         try await sendFromComposer("Run the deterministic fixture", in: window)
 
         _ = try await requireElement(in: window, label: "Run the deterministic fixture")
         _ = try await requireElement(in: window, label: "Approval required")
+        // TAL-625: the live turn shows each streamed text once, not only the settled one after the reopen.
+        for once in ["Fixture opening.", "Fixture progress."] {
+            let shown = HostedAccessibility.elements(in: window).filter(label(once))
+            XCTAssertEqual(shown.count, 1, """
+            Live \(once) is not shown once. TAL-625 trace: frames=\(shown.map(\.accessibilityFrame)) \
+            live=\(viewModel.liveActivityRows.map { "\($0.id)|\($0.content)" }) \
+            messages=\(viewModel.messages.map { "\($0.role ?? "")|\($0.messageId ?? "")|\($0.content ?? "")" }) \
+            transcript=\(viewModel.displayedTranscriptMessages.map { "\($0.id)|\($0.assistantSegments.map(\.anchorID))" }) \
+            streaming=\(viewModel.streamingAssistantMessageID ?? "nil") reasoning=\(viewModel.reasoningAnchorMessageID ?? "nil") \
+            tool=\(viewModel.toolCallAnchorMessageID ?? "nil")
+            """)
+        }
         let opening = try await requireElement(in: window, label: "Fixture opening.")
         let liveThinking = try await requireElement(in: window, where: labelContaining("Thinking, Inspecting fixture"))
         let liveProgress = try await requireElement(in: window, label: "Fixture progress.")
