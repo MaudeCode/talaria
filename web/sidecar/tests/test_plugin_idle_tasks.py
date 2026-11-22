@@ -20,7 +20,8 @@ def native(monkeypatch, tmp_path):
     """An Agent idle-task module over one synthetic state file whose writer can be made to lose the write, as the
     Agent's ``save_state`` does when it swallows an error."""
     path = tmp_path / "compact-notes.json"
-    path.write_text(json.dumps({"plugin": "team-notes", "task": "compact-notes", "paused": False, "last_run_at": "2026-11-20T08:00:00+00:00", "interval_hours": 24}))
+    path.write_text(json.dumps({"plugin": "team-notes", "task": "compact-notes", "paused": False, "last_run_at": "2026-11-20T08:00:00+00:00", "interval_hours": 24,
+                                "last_status": "error", "last_error": "RuntimeError: refused key plugin-shaped-secret"}))
     state = {"lose_write": False, "writes": []}
 
     def load_state(p, plugin_id="", name=""):
@@ -34,9 +35,18 @@ def native(monkeypatch, tmp_path):
     module = ModuleType("hermes_cli.plugins_idle_tasks")
     module.__dict__.update(load_state=load_state, set_paused=set_paused, next_due=lambda s: "2026-11-21T08:00:00+00:00",
                            iter_state_files=lambda plugin_id=None: iter([(path, load_state(path))] if plugin_id in (None, "team-notes") else []))
+    # The Agent's built-in patterns, which know no plugin's key shape.
+    monkeypatch.setattr("talaria_sidecar.redaction.redact_key_shapes", lambda text: text)
     monkeypatch.setitem(sys.modules, "hermes_cli", ModuleType("hermes_cli"))
     monkeypatch.setitem(sys.modules, "hermes_cli.plugins_idle_tasks", module)
     return state
+
+
+def test_without_the_profile_plugins_loaded_no_task_result_is_shown(native):
+    """The profile's plugins register their own redaction patterns as they load; this Agent has no plugin manager, so
+    a plugin-written error could carry a key only that plugin's pattern masks."""
+    assert [(row["task"], row["last_status"], row["last_result"]) for row in plugin_idle_tasks.idle_tasks()["tasks"]] == [("compact-notes", "error", None)]
+    assert plugin_idle_tasks.set_paused("team-notes", "compact-notes", True)["last_result"] is None
 
 
 def test_pausing_reads_the_state_back_and_refuses_a_write_the_agent_lost(native):

@@ -46,7 +46,8 @@ def _next_due(native, state: dict) -> str | None:
     return due if isinstance(due, str) else None
 
 
-def _row(native, state: dict, *, seeded: bool, interval=None) -> dict:
+def _row(native, state: dict, *, seeded: bool, masked: bool, interval=None) -> dict:
+    """One task's state; ``last_result`` only when ``masked`` (the profile's plugin redaction patterns are loaded)."""
     interval = state.get("interval_hours") if interval is None else interval
     last_run = state.get("last_run_at")
     status = state.get("last_status")
@@ -58,34 +59,37 @@ def _row(native, state: dict, *, seeded: bool, interval=None) -> dict:
         "next_due_at": _next_due(native, state) if seeded else None,
         "interval_hours": float(interval) if isinstance(interval, (int, float)) and not isinstance(interval, bool) and math.isfinite(interval) else None,
         "last_status": status if status in ("ok", "error") else None,
-        "last_result": _text(state.get("last_error")) or _text(state.get("last_summary")),
+        "last_result": (_text(state.get("last_error")) or _text(state.get("last_summary"))) if masked else None,
     }
 
 
-def _registered(native) -> list:
-    """The profile's loaded plugin manager's registered tasks; none when it cannot load or belongs to another profile."""
+def _registered(native) -> list | None:
+    """Load the profile's plugins, which registers their redaction patterns, and return their registered tasks; None when
+    they cannot load or the manager belongs to another profile, so no plugin-written text is shown unmasked."""
     try:
         from hermes_cli.plugins import get_plugin_manager
         from hermes_constants import hermes_home_key
 
         manager = get_plugin_manager()
         if manager.scope_key != hermes_home_key():
-            return []
+            return None
         manager.discover_and_load(force=False)
         return list(native.registered_idle_tasks(manager).values())
-    except Exception:  # noqa: BLE001 - the persisted list stays readable
-        return []
+    except Exception:  # noqa: BLE001 - the persisted list stays readable, without its results
+        return None
 
 
 def idle_tasks() -> dict:
     native = _agent()
     if native is None:
         return {"supported": False, "tasks": []}
-    rows = [row for _path, state in native.iter_state_files() if (row := _row(native, state, seeded=True))["plugin"] and row["task"]]
+    registered = _registered(native)  # first: a plugin's own redaction patterns mask its task results
+    masked = registered is not None
+    rows = [row for _path, state in native.iter_state_files() if (row := _row(native, state, seeded=True, masked=masked))["plugin"] and row["task"]]
     seen = {(row["plugin"], row["task"]) for row in rows}
-    for spec in _registered(native):
+    for spec in registered or []:
         if (spec.plugin_id, spec.name) not in seen:
-            rows.append(_row(native, {"plugin": spec.plugin_id, "task": spec.name}, seeded=False, interval=spec.interval_hours))
+            rows.append(_row(native, {"plugin": spec.plugin_id, "task": spec.name}, seeded=False, masked=masked, interval=spec.interval_hours))
     rows.sort(key=lambda row: (row["plugin"], row["task"]))
     return {"supported": True, "tasks": rows[:MAX_TASKS]}
 
@@ -97,6 +101,7 @@ def set_paused(key: str, task: str, paused) -> dict:
     native = _agent()
     if native is None:
         raise RpcError("This Hermes Agent has no plugin idle tasks", condition="idle_tasks_unsupported")
+    masked = _registered(native) is not None
     path = next((path for path, state in native.iter_state_files(key) if state.get("task") == task), None)
     if path is None:
         raise RpcError(f"No idle task {task!r} of plugin {key!r} has run or been seeded in this profile", condition="idle_task_not_found")
@@ -104,7 +109,7 @@ def set_paused(key: str, task: str, paused) -> dict:
     state = native.load_state(path, key, task)
     if state.get("paused") is not paused:
         raise RpcError(f"The idle task {task!r} could not be {'paused' if paused else 'resumed'}", condition="idle_task_not_saved")
-    return _row(native, state, seeded=True)
+    return _row(native, state, seeded=True, masked=masked)
 
 
 def register(reg) -> None:
