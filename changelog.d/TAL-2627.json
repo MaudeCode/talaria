@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On short landscape screens, Web's slash-command list now stays below the header and scrolls, so the highlighted command is always visible.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

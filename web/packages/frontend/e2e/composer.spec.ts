@@ -615,6 +615,28 @@ test('slash suggestions show the server catalog above the composer, aliases incl
   await expect(palette.getByRole('option', { name: /\/terminal/ })).toBeVisible()
 })
 
+/** TAL-2627: on a short landscape viewport (iPhone Duo outer display) the palette fits below the header and scrolls its rows. */
+test('the slash palette stays below the header and keeps the active row in view on a short landscape viewport (TAL-2627)', async ({ page }) => {
+  await page.setViewportSize({ width: 594, height: 368 })
+  await page.goto('/')
+  await page.locator('#msg').pressSequentially('/')
+  const options = page.getByRole('listbox', { name: 'Commands' }).getByRole('option')
+  await expect(options.nth(2)).toBeAttached()
+  /** Whether the row's centre is the row itself on screen: inside the viewport, below the header and covered by nothing. */
+  const onTop = (row: number) => options.nth(row).evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    const header = document.querySelector('.app-titlebar')!.getBoundingClientRect()
+    return r.top >= header.bottom && r.bottom <= window.innerHeight && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
+  })
+  await expect(options.first()).toHaveAttribute('aria-selected', 'true')
+  await expect.poll(() => onTop(0), 'the active first row shows below the header').toBe(true)
+  // ArrowUp wraps to the last row, which the list scrolls into view.
+  await page.locator('#msg').press('ArrowUp')
+  const last = await options.count() - 1
+  await expect(options.nth(last)).toHaveAttribute('aria-selected', 'true')
+  await expect.poll(() => onTop(last), 'the active last row scrolls into view').toBe(true)
+})
+
 /** TAL-1078: a running turn and its queue float as separate chips a gap above the card, inside the measured dock. */
 for (const size of ['default', 'xlarge'] as const) {
   test(`the run status and the queue float as separate chips over the composer: ${size} text (TAL-1078)`, async ({ page }, testInfo) => {
