@@ -3,6 +3,7 @@ import type { SessionOutline, SessionOutlineEntry } from '@maudecode/talaria-web
 import { markdownPlainText } from '../text/markdown.js'
 import { str } from '../util.js'
 import { messageText } from './merge.js'
+import { transcriptRowKey } from './transcript-row.js'
 
 export const OUTLINE_EXCERPT_MAX = 120
 /** A chat shows its outline from this many questions; a shorter one is read whole at a glance. */
@@ -53,10 +54,9 @@ export function outlineEntries(rows: readonly { message: unknown; index: number 
   return rows.flatMap(({ message: m, index }) => {
     if (!isDict(m) || m.role !== 'user') return []
     if (!m._steer && (m._display !== 'row' || m._marker_kind || m._delivery || m._notice_kind || m._background_update)) return []
-    const id = m.message_id ?? m.id
     return [{
-      // The transcript's row key (`messageKey`), so a jump finds the row this entry names.
-      message_id: typeof id === 'string' || typeof id === 'number' ? String(id) : `${String(index)}-user`,
+      // The transcript's row key, so a jump finds the row this entry names.
+      message_id: transcriptRowKey(m, index),
       index,
       excerpt: outlineExcerpt(m),
       created_at: typeof m.timestamp === 'number' && Number.isFinite(m.timestamp) ? m.timestamp : null,

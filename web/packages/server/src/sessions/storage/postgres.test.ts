@@ -74,7 +74,7 @@ it('finds matches across 200 sessions with one statement that the trigram index 
   const queries = vi.spyOn(pg.Client.prototype, 'query')
   // The whole history: the trigram index, not the (session_id, idx) key, is what narrows it.
   const found = await storage.sessions.searchMessages(sids, sessionSearchTerms('needle'), 0)
-  expect(found).toEqual(new Map([['session-77', { idx: 4, text: 'The NEEDLE is here' }]]))
+  expect(found).toEqual(new Map([['session-77', { idx: 4, text: 'The NEEDLE is here', key: '4-user' }]]))
   expect(queries).toHaveBeenCalledTimes(1)
   const [sql, params] = queries.mock.calls[0] as unknown as [string, unknown[]]
   vi.restoreAllMocks()
@@ -107,7 +107,7 @@ it('keeps searching a session past a row only its stored search text matched', a
     { role: 'user', content: 'nee\0dle' }, { role: 'user', content: 'a\ud800b' }, { role: 'assistant', content: 'needle and a\ufffdb' }, { role: 'user', content: 'x\0y' },
   ] } }, null)
   const search = async (query: string) => await storage.sessions.searchMessages(['session'], sessionSearchTerms(query), 0)
-  expect(await search('needle')).toEqual(new Map([['session', { idx: 2, text: 'needle and a\ufffdb' }]]))
+  expect(await search('needle')).toEqual(new Map([['session', { idx: 2, text: 'needle and a\ufffdb', key: '2-assistant' }]]))
   expect((await search('a\ufffdb')).get('session')?.idx).toBe(2)
   expect((await search('a\ud800b')).get('session')?.idx).toBe(1)
   expect((await search('x\0y')).get('session')?.idx).toBe(3)

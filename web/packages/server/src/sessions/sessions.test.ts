@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from 'node:os'
 import { readMetadataJsonPrefixWithSignature, statSignature } from './storage/json-files.js'
 import { Session } from './session.js'
+import { compactionRow } from './merge.js'
 import { allSessions } from './list.js'
 import { stampCompressionExhaustedRecovery } from './turn.js'
 import { join } from 'node:path'
@@ -824,6 +825,66 @@ describe('multi-word session search (TAL-453)', () => {
     expect(ids(await hits('checklist relay', sidebar))).toEqual([titled])
     expect(await hits('max quasar', sidebar)).toEqual([expect.objectContaining({ session_id: metadata, match_type: 'metadata' })])
     expect(ids(await hits('bug auth', sidebar)).sort()).toEqual([content, late].sort())
+  })
+})
+
+describe('content search landing (TAL-1922)', () => {
+  useSelectedStorage()
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('places each content hit on the transcript row a paged detail read shows, on the resident and stored paths', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const stored = (await s.deps.sessionStore.get(sid))
+    Object.assign(stored, { title: 'Landing chat', model: 'landmodel-x' })
+    stored.messages = [
+      { role: 'user', content: 'opening question', timestamp: 9000 },
+      { role: 'assistant', content: 'landprobe withheld', display_kind: 'hidden', timestamp: 9001 },
+      compactionRow('Context compacted', 9002, 'landing'),
+      { role: 'user', content: 'landprobe alpha question', timestamp: 9003 },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'terminal', arguments: '{}' } }], timestamp: 9004 },
+      { role: 'tool', tool_call_id: 'call-1', content: 'landprobe tool output', timestamp: 9005 },
+      { role: 'assistant', content: 'landprobe beta answer', id: 'a-77', timestamp: 9006 },
+      ...Array.from({ length: 12 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `later ${String(i)}`, timestamp: 9007 + i })),
+    ]
+    await s.deps.sessionStore.save(stored)
+    const sidebar = '&project_id=none&include_archived=0'
+    const hit = async (q: string, extra = ''): Promise<Json | undefined> => ((await json(await s.get(`/api/sessions/search?q=${encodeURIComponent(q)}${extra}`))).sessions as Json[]).find((r) => r.session_id === sid)
+    const landing = (row: Json | undefined) => row && { match_type: row.match_type, match_message_idx: row.match_message_idx, match_message_key: row.match_message_key }
+    const expectHits = async () => {
+      for (const route of ['&depth=0', `&depth=0${sidebar}`]) {
+        expect(landing(await hit('landprobe alpha', route)), route).toEqual({ match_type: 'content', match_message_idx: 3, match_message_key: '3-user' })
+        expect(landing(await hit('landprobe beta', route)), route).toEqual({ match_type: 'content', match_message_idx: 6, match_message_key: 'a-77' })
+        // A tool result shows inside its turn, so the hit opens the chat at the bottom.
+        expect(landing(await hit('landprobe tool', route)), route).toEqual({ match_type: 'content', match_message_idx: undefined, match_message_key: undefined })
+        expect(await hit('landprobe withheld', route), route).toBeUndefined()
+        expect(landing(await hit('landing chat', route)), route).toEqual({ match_type: 'title', match_message_idx: undefined, match_message_key: undefined })
+        // The default depth searches only the first five messages.
+        expect(landing(await hit('landprobe alpha', route.replace('depth=0', 'depth=3'))), route).toBeUndefined()
+        expect(landing(await hit('landprobe alpha', route.replace('&depth=0', ''))), route).toEqual({ match_type: 'content', match_message_idx: 3, match_message_key: '3-user' })
+      }
+      expect(landing(await hit('landmodel', sidebar))).toEqual({ match_type: 'metadata', match_message_idx: undefined, match_message_key: undefined })
+    }
+    expect(s.deps.sessionStore.sessions.has(sid)).toBe(true)
+    await expectHits()
+    s.deps.sessionStore.sessions.delete(sid)
+    await expectHits()
+    expect(s.deps.sessionStore.sessions.has(sid)).toBe(false)
+
+    // Page the transcript as the client does until the matched row is loaded; the shared fixture pins the rows it projects.
+    const cases: Json[] = []
+    for (const query of ['landprobe alpha', 'landprobe beta']) {
+      const row = (await hit(query, '&depth=0'))!
+      const idx = Number(row.match_message_idx)
+      let page = (await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=4`))).session as Json
+      while (Number(page._messages_offset) > idx) page = (await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=4&msg_before=${String(page._messages_offset)}`))).session as Json
+      const offset = Number(page._messages_offset)
+      const messages = page.messages as Json[]
+      expect(str(messages[idx - offset]?.content), query).toContain(query)
+      cases.push({ query, match_message_idx: idx, match_message_key: row.match_message_key, offset, messages: messages.map((m) => Object.fromEntries(['role', 'id', 'message_id', '_display'].flatMap((k) => (k in m ? [[k, m[k]]] : [])))) })
+    }
+    expect({ cases }).toEqual(JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/session-search-landing.json'), 'utf8')))
   })
 })
 

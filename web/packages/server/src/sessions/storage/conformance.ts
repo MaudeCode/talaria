@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Session, type Message } from '../session.js'
 import { ShareStore } from '../shares.js'
 import { RevisionConflict, type StorageBackend } from './backend.js'
-import { sessionSearchMatches, sessionSearchMessageText, sessionSearchTerms } from './search-text.js'
+import { sessionSearchEntry, sessionSearchMatches, sessionSearchMessageText, sessionSearchTerms } from './search-text.js'
 import { keepRecent } from '../../test/storage.js'
 
 export interface SessionBackendFixture {
@@ -153,7 +153,7 @@ export function runSessionBackendConformance(name: string, makeStorage: () => Se
         const terms = sessionSearchTerms(query)
         const candidates = await s.readMessages('session', { start: 0, end: depth || Infinity })
         const idx = candidates.findIndex((m) => sessionSearchMatches(sessionSearchMessageText(m), terms))
-        const expected = idx < 0 ? new Map() : new Map([['session', { idx, text: sessionSearchMessageText(candidates[idx]) }]])
+        const expected = idx < 0 ? new Map() : new Map([['session', { idx, ...sessionSearchEntry(candidates[idx], idx) }]])
         expect(await s.searchMessages(['session', 'unknown', 'deleted'], terms, depth), `${query}, depth ${depth}`).toEqual(expected)
       }
       expect(await s.searchMessages([], ['echo'], 0)).toEqual(new Map())
@@ -168,7 +168,26 @@ export function runSessionBackendConformance(name: string, makeStorage: () => Se
         { role: 'assistant', content: 'needle shown' },
       ])
       for (const query of ['withheld', 'steered', 'needle withheld']) expect(await s.searchMessages(['session'], sessionSearchTerms(query), 0), query).toEqual(new Map())
-      expect(await s.searchMessages(['session'], sessionSearchTerms('needle'), 0)).toEqual(new Map([['session', { idx: 3, text: 'needle shown' }]]))
+      expect(await s.searchMessages(['session'], sessionSearchTerms('needle'), 0)).toEqual(new Map([['session', { idx: 3, text: 'needle shown', key: '3-assistant' }]]))
+    })
+
+    it('keys each hit by the transcript row it lands on, and none inside a turn (TAL-1922)', async () => {
+      const s = fixture.storage.sessions
+      await write([
+        { role: 'user', content: 'start' },
+        { role: 'assistant', content: 'alpha withheld', display_kind: 'hidden' },
+        { role: 'tool', content: 'alpha tool output' },
+        { role: 'user', content: 'beta steer', _steer: true },
+        { role: 'assistant', content: 'gamma reply', id: 42 },
+        { role: 'user', content: 'delta prompt', message_id: 'm-5', id: 7 },
+        { role: 'assistant', content: 'epsilon reply' },
+      ])
+      const hit = async (query: string) => (await s.searchMessages(['session'], sessionSearchTerms(query), 0)).get('session')
+      expect(await hit('alpha')).toEqual({ idx: 2, text: 'alpha tool output', key: null })
+      expect(await hit('beta')).toEqual({ idx: 3, text: 'beta steer', key: null })
+      expect(await hit('gamma')).toEqual({ idx: 4, text: 'gamma reply', key: '42' })
+      expect(await hit('delta')).toEqual({ idx: 5, text: 'delta prompt', key: 'm-5' })
+      expect(await hit('epsilon')).toEqual({ idx: 6, text: 'epsilon reply', key: '6-assistant' })
     })
 
     it('closes without losing committed data and rejects subsequent reads', async () => {

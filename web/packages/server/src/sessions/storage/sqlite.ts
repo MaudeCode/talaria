@@ -3,7 +3,7 @@ import { str } from '../../util.js'
 import { isSafeSessionId, type Message } from '../session.js'
 import { RevisionConflict, type MessageMatch, type SessionBackend, type SessionChange, type SessionIndexEntry, type ShrinkBackup, type StorageBackend, type StorageIssue, type StoredSession } from './backend.js'
 import { backupIssue, backupStatus, indexIssues } from './json-recovery.js'
-import { sessionSearchMatches, sessionSearchMessageText } from './search-text.js'
+import { sessionSearchEntry, sessionSearchMatches, sessionSearchMessageText } from './search-text.js'
 import { nextRevision, SqliteDb } from './sqlite-db.js'
 import { SqliteDocuments } from './sqlite-documents.js'
 import { SqliteJournal } from './sqlite-journal.js'
@@ -87,8 +87,8 @@ class SqliteSessions implements SessionBackend {
     const params = [...long.map(globContaining), JSON.stringify(sids), depth, depth, ...short]
     for (const row of this.db.all<{ session_id: string; idx: number; body: string }>(`SELECT m.session_id, m.idx, m.body FROM ${from} WHERE ${where} ORDER BY m.session_id, m.idx`, ...params)) {
       if (matches.has(row.session_id)) continue
-      const text = sessionSearchMessageText(JSON.parse(row.body))
-      if (sessionSearchMatches(text, terms)) matches.set(row.session_id, { idx: row.idx, text })
+      const entry = sessionSearchEntry(JSON.parse(row.body), row.idx)
+      if (sessionSearchMatches(entry.text, terms)) matches.set(row.session_id, { idx: row.idx, ...entry })
     }
     return matches
   }

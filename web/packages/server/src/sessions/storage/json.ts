@@ -8,9 +8,11 @@ import { join } from 'node:path'
 import { isSafeSessionId, type Message } from '../session.js'
 import { RevisionConflict, type MessageMatch, type SessionBackend, type SessionChange, type SessionIndexEntry, type ShrinkBackup, type StorageBackend, type StorageIssue, type StoredSession } from './backend.js'
 import { readJsonMessagePrefix, readMetadataJsonPrefixWithSignature, stageAtomic, statSignature, statSignatureAsync, writeAtomic } from './json-files.js'
-import { sessionSearchMatches, sessionSearchMessageText } from './search-text.js'
+import { sessionSearchEntry, sessionSearchMatches } from './search-text.js'
 import { diagnoseJson, repairJson, restoreJsonBackup } from './json-recovery.js'
 import { signatureOf } from '../../fs/stat.js'
+
+type SearchEntry = ReturnType<typeof sessionSearchEntry>
 
 export interface JsonStorageOptions { directory: string; stateDir?: string; profileHome?: (profile: string) => string; env?: Record<string, string | undefined>; now: () => number; stampingSince: () => number | Promise<number> }
 
@@ -62,9 +64,9 @@ class JsonSessions implements SessionBackend {
   private parsedIndex: { revision: string; entries: SessionIndexEntry[] } | null = null
   private persistedIds: { revision: string; ids: Set<string> } | null = null
   /** TAL-1212: each session's leading-message search text, valid while its file keeps the recorded revision. */
-  private readonly searchTexts = new Map<string, { revision: string; depth: number; texts: string[] }>()
+  private readonly searchTexts = new Map<string, { revision: string; depth: number; entries: SearchEntry[] }>()
   /** TAL-1283: uncached search reads in flight, keyed by session, revision and depth, so concurrent identical searches share one read. */
-  private readonly searchReads = new Map<string, Promise<{ revision: string; texts: string[] }>>()
+  private readonly searchReads = new Map<string, Promise<{ revision: string; entries: SearchEntry[] }>>()
   constructor(private readonly options: JsonStorageOptions) {}
   private check(): void { if (this.closed) throw new Error('Storage is closed') }
   /** Lets every staged write publish or fail before the backend refuses further calls. */
@@ -130,29 +132,29 @@ class JsonSessions implements SessionBackend {
     const matches = new Map<string, MessageMatch>()
     for (const sid of sids) {
       try {
-        const texts = await this.searchText(sid, depth)
-        const idx = texts.findIndex((text) => sessionSearchMatches(text, terms))
-        if (idx >= 0) matches.set(sid, { idx, text: texts[idx]! })
+        const entries = await this.searchEntries(sid, depth)
+        const idx = entries.findIndex((entry) => sessionSearchMatches(entry.text, terms))
+        if (idx >= 0) matches.set(sid, { idx, ...entries[idx]! })
       } catch { /* unreadable sessions cannot match */ }
     }
     return matches
   }
-  private async searchText(sid: string, depth: number): Promise<string[]> {
+  private async searchEntries(sid: string, depth: number): Promise<SearchEntry[]> {
     const revision = await statSignatureAsync(this.path(sid))
     if (revision === null) return []
     const cached = this.searchTexts.get(sid)
-    if (cached?.revision === revision && cached.depth === depth) return cached.texts
+    if (cached?.revision === revision && cached.depth === depth) return cached.entries
     const key = `${sid}\0${revision}\0${depth}`
     let read = this.searchReads.get(key)
     if (!read) {
       read = this.readMessagePrefix(sid, depth)
-        .then((prefix) => ({ revision: prefix.revision, texts: prefix.rows.map(sessionSearchMessageText) }))
+        .then((prefix) => ({ revision: prefix.revision, entries: prefix.rows.map(sessionSearchEntry) }))
         .finally(() => this.searchReads.delete(key))
       this.searchReads.set(key, read)
     }
     const prefix = await read
-    if (depth > 0 && depth <= SEARCH_TEXT_CACHE_DEPTH_MAX && (cached || this.searchTexts.size < SEARCH_TEXT_CACHE_MAX)) this.searchTexts.set(sid, { revision: prefix.revision, depth, texts: prefix.texts })
-    return prefix.texts
+    if (depth > 0 && depth <= SEARCH_TEXT_CACHE_DEPTH_MAX && (cached || this.searchTexts.size < SEARCH_TEXT_CACHE_MAX)) this.searchTexts.set(sid, { revision: prefix.revision, depth, entries: prefix.entries })
+    return prefix.entries
   }
   async write(sid: string, change: SessionChange, expected: string | null): Promise<string> {
     const path = this.path(sid)

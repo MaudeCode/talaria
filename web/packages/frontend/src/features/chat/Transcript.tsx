@@ -48,6 +48,8 @@ function layOutTail(pane: HTMLElement): void {
   }
   if (revealed.length) requestAnimationFrame(() => requestAnimationFrame(() => { for (const row of revealed) row.style.removeProperty('content-visibility') }))
 }
+/** How long a `?msg=` landing marks its row; the `msg-landed` animation (chat.css) runs as long. */
+const LANDED_MS = 1600
 /** How long after a wheel or touch move a scroll still counts as the reader's own. */
 const HAND_SCROLL_MS = 250
 
@@ -371,7 +373,18 @@ export function Transcript(props: TranscriptProps) {
     setEntered({ scope, focusKey })
     setPinned(true)
   }
-  useLayoutEffect(() => { prependRef.current = null; readerAnchor.current = null; focusAnchor.current = null; entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pinnedRef.current = true }, [scope, focusKey])
+  // TAL-1922: the row a `?msg=` link landed on is marked briefly; a new entry or unmount clears it.
+  const landedRef = useRef<{ frame: number; timer?: number; row?: HTMLElement } | null>(null)
+  const clearLanded = () => {
+    const landed = landedRef.current
+    landedRef.current = null
+    if (!landed) return
+    cancelAnimationFrame(landed.frame)
+    clearTimeout(landed.timer)
+    landed.row?.removeAttribute('data-landed')
+  }
+  useLayoutEffect(() => clearLanded, [])
+  useLayoutEffect(() => { clearLanded(); prependRef.current = null; readerAnchor.current = null; focusAnchor.current = null; entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pinnedRef.current = true }, [scope, focusKey])
   useLayoutEffect(() => {
     const entry = entryRef.current
     if (!entry || rows.length === 0) return
@@ -404,6 +417,19 @@ export function Transcript(props: TranscriptProps) {
       else target.scrollIntoView({ block: 'center' })
       lastTopRef.current = scrollRef.current?.scrollTop ?? 0
     } else virtualizerRef.current?.scrollToIndex(index, { align: entry.jump ? 'start' : 'center' })
+    if (!entry.jump && index >= 0) {
+      // On the frame after the jump, so the mark outlasts the layout the jump set off; a virtualized row mounts by then.
+      clearLanded()
+      const landed: { frame: number; timer?: number; row?: HTMLElement } = { frame: 0 }
+      landedRef.current = landed
+      landed.frame = requestAnimationFrame(() => {
+        const row = find()
+        if (!row || landedRef.current !== landed) return
+        row.setAttribute('data-landed', '')
+        landed.row = row
+        landed.timer = window.setTimeout(() => { if (landedRef.current === landed) clearLanded() }, LANDED_MS)
+      })
+    }
     if (entry.jump) {
       // Focus follows the jump; a virtualized row mounts on the next frame.
       const focusTarget = (row: HTMLElement | null | undefined) => { if (!row) return; row.tabIndex = -1; row.focus({ preventScroll: true }) }

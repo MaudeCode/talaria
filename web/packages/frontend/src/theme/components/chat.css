@@ -42,6 +42,9 @@
    pinned transcript jumps when it grows. Rows already skip off-screen layout, so code blocks lay out at their own height. */
 [data-streamdown="code-block"]{content-visibility:visible !important}
 .msg-row+.msg-row{border-top:none}
+/* TAL-1922: the row a search result opened at; static under reduced motion until the transcript clears it. */
+.msg-row[data-landed]{border-radius:12px;animation:msg-landed 1.6s ease-out}
+@media (prefers-reduced-motion:reduce){.msg-row[data-landed]{animation:none;background:var(--accent-bg-strong);box-shadow:inset 0 0 0 1px var(--accent)}}
 .msg-role{font-size:12px;font-weight:500;letter-spacing:.01em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
 .msg-role.user{color:var(--msg-role-user-fg)}
 .msg-role.assistant{color:var(--accent-text);opacity:.6}

@@ -11,6 +11,7 @@ import { SessionPrefixIndex } from './prefix-index.js'
  */
 import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, RunStatus, RuntimeDescribe, SessionGoal, SessionNotice, RecoveryRepair, SidecarParams, SidecarResult, SidecarServerResultInput } from '@maudecode/talaria-web-contracts'
 import type { RunJournal } from './journal.js'
+import type { MessageMatch } from './storage/backend.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
 import { buildActiveTurnToken, copyJson, rawToolText, redactedRunStatus, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
@@ -1788,12 +1789,12 @@ export class SessionService {
     const query = q.toLowerCase().trim()
     if (!query) return { sessions: sessions.map((s) => redactRow({ ...s })), all_profiles: opts.allProfiles, active_profile: activeProfile }
     const terms = sessionSearchTerms(query)
-    const matches = opts.content ? await this.store.searchMessages(sessions.filter((s) => !sessionSearchMatches(str(s.title), terms)).map((s) => str(s.session_id)), terms, opts.depth) : new Map<string, { idx: number; text: string }>()
+    const matches = opts.content ? await this.store.searchMessages(sessions.filter((s) => !sessionSearchMatches(str(s.title), terms)).map((s) => str(s.session_id)), terms, opts.depth) : new Map<string, MessageMatch>()
     const results: Row[] = []
     for (const s of sessions) {
       if (sessionSearchMatches(str(s.title), terms)) { results.push(redactRow({ ...s, match_type: 'title' })); continue }
       const hit = matches.get(str(s.session_id))
-      if (hit) results.push(redactRow({ ...s, ...this.contentMatch(hit.text, terms) }))
+      if (hit) results.push(redactRow({ ...s, ...this.contentMatch(hit, terms) }))
     }
     return { sessions: results, query, count: results.length, all_profiles: opts.allProfiles, active_profile: activeProfile }
   }
@@ -1811,24 +1812,28 @@ export class SessionService {
     if (!query) return { ...base, sessions: withSidebarChildren(rows) }
     const terms = sessionSearchTerms(query)
     const metadataMatch = (row: Row) => ['workspace', 'workspace_name', 'model', 'model_provider', 'profile', 'source_label'].some((k) => sessionSearchMatches(str(row[k]), terms))
-    const matches = opts.content ? await this.store.searchMessages(rows.filter((row) => !sessionSearchMatches(str(row.title), terms) && !metadataMatch(row)).map((row) => str(row.session_id)), terms, opts.depth) : new Map<string, { idx: number; text: string }>()
+    const matches = opts.content ? await this.store.searchMessages(rows.filter((row) => !sessionSearchMatches(str(row.title), terms) && !metadataMatch(row)).map((row) => str(row.session_id)), terms, opts.depth) : new Map<string, MessageMatch>()
     const results: Row[] = []
     for (const row of rows) {
       if (sessionSearchMatches(str(row.title), terms)) results.push({ ...row, match_type: 'title' })
       else if (metadataMatch(row)) results.push({ ...row, match_type: 'metadata' })
       else {
         const hit = matches.get(str(row.session_id))
-        if (hit) results.push({ ...row, ...this.contentMatch(hit.text, terms) })
+        if (hit) results.push({ ...row, ...this.contentMatch(hit, terms) })
       }
     }
     return { ...base, sessions: withSidebarChildren(results), query, count: results.length }
   }
 
-  /** The first of a stored session's first `depth` messages (0: all) containing every term, with its redacted excerpt. */
-  private contentMatch(text: string, terms: readonly string[]): Row {
+  /**
+   * The first of a stored session's first `depth` messages (0: all) containing every term, with its redacted excerpt and,
+   * when the transcript shows that row on its own, where it is (TAL-1922).
+   */
+  private contentMatch(hit: MessageMatch, terms: readonly string[]): Row {
     const item: Row = { match_type: 'content' }
-    const preview = sessionSearchPreview(text, terms)
+    const preview = sessionSearchPreview(hit.text, terms)
     if (preview) item.match_preview = redactText(preview, this.deps.redactEnabled())
+    if (hit.key !== null) Object.assign(item, { match_message_idx: hit.idx, match_message_key: hit.key })
     return item
   }
 

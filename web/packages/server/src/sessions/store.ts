@@ -7,7 +7,7 @@ import { withBackgroundDisplayKinds } from './background-updates.js'
 import { withTalariaActivities } from './talaria-activities.js'
 import { anchorSceneIndexFromRecords, collapseAdjacentDuplicatePartials, isSafeSessionId, Session, type SessionDefaults, type SessionInit, type Message } from './session.js'
 import { RevisionConflict, type StorageBackend, type StorageIssue, type StoredSession, type SessionChange, type MessageMatch } from './storage/backend.js'
-import { sessionSearchMatches, sessionSearchMessageText } from './storage/search-text.js'
+import { sessionSearchEntry, sessionSearchMatches, sessionSearchMessageText } from './storage/search-text.js'
 import type { PersonAccess } from '../auth/person.js'
 import { readDocument, updateDocument } from './storage/document.js'
 import { isDict } from './merge.js'
@@ -411,7 +411,7 @@ export class SessionStore {
       if (!cached || cached.loadedMetadataOnly || await this.cachedLagsStorage(cached)) { remaining.push(sid); continue }
       const rows = depth ? cached.messages.slice(0, depth) : cached.messages
       const idx = rows.findIndex((row) => sessionSearchMatches(sessionSearchMessageText(row), terms))
-      if (idx >= 0) matches.set(sid, { idx, text: sessionSearchMessageText(rows[idx]) })
+      if (idx >= 0) matches.set(sid, { idx, ...sessionSearchEntry(rows[idx], idx) })
     }
     for (const [sid, match] of await this.backend.searchMessages(remaining, terms, depth)) matches.set(sid, match)
     return matches

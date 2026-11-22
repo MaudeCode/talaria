@@ -10,6 +10,7 @@ import { maskTypedBrowserText, typesIntoPage } from './redact-browser-input.js'
 import { cappedFields, codexCommentary, hasNativeImages, isDict, messageText, normalizeAssistantDisplay, normalizeUserDisplay, toolFields, TOOL_ARG_CONTENT_CAP, withoutImageData, withoutReasoningParts } from './sessions/merge.js'
 import { REASONING_FIELDS } from './sessions/reasoning-display.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
+import { kindDisplay } from './sessions/transcript-row.js'
 
 // Supported work instrumentation carries counts only, never transcript text or credentials.
 const assignmentScan = channel('talaria.redaction.assignment-scan')
@@ -2490,8 +2491,8 @@ function isCollapsibleUserMessage(item: Record<string, unknown>): boolean {
  * (`in_scene`); a silent background reply, or a row with nothing to show, not at all (`hidden`); every other row on its own.
  */
 function messageDisplay(item: Record<string, unknown>): 'row' | 'hidden' | 'in_scene' {
-  if (item.role === 'tool' || item._steer) return 'in_scene'
-  if (!item.role || item._background_silent || item.display_kind === 'hidden') return 'hidden'
+  const byKind = kindDisplay(item)
+  if (byKind) return byKind
   if (item._marker_kind) return 'row'
   const shown = Boolean(messageText(item.content).trim()) || (Array.isArray(item.attachments) && item.attachments.length > 0) || (item.role === 'user' && hasNativeImages([item]))
   if (item.role !== 'assistant') return shown ? 'row' : 'hidden'
