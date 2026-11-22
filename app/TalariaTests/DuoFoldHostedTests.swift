@@ -71,7 +71,10 @@ final class DuoFoldHostedTests: XCTestCase {
         fixture.pendingSessionID = UITestFixtureURLProtocol.sessionID
         let window = try hostWindow(fixture.sessionList().environment(\.chatBodyEvaluation, recorder),
                                     size: scene.coordinateSpace.bounds.size)
-        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        // The compact transcript opens at the latest reply. Earlier rows can sit above the lazy viewport.
+        _ = try await requireElement(in: window, "The initial transcript never loaded") {
+            $0.accessibilityLabel?.hasPrefix("FixturePlainLead") == true
+        }
         let moreID = "chat-session-actions-more"
         let ready = await awaitCondition {
             HostedAccessibility.toolbarItems(in: window).contains { $0.accessibilityIdentifier == moreID }
