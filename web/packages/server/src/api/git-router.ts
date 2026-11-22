@@ -1,5 +1,6 @@
 /** Git panel, rollback, worktree, and upload-receipt procedures. */
 import { implement } from '@orpc/server'
+import { requestCanManageServer } from '../auth/gate.js'
 import { gitContract, type CheckpointDiff } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard, uploadInbox } from './session-visibility.js'
@@ -31,7 +32,11 @@ async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
   }
 }
 
-/** Python `_git_session`: a visible session whose workspace supports local IO. */
+/**
+ * Python `_git_session`: a visible session whose workspace supports local IO and that the caller may work in. As for
+ * file reads (`fileOpsSession`), a caller who cannot manage the server needs the workspace trusted for them, and nobody
+ * reaches one inside Web state (TAL-2646).
+ */
 export async function gitSession(ctx: RequestContext, sid: unknown): Promise<{ session: Session; workspace: string }> {
   const id = str(sid)
   if (!id) throw new HttpError(400, 'session_id required')
@@ -43,6 +48,10 @@ export async function gitSession(ctx: RequestContext, sid: unknown): Promise<{ s
   }
   if (!ctx.deps.sessions.visibleToRequest(session)) throw new HttpError(404, 'Session not found')
   if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, { code: REMOTE_WORKSPACE_UNSUPPORTED_CODE })
+  const serverOwner = await requestCanManageServer(ctx)
+  if (!serverOwner || ctx.deps.workspaces.isInWebState(session.workspace)) {
+    try { await ctx.deps.workspaces.resolveTrusted(session.workspace, session.profile, serverOwner) } catch { throw new HttpError(403, 'Workspace is not trusted') }
+  }
   return { session, workspace: session.workspace }
 }
 
@@ -110,12 +119,15 @@ export const gitRouter = os.router({
     return { git: gitBadge(await ctx.deps.git.status(workspace, { useCache: true })) }
   })),
   git: {
-    status: os.git.status.handler(({ input, context: { ctx } }) => guard(async () => ({ git: asStatus(await ctx.deps.git.status((await gitSession(ctx, input.session_id)).workspace, { useCache: true })) }))),
+    status: os.git.status.handler(({ input, context: { ctx } }) => guard(async () => {
+      const { workspace } = (await gitSession(ctx, input.session_id))
+      return { git: asStatus(input.scope === 'branch' ? await ctx.deps.git.branchStatus(workspace) : await ctx.deps.git.status(workspace, { useCache: true })) }
+    })),
     branches: os.git.branches.handler(({ input, context: { ctx } }) => guard(async () => ({ branches: await ctx.deps.git.branches((await gitSession(ctx, input.session_id)).workspace) }))),
     diff: os.git.diff.handler(({ input, context: { ctx } }) => guard(async () => {
       const { workspace } = (await gitSession(ctx, input.session_id))
       if (!input.path) throw new HttpError(400, 'path required')
-      const kind = input.kind ?? (input.staged === '1' ? 'staged' : 'unstaged')
+      const kind = input.scope === 'branch' ? 'branch' : input.kind ?? (input.staged === '1' ? 'staged' : 'unstaged')
       return { diff: await ctx.deps.git.diff(workspace, input.path, kind) }
     })),
     stage: os.git.stage.handler(({ input, context: { ctx } }) => guard(async () => {

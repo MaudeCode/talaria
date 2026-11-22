@@ -17,14 +17,21 @@ export const GitTotalsSchema = z.object({
 export const GitFileSchema = z.object({
   path: z.string(), old_path: z.string().nullable(), workspace_path: z.string(), status: z.string(),
   change_kind: z.enum(['conflict', 'untracked', 'added', 'deleted', 'renamed', 'modified']), staged: z.boolean(), unstaged: z.boolean(), untracked: z.boolean(),
-  diff_kind: z.enum(['staged', 'unstaged']).describe('The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files.'),
+  diff_kind: z.enum(['staged', 'unstaged', 'branch']).describe('The diff this file opens: staged for staged-only changes, unstaged otherwise, including untracked and conflicted files; branch for every file of a branch-scope status.'),
   ignored: z.boolean(), conflict: z.boolean(), additions: z.number().int(), deletions: z.number().int(), binary: z.boolean(),
 })
 export const GitStatusSchema = z.object({
   is_git: z.boolean(), branch: z.string().optional(), upstream: z.string().optional(), ahead: z.number().int().optional(), behind: z.number().int().optional(),
   totals: GitTotalsSchema.optional(), files: z.array(GitFileSchema).optional(), truncated: z.boolean().optional(),
   noise_filtering: z.object({ filemode_only: z.number().int(), crlf_only: z.number().int(), active: z.boolean() }).optional(),
+  detached: z.boolean().optional().describe('Branch scope only: HEAD is not on a branch.'),
+  base_ref: z.string().nullable().optional().describe('Branch scope only: the ref the branch is compared against, the first of origin/HEAD, origin/main, origin/master, main and master that exists; null, with no files, when none exists or shares history with HEAD.'),
 })
+/**
+ * `uncommitted` (the default) reads the working tree against HEAD; `branch` reads what HEAD committed since its merge base
+ * with `base_ref` (`base...HEAD`), with `detached` and `base_ref` set (TAL-2646).
+ */
+export const GitScopeSchema = z.enum(['uncommitted', 'branch'])
 export const GitRefSchema = z.object({ name: z.string(), sha: z.string(), updated: z.number().int(), updated_relative: z.string(), author: z.string(), subject: z.string(), upstream: z.string(), ahead: z.number().int(), behind: z.number().int() })
 export const GitBranchesSchema = z.object({ is_git: z.literal(true), current: z.string(), detached: z.boolean(), head: z.string(), local: z.array(GitRefSchema), remote: z.array(GitRefSchema), upstream: z.string(), ahead: z.number().int(), behind: z.number().int() })
 /** One file's diff; `hunks` is `diff` parsed (TAL-604), empty for a binary or too-large diff. */
@@ -58,9 +65,9 @@ const CheckoutResult = z.object({ ok: z.literal(true), git: GitStatusSchema, bra
 export const gitContract = {
   gitInfo: oc.route({ method: 'GET', path: '/api/git-info', tags, summary: 'Lightweight branch badge for a session workspace.' }).input(SessionQuery).output(GitInfoSchema),
   git: {
-    status: oc.route({ method: 'GET', path: '/api/git/status', tags }).input(SessionQuery).output(z.object({ git: GitStatusSchema })),
+    status: oc.route({ method: 'GET', path: '/api/git/status', tags }).input(SessionQuery.extend({ scope: GitScopeSchema.optional() })).output(z.object({ git: GitStatusSchema })),
     branches: oc.route({ method: 'GET', path: '/api/git/branches', tags }).input(SessionQuery).output(z.object({ branches: GitBranchesSchema })),
-    diff: oc.route({ method: 'GET', path: '/api/git/diff', tags }).input(SessionQuery.extend({ path: z.string().optional(), kind: z.string().optional(), staged: z.string().optional() })).output(z.object({ diff: GitDiffSchema })),
+    diff: oc.route({ method: 'GET', path: '/api/git/diff', tags }).input(SessionQuery.extend({ path: z.string().optional(), kind: z.string().optional(), staged: z.string().optional(), scope: GitScopeSchema.optional() })).output(z.object({ diff: GitDiffSchema })),
     stage: oc.route({ method: 'POST', path: '/api/git/stage', tags }).input(PathsBody).output(GitOk),
     unstage: oc.route({ method: 'POST', path: '/api/git/unstage', tags }).input(PathsBody).output(GitOk),
     discard: oc.route({ method: 'POST', path: '/api/git/discard', tags }).input(PathsBody.extend({ delete_untracked: Json.optional() })).output(GitOk),

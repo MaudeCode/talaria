@@ -147,6 +147,20 @@ describe('workspace authority from the request', () => {
     }
   })
 
+  it('refuses workspace Git to a caller who may not work in the shared session\'s workspace (TAL-2646)', async () => {
+    const server = await boot(false)
+    const owner = signIn(server, 'olive', true)
+    const workspace = dirname(server.state)
+    server.deps.workspaces.deps.defaultWorkspace = () => workspace
+    const sid = await chat(server, owner, { workspace })
+    const bound = boundLogin(server, 'default')
+    for (const route of ['/api/git/status?scope=branch', '/api/git/diff?scope=branch&path=a.txt', '/api/git/branches', '/api/git-info']) {
+      const url = `${route}${route.includes('?') ? '&' : '?'}session_id=${sid}`
+      expect((await server.get(url, { headers: bound.headers })).status, route).toBe(403)
+    }
+    expect((await server.get(`/api/git/status?scope=branch&session_id=${sid}`, { headers: owner.headers })).status).toBe(200)
+  })
+
 })
 
 describe('media reach from the request (TAL-2205)', () => {
