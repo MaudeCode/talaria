@@ -12,6 +12,7 @@ const ROUTES: { method: string; path: string; owner: boolean }[] = [
   { method: 'GET', path: '/api/terminal/read', owner: true },
   { method: 'GET', path: '/api/terminal/output?session_id=synthetic', owner: true },
   { method: 'POST', path: '/api/screen/lease', owner: true },
+  { method: 'GET', path: '/api/screen/view?view_id=synthetic-view', owner: true },
   { method: 'GET', path: '/api/screen/ws?view_id=synthetic-view', owner: true },
   // Path variants reach the handler as the canonical path, so they get its decision.
   { method: 'POST', path: '/api/terminal/start/', owner: true },

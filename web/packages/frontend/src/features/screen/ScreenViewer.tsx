@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Copy, Hand, MousePointerClick, RefreshCw } from 'lucide-react'
 import { SCREEN_STREAM_PATH, type ScreenView } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
-import { leaseScreen } from '../../api/endpoints'
+import { fetchScreenView, leaseScreen } from '../../api/endpoints'
+import { isDefiniteRefusal } from '../../contracts/common'
 import { resolveApiUrl } from '../../api/client'
 import { Dialog } from '../../ui/Dialog'
 import { IconButton } from '../../ui/Button'
@@ -95,8 +96,15 @@ function LiveScreen({ initialControl }: { initialControl: Control }) {
     try {
       setControl((await leaseScreen({ view_id: viewId, action })).control)
     } catch (error) {
-      setControl(before)
       showErrorToast(error)
+      // A refusal rolls back. An unknown outcome (lost answer, timeout, 5xx) may have reached the owner, so this viewer's
+      // own read decides; if that fails too, the shown control stays until the next take-over or hand-back settles it.
+      if (isDefiniteRefusal(error)) { setControl(before); return }
+      try {
+        setControl((await fetchScreenView({ view_id: viewId })).control)
+      } catch {
+        // Unknown still: keep what is shown.
+      }
     }
   }
 

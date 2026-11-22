@@ -5,7 +5,8 @@ import { z } from 'zod'
  * the profile's Agent owner. `available` is false when the owner has no screen to offer (no owner runs, an older owner
  * without `display.*`, or a host that cannot run one); clients then show no Screen action. `not_installed` is available:
  * its viewer shows `install_command`, the host command that installs the desktop packages (null when the host has no
- * supported package manager). `control` is who drives it: the agent, this server's viewer (`you`), or another viewer.
+ * supported package manager). `control` is who drives it: the agent, the asking viewer (`you`, only on `GET /api/screen/view`
+ * and `POST /api/screen/lease`, which name it), or another viewer (`other`; the session detail, which names no viewer, never says `you`).
  */
 export const ScreenStateSchema = z.enum(['unsupported', 'not_installed', 'stopped', 'running'])
 export const ScreenControlSchema = z.enum(['agent', 'you', 'other'])

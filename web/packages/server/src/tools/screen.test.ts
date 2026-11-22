@@ -82,7 +82,8 @@ describe('screen viewer bridge (TAL-2380)', () => {
   let owner: FakeOwnerScreen
   let cookie: string
   let ended: Promise<void>
-  let holder: 'agent' | 'human'
+  /** The owner's lease: who holds it and, for a human, the hash of the viewer that took it. */
+  let holder: { holder: 'agent' | 'human'; viewer_hash: string | null }
 
   beforeAll(async () => {
     sidecar = new FakeSidecar()
@@ -92,24 +93,28 @@ describe('screen viewer bridge (TAL-2380)', () => {
   afterAll(async () => { await s.close() })
   beforeEach(() => {
     owner = new FakeOwnerScreen(GREETING)
-    holder = 'agent'
+    holder = { holder: 'agent', viewer_hash: null }
     let end: () => void = () => undefined
     ended = new Promise((resolve) => { end = resolve })
-    sidecar.respond('display.status', () => ({ state: 'ready', reason: null, status: { supported: true, installed: true, running: true, install_command: null, lease: { holder, viewer_hash: holder === 'human' ? 'viewer-hash-1' : null } } }))
+    // Each view is its own owner connection, which mints its own viewer (`sidecar-view-N`, hash `viewer-hash-N`).
+    let views = 0
+    sidecar.respond('display.status', () => ({ state: 'ready', reason: null, status: { supported: true, installed: true, running: true, install_command: null, lease: holder } }))
     sidecar.respond('display.view', (_params, emit, opts) => new Promise((_resolve, reject) => {
+      const n = ++views
       opts.signal?.addEventListener('abort', () => { end(); reject(new SidecarError('cancelled', { condition: 'cancelled' })) }, { once: true })
-      emit({ event: 'ready', data: { rfb_url: owner.url(TICKET), view_id: 'sidecar-view-1', viewer_hash: 'viewer-hash-1' } })
+      emit({ event: 'ready', data: { rfb_url: owner.url(TICKET), view_id: `sidecar-view-${String(n)}`, viewer_hash: `viewer-hash-${String(n)}` } })
     }))
-    sidecar.respond('display.lease.acquire', () => { holder = 'human'; return { lease: { holder, viewer_hash: 'viewer-hash-1' } } })
-    sidecar.respond('display.lease.release', () => { holder = 'agent'; return { lease: { holder, viewer_hash: null } } })
+    const hashOf = (viewId: string) => viewId.replace('sidecar-view-', 'viewer-hash-')
+    sidecar.respond('display.lease.acquire', (params) => { holder = { holder: 'human', viewer_hash: hashOf(params.view_id) }; return { lease: holder } })
+    sidecar.respond('display.lease.release', (params) => { if (holder.viewer_hash === hashOf(params.view_id)) holder = { holder: 'agent', viewer_hash: null }; return { lease: holder } })
     sidecar.calls.length = 0
   })
   afterEach(async () => { await owner.stop() })
 
   /** A viewer socket and everything the browser side of it observed. */
-  const open = (headers: Record<string, string>) => {
+  const open = (headers: Record<string, string>, viewId = 'browser-view-1') => {
     const seen: { messages: Buffer[]; status: number | null; closeCode: number | null; closeReason: string } = { messages: [], status: null, closeCode: null, closeReason: '' }
-    const ws = new WebSocket(`${s.base.replace(/^http/, 'ws')}${SCREEN_STREAM_PATH}?view_id=browser-view-1`, { headers })
+    const ws = new WebSocket(`${s.base.replace(/^http/, 'ws')}${SCREEN_STREAM_PATH}?view_id=${viewId}`, { headers })
     let first: () => void = () => undefined
     const greeted = new Promise<void>((resolve) => { first = resolve })
     ws.on('message', (data: Buffer) => { seen.messages.push(data); first() })
@@ -119,7 +124,8 @@ describe('screen viewer bridge (TAL-2380)', () => {
     })
     return { ws, seen, greeted, closed }
   }
-  const lease = (action: 'acquire' | 'release') => s.get('/api/screen/lease', { method: 'POST', body: JSON.stringify({ view_id: 'browser-view-1', action }), headers: { 'content-type': 'application/json', cookie } })
+  const lease = (action: 'acquire' | 'release', viewId = 'browser-view-1') => s.get('/api/screen/lease', { method: 'POST', body: JSON.stringify({ view_id: viewId, action }), headers: { 'content-type': 'application/json', cookie } })
+  const read = async (viewId: string): Promise<unknown> => (await s.get(`/api/screen/view?view_id=${viewId}`, { headers: { cookie } })).json()
 
   it('refuses a viewer that has not signed in, before reaching the owner', async () => {
     const viewer = open({})
@@ -167,5 +173,21 @@ describe('screen viewer bridge (TAL-2380)', () => {
     owner.close(SCREEN_CLOSE.controlTaken)
     await viewer.closed
     expect(viewer.seen.closeCode).toBe(SCREEN_CLOSE.controlTaken)
+  })
+
+  it('reports control for the viewer that asks, and session detail never as yours (TAL-2380)', async () => {
+    const first = open({ cookie }, 'browser-view-1')
+    const second = open({ cookie }, 'browser-view-2')
+    await Promise.all([first.greeted, second.greeted])
+    expect(await (await lease('acquire', 'browser-view-1')).json()).toMatchObject({ control: 'you' })
+    // A session detail names no viewer, so a viewer it opens next starts without the first one's control.
+    const created = (await (await s.get('/api/session/new', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json', cookie } })).json()) as { session: Json }
+    const detail = (await (await s.get(`/api/session?session_id=${String(created.session.session_id)}`, { headers: { cookie } })).json()) as { session: Json }
+    expect(detail.session.screen).toMatchObject({ control: 'other' })
+    expect(await read('browser-view-1')).toMatchObject({ control: 'you' })
+    expect(await read('browser-view-2')).toMatchObject({ control: 'other' })
+    first.ws.close(1000)
+    second.ws.close(1000)
+    await Promise.all([first.closed, second.closed])
   })
 })

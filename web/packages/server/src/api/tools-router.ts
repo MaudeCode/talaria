@@ -1059,6 +1059,11 @@ export const toolsRouter = os.router({
     })),
   },
   screen: {
+    view: os.screen.view.handler(({ input, context: { ctx } }) => run(async () => {
+      const screen = await ctx.deps.screens.viewerView(home(ctx), input.view_id)
+      if (screen === 'not_open') throw new HttpError(404, 'That screen viewer is not open')
+      return screen
+    })),
     lease: os.screen.lease.handler(({ input, context: { ctx } }) => run(async () => {
       const screen = await ctx.deps.screens.lease(home(ctx), input.view_id, input.action)
       if (screen === 'not_open') throw new HttpError(404, 'That screen viewer is not open')

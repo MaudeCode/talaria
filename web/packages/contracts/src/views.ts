@@ -759,7 +759,7 @@ export const SessionSchema = z.looseObject({
   activity_phase: SessionActivityPhaseSchema.optional(),
   refresh_after: z.number().int().positive().nullable().optional().describe('TAL-1760: seconds until a client rereads this detail, set only while a read-only delegated child is running (its state.db row has not ended and its parent\'s delegation still lists it). The next read after the child ends carries its settled scene and null. Older servers omit it.'),
   todo_state: TodoStateSchema.optional(),
-  screen: ScreenViewSchema.optional().describe('TAL-2380: the session profile\'s Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`.'),
+  screen: ScreenViewSchema.optional().describe('TAL-2380: the session profile\'s Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer.'),
   source_references: z.array(AcceptedSourceReferenceSchema).optional(),
   context_detail_key: z.string().nullable().optional().describe('Opaque identity for open-only context details; changes with owner epoch, model and context.'),
   composer_state_key: z.string().optional().describe('Opaque profile-home and owner identity for device-local composer state; never an API session id.'),

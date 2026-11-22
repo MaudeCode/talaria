@@ -7801,7 +7801,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -15644,7 +15644,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -22140,7 +22140,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -31920,7 +31920,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -41035,7 +41035,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -50707,7 +50707,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -57147,7 +57147,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -63649,7 +63649,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -70149,7 +70149,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -89958,7 +89958,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -96450,7 +96450,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -103649,7 +103649,7 @@
                             "control",
                             "install_command"
                           ],
-                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                          "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                         },
                         "source_references": {
                           "type": "array",
@@ -110729,7 +110729,7 @@
                                 "control",
                                 "install_command"
                               ],
-                              "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`."
+                              "description": "TAL-2380: the session profile's Bot Screen (`ScreenView`); only the full session detail carries it. Clients show the Screen action only while `available`. `control` is never `you` here: the detail names no viewer."
                             },
                             "source_references": {
                               "type": "array",
@@ -151454,6 +151454,78 @@
                     "steps",
                     "presents_dialog",
                     "dialog_close"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/screen/view": {
+      "get": {
+        "operationId": "screen.view",
+        "summary": "The screen as an open viewer sees it now, read afresh: `control` is `you` only while that viewer holds it. A client whose take-over or hand-back outcome is unknown reads this before keeping or rolling back. 404 when that viewer is not open.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "view_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,64}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "enum": [
+                        "unsupported",
+                        "not_installed",
+                        "stopped",
+                        "running"
+                      ],
+                      "type": "string"
+                    },
+                    "control": {
+                      "enum": [
+                        "agent",
+                        "you",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "install_command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "state",
+                    "control",
+                    "install_command"
                   ]
                 }
               }

@@ -33,8 +33,12 @@ export class ScreenService {
 
   constructor(private readonly deps: ScreenDeps) {}
 
-  /** The profile's screen as clients show it. Any failure to read the owner is an unavailable screen. */
-  async view(profileHome: string): Promise<ScreenView> {
+  /**
+   * The profile's screen as clients show it. Control is `you` only for `viewerHash`, the open viewer that asks: a session
+   * detail names none, so a viewer it opens next starts as `other` while anyone holds control. Any failure to read the
+   * owner is an unavailable screen.
+   */
+  async view(profileHome: string, viewerHash: string | null = null): Promise<ScreenView> {
     let read = this.reads.get(profileHome)
     if (!read || this.deps.now() - read.at >= STATUS_TTL_S) {
       read = { at: this.deps.now(), status: this.status(profileHome) }
@@ -43,11 +47,10 @@ export class ScreenService {
     const status = await read.status
     if (!status?.supported) return UNAVAILABLE_SCREEN
     const { lease } = status
-    const mine = [...this.viewers.values()].some((viewer) => viewer.profileHome === profileHome && viewer.viewerHash !== null && viewer.viewerHash === lease.viewer_hash)
     return {
       available: true,
       state: !status.installed ? 'not_installed' : status.running ? 'running' : 'stopped',
-      control: lease.holder === 'agent' ? 'agent' : mine ? 'you' : 'other',
+      control: lease.holder === 'agent' ? 'agent' : viewerHash !== null && viewerHash === lease.viewer_hash ? 'you' : 'other',
       install_command: status.installed ? null : status.install_command,
     }
   }
@@ -64,7 +67,15 @@ export class ScreenService {
     }
   }
 
-  /** Take over or hand back through the open viewer `viewId` of `profileHome`; the screen as it then stands. */
+  /** The screen as the open viewer `viewId` of `profileHome` sees it now, read afresh from the owner. */
+  async viewerView(profileHome: string, viewId: string): Promise<ScreenView | 'not_open'> {
+    const viewer = this.viewers.get(viewId)
+    if (!viewer || viewer.profileHome !== profileHome) return 'not_open'
+    this.reads.delete(profileHome)
+    return this.view(profileHome, viewer.viewerHash)
+  }
+
+  /** Take over or hand back through the open viewer `viewId` of `profileHome`; the screen as that viewer then sees it. */
   async lease(profileHome: string, viewId: string, action: 'acquire' | 'release'): Promise<ScreenView | 'not_open' | 'not_ready'> {
     const viewer = this.viewers.get(viewId)
     if (!viewer || viewer.profileHome !== profileHome) return 'not_open'
@@ -75,7 +86,7 @@ export class ScreenService {
     } finally {
       this.reads.delete(profileHome)
     }
-    return this.view(profileHome)
+    return this.view(profileHome, viewer.viewerHash)
   }
 
   /** `GET /api/screen/ws?view_id=`: one viewer of the active profile's screen. */

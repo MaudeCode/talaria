@@ -2,8 +2,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { ScreenView } from '@maudecode/talaria-web-contracts'
+import { ApiError } from '../../contracts/common'
 
-const { sockets, leaseScreen } = vi.hoisted(() => ({ sockets: [] as { url: string; viewOnly: boolean; disconnected: boolean; target: EventTarget }[], leaseScreen: vi.fn() }))
+const { sockets, leaseScreen, fetchScreenView } = vi.hoisted(() => ({ sockets: [] as { url: string; viewOnly: boolean; disconnected: boolean; target: EventTarget }[], leaseScreen: vi.fn(), fetchScreenView: vi.fn() }))
 // noVNC's client over the server's socket: records the URL it dialed, its input gate and whether it was closed.
 vi.mock('@novnc/novnc', () => ({
   default: class extends EventTarget {
@@ -18,7 +19,7 @@ vi.mock('@novnc/novnc', () => ({
     disconnect() { (this as unknown as { disconnected: boolean }).disconnected = true }
   },
 }))
-vi.mock('../../api/endpoints', async (original) => ({ ...await original<object>(), leaseScreen }))
+vi.mock('../../api/endpoints', async (original) => ({ ...await original<object>(), leaseScreen, fetchScreenView }))
 
 const { ScreenViewer } = await import('./ScreenViewer')
 const running: ScreenView = { available: true, state: 'running', control: 'agent', install_command: null }
@@ -26,6 +27,7 @@ const running: ScreenView = { available: true, state: 'running', control: 'agent
 beforeEach(() => {
   sockets.length = 0
   leaseScreen.mockReset()
+  fetchScreenView.mockReset()
 })
 
 it('takes over and hands back through its own viewer, and closing ends the socket', async () => {
@@ -54,14 +56,32 @@ it('takes over and hands back through its own viewer, and closing ends the socke
   expect(socket!.disconnected).toBe(true)
 })
 
-it('rolls a refused take-over back to watching', async () => {
+it('rolls a refused take-over back to watching without asking again', async () => {
   render(<ScreenViewer open onOpenChange={vi.fn()} screen={running} />)
   const takeOver = await screen.findByRole('button', { name: 'Take over' })
   await waitFor(() => { expect(takeOver).toBeEnabled() })
-  leaseScreen.mockRejectedValueOnce(new Error('The owner refused'))
+  leaseScreen.mockRejectedValueOnce(new ApiError({ kind: 'http', status: 502, path: '/api/screen/lease', message: 'The owner refused' }))
+  leaseScreen.mockRejectedValueOnce(new ApiError({ kind: 'http', status: 409, path: '/api/screen/lease', message: 'Still connecting' }))
   act(() => { fireEvent.click(takeOver) })
-  expect(await screen.findByRole('button', { name: 'Take over' })).toBeEnabled()
+  await waitFor(() => { expect(fetchScreenView).toHaveBeenCalledTimes(1) })
+  act(() => { fireEvent.click(screen.getByRole('button', { name: /Take over|Hand back/ })) })
+  await waitFor(() => { expect(screen.getByRole('button', { name: 'Take over' })).toBeEnabled() })
+  expect(fetchScreenView).toHaveBeenCalledTimes(1)
   expect(sockets[0]!.viewOnly).toBe(true)
+})
+
+it('settles a take-over whose answer was lost from this viewer\'s own read', async () => {
+  render(<ScreenViewer open onOpenChange={vi.fn()} screen={running} />)
+  const takeOver = await screen.findByRole('button', { name: 'Take over' })
+  await waitFor(() => { expect(takeOver).toBeEnabled() })
+  const viewId = new URL(sockets[0]!.url).searchParams.get('view_id')
+  leaseScreen.mockRejectedValueOnce(new ApiError({ kind: 'network', path: '/api/screen/lease', message: 'Load failed' }))
+  fetchScreenView.mockResolvedValueOnce({ ...running, control: 'you' })
+  act(() => { fireEvent.click(takeOver) })
+  // The owner applied it: this viewer keeps control instead of rolling back.
+  await waitFor(() => { expect(fetchScreenView).toHaveBeenCalledWith({ view_id: viewId }) })
+  expect(await screen.findByRole('button', { name: 'Hand back' })).toBeVisible()
+  expect(sockets[0]!.viewOnly).toBe(false)
 })
 
 it('shows the server\'s install command while the desktop packages are missing', () => {

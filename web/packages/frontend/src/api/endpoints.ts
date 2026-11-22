@@ -197,6 +197,8 @@ export const uploadFile = (session_id: SessionId, file: File) => {
 export const fetchTranscribeCapability = () => orpc().transcribeCapability()
 /** TAL-2380: take over or hand back the screen an open viewer watches. */
 export const leaseScreen = (input: { view_id: string; action: 'acquire' | 'release' }) => orpc().screen.lease(input)
+/** TAL-2380: the screen as an open viewer sees it now; settles a take-over or hand-back whose outcome is unknown. */
+export const fetchScreenView = (input: { view_id: string }) => orpc().screen.view(input)
 // TAL-906: what read-aloud speaks for a message, prepared by the server.
 export const prepareSpeech = (text: string) => orpc().speech.prepare({ text })
 export const transcribeRecording = (audio: Blob, filename: string, signal?: AbortSignal) => {

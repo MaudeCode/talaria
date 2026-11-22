@@ -112,7 +112,7 @@ async def _view(ctx, home: Path, endpoint) -> dict:
         try:
             ctx.emit("ready", {"rfb_url": rfb_url, "view_id": view_id,
                                "viewer_hash": hashlib.sha256(viewer_id.encode()).hexdigest()[:12]})
-            if not ctx.cancelled():
+            if not ctx.cancelled:
                 await stop.wait()
         finally:
             with _VIEWS_LOCK:

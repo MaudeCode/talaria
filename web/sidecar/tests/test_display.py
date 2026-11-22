@@ -1,5 +1,6 @@
 """TAL-2380: the owner's Bot Screen through ``display.*``: status, one connection per viewer, and control on it."""
 import asyncio
+import io
 from contextlib import asynccontextmanager, nullcontext
 import sys
 import threading
@@ -9,7 +10,7 @@ import pytest
 
 from talaria_sidecar.errors import RpcError
 from talaria_sidecar.methods import display
-from talaria_sidecar.rpc import WakeEvent
+from talaria_sidecar.rpc import CallContext, RpcServer
 
 
 class OwnerRefused(Exception):
@@ -67,8 +68,14 @@ def test_an_owner_without_display_methods_has_no_screen(owner, tmp_path):
 
 def test_a_view_keeps_its_ticket_to_the_server_and_controls_through_its_own_connection(owner, tmp_path):
     frames, ready = [], threading.Event()
-    ctx = SimpleNamespace(cancel_event=WakeEvent(), emit=lambda event, data: (frames.append((event, data)), ready.set()))
-    ctx.cancelled = ctx.cancel_event.is_set
+
+    class Recorded(CallContext):
+        """The sidecar's own call context, recording what it emits."""
+        def emit(self, event, data=None):
+            super().emit(event, data)
+            frames.append((event, data))
+            ready.set()
+    ctx = Recorded(RpcServer({}, stdout=io.BytesIO()), 7, "display.view")
     result = {}
     viewer = threading.Thread(target=lambda: result.update(display.view(ctx, {"profile_home": str(tmp_path)})))
     viewer.start()
