@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web now refuses a request to turn approval bypass on or off unless it says on or off exactly, so a malformed request can no longer turn it on.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
