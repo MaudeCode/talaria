@@ -24,7 +24,8 @@ function usePathCompletions(paths: { sessionId: string; before: string } | null)
     placeholderData: (previous, previousQuery) => previousQuery?.queryKey[2] === sent?.sessionId ? previous : undefined,
   })
   const current = !!sent && sessionId === sent.sessionId && before === sent.before && query.isSuccess && !query.isPlaceholderData
-  const answer = sent && query.data?.replace_from != null && query.data.items.length ? query.data : null
+  // Only this chat's answer: right after a switch the settled key, and so the data, is still the previous chat's.
+  const answer = sessionId === sent?.sessionId && query.data?.replace_from != null && query.data.items.length ? query.data : null
   // The rows' offsets count from the start of what was sent, which may be the draft's tail.
   const offset = paths && answer ? paths.before.length - before.length + (answer.replace_from ?? 0) : 0
   const items: CommandSuggestion[] = answer?.items.map((item) => ({ name: item.label, desc: item.detail, path: { kind: item.kind, insert: item.insert, from: offset } })) ?? []
@@ -51,9 +52,12 @@ export function useCommandPalette(text: string, paths: { sessionId: string; befo
   const open = slash || pathOpen
   const stale = slash ? !commands.isError && (commands.isPlaceholderData || !commands.isSuccess) : pathOpen && completions.stale
   const items: CommandSuggestion[] = slash ? (commands.data?.commands ?? []).map(toSuggestion) : pathOpen ? completions.items : []
-  const [activeState, setActiveState] = useState<{ text: string; index: number }>({ text, index: 0 })
-  const active = activeState.text === text ? activeState.index : 0
-  const setActive = (update: number | ((a: number) => number)) => setActiveState((s) => ({ text, index: typeof update === 'function' ? update(s.text === text ? s.index : 0) : update }))
+  // The selection belongs to one completion target: the draft and, for path rows, the word before the caret. A list that
+  // shrinks under it keeps its last row selected.
+  const target = slash ? text : `${text}\n${paths?.before ?? ''}`
+  const [activeState, setActiveState] = useState<{ target: string; index: number }>({ target, index: 0 })
+  const active = activeState.target === target ? Math.min(activeState.index, Math.max(items.length - 1, 0)) : 0
+  const setActive = (update: number | ((a: number) => number)) => setActiveState(() => ({ target, index: typeof update === 'function' ? update(active) : update }))
   const listId = useId()
   const activeId = open && !stale && items[active] ? `${listId}-${String(active)}` : undefined
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>, apply: (s: CommandSuggestion) => void): boolean => {

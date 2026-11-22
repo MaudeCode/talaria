@@ -999,6 +999,36 @@ describe('Composer', () => {
     await waitFor(() => expect((box as HTMLTextAreaElement).selectionStart).toBe('read src/mail/'.length))
   })
 
+  it('starts each completed word at its first row, so moving the caret never strands the selection (TAL-1342)', async () => {
+    vi.mocked(api.completePaths).mockReset().mockImplementation((_sid, before) => Promise.resolve(
+      before === 'a/x' ? pathRows(before, ['x1', 'a/x1', 'file'], ['x2', 'a/x2', 'file'], ['x3', 'a/x3', 'file'])
+        : before === 'a/x b/y' ? pathRows(before, ['y1', 'b/y1', 'file'], ['y2', 'b/y2', 'file']) : noPath))
+    renderComposer(owned('owner-chat'))
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, 'a/x b/y')
+    await userEvent.keyboard('{ArrowLeft>4/}')
+    await screen.findByRole('option', { name: 'x3' })
+    await waitFor(() => expect(screen.getByRole('listbox', { name: 'Files' })).not.toHaveAttribute('aria-busy', 'true'))
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}')
+    expect(screen.getByRole('option', { name: 'x3' })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.keyboard('{ArrowRight>4/}')
+    await screen.findByRole('option', { name: 'y2' })
+    await waitFor(() => expect(screen.getByRole('listbox', { name: 'Files' })).not.toHaveAttribute('aria-busy', 'true'))
+    expect(screen.getByRole('option', { name: 'y1' })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.keyboard('{Tab}')
+    expect(box).toHaveValue('a/x b/y1')
+  })
+
+  it('hides one chat\'s settled rows the moment another chat opens (TAL-1342)', async () => {
+    vi.mocked(api.completePaths).mockReset().mockImplementation((sid, before) => Promise.resolve(sid === 'chat-a' ? pathRows(before, ['main.py', 'src/main.py', 'file']) : noPath))
+    const view = renderComposer(owned('chat-a'))
+    await userEvent.type(screen.getByRole('textbox'), 'src/')
+    await waitFor(() => expect(screen.getByRole('listbox', { name: 'Files' })).not.toHaveAttribute('aria-busy', 'true'))
+    view.rerenderSession(owned('chat-b'))
+    // Chat B's draft has not settled yet, so chat A's answer is still the newest settled one: it never shows here.
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
   it('never shows one chat\'s completions in another, shown or arriving late (TAL-1342)', async () => {
     const late = deferred<PathCompletions>()
     vi.mocked(api.completePaths).mockReset().mockImplementation((sid, before) => sid !== 'chat-a' ? new Promise<PathCompletions>(() => undefined)
