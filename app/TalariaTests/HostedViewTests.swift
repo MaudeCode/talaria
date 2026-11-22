@@ -841,12 +841,6 @@ final class SettingsPlacementHostedTests: XCTestCase {
         window.rootViewController = nil
     }
 
-    private func settingsAvatar(in window: UIWindow) -> NSObject? {
-        HostedAccessibility.elements(in: window).first {
-            $0.accessibilityLabel == "Settings" && $0.accessibilityHint == "Long press to switch servers."
-        } ?? HostedAccessibility.toolbarItems(in: window).first { $0.accessibilityLabel == "Settings" }
-    }
-
     func testServerSettingsOnlyExposeFieldsTheServerSent() async throws {
         _ = try FixtureApp(for: self)
         for (payload, showsTools, showsMaximum) in [
@@ -1179,6 +1173,14 @@ final class SettingsPlacementHostedTests: XCTestCase {
 }
 
 extension XCTestCase {
+    /// The sidebar's Settings avatar, or the toolbar item that stands in for it; the hidden drawer's Settings row is not it.
+    @MainActor
+    func settingsAvatar(in window: UIWindow) -> NSObject? {
+        HostedAccessibility.elements(in: window).first {
+            $0.accessibilityLabel == "Settings" && $0.accessibilityHint == "Long press to switch servers."
+        } ?? HostedAccessibility.toolbarItems(in: window).first { $0.accessibilityLabel == "Settings" }
+    }
+
     /// The Settings search button as VoiceOver reaches it: a hosted element in a bottom bar, a bar button item on top.
     @MainActor
     func settingsSearchButton(in window: UIWindow) -> NSObject? {
