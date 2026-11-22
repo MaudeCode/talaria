@@ -581,6 +581,11 @@ export const PoolLimitSchema = z.discriminatedUnion('scope', [
   z.object({ scope: z.literal('account'), resets_at: z.string() }),
   z.object({ scope: z.literal('models'), models: z.record(z.string(), z.string()) }),
 ])
+/** TAL-2681: one provider grant with only its documented fields (`RateLimitResetCreditDetails`), times as ISO-8601 UTC. */
+export const CodexResetCreditSchema = z.object({
+  id: z.string(), reset_type: z.string().nullable(), status: z.string().nullable(), granted_at: z.string().nullable(), expires_at: z.string().nullable(), redeemed_at: z.string().nullable(), title: z.string().nullable(), description: z.string().nullable(),
+})
+const CodexResetCreditListSchema = z.object({ available_count: z.number().int().nullable(), credits: z.array(CodexResetCreditSchema) })
 export const USAGE_METHODS = {
   'usage.account': { params: ProfileHomeParams.extend({ provider: z.string().min(1), base_url: z.string().nullable().optional(), api_key: z.string().nullable().optional(), credential_id: CredentialId }), result: z.object({ snapshot: AccountUsageSnapshotSchema.nullable() }) },
   'usage.pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1), api_key: z.string().nullable().optional(), env_vars: z.array(z.string().min(1)).optional() }), result: z.object({ entries: z.array(PoolEntrySchema), has_api_key: z.boolean().optional() }) },
@@ -589,6 +594,17 @@ export const USAGE_METHODS = {
   /** TAL-807: pool rate limits by provider slug, only for pooled providers that are limited; `models` are bare ids. */
   'usage.limits': { params: ProfileHomeParams.extend({ providers: z.array(z.object({ slug: z.string().min(1), models: z.array(z.string()) })) }), result: z.object({ limits: z.record(z.string(), PoolLimitSchema) }) },
   'usage.balance': { params: ProfileHomeParams.extend({ provider: z.enum(BALANCE_PROVIDERS), credential_id: CredentialId, api_key: z.string().nullable().optional(), env_vars: z.array(z.string().min(1)).optional() }), result: BalanceResultSchema },
+  /** TAL-2681: one Codex account's banked usage-limit resets (a pool account's, else the signed-in one's); a read that redeems nothing. */
+  'usage.reset_credits': { params: ProfileHomeParams.extend({ credential_id: CredentialId }), result: CodexResetCreditListSchema.extend({ status: z.enum(['ok', 'no_credentials', 'http_error', 'unavailable']), http_status: z.number().int().nullable() }) },
+  /**
+   * TAL-2681: spend exactly `credit_id` of that account, only when a fresh list holds it as available. `redeem_request_id` is
+   * the caller's attempt id, reused when the attempt is retried. `unknown`: the answer was lost and the reread list does not
+   * show the grant redeemed. `credits` is the reread list, null when it failed.
+   */
+  'usage.redeem_reset_credit': {
+    params: ProfileHomeParams.extend({ credential_id: CredentialId, credit_id: z.string().min(1).max(256), redeem_request_id: z.string().min(1).max(128) }),
+    result: z.object({ outcome: z.enum(['reset', 'nothing_to_reset', 'no_credit', 'already_redeemed', 'not_found', 'not_available', 'refused', 'unknown', 'unavailable', 'no_credentials']), http_status: z.number().int().nullable(), windows_reset: z.number().int().nullable(), credits: CodexResetCreditListSchema.nullable() }),
+  },
 } as const
 export const CONFIG_METHODS = {
   // `config_path` is the server-resolved file (honouring HERMES_CONFIG_PATH); the sidecar reads and writes exactly that path.

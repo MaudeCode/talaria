@@ -717,6 +717,37 @@ Clients render the fields as shipped; Web shows them under Settings › Models. 
 live probe (`--live`) is not exposed. The shared fixture is
 `contracts/fixtures/fallback-check.json`. This uses sidecar RPC version 105.
 
+## Banked Codex usage-limit resets
+
+A `/api/provider/quotas` row with `reset_credits: true` (TAL-2681) is an OpenAI
+Codex account that can bank usage-limit resets. `GET
+/api/provider/quotas/reset-credits?source=` lists that account's grants: the
+sidecar's `usage.reset_credits` reads the Codex backend's
+`rate-limit-reset-credits` list at the URL the Agent's `/usage reset` uses
+(`agent.account_usage._codex_backend_urls`), with the pool account's own key or
+the account the Agent's usage resolver picks, and keeps only the documented grant
+fields. The server classifies each grant (`available`, `redeeming`, `redeemed`,
+`expired` once an available grant passes `expires_at`, `unknown`), sets
+`redeemable`, reads the windows it restores (`covers`) from the provider's wording,
+and orders `credits` by expiry and `history` by recency. A read never redeems.
+
+`POST /api/provider/quotas/reset-credits/redeem` spends exactly `credit_id`. The
+sidecar's `usage.redeem_reset_credit` first rereads the list and sends the consume
+only when that account holds the grant as available, with the caller's
+`request_id` as `redeem_request_id`, so a retried attempt is answered
+`already_redeemed` rather than spending again; a grant the list shows spent is
+sent only to replay its attempt that way, never an unspent expired one. A lost
+answer (network loss, timeout, a 5xx, or a failed sidecar call) is `unknown`
+until a reread shows the grant redeemed; the server then replays that attempt
+once, so the sidecar confirms it. After a confirmed or replayed reset the sidecar
+runs the Agent's own `clear_codex_pool_quota_cooldowns` for that token. An
+exhausted pool account, which has no windows, still shows its resets. The server allows one
+redemption per account at a time (`in_progress`), then rereads the account's pool
+state and usage past every cache, so the quota rows show the provider's values.
+Nothing sends a chat command, touches a session or edits local counters. The
+shared fixture is `contracts/fixtures/codex-reset-credits.json`. This uses sidecar
+RPC version 107.
+
 ## Persistent delegation settings
 
 `GET /api/model/auxiliary` includes optional `delegation` settings. The native

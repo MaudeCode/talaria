@@ -4,7 +4,7 @@ import { AGENT_IMPORT_EXPORT_MAX_CHARS, AgentImportSourceSchema, AgentImportResu
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX } from '../sidecar-shared.js'
-import { KanbanPinnedBoardsSchema, SettingsSchema, ReasoningStatusSchema, PersonalitiesSchema, ModelsSchema, ModelsLiveSchema, SettingsModelPickerSchema, SettingsModelPickerQuerySchema, HiddenModelsSchema, ModelFavoriteSchema, ModelFavoritesSchema, MODEL_FAVORITES_MAX, ProvidersSchema, ProfileSchema, ProfileCreateResultSchema, ProfilesSchema, ActiveProfileSchema, ProfileSwitchSchema, AuxiliaryModelsSchema, ProviderQuotaSchema, ProviderQuotasSchema, ProviderCostHistorySchema, OnboardingStatusSchema, OnboardingProbeSchema, OnboardingOAuthSchema } from '../views.js'
+import { KanbanPinnedBoardsSchema, SettingsSchema, ReasoningStatusSchema, PersonalitiesSchema, ModelsSchema, ModelsLiveSchema, SettingsModelPickerSchema, SettingsModelPickerQuerySchema, HiddenModelsSchema, ModelFavoriteSchema, ModelFavoritesSchema, MODEL_FAVORITES_MAX, ProvidersSchema, ProfileSchema, ProfileCreateResultSchema, ProfilesSchema, ActiveProfileSchema, ProfileSwitchSchema, AuxiliaryModelsSchema, ProviderQuotaSchema, ProviderQuotasSchema, ProviderCostHistorySchema, ResetCreditsSchema, ResetCreditRedemptionSchema, OnboardingStatusSchema, OnboardingProbeSchema, OnboardingOAuthSchema } from '../views.js'
 
 /** Settings, profiles, models, providers, reasoning, personalities, and onboarding. */
 
@@ -112,6 +112,8 @@ export const settingsContract = {
     selfHosted: oc.route({ method: 'POST', path: '/api/providers/self-hosted', tags, summary: 'Save an Ollama or LM Studio endpoint (optional key) and make `model` the default; an endpoint whose `/models` does not answer is refused with 400 and nothing is saved.' }).input(Loose).output(Loose),
     quota: oc.route({ method: 'GET', path: '/api/provider/quota', tags }).input(z.object({ provider: z.string().optional(), refresh: z.string().optional() })).output(ProviderQuotaSchema),
     quotas: oc.route({ method: 'GET', path: '/api/provider/quotas', tags }).input(z.object({ source: z.string().optional(), refresh: z.string().optional(), provider: z.string().optional().describe('TAL-2151: the chat\'s provider id; the read then carries `composer`.') })).output(ProviderQuotasSchema),
+    resetCredits: oc.route({ method: 'GET', path: '/api/provider/quotas/reset-credits', tags, summary: 'TAL-2681: the banked usage-limit resets of one quota source whose row has `reset_credits`. A read; it never redeems.' }).input(z.object({ source: z.string().min(1) })).output(ResetCreditsSchema),
+    redeemResetCredit: oc.route({ method: 'POST', path: '/api/provider/quotas/reset-credits/redeem', tags, summary: "TAL-2681: spend exactly `credit_id` of the source's account, then reread its usage and grants. Reuse `request_id` to retry an attempt whose outcome was lost; a new attempt takes a new one. Unknown source: 404." }).input(z.object({ source: z.string().min(1), credit_id: z.string().min(1).max(256), request_id: z.string().min(8).max(128) })).output(ResetCreditRedemptionSchema),
     costHistory: oc.route({ method: 'GET', path: '/api/provider/cost-history', tags }).input(z.object({ provider: z.string().optional(), days: z.string().optional() })).output(ProviderCostHistorySchema),
   },
   reasoning: {

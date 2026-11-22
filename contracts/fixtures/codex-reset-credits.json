@@ -1,0 +1,331 @@
+{
+  "list": {
+    "source_id": "qsrc_codex_work",
+    "computed_at": "2026-11-22T12:00:00Z",
+    "available_count": 4,
+    "credits": [
+      {
+        "id": "rc_full_a",
+        "state": "available",
+        "redeemable": true,
+        "title": "Full reset (Weekly + 5 hr)",
+        "description": "Ready to redeem",
+        "covers": [
+          "session",
+          "weekly"
+        ],
+        "granted_at": "2026-11-01T00:00:00Z",
+        "expires_at": "2099-01-10T00:00:00Z",
+        "redeemed_at": null
+      },
+      {
+        "id": "rc_full_b",
+        "state": "available",
+        "redeemable": true,
+        "title": "Full reset (Weekly + 5 hr)",
+        "description": "Ready to redeem",
+        "covers": [
+          "session",
+          "weekly"
+        ],
+        "granted_at": "2026-11-01T00:00:00Z",
+        "expires_at": "2099-02-10T00:00:00Z",
+        "redeemed_at": null
+      },
+      {
+        "id": "rc_weekly",
+        "state": "available",
+        "redeemable": true,
+        "title": "Weekly reset",
+        "description": "Ready to redeem",
+        "covers": [
+          "weekly"
+        ],
+        "granted_at": "2026-11-01T00:00:00Z",
+        "expires_at": "2099-03-10T00:00:00Z",
+        "redeemed_at": null
+      },
+      {
+        "id": "rc_session",
+        "state": "available",
+        "redeemable": true,
+        "title": "5 hr reset",
+        "description": "Ready to redeem",
+        "covers": [
+          "session"
+        ],
+        "granted_at": "2026-11-01T00:00:00Z",
+        "expires_at": null,
+        "redeemed_at": null
+      }
+    ],
+    "history": [
+      {
+        "id": "rc_used",
+        "state": "redeemed",
+        "redeemable": false,
+        "title": "Full reset (Weekly + 5 hr)",
+        "description": "Ready to redeem",
+        "covers": [
+          "session",
+          "weekly"
+        ],
+        "granted_at": "2026-11-01T00:00:00Z",
+        "expires_at": "2099-04-10T00:00:00Z",
+        "redeemed_at": "2026-11-20T10:00:00Z"
+      },
+      {
+        "id": "rc_expired",
+        "state": "expired",
+        "redeemable": false,
+        "title": "Weekly reset",
+        "description": "Ready to redeem",
+        "covers": [
+          "weekly"
+        ],
+        "granted_at": "2026-11-01T00:00:00Z",
+        "expires_at": "2020-01-01T00:00:00Z",
+        "redeemed_at": null
+      }
+    ],
+    "status": "available",
+    "message": null
+  },
+  "unsupported": {
+    "source_id": "qsrc_codex_work",
+    "computed_at": "2026-11-22T12:00:00Z",
+    "available_count": 0,
+    "credits": [],
+    "history": [],
+    "status": "unsupported",
+    "message": "Sign in to OpenAI Codex with a ChatGPT account to use banked resets."
+  },
+  "redemptions": {
+    "reset": {
+      "outcome": "reset",
+      "windows_reset": 2,
+      "credit": {
+        "id": "rc_full_b",
+        "state": "redeemed",
+        "redeemable": false,
+        "title": "Full reset (Weekly + 5 hr)",
+        "description": "Ready to redeem",
+        "covers": [
+          "session",
+          "weekly"
+        ],
+        "granted_at": "2026-11-01T00:00:00Z",
+        "expires_at": "2099-02-10T00:00:00Z",
+        "redeemed_at": "2026-11-22T12:00:00Z"
+      },
+      "reset_credits": {
+        "source_id": "qsrc_codex_work",
+        "computed_at": "2026-11-22T12:00:00Z",
+        "available_count": 3,
+        "credits": [
+          {
+            "id": "rc_full_a",
+            "state": "available",
+            "redeemable": true,
+            "title": "Full reset (Weekly + 5 hr)",
+            "description": "Ready to redeem",
+            "covers": [
+              "session",
+              "weekly"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": "2099-01-10T00:00:00Z",
+            "redeemed_at": null
+          },
+          {
+            "id": "rc_weekly",
+            "state": "available",
+            "redeemable": true,
+            "title": "Weekly reset",
+            "description": "Ready to redeem",
+            "covers": [
+              "weekly"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": "2099-03-10T00:00:00Z",
+            "redeemed_at": null
+          },
+          {
+            "id": "rc_session",
+            "state": "available",
+            "redeemable": true,
+            "title": "5 hr reset",
+            "description": "Ready to redeem",
+            "covers": [
+              "session"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": null,
+            "redeemed_at": null
+          }
+        ],
+        "history": [
+          {
+            "id": "rc_full_b",
+            "state": "redeemed",
+            "redeemable": false,
+            "title": "Full reset (Weekly + 5 hr)",
+            "description": "Ready to redeem",
+            "covers": [
+              "session",
+              "weekly"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": "2099-02-10T00:00:00Z",
+            "redeemed_at": "2026-11-22T12:00:00Z"
+          },
+          {
+            "id": "rc_used",
+            "state": "redeemed",
+            "redeemable": false,
+            "title": "Full reset (Weekly + 5 hr)",
+            "description": "Ready to redeem",
+            "covers": [
+              "session",
+              "weekly"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": "2099-04-10T00:00:00Z",
+            "redeemed_at": "2026-11-20T10:00:00Z"
+          },
+          {
+            "id": "rc_expired",
+            "state": "expired",
+            "redeemable": false,
+            "title": "Weekly reset",
+            "description": "Ready to redeem",
+            "covers": [
+              "weekly"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": "2020-01-01T00:00:00Z",
+            "redeemed_at": null
+          }
+        ],
+        "status": "available",
+        "message": null
+      }
+    },
+    "unknown": {
+      "outcome": "unknown",
+      "windows_reset": null,
+      "credit": {
+        "id": "rc_full_b",
+        "state": "available",
+        "redeemable": true,
+        "title": "Full reset (Weekly + 5 hr)",
+        "description": "Ready to redeem",
+        "covers": [
+          "session",
+          "weekly"
+        ],
+        "granted_at": "2026-11-01T00:00:00Z",
+        "expires_at": "2099-02-10T00:00:00Z",
+        "redeemed_at": null
+      },
+      "reset_credits": {
+        "source_id": "qsrc_codex_work",
+        "computed_at": "2026-11-22T12:00:00Z",
+        "available_count": 4,
+        "credits": [
+          {
+            "id": "rc_full_a",
+            "state": "available",
+            "redeemable": true,
+            "title": "Full reset (Weekly + 5 hr)",
+            "description": "Ready to redeem",
+            "covers": [
+              "session",
+              "weekly"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": "2099-01-10T00:00:00Z",
+            "redeemed_at": null
+          },
+          {
+            "id": "rc_full_b",
+            "state": "available",
+            "redeemable": true,
+            "title": "Full reset (Weekly + 5 hr)",
+            "description": "Ready to redeem",
+            "covers": [
+              "session",
+              "weekly"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": "2099-02-10T00:00:00Z",
+            "redeemed_at": null
+          },
+          {
+            "id": "rc_weekly",
+            "state": "available",
+            "redeemable": true,
+            "title": "Weekly reset",
+            "description": "Ready to redeem",
+            "covers": [
+              "weekly"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": "2099-03-10T00:00:00Z",
+            "redeemed_at": null
+          },
+          {
+            "id": "rc_session",
+            "state": "available",
+            "redeemable": true,
+            "title": "5 hr reset",
+            "description": "Ready to redeem",
+            "covers": [
+              "session"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": null,
+            "redeemed_at": null
+          }
+        ],
+        "history": [
+          {
+            "id": "rc_used",
+            "state": "redeemed",
+            "redeemable": false,
+            "title": "Full reset (Weekly + 5 hr)",
+            "description": "Ready to redeem",
+            "covers": [
+              "session",
+              "weekly"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": "2099-04-10T00:00:00Z",
+            "redeemed_at": "2026-11-20T10:00:00Z"
+          },
+          {
+            "id": "rc_expired",
+            "state": "expired",
+            "redeemable": false,
+            "title": "Weekly reset",
+            "description": "Ready to redeem",
+            "covers": [
+              "weekly"
+            ],
+            "granted_at": "2026-11-01T00:00:00Z",
+            "expires_at": "2020-01-01T00:00:00Z",
+            "redeemed_at": null
+          }
+        ],
+        "status": "available",
+        "message": null
+      }
+    },
+    "in_progress": {
+      "outcome": "in_progress",
+      "windows_reset": null,
+      "credit": null,
+      "reset_credits": null
+    }
+  }
+}

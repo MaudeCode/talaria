@@ -695,6 +695,16 @@ export const settingsRouter = os.router({
     selfHosted: os.providers.selfHosted.handler(({ input, context: { ctx } }) => run(async () => { const r = await ctx.deps.onboarding.selfHosted(input); ctx.deps.catalog.invalidate(); return r })),
     quota: os.providers.quota.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quota(home(ctx), str(input.provider).trim() || null, { refresh: truthy(input.refresh) }))),
     quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(() => quotasWithSidebar(ctx, { sourceId: str(input.source).trim() || null, refresh: truthy(input.refresh), provider: str(input.provider).trim() || null }) as never)),
+    resetCredits: os.providers.resetCredits.handler(({ input, context: { ctx } }) => run(async () => {
+      const body = await ctx.deps.catalog.resetCredits(home(ctx), activeProfileName(ctx), input.source)
+      if (!body) throw new HttpError(404, 'Unknown OpenAI Codex quota source')
+      return body
+    })),
+    redeemResetCredit: os.providers.redeemResetCredit.handler(({ input, context: { ctx } }) => run(async () => {
+      const body = await ctx.deps.catalog.redeemResetCredit(home(ctx), activeProfileName(ctx), input.source, input.credit_id, input.request_id)
+      if (!body) throw new HttpError(404, 'Unknown OpenAI Codex quota source')
+      return body
+    })),
     costHistory: os.providers.costHistory.handler(({ input, context: { ctx } }) => run(() => {
       const parsed = Number.parseInt(str(input.days ?? '7').trim() || '7', 10)
       const days = Number.isFinite(parsed) ? Math.max(1, Math.min(parsed, 365)) : 7

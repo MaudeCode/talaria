@@ -17,11 +17,12 @@ import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { providerIcon } from './icons.js'
-import type { CatalogAvailability, ConfiguredModelRole, QuotaChipWindow, QuotaCredits, ModelAllowance, ModelFavorite, SettingsModelPicker, SettingsModelPickerQuery, PlanUsage, ProviderIcon, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { CatalogAvailability, ConfiguredModelRole, QuotaChipWindow, QuotaCredits, ModelAllowance, ModelFavorite, SettingsModelPicker, SettingsModelPickerQuery, PlanUsage, ProviderIcon, KeySourceKind, ResetCreditRedemption, ResetCredits, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { BALANCE_PROVIDERS, ModelsLiveSchema, SettingsModelPickerSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
 import { loadEnvFile } from './env-file.js'
+import { resetCreditsView } from './reset-credits.js'
 import {
   ACCOUNT_USAGE_PROVIDERS, FALLBACK_MODELS, OAUTH_PROVIDERS, PORTAL_PROVIDERS, PROVIDER_DISPLAY, PROVIDER_ENV_VAR, PROVIDER_ENV_VAR_ALIASES, PROVIDER_MODELS, SELF_HOSTED_PROVIDER_IDS,
 } from './tables.js'
@@ -473,6 +474,10 @@ function durationLabel(seconds: number): string {
 
 /** ISO-8601 UTC for epoch seconds, without a `.000` fraction. */
 export const isoAt = (seconds: number): string => new Date(seconds * 1000).toISOString().replace('.000Z', 'Z')
+/** Python `_quota_source_id(profile, provider, credential_id)`: a pool account's id, or "provider" for the provider's own key. */
+const quotaSourceId = (scopeId: string, pid: string, credential: string): string => `qsrc_${createHash('sha256').update(`${scopeId}\0${pid}\0${credential}`).digest('hex').slice(0, 32)}`
+/** TAL-2681: the provider whose accounts bank usage-limit resets. */
+const CODEX = 'openai-codex'
 
 /** ISO-8601 UTC (`…Z`) or null. Accepts the pre-TAL-409 sidecar's `str(datetime)` space form; a zone-less stamp is UTC. */
 export function isoUtc(value: unknown): string | null {
@@ -2090,8 +2095,7 @@ export class ProviderCatalog {
     const { payload: status, pooled: pooledIds } = await this.providerRows(profileHome, opts.refresh ? await this.poolProviders(profileHome) : undefined)
     const active = status.active_provider
     const scopeId = (await this.quotaProfileScopeId(profile))
-    // Python `_quota_source_id(profile, provider, credential_id)`: a pool account's id, or "provider" for the provider's own key.
-    const sourceId = (pid: string, credential: string): string => `qsrc_${createHash('sha256').update(`${scopeId}\0${pid}\0${credential}`).digest('hex').slice(0, 32)}`
+    const sourceId = (pid: string, credential: string): string => quotaSourceId(scopeId, pid, credential)
     // A provider configured only through `hermes auth add` has no key in .env or config.yaml, yet its pool accounts are
     // sources, including a signed-out OAuth provider's. An unknown pool (a failed lookup with no earlier answer) never
     // reports a requested source as missing.
@@ -2127,6 +2131,7 @@ export class ProviderCatalog {
         ...(limits.plan_usage !== undefined ? { plan_usage: limits.plan_usage, plan_stale: limits.plan_stale ?? false } : {}),
         plan: limits.plan ?? null, windows: (limits.windows ?? []) as QuotaWindow[], pace_window_index: (limits.pace_window_index ?? null) as number | null, session_window_index: limits.session_window_index ?? null, weekly_window_index: limits.weekly_window_index ?? null, quota: q.quota ?? null, balances: q.balances ?? [], details: limits.details ?? [],
         unavailable_reason: limits.unavailable_reason ?? null, retry_after: limits.retry_after ?? null, fetched_at: limits.fetched_at ?? null, message: q.message ?? null,
+        ...(d.provider_id === CODEX ? { reset_credits: true } : {}),
       }, thresholds)
     }))
     if (source !== this.sourceFingerprint(profileHome) && attempt === 0) return this.quotas(profileHome, profile, opts, 1)
@@ -2196,6 +2201,90 @@ export class ProviderCatalog {
     return { authoritative, status: authoritative ? 'available' : cached ? 'stale' : 'unavailable',
       unavailable_reason: authoritative ? null : cached ? 'Provider data is temporarily unavailable. Showing last-confirmed data.' : 'Provider data is temporarily unavailable. Try again.',
       generation: createHash('sha256').update(source).digest('hex') }
+  }
+
+  /**
+   * TAL-2681: the Codex account a quota source names, as `quotas` derives its id: a pool account, else the account the
+   * Agent's usage resolver picks for the provider's own source (`credential_id` null). Null for any other source.
+   */
+  private async codexAccount(profileHome: string, profile: string, sourceId: string): Promise<{ credential_id: string | null } | null> {
+    const scopeId = await this.quotaProfileScopeId(profile)
+    if (sourceId === quotaSourceId(scopeId, CODEX, 'provider')) return { credential_id: null }
+    const config = await this.deps.config.read(profileHome)
+    const entries = (await this.poolEntries(profileHome, CODEX, this.apiKeyFor(CODEX, profileHome, config))).value?.entries ?? []
+    const entry = entries.find((e) => quotaSourceId(scopeId, CODEX, e.credential_id) === sourceId)
+    return entry ? { credential_id: entry.credential_id } : null
+  }
+
+  private async readResetCredits(profileHome: string, account: { credential_id: string | null }): Promise<SidecarResult<'usage.reset_credits'> | null> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return null
+    try {
+      return await sidecar.call('usage.reset_credits', { profile_home: profileHome, ...(account.credential_id ? { credential_id: account.credential_id } : {}) }, { timeoutMs: 35_000 })
+    } catch (error) {
+      this.deps.log(`[catalog] Codex reset credits failed: ${str((error as Error).message)}`)
+      return null
+    }
+  }
+
+  /** TAL-2681: a quota source's banked usage-limit resets; null when the source is not a Codex account of this profile. A read never redeems. */
+  async resetCredits(profileHome: string, profile: string, sourceId: string): Promise<ResetCredits | null> {
+    const account = await this.codexAccount(profileHome, profile, sourceId)
+    if (!account) return null
+    const read = await this.readResetCredits(profileHome, account)
+    const at = this.deps.now()
+    return resetCreditsView(sourceId, read, at, isoAt(at))
+  }
+
+  /** Accounts with a redemption running, by profile home and source: a second one waits for the first's outcome. */
+  private readonly resetRedemptions = new Set<string>()
+
+  /**
+   * TAL-2681: spend exactly `creditId` of the source's account, then reread its grants and usage, so the quota rows show
+   * the provider's value after the reset rather than an assumed 0%. `requestId` is the caller's attempt id. A sidecar call
+   * that fails leaves the spend unknown, so the grants are reread before answering. Null for an unknown source.
+   */
+  async redeemResetCredit(profileHome: string, profile: string, sourceId: string, creditId: string, requestId: string): Promise<ResetCreditRedemption | null> {
+    const account = await this.codexAccount(profileHome, profile, sourceId)
+    if (!account) return null
+    const key = `${profileHome}\0${sourceId}`
+    if (this.resetRedemptions.has(key)) return { outcome: 'in_progress', windows_reset: null, credit: null, reset_credits: null }
+    this.resetRedemptions.add(key)
+    try {
+      const attempt = async (): Promise<SidecarResult<'usage.redeem_reset_credit'>> => {
+        const sidecar = this.deps.sidecar()
+        if (!sidecar) return { outcome: 'unavailable', http_status: null, windows_reset: null, credits: null }
+        try {
+          return await sidecar.call('usage.redeem_reset_credit', { profile_home: profileHome, ...(account.credential_id ? { credential_id: account.credential_id } : {}), credit_id: creditId, redeem_request_id: requestId }, { timeoutMs: 60_000 })
+        } catch (error) {
+          this.deps.log(`[catalog] Codex reset redemption failed: ${str((error as Error).message)}`)
+          return { outcome: 'unknown', http_status: null, windows_reset: null, credits: null }
+        }
+      }
+      const answer = await attempt()
+      const read = answer.credits ? { status: 'ok' as const, http_status: null, ...answer.credits } : await this.readResetCredits(profileHome, account)
+      const at = this.deps.now()
+      const view = resetCreditsView(sourceId, read, at, isoAt(at))
+      const listed = view.status === 'available' ? view : null
+      const credit = listed ? [...listed.credits, ...listed.history].find((c) => c.id === creditId) ?? null : null
+      const recovered = answer.outcome === 'unknown' && credit?.state === 'redeemed'
+      // A lost answer whose grant this reread shows spent is this reset. Replaying the same attempt id cannot spend another
+      // grant; the sidecar's confirmation of it lifts the account's pool cooldown as a confirmed reset does.
+      if (recovered) await attempt()
+      const outcome = answer.outcome === 'no_credentials' ? 'unsupported' : recovered ? 'reset' : answer.outcome
+      if (outcome !== 'unsupported') await this.refreshCodexUsage(profileHome, account)
+      return { outcome, windows_reset: answer.windows_reset, credit, reset_credits: listed }
+    } finally {
+      this.resetRedemptions.delete(key)
+    }
+  }
+
+  /** Reread one Codex account's pool state and usage past every cache, so the next quota read shows the provider's values. */
+  private async refreshCodexUsage(profileHome: string, account: { credential_id: string | null }): Promise<void> {
+    const config = await this.deps.config.read(profileHome)
+    const entries = (await this.poolEntries(profileHome, CODEX, this.apiKeyFor(CODEX, profileHome, config))).value?.entries ?? []
+    const credential = account.credential_id === null ? null : entries.find((e) => e.credential_id === account.credential_id) ?? null
+    await this.quota(profileHome, CODEX, { refresh: true, credential })
   }
 
   /** Python `get_provider_cost_history` (OpenRouter only; daily snapshots under `<home>/cost-snapshots`). */

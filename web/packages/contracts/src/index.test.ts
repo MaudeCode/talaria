@@ -349,6 +349,11 @@ describe('contracts package', () => {
       expect(settingsContract.models.fallback['~orpc'].outputSchema!.parse(view)).toEqual(view)
     }
   })
+  it('shares the banked Codex reset list and redemption answers with every client (TAL-2681)', () => {
+    const fixture = shared('fixtures/codex-reset-credits.json') as { list: unknown; unsupported: unknown; redemptions: Record<string, unknown> }
+    for (const list of [fixture.list, fixture.unsupported]) expect(settingsContract.providers.resetCredits['~orpc'].outputSchema!.parse(list)).toEqual(list)
+    for (const answer of Object.values(fixture.redemptions)) expect(settingsContract.providers.redeemResetCredit['~orpc'].outputSchema!.parse(answer)).toEqual(answer)
+  })
   it('shares the filtered Settings picker identity, flags and unfiltered provider menu (TAL-2193)', () => {
     const value = SettingsModelPickerSchema.parse(shared('fixtures/settings-model-picker.json'))
     expect(value.providers.map((provider) => provider.id)).toEqual(['alpha', 'beta'])

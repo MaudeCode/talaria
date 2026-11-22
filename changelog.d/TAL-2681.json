@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Insights › Quotas lists an OpenAI Codex account's banked usage limit resets and spends the one you choose, then shows the limits the provider reports afterwards.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Use your banked Codex resets",
+        "description": "Pick a banked usage limit reset in Insights and spend it to restore your 5-hour or weekly limit.",
+        "icon": "model"
+      }
+    }
+  ]
+}

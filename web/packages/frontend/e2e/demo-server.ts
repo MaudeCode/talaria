@@ -97,11 +97,28 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   ] }))
   // TAL-2151: an Anthropic 5h window at 79% used, and the composer's quota chip on, so the chat page shows "21% left".
   // TAL-2513: a weekly and a model-only Opus window too, so the chip's detail lists windows with their resets.
-  sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', plan: 'max', details: [], windows: [
-    { label: '5h', used_percent: 79, window_seconds: 18_000, reset_at: resetIn(2) },
-    { label: 'Opus week', used_percent: 64, window_seconds: 604_800, reset_at: resetIn(100), scope: 'model' },
-    { label: 'Weekly', used_percent: 38, window_seconds: 604_800, reset_at: resetIn(100) },
-  ] } }))
+  // TAL-2681: a Codex pool account at 90% of its weekly limit with banked resets (the sidecar's synthetic list), so
+  // Insights › Quotas shows its Usage limit resets; spending one restores its windows to the provider's reread values.
+  const codex = { list: JSON.parse(readFileSync(join(import.meta.dirname, '../../../sidecar/tests/fixtures/codex_reset_credits.json'), 'utf8')), session: 40, weekly: 90 }
+  sidecar.respond('usage.pool_providers', () => ({ providers: ['openai-codex'], keys: {} }))
+  sidecar.respond('usage.pool', (params) => ({ entries: params.provider === 'openai-codex' ? [{ credential_id: 'codex-work', label: 'work@example.test', status: 'available', unavailable_reason: null, retry_after: null, matches_api_key: false }] : [] }))
+  sidecar.respond('usage.reset_credits', () => structuredClone(codex.list))
+  sidecar.respond('usage.redeem_reset_credit', (params) => {
+    Object.assign(codex.list.credits.find((c: { id: string }) => c.id === params.credit_id), { status: 'redeemed', redeemed_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z') })
+    Object.assign(codex, { session: 2, weekly: 11 })
+    codex.list.available_count -= 1
+    return { outcome: 'reset', http_status: null, windows_reset: 2, credits: structuredClone(codex.list) }
+  })
+  sidecar.respond('usage.account', (params) => ({ snapshot: params.provider === 'openai-codex'
+    ? { provider: params.provider, available: true, title: 'Account limits', plan: 'Pro', details: [], windows: [
+      { label: 'Session', used_percent: codex.session, limit_window_seconds: 18_000, reset_at: resetIn(3) },
+      { label: 'Weekly', used_percent: codex.weekly, limit_window_seconds: 604_800, reset_at: resetIn(70) },
+    ] }
+    : { provider: params.provider, available: true, title: 'Claude limits', plan: 'max', details: [], windows: [
+      { label: '5h', used_percent: 79, window_seconds: 18_000, reset_at: resetIn(2) },
+      { label: 'Opus week', used_percent: 64, window_seconds: 604_800, reset_at: resetIn(100), scope: 'model' },
+      { label: 'Weekly', used_percent: 38, window_seconds: 604_800, reset_at: resetIn(100) },
+    ] } }))
   await server.deps.settings.save({ show_quota_chip: true })
   server.deps.agentConfig.invalidate()
   server.deps.catalog.invalidate()

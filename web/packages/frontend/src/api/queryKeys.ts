@@ -28,6 +28,9 @@ export const keys = {
   providers: ['providers'] as const,
   providerQuotas: ['providers', 'quotas'] as const,
   providerCostHistory: ['providers', 'cost-history', 'openrouter'] as const,
+  /** TAL-2681: every quota source's banked usage-limit resets, which a quota refresh rereads, and one source's. */
+  resetCreditsAll: ['providers', 'reset-credits'] as const,
+  resetCredits: (source: string) => ['providers', 'reset-credits', source] as const,
   personalities: ['personalities'] as const,
   auxiliaryModels: ['models', 'auxiliary'] as const,
   fallbackCheck: ['models', 'fallback'] as const,

@@ -456,6 +456,151 @@ def account(provider: str, *, base_url: str | None, api_key: str | None, credent
     return row
 
 
+# TAL-2681: banked Codex usage-limit resets, read and spent through the Codex backend the Agent's `/usage reset` uses
+# (`agent.account_usage._codex_backend_urls`), one chosen grant at a time, the way the Codex CLI's
+# `consume_rate_limit_reset_credit_by_id` redeems one.
+_CODEX = "openai-codex"
+_CONSUME_CODES = frozenset({"reset", "nothing_to_reset", "no_credit", "already_redeemed"})
+
+
+def _codex_account(credential_id: str | None):
+    """``(token, base_url, account_id)`` of one Codex account: a pool account's own key and route, as its usage read uses
+    them, else the account the Agent's own usage resolver picks. None when the account has no usable token."""
+    from agent import account_usage as agent_usage
+
+    if credential_id:
+        entry = _entry(_CODEX, credential_id)
+        key = _entry_key(entry) if entry is not None else ""
+        if not key:
+            return None
+        base_url = str(getattr(entry, "runtime_base_url", None) or getattr(entry, "base_url", None) or "").strip() or None
+        return agent_usage._resolve_codex_usage_credentials(base_url, key)
+    try:
+        return agent_usage._resolve_codex_usage_credentials(None, None)
+    except Exception:  # noqa: BLE001 - no signed-in Codex account
+        log.debug("Codex credential resolution failed", exc_info=True)
+        return None
+
+
+def _codex_json(url: str, headers: dict, body: dict | None = None) -> dict:
+    """One bounded Codex backend call that never follows a redirect; raises like `balance` reads do."""
+    data = None if body is None else json.dumps(body).encode()
+    request = urllib.request.Request(url, data=data, method="GET" if data is None else "POST",
+                                     headers={**headers, **({} if data is None else {"Content-Type": "application/json"})})
+    with _open_balance(request, timeout=_BALANCE_TIMEOUT_SECONDS) as response:
+        raw = response.read(_BALANCE_MAX_BYTES + 1)
+    if len(raw) > _BALANCE_MAX_BYTES:
+        raise ValueError("oversized Codex response")
+    payload = json.loads(raw.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Codex response is not an object")
+    return payload
+
+
+def _text(value: Any, limit: int) -> str | None:
+    return " ".join(value.split())[:limit] or None if isinstance(value, str) else None
+
+
+def _reset_credit(row: Any) -> dict | None:
+    """One provider grant with only its documented fields (`RateLimitResetCreditDetails`), times as ISO-8601 UTC."""
+    credit_id = row.get("id") if isinstance(row, dict) else None
+    if not isinstance(credit_id, str) or not credit_id.strip() or len(credit_id) > 256:
+        return None
+    return {"id": credit_id, "reset_type": _text(row.get("reset_type"), 64), "status": _text(row.get("status"), 32),
+            "granted_at": _reset_at(row.get("granted_at")), "expires_at": _reset_at(row.get("expires_at")), "redeemed_at": _reset_at(row.get("redeemed_at")),
+            "title": _text(row.get("title"), 200), "description": _text(row.get("description"), 500)}
+
+
+def _credit_list(url: str, headers: dict) -> dict:
+    payload = _codex_json(url, headers)
+    rows = payload.get("credits") if isinstance(payload.get("credits"), list) else []
+    count = payload.get("available_count")
+    return {"available_count": count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else None,
+            "credits": [credit for credit in map(_reset_credit, rows) if credit is not None]}
+
+
+def _redeemable(credit: dict) -> bool:
+    expires = credit.get("expires_at")
+    return credit.get("status") == "available" and (expires is None or datetime.fromisoformat(expires.replace("Z", "+00:00")).timestamp() > time.time())
+
+
+def reset_credits(credential_id: str | None) -> dict:
+    """The account's banked reset grants. A read: nothing is redeemed, refreshed or rotated."""
+    result = {"status": "unavailable", "http_status": None, "available_count": None, "credits": []}
+    account = _codex_account(credential_id)
+    if account is None:
+        return {**result, "status": "no_credentials"}
+    from agent.account_usage import _codex_backend_urls, _codex_headers
+
+    token, base_url, account_id = account
+    try:
+        return {**result, **_credit_list(_codex_backend_urls(base_url)[1], _codex_headers(token, account_id)), "status": "ok"}
+    except urllib.error.HTTPError as exc:
+        with exc:
+            return {**result, "status": "http_error", "http_status": exc.code}
+    except (OSError, ValueError, RecursionError, http.client.HTTPException):
+        log.debug("Codex reset credit list failed", exc_info=True)
+        return result
+
+
+def redeem_reset_credit(credential_id: str | None, credit_id: str, redeem_request_id: str) -> dict:
+    """Spend exactly ``credit_id`` of this account. The grant must be one of the account's own grants in a fresh list,
+    so another account's grant is never sent, nor an unspent expired one. ``redeem_request_id`` is the caller's attempt
+    id: retrying one attempt reuses it, and the backend answers ``already_redeemed`` instead of spending again. A grant
+    the list already shows spent is sent only to replay its attempt this way: the pinned ``credit_id`` cannot spend
+    another grant, and a confirmed replay still lifts the account's pool cooldown. An answer that never arrives (network
+    loss, timeout, a 5xx) is ``unknown`` until the reread list shows the grant redeemed. ``credits`` is that reread, or
+    null when it failed."""
+    result = {"outcome": "unavailable", "http_status": None, "windows_reset": None, "credits": None}
+    account = _codex_account(credential_id)
+    if account is None:
+        return {**result, "outcome": "no_credentials"}
+    from agent.account_usage import _codex_backend_urls, _codex_headers
+
+    token, base_url, account_id = account
+    _usage, list_url, consume_url = _codex_backend_urls(base_url)
+    headers = _codex_headers(token, account_id)
+    try:
+        before = _credit_list(list_url, headers)
+    except urllib.error.HTTPError as exc:
+        with exc:
+            return {**result, "outcome": "refused", "http_status": exc.code}
+    except (OSError, ValueError, RecursionError, http.client.HTTPException):
+        log.debug("Codex reset credit list failed", exc_info=True)
+        return result
+    credit = next((c for c in before["credits"] if c["id"] == credit_id), None)
+    if credit is None or not (_redeemable(credit) or credit.get("status") in {"redeeming", "redeemed"}):
+        return {**result, "outcome": "not_found" if credit is None else "not_available", "credits": before}
+    try:
+        body = _codex_json(consume_url, headers, {"redeem_request_id": redeem_request_id, "credit_id": credit_id})
+        code = str(body.get("code") or "").strip().lower()
+        windows = body.get("windows_reset")
+        result.update(outcome=code if code in _CONSUME_CODES else "unknown", windows_reset=windows if isinstance(windows, int) and not isinstance(windows, bool) and windows >= 0 else None)
+    except urllib.error.HTTPError as exc:
+        with exc:
+            result.update(outcome="unknown" if exc.code >= 500 or exc.code == 408 else "refused", http_status=exc.code)
+    except (OSError, ValueError, RecursionError, http.client.HTTPException):
+        log.debug("Codex reset credit consume answer was lost", exc_info=True)
+        result["outcome"] = "unknown"
+    try:
+        result["credits"] = _credit_list(list_url, headers)
+    except (OSError, ValueError, RecursionError, http.client.HTTPException):  # an HTTPError is an OSError
+        log.debug("Codex reset credit reread failed", exc_info=True)
+    after = next((c for c in (result["credits"] or {}).get("credits", []) if c["id"] == credit_id), None)
+    if result["outcome"] == "unknown" and after is not None and after.get("status") == "redeemed":
+        result["outcome"] = "reset"
+    if result["outcome"] in {"reset", "already_redeemed"}:
+        # The Agent's own follow-up to a confirmed reset, this attempt's or a replayed one's: this account's pool entry
+        # stops waiting out its old limit.
+        try:
+            from hermes_cli.auth import clear_codex_pool_quota_cooldowns
+
+            clear_codex_pool_quota_cooldowns(token)
+        except Exception:  # noqa: BLE001
+            log.debug("clearing Codex pool cooldowns failed", exc_info=True)
+    return result
+
+
 def register(registry) -> None:
     @registry.method("usage.account")
     def account_(ctx: CallContext, params: dict) -> dict:
@@ -494,6 +639,20 @@ def register(registry) -> None:
             raise InvalidParams("providers must be a list of {slug, models}")
         with scoped_home(profile_home_param(params)):
             return {"limits": limits(providers)}
+
+    @registry.method("usage.reset_credits")
+    def reset_credits_(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return reset_credits(str(params.get("credential_id") or "").strip() or None)
+
+    @registry.method("usage.redeem_reset_credit")
+    def redeem_reset_credit_(ctx: CallContext, params: dict) -> dict:
+        credit_id = params.get("credit_id")
+        request_id = params.get("redeem_request_id")
+        if not isinstance(credit_id, str) or not credit_id.strip() or not isinstance(request_id, str) or not request_id.strip():
+            raise InvalidParams("credit_id and redeem_request_id are required")
+        with scoped_home(profile_home_param(params)):
+            return redeem_reset_credit(str(params.get("credential_id") or "").strip() or None, credit_id, request_id)
 
     @registry.method("usage.balance")
     def balance_(ctx: CallContext, params: dict) -> dict:

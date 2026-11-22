@@ -9,6 +9,7 @@ import { Button } from '../../ui/Button'
 import { MetricCell, Row, RowList, SectionHeader } from '../../ui/List'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { cn } from '../../ui/cn'
+import { ResetCredits } from './ResetCredits'
 import { QuotaMeter, quotaCreditsText, quotaSourceName, quotaSourcePlan, quotaStatusText, quotaWindowFigures, type QuotaPercentMode, type QuotaSource, type QuotaWindow } from './QuotaMeter'
 
 /**
@@ -45,6 +46,8 @@ export function ProviderQuotaRows({ quotas, mode, onRefresh }: { quotas: UseQuer
                     <Row compact key={s.source_id} data-quota-source={s.source_id} data-quota-status={s.status ?? 'unavailable'}>
                       <span className="font-medium text-text">{quotaSourceName(s)}</span>
                       <span className="text-muted">{quotaStatusText(s)}</span>
+                      {/* TAL-2681: an exhausted Codex account has no windows, and its banked resets matter most then. */}
+                      {s.reset_credits && <ResetCredits sourceId={s.source_id} account={s.account_label || quotaSourceName(s)} locale={locale} />}
                     </Row>
                   ))}
                 </RowList>
@@ -77,6 +80,7 @@ function QuotaSourceRow({ source: s, mode, locale }: { source: QuotaSource; mode
       {(s.windows ?? []).map((w, i) => <QuotaWindowRow key={`${w.label}-${String(i)}`} window={w} source={s} mode={mode} locale={locale} />)}
       {(s.windows ?? []).length === 0 && credits !== null && <div className="text-xs text-text tabular-nums">{credits}</div>}
       {detail && <div className="text-xs text-muted">{detail}</div>}
+      {s.reset_credits && <ResetCredits sourceId={s.source_id} account={account ?? name} locale={locale} />}
       {(s.computed_at || typeof s.fetched_at === 'string') && (
         <div className={cn('text-xs', stale ? 'text-warning' : 'text-muted')}>
           {s.computed_at && m.provider_quota_as_of({ time: resetTime(locale, s.computed_at) })}

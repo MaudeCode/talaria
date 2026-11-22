@@ -68,5 +68,33 @@
         "limits": {}
       }
     }
+  ],
+  "usage.reset_credits": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "status": "no_credentials",
+        "http_status": null,
+        "available_count": null,
+        "credits": []
+      }
+    }
+  ],
+  "usage.redeem_reset_credit": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "credit_id": "rc_synthetic",
+        "redeem_request_id": "attempt-synthetic"
+      },
+      "result": {
+        "outcome": "no_credentials",
+        "http_status": null,
+        "windows_reset": null,
+        "credits": null
+      }
+    }
   ]
 }
