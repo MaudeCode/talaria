@@ -11,11 +11,12 @@ import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()),
   fetchCronBlueprints: vi.fn(), fillCronBlueprint: vi.fn(), fetchCrons: vi.fn(), fetchCronStatus: vi.fn(), fetchCronHistory: vi.fn(), fetchCronRun: vi.fn(), cronAction: vi.fn(),
-  fetchCronContextSources: vi.fn(), fetchCronDeliveryOptions: vi.fn(), fetchSkills: vi.fn(), fetchProfiles: vi.fn(), fetchModels: vi.fn(),
+  fetchCronContextSources: vi.fn(), fetchCronDeliveryOptions: vi.fn(), fetchCronScripts: vi.fn(), fetchSkills: vi.fn(), fetchProfiles: vi.fn(), fetchModels: vi.fn(),
 }))
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useTasksWorkbench } from './TasksPage'
+import type { TasksTab } from '../../contracts/url'
 import { teardownAll } from '../../stream/connection'
 import { showToast } from '../toast/toast'
 
@@ -35,10 +36,11 @@ const feed: CronJob = { ...full, id: 'feed0000feed', name: 'Feed', context_from:
 const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', shown_state: 'needs_attention', diagnostics: '{"id": "a77e0000a77e", "state": "completed"}', needs_attention: true, resumable: true, attention_hint: 'croniter_missing' }
 const foreign: CronJob = { ...feed, id: 'f0e1f0e1f0e1', name: 'Other profile job', read_only: true, owner_profile: 'personal', profile: 'personal' }
 
-/** The route without the app shell: selection is local state instead of `?job=`. */
+/** The route without the app shell: selection and tab are local state instead of `?job=` and `?tab=`. */
 function Workbench() {
   const [selected, setSelected] = useState<string | null>(null)
-  const main = useTasksWorkbench(selected, setSelected)
+  const [tab, setTab] = useState<TasksTab>('jobs')
+  const main = useTasksWorkbench(selected, setSelected, tab, setTab)
   // The shell's right-panel slot: the run panel portals into it.
   return <><main data-testid="main">{main}</main><div id="rightpanelSlot" /></>
 }
@@ -581,6 +583,48 @@ describe('TasksPage', () => {
     expect(await within(panel).findByRole('alert')).toHaveTextContent(/could not load this run.*run not found/i)
   })
 
+
+  // TAL-1762: the Scripts tab renders the server's listing as sent, and Refresh reloads the tab on screen.
+  it('switches to the profile\'s scripts and back, and Refresh reloads the tab on screen', async () => {
+    const scripts: Awaited<ReturnType<typeof api.fetchCronScripts>> = { directory: '/srv/hermes/scripts', unavailable_reason: null, scripts: [
+      { name: 'backup.sh', size: 2048, mtime: 1_789_600_000, description: 'Back up the notes vault' },
+      { name: 'feeds/collect.py', size: 512, mtime: 1_789_500_000, description: null },
+    ] }
+    vi.mocked(api.fetchCronScripts).mockReset().mockResolvedValue(scripts)
+    renderPage([full])
+    const main = within(screen.getByTestId('main'))
+    expect(await main.findByRole('button', { name: /Digest/ })).toBeVisible()
+    expect(api.fetchCronScripts).not.toHaveBeenCalled()
+    await userEvent.click(main.getByRole('tab', { name: 'Scripts' }))
+    const panel = await main.findByRole('tabpanel')
+    const backup = await within(panel).findByText('backup.sh')
+    expect(backup.closest('li')).toHaveTextContent(/^backup\.sh2\.0 KB · .+Back up the notes vault$/)
+    expect(within(panel).getByText('feeds/collect.py').closest('li')).toHaveTextContent(/^feeds\/collect\.py512 B · \S[^·]*$/)
+    expect(within(panel).queryByRole('button')).toBeNull()
+    expect(main.queryByRole('button', { name: /Digest/ })).toBeNull()
+    const jobsRead = vi.mocked(api.fetchCrons).mock.calls.length
+    await userEvent.click(main.getByRole('button', { name: /^refresh$/i }))
+    await waitFor(() => expect(api.fetchCronScripts).toHaveBeenCalledTimes(2))
+    expect(api.fetchCrons).toHaveBeenCalledTimes(jobsRead)
+    await userEvent.click(main.getByRole('tab', { name: 'Jobs' }))
+    expect(main.getByRole('tab', { name: 'Jobs' })).toHaveAttribute('aria-selected', 'true')
+    expect(await main.findByRole('button', { name: /Digest/ })).toBeVisible()
+    await userEvent.click(main.getByRole('button', { name: /^refresh$/i }))
+    await waitFor(() => expect(api.fetchCrons).toHaveBeenCalledTimes(jobsRead + 1))
+    expect(api.fetchCronScripts).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    { state: 'an empty directory', reason: null, text: 'No scripts in /srv/hermes/scripts' },
+    { state: 'a refused directory', reason: 'Permission denied', text: "Can't read scripts: Permission denied" },
+  ])('shows the server\'s scripts listing of $state as sent', async ({ reason, text }) => {
+    vi.mocked(api.fetchCronScripts).mockReset().mockResolvedValue({ directory: '/srv/hermes/scripts', unavailable_reason: reason, scripts: [] })
+    renderPage([full])
+    const main = within(screen.getByTestId('main'))
+    await userEvent.click(await main.findByRole('tab', { name: 'Scripts' }))
+    expect(await within(main.getByRole('tabpanel')).findByText(text)).toBeVisible()
+    expect(main.queryByText(reason ? 'No scripts in /srv/hermes/scripts' : /Can't read scripts/)).toBeNull()
+  })
 
   it('explains a needs-attention job and offers resume, run once and diagnostics', async () => {
     const writeText = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())

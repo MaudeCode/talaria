@@ -86,6 +86,7 @@ async function dataPages(page: Page, info: TestInfo, theme: Theme) {
       await page.keyboard.press('Escape')
     }
     await visit('tasks', '/tasks', 'Dependency audit')
+    await visit('tasks-scripts', '/tasks?tab=scripts', 'backup-notes.sh')
     await visit('insights-usage', '/insights?tab=usage', 'claude-sonnet-4-6')
     await visit('decisions', '/decisions', 'Settings audit')
     await visit('decision-review', `/decisions/${reviewId}`, 'Retention policy')

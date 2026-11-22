@@ -47,6 +47,12 @@ const PY_STRERROR: Record<string, string> = {
   EBUSY: 'Resource busy', ETXTBSY: 'Text file busy', EXDEV: 'Cross-device link',
 }
 
+/** The C library's text for an errno error (`Permission denied`), else its message. */
+export function osErrorText(error: unknown): string {
+  const e = error as NodeJS.ErrnoException
+  return PY_STRERROR[e.code ?? ''] ?? (e.message || String(error))
+}
+
 /** Python `str(OSError)`: `[Errno N] <strerror>: '<path>'`, so error text reads as it did in the Python backend. */
 export function pyOsError(error: unknown, path?: string): string {
   const e = error as NodeJS.ErrnoException

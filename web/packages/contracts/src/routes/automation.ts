@@ -3,7 +3,7 @@ import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { TerminalIdSchema, TerminalViewSliceSchema } from '../terminal.js'
 import { PromptQueueRunSchema, PromptQueueCardsSchema, PromptQueueActionSchema } from '../prompt-queue.js'
-import { CronsSchema, CronContextSourcesSchema, CronRecentSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanInspectionSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, KanbanStatsViewSchema, KanbanTaskPolicyShape, ExtensionStatusSchema, ExtensionRegistrySchema } from '../views.js'
+import { CronsSchema, CronContextSourcesSchema, CronRecentSchema, CronScriptsSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanInspectionSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, KanbanStatsViewSchema, KanbanTaskPolicyShape, ExtensionStatusSchema, ExtensionRegistrySchema } from '../views.js'
 import { CronBlueprintsSchema, CronBlueprintFillInputSchema, CronBlueprintFillSchema, KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanRunStartShape, KanbanTaskLinksShape, KanbanTaskSchema } from '../sidecar-shared.js'
 
 /** Crons, kanban, extensions, and the embedded terminal. */
@@ -52,6 +52,7 @@ export const automationContract = {
     run: oc.route({ method: 'GET', path: '/api/crons/run', tags }).input(JobId.extend({ filename: z.string().optional() })).output(CronRunSchema),
     status: oc.route({ method: 'GET', path: '/api/crons/status', tags }).input(JobId).output(CronStatusSchema),
     recent: oc.route({ method: 'GET', path: '/api/crons/recent', tags, summary: "Each active-profile job's latest completion after `since` (Unix seconds), newest first. Not a run archive." }).input(z.object({ since: z.string().optional() })).output(CronRecentSchema),
+    scripts: oc.route({ method: 'GET', path: '/api/crons/scripts', tags, summary: "The active profile's runnable job scripts, read-only." }).output(CronScriptsSchema),
     deliveryOptions: oc.route({ method: 'GET', path: '/api/crons/delivery-options', tags }).output(z.object({ platforms: z.array(z.object({ value: z.string(), label: z.string() })) })),
     create: oc.route({ method: 'POST', path: '/api/crons/create', tags }).input(CronCreateInputSchema).output(CronMutationSchema),
     update: oc.route({ method: 'POST', path: '/api/crons/update', tags }).input(CronUpdateInputSchema).output(CronMutationSchema),

@@ -2109,6 +2109,11 @@ export const CronRecentCompletionSchema = z.object({
 })
 export type CronRecentCompletion = z.infer<typeof CronRecentCompletionSchema>
 export const CronRecentSchema = z.object({ completions: z.array(CronRecentCompletionSchema), since: z.number() })
+/** TAL-1762: one `.py` or `.sh` file under the active profile's `scripts/` directory, top level or one subdirectory deep. `name` is the value a job's `script` field takes; `mtime` is Unix seconds; `description` is its first docstring or comment line. */
+export const CronScriptSchema = z.object({ name: z.string(), size: z.number().int().nonnegative(), mtime: z.number(), description: z.string().nullable() })
+/** `GET /api/crons/scripts`: rows sorted by `name`; `unavailable_reason` is set when `directory` exists but cannot be read, so an empty list is never a refusal. */
+export const CronScriptsSchema = z.object({ directory: z.string(), scripts: z.array(CronScriptSchema), unavailable_reason: z.string().nullable() })
+export type CronScripts = z.infer<typeof CronScriptsSchema>
 export const CronMutationSchema = z.looseObject({ ok: z.boolean().optional(), job: CronJobViewSchema.optional(), job_id: z.string().optional(), status: z.string().optional(), error: z.string().optional(), elapsed: z.number().optional() })
 export const CronRunUsageSchema = z.looseObject({ input_tokens: NullableNumber.optional(), output_tokens: NullableNumber.optional(), total_tokens: NullableNumber.optional(), estimated_cost_usd: NullableNumber.optional(), duration_seconds: NullableNumber.optional(), model: z.string().optional(), provider: z.string().optional() })
 export const CronRunSummarySchema = z.looseObject({ filename: z.string(), size: z.number(), modified: z.number(), usage: CronRunUsageSchema.optional() })

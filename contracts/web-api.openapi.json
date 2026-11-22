@@ -155643,6 +155643,82 @@
         }
       }
     },
+    "/api/crons/scripts": {
+      "get": {
+        "operationId": "crons.scripts",
+        "summary": "The active profile's runnable job scripts, read-only.",
+        "tags": [
+          "automation"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "type": "string"
+                    },
+                    "scripts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "mtime": {
+                            "type": "number"
+                          },
+                          "description": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "size",
+                          "mtime",
+                          "description"
+                        ]
+                      }
+                    },
+                    "unavailable_reason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "directory",
+                    "scripts",
+                    "unavailable_reason"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/crons/delivery-options": {
       "get": {
         "operationId": "crons.deliveryOptions",

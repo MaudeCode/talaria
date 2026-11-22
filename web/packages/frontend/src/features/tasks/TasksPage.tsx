@@ -4,7 +4,7 @@
  * `?job=` so a task can be linked and the browser back button works; the editor is transient.
  */
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
-import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useMutationState, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Copy, ListOrdered, Pause, Play, Plus, RefreshCw, Square, Trash2, type LucideIcon } from 'lucide-react'
 import { copyWithToast } from '../../lib/clipboard'
@@ -21,6 +21,8 @@ import { HelpTip } from '../../ui/Field'
 import { RightPanel } from '../../shell/RightPanel'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { Row as ListRow, RowList } from '../../ui/List'
+import { TabStrip } from '../../ui/TabStrip'
+import type { TasksTab } from '../../contracts/url'
 import { ContextMenu, MenuItem } from '../../ui/Menu'
 import { EmptyState, ErrorState, LoadingState, epochMs, formatBytes, formatDate } from '../../ui/States'
 import { resetTime } from '../../i18n/units'
@@ -55,13 +57,15 @@ export { statusLabel } from './automationStatus'
 
 export function TasksRoute() {
   useLocale()
-  const { job } = useSearch({ from: '/_app/tasks' })
+  const { job, tab } = useSearch({ from: '/_app/tasks' })
   const navigate = useNavigate()
-  return useTasksWorkbench(job ?? null, (id) => { void navigate({ to: '/tasks', search: id ? { job: id } : {} }) })
+  return useTasksWorkbench(job ?? null, (id) => { void navigate({ to: '/tasks', search: id ? { job: id } : {} }) }, tab ?? 'jobs', (next) => { void navigate({ to: '/tasks', search: next === 'jobs' ? {} : { tab: next }, replace: true }) })
 }
 
-/** The list and its details over one query set; `selectedId` is owned by the caller (the URL in the app, state in tests). */
-export function useTasksWorkbench(selectedId: string | null, onSelect: (id: string | null) => void): ReactNode {
+const TABS = [{ id: 'jobs', label: () => m.tasks_tab_jobs() }, { id: 'scripts', label: () => m.tasks_tab_scripts() }] as const
+
+/** The list and its details over one query set; `selectedId` and `tab` are owned by the caller (the URL in the app, state in tests). */
+export function useTasksWorkbench(selectedId: string | null, onSelect: (id: string | null) => void, tab: TasksTab, onTab: (tab: TasksTab) => void): ReactNode {
   const qc = useQueryClient()
   const context = useStreamContext()
   const selection = useRef(selectedId)
@@ -75,6 +79,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
   // (the status map below only tracks runs started from the UI).
   const crons = useQuery({ queryKey: keys.crons.list(allProfiles), queryFn: () => api.fetchCrons(allProfiles), staleTime: 15_000, refetchInterval: (query) => query.state.data?.jobs.some((job) => job.stopping) ? 3_000 : 30_000 })
   const status = useQuery({ queryKey: keys.crons.status, queryFn: api.fetchCronStatus, refetchInterval: 10_000, staleTime: 5_000 })
+  const scripts = useQuery({ queryKey: keys.crons.scripts, queryFn: api.fetchCronScripts, staleTime: 15_000, enabled: tab === 'scripts' && !selectedId })
   const invalidate = () => qc.invalidateQueries({ queryKey: keys.crons.all })
   const action = useResourceMutation({
     resource: ({ job, context: owner }: { action: CronWrite; job: CronJob; context: object }) => {
@@ -164,6 +169,9 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
   } else if (!selectedId) {
     main = (
       <TaskList
+        tab={tab}
+        onTab={onTab}
+        scripts={tab === 'scripts' ? <ScriptList query={scripts} /> : null}
         queues={queues.runs}
         onNewQueue={() => select('queue:new')}
         jobs={jobs}
@@ -176,7 +184,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         unwritable={unwritable}
         onSelect={select}
         onNew={() => startEditor('create', null)}
-        onRefresh={() => { void crons.refetch() }}
+        onRefresh={() => { void (tab === 'scripts' ? scripts.refetch() : crons.refetch()) }}
         onToggleAllProfiles={() => setAllProfiles((v) => !v)}
       />
     )
@@ -219,8 +227,8 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
 
 // ── List ─────────────────────────────────────────────────────────────────────
 
-function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount, allProfiles, jobActions, unavailable, unwritable, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
-  queues: PromptQueueRun[]; onNewQueue: () => void; jobs: CronJob[]; pending: boolean; error: unknown; otherProfileCount: number; allProfiles: boolean; jobActions: (job: CronJob) => JobAction[]; unavailable: boolean; unwritable: CronStoreHealth[]
+function TaskList({ tab, onTab, scripts, queues, onNewQueue, jobs, pending, error, otherProfileCount, allProfiles, jobActions, unavailable, unwritable, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
+  tab: TasksTab; onTab: (tab: TasksTab) => void; scripts: ReactNode; queues: PromptQueueRun[]; onNewQueue: () => void; jobs: CronJob[]; pending: boolean; error: unknown; otherProfileCount: number; allProfiles: boolean; jobActions: (job: CronJob) => JobAction[]; unavailable: boolean; unwritable: CronStoreHealth[]
   onSelect: (id: string) => void; onNew: () => void; onRefresh: () => void; onToggleAllProfiles: () => void
 }) {
   const rows = jobs.map((job) => ({ job, id: jobId(job), state: job.shown_state }))
@@ -235,30 +243,58 @@ function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount,
         <Button onClick={onNewQueue}><ListOrdered size={12} aria-hidden="true" /> {m.prompt_queue_new()}</Button>
         <Button variant="primary" onClick={onNew}><Plus size={12} aria-hidden="true" /> {m.cron_new_job()}</Button>
       </>
-    }>
-      <UnwritableStores stores={unwritable} className="mb-4" />
-      {unavailable && <p role="status" className="mb-4 text-xs text-warning">{m.cron_gateway_unavailable()}</p>}
-      {pending && <LoadingState />}
-      {error !== null && <ErrorState error={error} onRetry={onRefresh} />}
-      {!pending && error === null && jobs.length === 0 && queues.length === 0 && <EmptyState>{otherProfileCount > 0 && !allProfiles ? m.cron_no_jobs_in_profile() : m.cron_no_jobs()}</EmptyState>}
-      <section data-section="tasks">
-        <RowList>
-          {queues.map((queue) => <AutomationListItem key={queue.id} id={queueSelection(queue.id)} title={queue.title} state={queue.phase} status={statusLabel(queue.phase)} onSelect={onSelect} />)}
-          {live.map(item)}
-        </RowList>
-        {parked.length > 0 && (
-          <details className="mt-4" data-section="tasks-paused">
-            <summary className="cursor-pointer py-2 text-xs font-medium uppercase tracking-wider text-muted">{m.cron_paused_group({ n: parked.length })}</summary>
-            <RowList>{parked.map(item)}</RowList>
-          </details>
-        )}
-        {(otherProfileCount > 0 || allProfiles) && (
-          <button type="button" className="linklike mt-4 text-left text-xs text-muted" onClick={onToggleAllProfiles}>
-            {allProfiles ? m.cron_hide_other_profiles() : m.cron_show_other_profiles({ n: otherProfileCount })}
-          </button>
-        )}
-      </section>
+    } toolbar={<TabStrip label={m.tab_tasks()} tabs={TABS} value={tab} onChange={onTab} panelPrefix="tasks" />}>
+      {scripts ?? (
+        <div role="tabpanel" id="tasks-jobs">
+          <UnwritableStores stores={unwritable} className="mb-4" />
+          {unavailable && <p role="status" className="mb-4 text-xs text-warning">{m.cron_gateway_unavailable()}</p>}
+          {pending && <LoadingState />}
+          {error !== null && <ErrorState error={error} onRetry={onRefresh} />}
+          {!pending && error === null && jobs.length === 0 && queues.length === 0 && <EmptyState>{otherProfileCount > 0 && !allProfiles ? m.cron_no_jobs_in_profile() : m.cron_no_jobs()}</EmptyState>}
+          <section data-section="tasks">
+            <RowList>
+              {queues.map((queue) => <AutomationListItem key={queue.id} id={queueSelection(queue.id)} title={queue.title} state={queue.phase} status={statusLabel(queue.phase)} onSelect={onSelect} />)}
+              {live.map(item)}
+            </RowList>
+            {parked.length > 0 && (
+              <details className="mt-4" data-section="tasks-paused">
+                <summary className="cursor-pointer py-2 text-xs font-medium uppercase tracking-wider text-muted">{m.cron_paused_group({ n: parked.length })}</summary>
+                <RowList>{parked.map(item)}</RowList>
+              </details>
+            )}
+            {(otherProfileCount > 0 || allProfiles) && (
+              <button type="button" className="linklike mt-4 text-left text-xs text-muted" onClick={onToggleAllProfiles}>
+                {allProfiles ? m.cron_hide_other_profiles() : m.cron_show_other_profiles({ n: otherProfileCount })}
+              </button>
+            )}
+          </section>
+        </div>
+      )}
     </HubPage>
+  )
+}
+
+/** TAL-1762: the profile's job scripts as the server lists them; read-only, so rows carry no action. */
+function ScriptList({ query }: { query: UseQueryResult<Awaited<ReturnType<typeof api.fetchCronScripts>>> }) {
+  const locale = useLocale()
+  const data = query.data
+  return (
+    <section role="tabpanel" id="tasks-scripts" data-section="task-scripts">
+      {query.isPending && <LoadingState />}
+      {query.isError && <ErrorState error={query.error} onRetry={() => { void query.refetch() }} />}
+      {data?.unavailable_reason && <p role="status" className="mb-4 text-xs text-warning">{m.cron_scripts_unavailable({ reason: data.unavailable_reason })}</p>}
+      {data && !data.unavailable_reason && data.scripts.length === 0 && <EmptyState>{m.cron_scripts_empty({ directory: data.directory })}</EmptyState>}
+      <RowList>
+        {data?.scripts.map((script) => (
+          <ListRow key={script.name} data-script={script.name}>
+            <span className="flex w-full min-w-0 flex-col gap-1.5">
+              <span className="flex w-full min-w-0 items-baseline gap-2"><span className="min-w-0 flex-1 truncate font-mono text-sm font-semibold">{script.name}</span><span className="shrink-0 text-xs tabular-nums text-muted">{formatBytes(script.size)} · <span title={formatDate(script.mtime)}>{resetTime(locale, epochMs(script.mtime))}</span></span></span>
+              {script.description && <span className="w-full truncate text-xs text-muted">{script.description}</span>}
+            </span>
+          </ListRow>
+        ))}
+      </RowList>
+    </section>
   )
 }
 

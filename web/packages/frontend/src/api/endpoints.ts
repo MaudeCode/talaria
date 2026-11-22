@@ -293,6 +293,7 @@ export const fetchCronRun = (job_id: string, filename: string) => orpc().crons.r
 export const fetchCronBlueprints = () => orpc().crons.blueprints()
 export const fillCronBlueprint = (input: { key: string; values: Record<string, string> }) => orpc().crons.blueprintFill(input)
 export const fetchCronDeliveryOptions = () => orpc().crons.deliveryOptions()
+export const fetchCronScripts = () => orpc().crons.scripts()
 export const fetchCronStatus = () => orpc().crons.status({})
 export const fetchKanbanBoards = () => orpc().kanban.boards({})
 /** Every Kanban read and write names the board the page shows (`board`), so a switch elsewhere cannot redirect it; omitted, the server uses its active board. */

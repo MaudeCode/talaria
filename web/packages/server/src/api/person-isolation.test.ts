@@ -366,6 +366,24 @@ describe('owner-only reach', () => {
     expect(await reach(server, viewer, '')).toEqual({ sessions: listing([own], false, without), search: listing([own], false, undefined), projects: listing([own], false, without), crons: listing([own], false, without) })
   })
 
+  // TAL-1762: the job script listing reads the caller's active profile home, as the cron list does; no input selects another.
+  it.each([
+    { viewer: 'a profile-bound login', owner: false },
+    { viewer: 'the owner', owner: true },
+  ])('the job script listing shows only the active profile to $viewer', async ({ owner }) => {
+    const server = await seeded(false)
+    for (const profile of PROFILES) {
+      const scripts = join(profile === 'default' ? server.state : join(server.state, 'profiles', profile), 'scripts')
+      mkdirSync(scripts, { recursive: true })
+      writeFileSync(join(scripts, `${profile}.py`), `# ${profile} script\n`)
+    }
+    const viewer = owner ? signIn(server, 'olive', true) : boundLogin(server, 'work')
+    const response = await server.get('/api/crons/scripts?profile=default&all_profiles=1', { headers: viewer.headers })
+    expect(response.status).toBe(200)
+    const own = owner ? 'default' : 'work'
+    expect(((await response.json()) as { scripts: { name: string; description: string }[] }).scripts.map((row) => [row.name, row.description])).toEqual([[`${own}.py`, `${own} script`]])
+  })
+
   it.each([
     { viewer: 'a profile-bound login', isolation: false, owner: false },
     { viewer: 'a non-owner person', isolation: true, owner: false },

@@ -85,6 +85,11 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   server.deps.catalog.invalidate()
   const workspace = server.workspace
   mkdirSync(workspace, { recursive: true })
+  // TAL-1762: the default profile's job scripts, listed on Tasks › Scripts.
+  mkdirSync(join(server.state, 'scripts', 'feeds'), { recursive: true })
+  writeFileSync(join(server.state, 'scripts', 'backup-notes.sh'), '#!/bin/bash\n# Back up the notes vault to the NAS\nrsync -a ~/notes /mnt/nas\n')
+  writeFileSync(join(server.state, 'scripts', 'feeds', 'collect_release_notes_from_every_upstream_repository.py'), '"""Collect release notes from every upstream repository the projects depend on."""\n')
+  writeFileSync(join(server.state, 'scripts', 'disk-check.py'), 'print(1)\n')
   // The Agent's MemoryStore separates entries with a `§` line; the Memory page shows each as its own block.
   mkdirSync(join(server.state, 'memories'), { recursive: true })
   writeFileSync(join(server.state, 'memories', 'MEMORY.md'), 'Uses **TypeScript** for Web projects.\n§\nDeploys go through the `staging` host first.\n§\nRelease checklist:\n- Run the full suite\n- Tag `vX.Y.Z`\n')

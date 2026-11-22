@@ -11,6 +11,7 @@ import { ConfigUnavailable, type Dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
 import { dashboardScope, isAgentDashboardId } from '../tools/dashboard-plugins.js'
 import { ExtensionError } from '../tools/extensions.js'
+import { listCronScripts } from '../tools/cron-scripts.js'
 import { boardSlug, intQuery, kanbanFailure, truthyQuery, withKanbanPolicy, withStatsTotals } from '../tools/kanban.js'
 import { TerminalNotRunning } from '../tools/terminal.js'
 import { sessionTerminal, startSessionTerminal, terminalSlice, TerminalRefused } from '../tools/agent-terminal.js'
@@ -110,6 +111,7 @@ export const automationRouter = os.router({
     run: os.crons.run.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.runDetail(home(ctx), str(input.job_id), str(input.filename)))),
     status: os.crons.status.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.status(str(input.job_id)))),
     recent: os.crons.recent.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.recent(home(ctx), input.since))),
+    scripts: os.crons.scripts.handler(({ context: { ctx } }) => run(() => listCronScripts(home(ctx)))),
     deliveryOptions: os.crons.deliveryOptions.handler(({ context: { ctx } }) => run(() => ctx.deps.crons.deliveryOptions(home(ctx)))),
     create: os.crons.create.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.crons.create(home(ctx), input, await executionProfileScope(ctx)) as Promise<never>)),
     update: os.crons.update.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.crons.update(home(ctx), input, await executionProfileScope(ctx)) as Promise<never>)),
