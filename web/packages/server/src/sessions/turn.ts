@@ -1622,7 +1622,6 @@ export class TurnRunner {
         // usually finds the session compacted; a follow-up turn admitted meanwhile joins it.
         void deps.service().ensureCompacted(sessionId)
         await this.startSteerFollowUp(sessionId, leftovers)
-        // Before the title work, so a generated title's own state.db sync lands after this one's provisional title.
         await deps.syncUsage?.(s, usedModel || null)
       } catch (error) { logAfterOutcome(error) }
       // Title work and the goal judge run side by side; `stream_end` follows both, so their frames reach the stream.

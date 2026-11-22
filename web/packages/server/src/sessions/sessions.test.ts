@@ -4535,7 +4535,7 @@ describe('runtime seams from review round 10', () => {
       const session = (await s.deps.sessionStore.get(sid))
       expect(usageSynced[0]).toMatchObject({
         profile_home: s.state, session_id: sid, input_tokens: 120, output_tokens: 30, cache_read_tokens: 40, cache_write_tokens: 8,
-        estimated_cost: 0.0125, model: 'used-model', title: session.title, message_count: session.messages.length,
+        estimated_cost: 0.0125, model: 'used-model', message_count: session.messages.length,
       })
       expect(session.messages.length).toBeGreaterThan(0)
       // A failed or cancelled turn persists the counters the stream reported, so state.db follows those exits too.
@@ -4548,6 +4548,32 @@ describe('runtime seams from review round 10', () => {
         expect(usageSynced.at(-1)).toMatchObject({ session_id: sid, input_tokens: settled.input_tokens, output_tokens: settled.output_tokens, estimated_cost: settled.estimated_cost, message_count: settled.messages.length })
         if (status === 'cancelled') expect(usageSynced.at(-1)).toMatchObject({ input_tokens: usage.prompt_tokens, estimated_cost: usage.estimated_cost_usd })
       }
+    } finally {
+      await s.deps.settings.save({ sync_to_insights: false })
+    }
+  })
+
+  it('a settled turn syncs only a manual title with its usage, leaving an automatic title to its own provenance (TAL-2626)', async () => {
+    const usageSynced: Json[] = []
+    sidecar.respond('state_db.sync_usage', (params) => { usageSynced.push(params); return { ok: true as const } })
+    sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Docker volume permissions', usage: null }))
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const turn = async (message: string): Promise<void> => {
+      const started = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    }
+    await s.deps.settings.save({ sync_to_insights: true })
+    try {
+      await turn('fix the docker volume permissions')
+      expect(usageSynced).toHaveLength(1)
+      expect(usageSynced[0]).toMatchObject({ session_id: sid, message_count: 2 })
+      expect(usageSynced[0]).not.toHaveProperty('title')
+      expect(synced.findLast((params) => params.session_id === sid)).toMatchObject({ title: 'Docker volume permissions', title_source: 'llm' })
+      await post(s, '/api/session/rename', { session_id: sid, title: 'Volume fix' })
+      await turn('and the log directory?')
+      expect(usageSynced).toHaveLength(2)
+      expect(usageSynced[1]).toMatchObject({ session_id: sid, title: 'Volume fix' })
     } finally {
       await s.deps.settings.save({ sync_to_insights: false })
     }

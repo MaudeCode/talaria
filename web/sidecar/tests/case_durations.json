@@ -980,6 +980,7 @@
  "tests/test_state_db_shared_handle.py::test_sync_usage_reuses_one_handle_until_the_file_is_replaced": 0.412,
  "tests/test_state_db_title.py::test_a_local_summary_title_is_derived_so_a_later_model_title_replaces_it": 1.5,
  "tests/test_state_db_title.py::test_a_manual_rename_replaces_a_generated_title": 1.434,
+ "tests/test_state_db_title.py::test_a_usage_title_is_a_manual_name_so_a_turn_sends_none_for_an_automatic_title": 1.5,
  "tests/test_status_events.py::test_marked_compaction_progress_and_compression_warnings_reach_their_frames": 0.073,
  "tests/test_status_events.py::test_pinned_compaction_progress_opens_the_span": 0.257,
  "tests/test_status_events.py::test_pinned_stream_diagnostics_reach_warning_frames": 0.11,

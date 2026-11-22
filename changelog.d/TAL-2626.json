@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With Sync to Insights on, a new chat's generated title now replaces its placeholder in Insights after the first reply, and the Agent can still update it later.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -2401,6 +2401,13 @@
         ""
       ]
     },
+    "tests/test_state_db_title.py::test_a_usage_title_is_a_manual_name_so_a_turn_sends_none_for_an_automatic_title": {
+      "layer": "compatibility",
+      "reason": "The installed Agent store must keep a state_db.sync_usage title at user provenance, above every automatic title, and leave the title alone when the usage sync carries none, so the server's derived and llm titles land on a real sidecar (TAL-2626).",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_state_db_title.py::test_a_local_summary_title_is_derived_so_a_later_model_title_replaces_it": {
       "layer": "compatibility",
       "reason": "The installed Agent store's title precedence must keep a local summary synced through state_db.sync_title at derived provenance, including its collision retry, so a later model title replaces it and no summary replaces a model title on a real sidecar (TAL-2588).",

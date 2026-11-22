@@ -654,6 +654,8 @@ and `POST /api/skills/lock` answers 409 without writing.
 Talaria generates session titles on the server and syncs them through `state_db.sync_title`.
 A rename or explicit regenerate lands with `user` provenance, a model title with `llm`, and a
 local fallback summary with `derived`, so a later model title still replaces the summary.
+A turn's `state_db.sync_usage` carries the title only for a manually named session, because the
+sidecar writes a usage title as `user`; an automatic title reaches state.db only at its own rank.
 Chat turns pass `title_user_message=""` when the Agent explicitly declares that parameter,
 preventing duplicate Agent title requests and titles derived from workspace-prefixed prompts.
 The sidecar caches turn signatures per Agent class. Older or uninspectable Agents retain

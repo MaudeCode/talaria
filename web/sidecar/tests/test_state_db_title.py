@@ -57,3 +57,26 @@ def test_a_local_summary_title_is_derived_so_a_later_model_title_replaces_it(her
         assert _title(hermes_home, "webui-1") == ("Repair the CI pipeline", "llm")
     finally:
         proc.close()
+
+
+def test_a_usage_title_is_a_manual_name_so_a_turn_sends_none_for_an_automatic_title(hermes_home) -> None:
+    """TAL-2626: ``state_db.sync_usage`` writes a supplied title with ``user`` provenance, which no automatic title
+    replaces, so the server sends one only for a manual name. A usage sync without a title leaves the row to the
+    automatic title's own ``derived`` and ``llm`` ranks."""
+    _seed(hermes_home, "webui-1")
+    params = {"profile_home": str(hermes_home), "session_id": "webui-1"}
+    usage = {**params, "input_tokens": 3, "output_tokens": 2, "message_count": 2}
+    proc = SidecarProcess(hermes_home)
+    try:
+        assert proc.result("state_db.sync_usage", usage) == {"ok": True}
+        assert proc.result("state_db.sync_title", {**params, "title": "fix docker volume permissions", "title_source": "derived"}) == {"ok": True}
+        assert _title(hermes_home, "webui-1") == ("fix docker volume permissions", "derived")
+        assert proc.result("state_db.sync_usage", usage) == {"ok": True}
+        assert proc.result("state_db.sync_title", {**params, "title": "Docker volume permissions", "title_source": "llm"}) == {"ok": True}
+        assert _title(hermes_home, "webui-1") == ("Docker volume permissions", "llm")
+        assert proc.result("state_db.sync_usage", {**usage, "title": "Volume fix"}) == {"ok": True}
+        assert _title(hermes_home, "webui-1") == ("Volume fix", "user")
+        assert proc.result("state_db.sync_title", {**params, "title": "Docker volumes", "title_source": "llm"}) == {"ok": True}
+        assert _title(hermes_home, "webui-1") == ("Volume fix", "user")
+    finally:
+        proc.close()
