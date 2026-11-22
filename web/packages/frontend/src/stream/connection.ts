@@ -69,19 +69,25 @@ function invalidateSession(sessionId: string, mode: 'all' | 'settled' | 'started
   void invalidateSessionQueries(queryClient, sessionId, { detail: mode !== 'settled' })
 }
 
+/**
+ * Applies a live frame's fields to the cached session detail. TAL-1121: a detail read already in flight would answer
+ * later with the older values, so it is cancelled and the detail reread.
+ */
+function patchDetail(sessionId: string, fields: Partial<Session>): void {
+  if (!queryClient) return
+  const qc = queryClient, filter = { queryKey: keys.sessions.detail(sessionId), exact: true }
+  if (qc.isFetching(filter)) void qc.cancelQueries(filter).then(() => qc.invalidateQueries(filter))
+  qc.setQueryData<{ session: Session }>(filter.queryKey, (old) => old ? { ...old, session: { ...old.session, ...fields } } : old)
+}
+
 function applySideEffects(sessionId: string, event: ChatEvent): void {
   switch (event.event) {
     case 'session_snapshot':
       queryClient?.setQueryData(keys.sessions.detail(sessionId), { session: event.data.session })
       break
-    case 'todo_state': {
-      if (!queryClient) break
-      // TAL-1121: a read started before this write must not answer later with the older list; reread the rest instead.
-      const qc = queryClient, filter = { queryKey: keys.sessions.detail(sessionId), exact: true }
-      if (qc.isFetching(filter)) void qc.cancelQueries(filter).then(() => qc.invalidateQueries(filter))
-      qc.setQueryData<{ session: Session }>(filter.queryKey, (old) => old ? { ...old, session: { ...old.session, todo_state: event.data } } : old)
+    case 'todo_state':
+      patchDetail(sessionId, { todo_state: event.data })
       break
-    }
     // TAL-425: a Stop gives a pending steer's text back to the tab that sent it.
     case 'steer_withdrawn':
       if (event.data.reason === 'stopped') returnStoppedSteer(sessionId, event.data.steer_id, event.data.text)
@@ -107,16 +113,16 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
     }
     // TAL-803: the session's notice list changed; the cached session shows the new one until its next load.
     case 'notices':
-      queryClient?.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => (old ? { ...old, session: { ...old.session, notices: event.data.notices } } : old))
+      patchDetail(sessionId, { notices: event.data.notices })
       break
     // TAL-808: the standing goal changed; the cached session shows the new one until its next load.
     case 'session_goal':
-      queryClient?.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => (old ? { ...old, session: { ...old.session, goal: event.data.goal } } : old))
+      patchDetail(sessionId, { goal: event.data.goal })
       break
     case 'title': {
       const title = event.data.title
       if (title && queryClient) {
-        queryClient.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => old ? { ...old, session: { ...old.session, title } } : old)
+        patchDetail(sessionId, { title })
         void invalidateSessionQueries(queryClient, sessionId, { detail: false })
       }
       break
@@ -144,7 +150,7 @@ function closeLive(sessionId: string): void {
   entry.handle.close()
 }
 
-function open(sessionId: string, streamId: string, replay: Replay | null, owner: object): void {
+function open(sessionId: string, streamId: string, replay: Replay | 'tail' | null, owner: object): void {
   closeLive(sessionId)
   const entry: Live = { sessionId, streamId, handle: { close: () => undefined, readyState: () => SSE_CLOSED }, reconnectTimer: null, reconnectAttempts: 0, owner }
   live.set(sessionId, entry)
@@ -153,6 +159,8 @@ function open(sessionId: string, streamId: string, replay: Replay | null, owner:
       if (live.get(sessionId) !== entry) return
       entry.reconnectAttempts = 0
       dispatch({ type: 'connection', sessionId, streamId, status: 'open' })
+      // A live-tail attach skipped the run's buffered output: reread the persisted rows the server saved since the detail it attached from.
+      if (replay === 'tail') void queryClient?.invalidateQueries({ queryKey: keys.sessions.detail(sessionId), exact: true })
     },
     onEvent: (event, lastEventId) => {
       if (live.get(sessionId) !== entry) return
@@ -170,14 +178,18 @@ function open(sessionId: string, streamId: string, replay: Replay | null, owner:
       if (!turn || isTerminal(turn.status)) { closeLive(sessionId); return }
       dispatch({ type: 'connection', sessionId, streamId, status: 'error' })
       if (readyState === SSE_CLOSED) scheduleReconnect(entry)
+      // The browser would reopen a live-tail URL at the tail again and skip what the run buffered meanwhile: reopen it as
+      // its own reconnect would without `tail`, from the last journaled frame this turn received, else with the buffer.
+      else if (replay === 'tail') open(sessionId, streamId, turn.lastEventId ? { afterSeq: turn.lastSeq, afterEventId: turn.lastEventId } : null, entry.owner)
     },
   })
 }
 
 /**
  * Where to resume `streamId`: this page's own cursor while its live turn holds that stream, else the session detail's
- * `transcript_seq` for that stream (its transcript holds nothing the journal delivers after it), else null — attach live
- * without replay. A cursor for another stream is never used.
+ * `transcript_seq` for that stream (its transcript holds nothing the journal delivers after it), else null — attach an
+ * active run at its live tail, since the persisted rows already hold what it buffered (TAL-2644). A cursor for another
+ * stream is never used.
  */
 function resumeFrom(sessionId: string, streamId: string, transcriptSeq: Session['transcript_seq']): Replay | null {
   const turn = getStreamState().turns[sessionId]
@@ -226,7 +238,7 @@ async function settleFromServer(sessionId: string, streamId: string, owner: obje
       if (st?.active) {
         const replay = resumeFrom(sessionId, streamId, session.transcript_seq)
         dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: session.pending_started_at, serverCompressionStartedAt: session.compression_started_at, serverRunStatus: session.run_status })
-        open(sessionId, streamId, replay, owner)
+        open(sessionId, streamId, replay ?? 'tail', owner)
         return
       }
     }
@@ -362,7 +374,7 @@ export function attachToStream(sessionId: string, streamId: string, run: Pick<Se
     const replay = resumeFrom(sessionId, streamId, run.transcript_seq ?? null)
     dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: run.pending_started_at, serverCompressionStartedAt: run.compression_started_at, serverRunStatus: run.run_status })
     dispatch({ type: 'pending_steers', sessionId, streamId, steers: run.pending_steers ?? [] })
-    open(sessionId, streamId, replay, owner)
+    open(sessionId, streamId, replay ?? (st.active ? 'tail' : null), owner)
   })().finally(() => {
     if (attaching.get(sessionId)?.promise === promise) attaching.delete(sessionId)
     if (owners.get(sessionId) === owner && !live.has(sessionId)) owners.delete(sessionId)

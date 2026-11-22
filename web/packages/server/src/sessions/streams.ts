@@ -33,6 +33,12 @@ export interface SubscribeSnapshot {
   last_event_id: string | null
 }
 
+/**
+ * The Agent's content frames: the run's output, which the session's persisted rows hold. They end a rate-limit wait
+ * (TAL-821) and a compression span (TAL-1006), and a live-tail attach skips the buffered ones (TAL-2644).
+ */
+export const CONTENT_EVENTS = new Set(['token', 'reasoning', 'interim_assistant', 'tool', 'tool_complete'])
+
 const OFFLINE_BUFFER_MAXLEN = 8192
 const SUBSCRIBER_QUEUE_MAXSIZE = OFFLINE_BUFFER_MAXLEN
 
@@ -43,10 +49,16 @@ export class StreamChannel {
   private offlineDropped = 0
   lastEventId: string | null = null
 
-  subscribeWithSnapshot(): [StreamSubscriber, SubscribeSnapshot] {
-    const sub: StreamSubscriber = { queue: [...this.offline, ...this.toolProgress.values()], wake: null, closed: false, gap: null }
-    const first = this.offline[0]
-    const snapshot: SubscribeSnapshot = { offline_buffered_events: this.offline.length, offline_dropped_events: this.offlineDropped, offline_first_event_id: first?.[2] ?? null, last_event_id: this.lastEventId }
+  /**
+   * `tail` (TAL-2644): start at the live tail. The subscriber skips the output buffered while no subscriber was attached
+   * and removes it from the buffer, so a later attach cannot deliver it either; prompts, status and outcome stay for every attach.
+   */
+  subscribeWithSnapshot(opts: { tail?: boolean } = {}): [StreamSubscriber, SubscribeSnapshot] {
+    const offline = opts.tail ? this.offline.filter(([event]) => !CONTENT_EVENTS.has(event)) : this.offline
+    const sub: StreamSubscriber = { queue: [...offline, ...this.toolProgress.values()], wake: null, closed: false, gap: null }
+    const first = offline[0]
+    const snapshot: SubscribeSnapshot = { offline_buffered_events: offline.length, offline_dropped_events: opts.tail ? 0 : this.offlineDropped, offline_first_event_id: first?.[2] ?? null, last_event_id: this.lastEventId }
+    if (opts.tail) { this.offline.splice(0, this.offline.length, ...offline); this.offlineDropped = 0 }
     this.subscribers.add(sub)
     return [sub, snapshot]
   }

@@ -9,7 +9,7 @@ import type { ChatEvent } from '../contracts/sse'
 import { parseChatEvent } from '../contracts/sse'
 
 let readyState = 1
-const opened: { streamId: string; replay: { afterSeq: number; afterEventId: string } | null; onEvent: (event: ChatEvent, lastEventId: string) => void; onOpen: () => void; close: ReturnType<typeof vi.fn> }[] = []
+const opened: { streamId: string; replay: { afterSeq: number; afterEventId: string } | 'tail' | null; onEvent: (event: ChatEvent, lastEventId: string) => void; onOpen: () => void; onError: (readyState: number) => void; close: ReturnType<typeof vi.fn> }[] = []
 
 vi.mock('../api/endpoints', () => ({
   fetchStreamStatus: vi.fn(() => Promise.resolve({ active: true, replay_available: true, stream_id: 'run-a', blocking_stream_id: null })),
@@ -21,9 +21,9 @@ vi.mock('../api/endpoints', () => ({
 vi.mock('../features/toast/toast', () => ({ showToast: vi.fn() }))
 vi.mock('../api/sse', () => ({
   SSE_CLOSED: 2,
-  openChatStream: (streamId: string, replay: { afterSeq: number; afterEventId: string } | null, cb: { onEvent: (event: ChatEvent, lastEventId: string) => void; onOpen: () => void }) => {
+  openChatStream: (streamId: string, replay: { afterSeq: number; afterEventId: string } | 'tail' | null, cb: { onEvent: (event: ChatEvent, lastEventId: string) => void; onOpen: () => void; onError: (readyState: number) => void }) => {
     const close = vi.fn()
-    opened.push({ streamId, replay, onEvent: cb.onEvent, onOpen: cb.onOpen, close })
+    opened.push({ streamId, replay, onEvent: cb.onEvent, onOpen: cb.onOpen, onError: cb.onError, close })
     return { close, readyState: () => close.mock.calls.length ? 2 : readyState }
   },
 }))
@@ -66,21 +66,29 @@ describe('turn boundary cache invalidation (TAL-1210)', () => {
     expect(qc.getQueryData<{ session: typeof initial }>(keys.sessions.detail('other'))?.session).toBeUndefined()
   })
 
-  it('keeps a live todo list when a detail read started before it answers later, then rereads', async () => {
-    const stale = sessionFixture({ session_id: SID, todo_state: { display_items: [{ text: 'Old task', state: 'pending' }], total_count: 1 } })
+  // TAL-2644: a live-tail attach rereads the detail, so a live write regularly lands while that read is in flight.
+  const plan = { display_items: [{ text: 'Owner task', state: 'pending' }], total_count: 1 }
+  const goal = { text: 'Ship it', status: 'parked', turns_used: 4, max_turns: 20, reason: 'CI running', parked_until: null }
+  const notices = [{ key: 'n1', level: 'info', text: 'Live notice', expires_at: null }]
+  it.each([
+    ['todo_state', plan, 'todo_state', { display_items: [{ text: 'Old task', state: 'pending' }], total_count: 1 }, plan],
+    ['session_goal', { session_id: SID, goal }, 'goal', { ...goal, status: 'active', reason: null }, goal],
+    ['notices', { session_id: SID, notices }, 'notices', [], notices],
+    ['title', { session_id: SID, title: 'Live title' }, 'title', 'Old title', 'Live title'],
+  ] as const)('keeps a live %s when a detail read started before it answers later, then rereads', async (event, data, field, before, after) => {
+    const stale = sessionFixture({ session_id: SID, [field]: before })
     qc.setQueryData(keys.sessions.detail(SID), { session: stale })
     const late = deferred<{ session: typeof stale }>()
-    const reads = [late.promise, Promise.resolve({ session: sessionFixture({ session_id: SID, todo_state: { display_items: [{ text: 'Owner task', state: 'pending' }], total_count: 1 } }) })]
+    const reads = [late.promise, Promise.resolve({ session: sessionFixture({ session_id: SID, [field]: after }) })]
     const observer = new QueryObserver(qc, { queryKey: keys.sessions.detail(SID), queryFn: () => reads.shift()!, staleTime: Infinity })
     const unsubscribe = observer.subscribe(() => undefined)
     void observer.refetch()
     await attachToStream(SID, 'run-a')
-    const plan = { display_items: [{ text: 'Owner task', state: 'pending' }], total_count: 1 }
-    opened[0]!.onEvent(parseChatEvent('todo_state', JSON.stringify(plan))!, 'run-a:1')
+    opened[0]!.onEvent(parseChatEvent(event, JSON.stringify(data))!, 'run-a:1')
     late.resolve({ session: stale })
     const settled = async () => {
       await vi.waitFor(() => expect(qc.isFetching({ queryKey: keys.sessions.detail(SID) })).toBe(0))
-      expect(qc.getQueryData<{ session: typeof stale }>(keys.sessions.detail(SID))?.session.todo_state).toMatchObject(plan)
+      expect((qc.getQueryData<{ session: typeof stale }>(keys.sessions.detail(SID))?.session as Record<string, unknown>)[field]).toEqual(after)
     }
     await settled()
     // The cancelled read's other fields converge on a reread the server answers after the live write.
@@ -173,11 +181,39 @@ describe('stream attach cursor (TAL-316)', () => {
     expect(opened.map((o) => [o.streamId, o.replay])).toEqual([['run-a', { afterSeq: 0, afterEventId: '' }]])
   })
 
-  it('attaches live without replay when the detail states no cursor, or a cursor for another stream', async () => {
+  // TAL-2644: the detail's persisted rows already hold what the run buffered before this attach.
+  it('attaches an active run at its live tail when the detail states no cursor, or a cursor for another stream', async () => {
     await attachToStream(SID, 'run-a')
     teardown(SID)
     await attachToStream(SID, 'run-b', { transcript_seq: { stream_id: 'run-a', seq: 7 } })
-    expect(opened.map((o) => [o.streamId, o.replay])).toEqual([['run-a', null], ['run-b', null]])
+    expect(opened.map((o) => [o.streamId, o.replay])).toEqual([['run-a', 'tail'], ['run-b', 'tail']])
+    expect(getStreamState().turns[SID]?.claimsPersistedRows).toBe(false)
+  })
+
+  // Rows the server saved between the detail read and the subscription are not in the cached detail.
+  it.each([[undefined, true], [{ stream_id: 'run-a', seq: 0 }, false]] as const)('with transcript_seq %j, an opened attach rereads the session detail: %s', async (transcriptSeq, reread) => {
+    const qc = new QueryClient()
+    configureStream({ queryClient: qc })
+    qc.setQueryData(keys.sessions.detail(SID), { session: sessionFixture({ session_id: SID }) })
+    await attachToStream(SID, 'run-a', transcriptSeq ? { transcript_seq: transcriptSeq } : {})
+    opened[0]!.onOpen()
+    expect(qc.getQueryState(keys.sessions.detail(SID))?.isInvalidated).toBe(reread)
+    qc.clear()
+  })
+
+  it('replays a finished run\'s journal without a cursor, never at its tail', async () => {
+    vi.mocked(api.fetchStreamStatus).mockResolvedValueOnce({ active: false, replay_available: true, stream_id: 'run-a', blocking_stream_id: null })
+    await attachToStream(SID, 'run-a')
+    expect(opened.map((o) => o.replay)).toEqual([null])
+  })
+
+  // The browser would reopen the same `tail=1` URL and skip what the run buffered while the connection was down.
+  it.each([['', null], ['run-a:4', { afterSeq: 4, afterEventId: 'run-a:4' }]] as const)('a dropped live-tail attach that received "%s" reopens without tail from %j', async (lastEventId, replay) => {
+    await attachToStream(SID, 'run-a')
+    opened[0]!.onEvent(token('Live'), lastEventId)
+    opened[0]!.onError(0)
+    expect(opened[0]!.close).toHaveBeenCalled()
+    expect(opened.map((o) => o.replay)).toEqual(['tail', replay])
   })
 
   it('an in-page reconnect keeps its own same-stream cursor, and replayed events render once', async () => {

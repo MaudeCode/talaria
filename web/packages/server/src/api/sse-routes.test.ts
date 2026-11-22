@@ -361,6 +361,34 @@ it.each(['chat', 'session'])('%s stream backfill of dropped frames omits a settl
   expect(frames.filter((f) => f.id).map((f) => [f.event, f.id])).toEqual([['tool', 'live:1'], ['tool_complete', 'live:3'], ['approval', 'live:4'], ['token', 'live:5']])
 })
 
+// TAL-2644: a run without a usable journal buffers its frames while no tab is attached; a reload already shows them as
+// persisted rows, so a `tail=1` attach starts at the live tail and a plain attach still receives the buffer.
+it.each([['tail=1', ['after']], ['', ['before', 'after']]] as const)('chat attach with "%s" delivers %j', async (query, texts) => {
+  const s = server = await bootTestServer()
+  const sid = (await s.deps.sessionStore.newSession()).session_id
+  const channel = liveRun(s, sid, 'live')
+  channel.put(['token', { text: 'before' }, null])
+  let subscribed!: () => void
+  const attached = new Promise<void>((resolve) => { subscribed = resolve })
+  const subscribe = channel.subscribeWithSnapshot.bind(channel)
+  vi.spyOn(channel, 'subscribeWithSnapshot').mockImplementation((...args) => { const result = subscribe(...args); subscribed(); return result })
+  const received = s.sse(`/api/chat/stream?stream_id=live&${query}`, (f) => f.event === 'stream_end', { timeoutMs: 2000 })
+  await attached
+  channel.put(['token', { text: 'after' }, null])
+  channel.put(['stream_end', {}, null])
+  const frames = await received
+  expect(frames.filter((f) => f.event === 'token').map((f) => (f.data as { text: string }).text)).toEqual(texts)
+})
+
+it.each(['after_seq=0', 'after_event_id=live:1', 'replay=1'])('chat attach rejects tail=1 with the cursor %s', async (cursor) => {
+  const s = server = await bootTestServer()
+  const sid = (await s.deps.sessionStore.newSession()).session_id
+  liveRun(s, sid, 'live')
+  const res = await s.get(`/api/chat/stream?stream_id=live&tail=1&${cursor}`)
+  expect(res.status).toBe(400)
+  expect(await res.json()).toEqual({ error: 'tail cannot be combined with a resume cursor' })
+})
+
 /** Listings of the journals root, sync or async, since the last mock clear. */
 function rootListings(journal: JsonJournal): number {
   return [...vi.mocked(fs.readdirSync).mock.calls, ...vi.mocked(fsp.readdir).mock.calls].filter(([path]) => String(path) === journal.root()).length

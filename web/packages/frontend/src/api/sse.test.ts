@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { openGroupStream, openKanbanEventStream, openSessionListStream, openSessionStream, SSE_CLOSED, type SseHandle } from './sse'
+import { openChatStream, openGroupStream, openKanbanEventStream, openSessionListStream, openSessionStream, SSE_CLOSED, type SseHandle } from './sse'
 
 vi.unmock('./sse')
 
@@ -16,6 +16,19 @@ it('sends the cached persisted count, including zero, without inventing a missin
   openSessionStream('empty', cb, 0).close()
   openSessionStream('uncached', cb).close()
   expect(urls.map((url) => url.searchParams.get('known_count'))).toEqual(['241', '0', null])
+})
+
+it('sends tail=1 only for a live-tail attach, never beside a resume cursor (TAL-2644)', () => {
+  const urls: URL[] = []
+  vi.stubGlobal('EventSource', class extends EventTarget {
+    constructor(url: string) { super(); urls.push(new URL(url)) }
+    close = vi.fn()
+  })
+  const cb = { onEvent: vi.fn() }
+  openChatStream('run', 'tail', cb).close()
+  openChatStream('run', { afterSeq: 3, afterEventId: 'run:3' }, cb).close()
+  openChatStream('run', null, cb).close()
+  expect(urls.map((url) => [url.searchParams.get('tail'), url.searchParams.get('after_seq')])).toEqual([['1', null], [null, '3'], [null, null]])
 })
 
 /** What a browser does when a response ends cleanly: it reports `error`, stays connecting, and reopens by itself. */

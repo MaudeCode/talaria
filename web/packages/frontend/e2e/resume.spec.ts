@@ -51,8 +51,11 @@ test('reloading a running session renders its turn once from the transcript curs
   }
 })
 
-/** A run whose journal cannot replay it keeps its persisted rows: the live turn attached without replay does not hide them. */
-test('a running session without a transcript cursor keeps its persisted output visible', async ({ page }) => {
+/**
+ * A run whose journal cannot replay it keeps its persisted rows: the live turn attaches at the live tail (TAL-2644), so it
+ * neither hides them nor repeats the frames the run buffered before the reload.
+ */
+test('a running session without a transcript cursor keeps its persisted output visible, then only live frames', async ({ page }) => {
   const sid = 'resume-degraded'
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
     session_id: sid, title: 'Read the file', active_stream_id: 'degraded-run', transcript_seq: null,
@@ -68,7 +71,7 @@ test('a running session without a transcript cursor keeps its persisted output v
     requests.push(request.url ?? '')
     open.push(response)
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
-    response.write(': connected\n\n')
+    response.write(`: connected\n\nevent: token\ndata: ${JSON.stringify({ text: 'Live after attach.' })}\n\n`)
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
@@ -77,8 +80,10 @@ test('a running session without a transcript cursor keeps its persisted output v
   try {
     await page.goto(`/session/${sid}`)
     await expect.poll(() => requests.length).toBeGreaterThan(0)
-    expect(new URL(requests[0]!, 'http://x').searchParams.get('after_seq')).toBeNull()
-    await expect(page.getByText('Persisted before the journal failed.')).toBeVisible()
+    const attach = new URL(requests[0]!, 'http://x').searchParams
+    expect([attach.get('tail'), attach.get('after_seq')]).toEqual(['1', null])
+    await expect(page.locator('.live-turn')).toContainText('Live after attach.')
+    await expect(page.getByText('Persisted before the journal failed.')).toHaveCount(1)
   } finally {
     for (const response of open) response.end()
     await new Promise<void>((resolve) => server.close(() => { resolve() }))
