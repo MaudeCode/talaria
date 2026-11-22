@@ -15654,6 +15654,84 @@
     ],
     "additionalProperties": false
   },
+  "gateway.bot_deliveries": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "state": {
+        "type": "string",
+        "enum": [
+          "available",
+          "not_bot_chat",
+          "unsupported",
+          "stopped",
+          "unavailable"
+        ]
+      },
+      "reason": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "deliveries": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "delivery_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "target": {
+              "type": "string"
+            },
+            "target_handle": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "claimed",
+                "working",
+                "waiting_on_you",
+                "failed"
+              ]
+            },
+            "since": {
+              "type": "number"
+            },
+            "preview": {
+              "type": "string"
+            },
+            "waiting_on": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "delivery_id",
+            "target",
+            "target_handle",
+            "state",
+            "since",
+            "preview",
+            "waiting_on"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "state",
+      "reason",
+      "deliveries"
+    ],
+    "additionalProperties": false
+  },
   "worktree.create": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

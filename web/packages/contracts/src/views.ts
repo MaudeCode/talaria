@@ -1642,6 +1642,29 @@ export type SessionSkill = z.infer<typeof SessionSkillSchema>
 export const SessionSkillsSchema = z.object({ session_id: z.string(), skills: z.array(SessionSkillSchema) })
 export type SessionSkills = z.infer<typeof SessionSkillsSchema>
 /**
+ * TAL-2684: one request the profile's bot sent a teammate that the teammate has not settled, from the Agent's read-only
+ * `bot_delivery.list`. `running` covers a teammate holding or working on it; `waiting_on_user` is its turn parked on the
+ * user's `clarify` answer or `approval` (`waiting_on`). `since` is the delivery's last change in unix seconds; `preview`
+ * is the request's text, redacted like the transcript. Failed and settled deliveries are not listed.
+ */
+export const BotDeliverySchema = z.object({
+  delivery_id: z.string(), target: z.string(), target_handle: z.string(),
+  state: z.enum(['queued', 'running', 'waiting_on_user']), waiting_on: z.enum(['clarify', 'approval']).nullable(),
+  since: z.number(), preview: z.string(),
+})
+export type BotDelivery = z.infer<typeof BotDeliverySchema>
+/**
+ * TAL-2684: the unsettled teammate deliveries of the requesting profile's canonical Bot Chat, newest first. `not_bot_chat`:
+ * the session is not that chat (another profile's Bot Chat included), and nothing is shown. `unavailable` with `reason`
+ * `agent_unsupported` (an Agent before v0.23.3, or an owner Web cannot verify) or `gateway_stopped`. A transient owner
+ * failure answers 503, so a client keeps the last list it had. Read-only: no route changes a delivery.
+ */
+export const SessionBotDeliveriesSchema = z.object({
+  session_id: z.string(), state: z.enum(['available', 'unavailable', 'not_bot_chat']),
+  reason: z.enum(['agent_unsupported', 'gateway_stopped']).nullable(), deliveries: z.array(BotDeliverySchema),
+})
+export type SessionBotDeliveries = z.infer<typeof SessionBotDeliveriesSchema>
+/**
  * TAL-2152: the conversation outline, one entry per user message of the visible lineage (steers included), oldest first.
  * `index` is the message's absolute position, the `msg_before` coordinate its page loads from; `message_id` is its row key.
  * `excerpt` is its first line without Markdown, redacted like the transcript, at most 120 characters.

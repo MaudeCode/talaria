@@ -13,6 +13,7 @@ import { HttpError, RawResponse, requireFields, type ApiContext } from './router
 import { GitWorkspaceError, WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import { HttpFailure, sanitizePaths } from '../sessions/service.js'
+import { botDeliveries } from '../sessions/bot-deliveries.js'
 import { compressionStatusPayload } from '../sessions/compress.js'
 import { titleFailureReason } from '../sessions/titles.js'
 import { SessionNotFound } from '../sessions/store.js'
@@ -380,6 +381,12 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       if (!input.session_id) throw new HttpError(400, 'Missing session_id')
       await guardVisibility(ctx, input.session_id)
       return ctx.deps.sessions.sessionSkills(input.session_id, () => ctx.deps.skills.list(ctx.deps.profileHome(activeProfileName(ctx))))
+    })),
+    botDeliveries: os.session.botDeliveries.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!input.session_id) throw new HttpError(400, 'Missing session_id')
+      await guardVisibility(ctx, input.session_id)
+      // Only the requesting profile's own Bot Chat answers; the sidecar resolves it from that profile's home alone.
+      return botDeliveries(ctx.deps.sidecar(), ctx.deps.profileHome(activeProfileName(ctx)), input.session_id, ctx.deps.sessions.deps.redactEnabled())
     })),
     outline: os.session.outline.handler(({ input, context: { ctx } }) => run(async () => {
       if (!input.session_id) throw new HttpError(400, 'Missing session_id')

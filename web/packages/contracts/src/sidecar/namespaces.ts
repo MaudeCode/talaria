@@ -878,3 +878,21 @@ export const GATEWAY_METHODS = {
   },
 } as const
 export const GROUP_METHODS = { 'gateway.groups': { params: GroupSidecarParamsSchema, result: GroupSidecarResultSchema } } as const
+/**
+ * TAL-2684: the native owner's read-only `bot_delivery.list` for `session_id` when it is the canonical Bot Chat of the
+ * profile at `profile_home`, else `not_bot_chat` without reaching an owner. Rows keep the Agent's own `state`.
+ * `unsupported`: an owner without the method (before v0.23.3) or one that cannot be verified; `stopped`: no owner runs;
+ * `unavailable`: a transient failure.
+ */
+export const BOT_DELIVERY_METHODS = {
+  'gateway.bot_deliveries': {
+    params: ProfileHomeParams.extend({ session_id: z.string().min(1) }),
+    result: z.object({
+      state: z.enum(['available', 'not_bot_chat', 'unsupported', 'stopped', 'unavailable']), reason: z.string().nullable(),
+      deliveries: z.array(z.object({
+        delivery_id: z.string().min(1), target: z.string(), target_handle: z.string(),
+        state: z.enum(['queued', 'claimed', 'working', 'waiting_on_you', 'failed']), since: z.number(), preview: z.string(), waiting_on: z.string().nullable(),
+      })),
+    }),
+  },
+} as const

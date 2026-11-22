@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
-import { Mic, Square, ArrowUp, ListPlus, Layers, CornerUpRight, SkipForward } from 'lucide-react'
+import { Mic, Square, ArrowUp, ListPlus, Layers, CornerUpRight, SkipForward, Send } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import type { CommandDecision, Session, Settings } from '../../contracts'
@@ -31,6 +31,7 @@ import { ComposerNotices, type ComposerNotice } from './ComposerNotices'
 import { useBtw } from './useBtw'
 import { useCommandOutput } from './useCommandOutput'
 import { BackgroundWorkCard, delegationSummary, useBackgroundTasks, useStartBackground } from '../background/BackgroundWork'
+import { BotDeliveriesCard, useBotDeliveries } from '../background/BotDeliveries'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
 import { REST_MS, onComposerRestRequest, requestScroll } from '../chat/sendMotion'
 import { MOTION_EASE, prefersReducedMotion } from '../../lib/motion'
@@ -121,6 +122,7 @@ interface RoomComposerProps {
 const EMPTY_NOTICES: ComposerNotice[] = []
 const EMPTY_TASKS: NonNullable<ReturnType<typeof useBackgroundTasks>['data']>['tasks'] = []
 const EMPTY_ADMISSIONS: NonNullable<Session['owner_attachment']>['admissions'] = []
+const EMPTY_DELIVERIES: NonNullable<ReturnType<typeof useBotDeliveries>['data']> = []
 /** Phone-width viewport: the footer runs the icon/burger stage and collapses when idle (legacy _isPhoneWidthViewport). */
 function usePhone(): boolean {
   // oxlint-disable-next-line typescript/prefer-optional-chain -- `window?.` would throw where `window` is undeclared.
@@ -897,6 +899,8 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const backgroundTasks = background?.tasks ?? EMPTY_TASKS
   const pinnedCount = background?.pinned_count ?? 0
   const delivery = background?.delegation_status
+  // TAL-2684: the server answers only this profile's canonical Bot Chat with its teammates' unsettled requests.
+  const deliveries = useBotDeliveries(session ? sessionId : null).data ?? EMPTY_DELIVERIES
   const admissions = session?.owner_attachment?.admissions ?? EMPTY_ADMISSIONS
   const ownerInputs = session?.owner_attachment?.queued_input_count ?? 0
   // TAL-1043: an owner input with an unknown outcome blocks sending until it is retried or discarded, so its chip says so.
@@ -913,6 +917,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     // TAL-2613: active YOLO skips approvals, so its warning always shows; the setting hides only the Turn off action.
     ...(yolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: hide('hide_composer_yolo') ? undefined : { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
     ...(sessionId && (pinnedCount > 0 || delivery?.visible) ? [{ id: 'background', content: <><Layers size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{delivery?.visible ? delegationSummary(delivery) : m.bg_card_count({ n: pinnedCount })}</span></>, detail: { title: m.bg_card_title(), content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} delivery={delivery} /> } }] : []),
+    ...(deliveries.length ? [{ id: 'bot-deliveries', content: <><Send size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{m.bot_deliveries_count({ n: deliveries.length })}</span></>, detail: { title: m.bot_deliveries_title(), content: <BotDeliveriesCard deliveries={deliveries} /> } }] : []),
     ...(sessionId && (queued.length > 0 || ownerInputs) ? [{ id: 'queue', tone: outcomeUnknown ? 'warning' as const : undefined, content: <><ListPlus size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{outcomeUnknown ? m.owner_outcome_unknown() : m.queued_count({ n: queued.length + ownerInputs })}</span></>, detail: { title: ownerInputs ? m.owner_inputs() : m.queued_count({ n: queued.length }), content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={admissions} onAdmissionAction={props.onOwnerAction} /> } }] : []),
   ]
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).

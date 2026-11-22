@@ -15496,6 +15496,126 @@
         }
       }
     },
+    "/api/session/bot-deliveries": {
+      "get": {
+        "operationId": "session.botDeliveries",
+        "summary": "TAL-2684: the unsettled requests the active profile's bot sent its teammates, for its canonical Bot Chat only, read from the Agent's owner. 503 on a transient owner failure.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": [
+                        "available",
+                        "unavailable",
+                        "not_bot_chat"
+                      ],
+                      "type": "string"
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "agent_unsupported",
+                            "gateway_stopped"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "delivery_id": {
+                            "type": "string"
+                          },
+                          "target": {
+                            "type": "string"
+                          },
+                          "target_handle": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "queued",
+                              "running",
+                              "waiting_on_user"
+                            ],
+                            "type": "string"
+                          },
+                          "waiting_on": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "clarify",
+                                  "approval"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "since": {
+                            "type": "number"
+                          },
+                          "preview": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "delivery_id",
+                          "target",
+                          "target_handle",
+                          "state",
+                          "waiting_on",
+                          "since",
+                          "preview"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "session_id",
+                    "state",
+                    "reason",
+                    "deliveries"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/outline": {
       "get": {
         "operationId": "session.outline",
