@@ -3147,3 +3147,46 @@ final class ApprovalRequestContentTests: XCTestCase {
         }
     }
 }
+
+/// TAL-968: the chat's bar draws its own background, so transcript text scrolled under the title never shows through.
+/// The transcript scrolls inside the chat, so the bar stays in its scroll-edge appearance whatever is under it.
+@MainActor
+final class ChatNavigationBackgroundTests: XCTestCase {
+    func testChatBarDrawsMaterialBehindTheTitle() async throws {
+        let bar = try await chatBar(reduceTransparency: false)
+        if #available(iOS 26, *) {
+            XCTAssertTrue(bar.appearance.backgroundEffect != nil, "The chat bar must draw a material behind its title")
+        } else {
+            XCTAssertEqual(bar.background, bar.systemBackground, "Before iOS 26 the chat bar is opaque")
+        }
+    }
+
+    func testChatBarIsOpaqueWithReduceTransparency() async throws {
+        let bar = try await chatBar(reduceTransparency: true)
+        XCTAssertNil(bar.appearance.backgroundEffect, "Reduce Transparency must not blur transcript text behind the title")
+        XCTAssertEqual(bar.background, bar.systemBackground, "Reduce Transparency makes the chat bar opaque")
+    }
+
+    /// The appearance the chat's bar shows at the scroll edge once a long transcript fills the chat, with its
+    /// background and the system background resolved for the window.
+    private func chatBar(reduceTransparency: Bool) async throws
+        -> (appearance: UINavigationBarAppearance, background: UIColor?, systemBackground: UIColor) {
+        let fixture = try FixtureApp(["--ui-test-long-bodies"], for: self)
+        let session = try await fixture.session()
+        let window = try hostWindow(fixture.chat(session).environment(\._accessibilityReduceTransparency, reduceTransparency))
+        _ = try await requireElement(in: window, label: "Short reply 25.")
+        attachHostedScreenshot(window, name: reduceTransparency ? "chat-bar-reduce-transparency" : "chat-bar")
+        let navigation = try XCTUnwrap(Self.navigationController(under: window.rootViewController))
+        let page = try XCTUnwrap(navigation.topViewController)
+        let appearance = page.navigationItem.scrollEdgeAppearance ?? navigation.navigationBar.scrollEdgeAppearance
+            ?? navigation.navigationBar.standardAppearance
+        let traits = window.traitCollection
+        return (appearance, appearance.backgroundColor?.resolvedColor(with: traits), UIColor.systemBackground.resolvedColor(with: traits))
+    }
+
+    private static func navigationController(under controller: UIViewController?) -> UINavigationController? {
+        guard let controller else { return nil }
+        if let navigation = controller as? UINavigationController { return navigation }
+        return controller.children.lazy.compactMap { navigationController(under: $0) }.first
+    }
+}

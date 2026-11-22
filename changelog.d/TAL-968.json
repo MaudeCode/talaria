@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chat text you scroll under the title no longer shows through the bar, including with Reduce Transparency on.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

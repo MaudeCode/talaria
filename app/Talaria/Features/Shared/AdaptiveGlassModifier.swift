@@ -400,6 +400,26 @@ private struct AdaptiveSoftScrollEdgeModifier: ViewModifier {
     }
 }
 
+/// A navigation bar background that does not rely on the bar detecting the scroll view under it: material where the
+/// soft scroll edge applies, opaque under Reduce Transparency and before iOS 26.
+private struct AdaptiveNavigationBarBackgroundModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        content
+            .toolbarBackground(background, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+    }
+
+    private var background: AnyShapeStyle {
+        guard #available(iOS 26, *), AdaptiveScrollEdgeTreatment.resolve(
+            softScrollEdgesAvailable: true, reduceTransparency: reduceTransparency) == .soft else {
+            return AnyShapeStyle(Color(.systemBackground))
+        }
+        return AnyShapeStyle(.regularMaterial)
+    }
+}
+
 struct AdaptiveGlassContainer<Content: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @AppStorage(GlassPreference.isEnabledKey) private var isGlassEnabled = GlassPreference.defaultIsEnabled
@@ -461,5 +481,9 @@ extension View {
 
     func adaptiveSoftScrollEdges(_ edges: Edge.Set = [.top, .bottom], emphasizesTop: Bool = false) -> some View {
         modifier(AdaptiveSoftScrollEdgeModifier(edges: edges, emphasizesTop: emphasizesTop))
+    }
+
+    func adaptiveNavigationBarBackground() -> some View {
+        modifier(AdaptiveNavigationBarBackgroundModifier())
     }
 }

@@ -951,6 +951,8 @@ struct ChatView: View {
             // Two chats show their titles inline, so neither offers the bar a title.
             .navigationTitle(isSplitPane ? "" : displayTitle)
             .navigationBarTitleDisplayMode(.inline)
+            // The transcript scrolls inside the chat, so the bar never sees content under it to draw its own (TAL-968).
+            .adaptiveNavigationBarBackground()
             .onToolbarVerticalEdgeChange { observedVerticalToolbar = $0 }
             .toolbarTitleMenu { if !isSplitPane { sessionMenu } }
             .toolbar {
