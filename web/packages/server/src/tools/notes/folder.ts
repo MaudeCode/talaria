@@ -11,11 +11,14 @@ import { sessionSearchMatches, sessionSearchTerms } from '../../sessions/storage
 import { str } from '../../util.js'
 import { expandHome } from '../../workspace/paths.js'
 import { safeText } from '../mcp.js'
-import { expandVars, WikiPages } from '../wiki.js'
+import { expandVars, WikiPages, type PageRule } from '../wiki.js'
 import { noteSnippet, previewBody, searchLimit, type NotesSource } from './source.js'
 
+/** Every page under the root but Logseq's `logseq/bak` (dot directories are never listed). */
+export const FOLDER_RULE = { sections: [''], include: (rel: string): boolean => rel !== 'logseq/bak' && !rel.startsWith('logseq/bak/') } satisfies PageRule
+
 /** The process-wide allowlist cache for notes folders, apart from the wiki's (a different page rule over the same roots). */
-export const folderPages = new WikiPages({ rule: { sections: [''], include: (rel) => rel !== 'logseq/bak' && !rel.startsWith('logseq/bak/') } })
+export const folderPages = new WikiPages({ rule: FOLDER_RULE })
 
 /** The configured folders, `~` and env vars expanded; an entry without a name or an absolute path is skipped, and a repeated name keeps the first. */
 export function notesFolders(config: Config, env: Record<string, string | undefined>, home: string): { name: string; path: string }[] {

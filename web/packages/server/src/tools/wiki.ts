@@ -76,16 +76,18 @@ function isoSeconds(ms: number): string {
 
 /**
  * Entries under `dir`, like `Path.rglob`: directory symlinks are not followed; dot directories (never listed) are
- * skipped. Every entry spends one unit of `budget`, so a huge tree cannot hold the event loop.
+ * skipped, and so is any entry `keep` refuses, before its subtree is read. Every entry spends one unit of `budget`,
+ * so a huge tree cannot hold the event loop.
  */
-async function* walk(dir: string, budget: { left: number }): AsyncGenerator<{ path: string; name: string; dir: boolean }> {
+async function* walk(dir: string, budget: { left: number }, keep: (path: string) => boolean = () => true): AsyncGenerator<{ path: string; name: string; dir: boolean }> {
   let names
   try { names = await readdir(dir, { withFileTypes: true }) } catch { return }
   for (const d of names) {
     if (budget.left-- <= 0) return
     const path = join(dir, d.name)
+    if (!keep(path)) continue
     yield { path, name: d.name, dir: d.isDirectory() }
-    if (d.isDirectory() && !d.name.startsWith('.')) yield* walk(path, budget)
+    if (d.isDirectory() && !d.name.startsWith('.')) yield* walk(path, budget, keep)
   }
 }
 
@@ -122,7 +124,8 @@ interface Cached<T> { signature: string; expiresAt: number; value: T }
 
 /**
  * Which pages a reader lists: the `*.md` files under each of `sections` (relative to the root; `''` is the root itself)
- * whose path relative to that section passes `include`. The default is the LLM wiki's four page sections.
+ * whose path relative to that section passes `include`. A directory `include` refuses is never read, so its entries
+ * spend none of the walk budget. The default is the LLM wiki's four page sections.
  */
 export interface PageRule { sections: readonly string[]; include?: (rel: string) => boolean }
 
@@ -156,15 +159,14 @@ export class WikiPages {
     const rootReal = await realpath(root)
     if (!rootReal || FORBIDDEN_ROOTS.has(rootReal)) return pages
     const budget = { left: this.opts.maxFiles ?? MAX_FILES }
-    const include = this.opts.rule?.include ?? (() => true)
+    const include = this.opts.rule?.include
     for (const name of this.sections) {
       const section = join(root, name)
       const sectionReal = await realpath(section)
       // A symlinked section must still resolve under the wiki root, so it cannot expose an outside tree.
       if (!sectionReal || !(await stat(sectionReal))?.isDirectory() || !isWithin(sectionReal, rootReal)) continue
-      for await (const item of walk(section, budget)) {
-        const rel = relative(section, item.path)
-        if (!item.name.endsWith('.md') || !isClean(rel) || !include(rel.split(sep).join('/'))) continue
+      for await (const item of walk(section, budget, include && ((path) => include(relative(section, path).split(sep).join('/'))))) {
+        if (!item.name.endsWith('.md') || !isClean(relative(section, item.path))) continue
         // A hard link at a clean page name can carry any inode, and the identity check at read time cannot tell it apart.
         const [st, link, itemReal] = await Promise.all([stat(item.path), lstat(item.path), realpath(item.path)])
         if (st?.isFile() && link && link.nlink <= 1 && itemReal && isWithin(itemReal, sectionReal) && isClean(relative(rootReal, itemReal))) pages.set(item.path, sectionReal)
