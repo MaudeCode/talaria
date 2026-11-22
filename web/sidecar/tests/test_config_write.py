@@ -484,6 +484,30 @@ for case in ("endpoint", "no_url", "managed"):
 
 
 @requires_agent
+@native_refs
+def test_config_set_never_shows_a_repointed_route_the_old_endpoints_key(hermes_home: pathlib.Path) -> None:
+    agent_script(hermes_home, CREDENTIAL_HOME + r'''
+from unittest.mock import patch
+
+# Delegation reads the fixed HERMES_DELEGATION_API_KEY for an old endpoint; the save re-points it and enters a new key.
+path.write_text("delegation:\n  provider: custom\n  base_url: https://old.example.test/v1\n  api_key: ${HERMES_DELEGATION_API_KEY}\n")
+env.write_text("HERMES_DELEGATION_API_KEY=synthetic-old-key\n")
+seen = []
+original_write = config.env_write
+def observed(home, updates, **kwargs):
+    if not kwargs.get("dry_run"):
+        seen.append(config.read_config(path)["config"])
+    return original_write(home, updates, **kwargs)
+with patch.object(config, "env_write", side_effect=observed):
+    save({"delegation": {"provider": "openrouter", "model": "synthetic", "api_key": "synthetic-new-key"}})
+# When the new key reaches .env, config.yaml routes that variable to no endpoint at all.
+assert seen and all("api_key" not in state.get("delegation", {}) and "old.example.test" not in str(state) for state in seen), seen
+assert config.read_config(path)["config"]["delegation"]["api_key"] == "${HERMES_DELEGATION_API_KEY}"
+assert "HERMES_DELEGATION_API_KEY=synthetic-new-key" in env_lines()
+''')
+
+
+@requires_agent
 def test_config_set_keeps_credentials_inline_without_native_references(hermes_home: pathlib.Path) -> None:  # agent-shim: config-secret-refs
     agent_script(hermes_home, CREDENTIAL_HOME + r'''
 from unittest.mock import patch

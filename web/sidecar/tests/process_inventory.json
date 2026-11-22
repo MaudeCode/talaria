@@ -973,6 +973,11 @@
       "reason": "Supported-Agent refusals: the release's managed .env scope and endpoint-name ownership must refuse the whole save before config.yaml or .env changes.",
       "cases": [""]
     },
+    "tests/test_config_write.py::test_config_set_never_shows_a_repointed_route_the_old_endpoints_key": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent write order: the release's names and .env writer, observed at the moment the key lands, must never meet a config.yaml that routes it to the old endpoint.",
+      "cases": [""]
+    },
     "tests/test_config_write.py::test_config_set_keeps_credentials_inline_without_native_references": {
       "layer": "compatibility",
       "reason": "The config-secret-refs shim: a save through the installed Agent writer keeps the key inline when the Agent lacks config_secret_refs.",

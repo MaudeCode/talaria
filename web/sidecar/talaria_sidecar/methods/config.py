@@ -248,24 +248,35 @@ def _credential_routes(config: dict, current: dict):
     return [(block, saved.get("api_key"), task) for block, saved, task in routes if isinstance(block, dict)]
 
 
-def _route_entered_credentials(config: dict, target: Path, home: Path) -> dict[str, str]:
+def _reads_elsewhere(refs, owner: dict, identity: str) -> bool:
+    """Whether ``owner`` may send its credential to another endpoint than ``identity``; without a URL on both sides
+    (delegation re-pointed at a named provider) that cannot be ruled out."""
+    url = str(owner.get("base_url") or owner.get("url") or owner.get("api") or "").strip()
+    return not (identity and refs.endpoint_identity(url) == identity)
+
+
+def _route_entered_credentials(config: dict, target: Path, home: Path) -> tuple[dict[str, str], list[dict]]:
     """TAL-2304: the Agent's dashboard save, at this one boundary. A literal ``api_key`` this save enters or changes in
     ``model``, ``delegation`` or ``auxiliary.<task>`` is replaced in ``config`` by ``${NAME}`` under the Agent's own
     name (``config_secret_refs``) and returned for ``.env``; inline keys the save leaves alone and references stay.
-    Refuses, before anything is written, a name another endpoint reads with a different key. Never touches
-    ``os.environ``: names come from the Agent's helpers, the value goes through ``env_write``.
+    Refuses, before anything is written, a name another endpoint reads with a different key. Also returns the blocks
+    whose name ``config.yaml`` on disk still routes to another endpoint (a fixed ``AUXILIARY_<TASK>_API_KEY`` or
+    ``HERMES_DELEGATION_API_KEY`` re-pointed by this save): ``write_config`` publishes them keyless before ``.env``
+    changes, so no reader ever pairs the new key with the old endpoint. Never touches ``os.environ``: names come from
+    the Agent's helpers, the value goes through ``env_write``.
     """
     if not any(isinstance(block.get("api_key"), str) and block["api_key"].strip() for block, _, _ in _credential_routes(config, {})):
-        return {}
+        return {}, []
     try:
         refs = importlib.import_module("hermes_cli.config_secret_refs")
     except ImportError:  # agent-shim: config-secret-refs
-        return {}
+        return {}, []
     current = read_config(target)["config"]
     updates: dict[str, str] = {}
+    repointed: list[dict] = []
     with scoped_home(home, read_only=True):
         if not refs.refs_supported():  # Remote Config serves config.yaml to hosts that do not share this .env
-            return {}
+            return {}, []
         env = importlib.import_module("hermes_cli.config").load_env()
         for block, saved, task in _credential_routes(config, current):
             value = block.get("api_key")
@@ -274,23 +285,22 @@ def _route_entered_credentials(config: dict, target: Path, home: Path) -> dict[s
             key, url = value.strip(), str(block.get("base_url") or "").strip()
             name = (refs.aux_api_key_env(task) if task else
                     refs.known_endpoint_key_env(config, url) or refs.endpoint_api_key_env(url))
-            # Another reader of ``name`` shares it unless both name the same endpoint; a route with no URL of its own
-            # (delegation re-pointed at a named provider) cannot prove that, so any other reader counts.
-            identity = refs.endpoint_identity(url)
-            shared = [owner for owner in refs.env_reference_owners(config, name) if owner is not block and not (
-                identity and refs.endpoint_identity(str(owner.get("base_url") or owner.get("url") or owner.get("api") or "").strip()) == identity)]
-            if updates.get(name, key) != key or shared and env.get(name) not in (None, "", key):
+            identity, changes = refs.endpoint_identity(url), env.get(name) not in (None, "", key)
+            shared = any(owner is not block and _reads_elsewhere(refs, owner, identity) for owner in refs.env_reference_owners(config, name))
+            if updates.get(name, key) != key or shared and changes:
                 raise RpcError(f"Refusing to overwrite {name}: another endpoint in config.yaml reads it and it holds a different key.",
                                condition="config_write_refused")
+            if changes and any(_reads_elsewhere(refs, owner, identity) for owner in refs.env_reference_owners(current, name)):
+                repointed.append(block)
             updates[name] = key
             block["api_key"] = f"${{{name}}}"
-    return updates
+    return updates, repointed
 
 
-def _write_credentials(home: Path, updates: dict[str, str]) -> None:
+def _write_credentials(home: Path, updates: dict[str, str], *, dry_run: bool = False) -> None:
     """``env_write`` for a config save: its refusals (administrator-managed name, redacted mask, bad bytes) refuse the save."""
     try:
-        env_write(home, updates)
+        env_write(home, updates, dry_run=dry_run)
     except InvalidParams as exc:
         raise RpcError(str(exc), condition="config_write_refused") from exc
     except RpcError as exc:
@@ -299,19 +309,8 @@ def _write_credentials(home: Path, updates: dict[str, str]) -> None:
         raise
 
 
-def write_config(path: Path, config: dict, *, profile_home: Path | None = None) -> dict:
-    if not isinstance(config, dict):
-        raise InvalidParams("config must be an object")
-    assert_config_writable(profile_home)
-    target = _write_target(path)
-    try:
-        managed = managed_config()
-    except Exception as exc:  # noqa: BLE001
-        raise RpcError("Cannot verify administrator config policy", condition="config_policy_unavailable") from exc
-    config = copy.deepcopy(config)
-    if managed:
-        _preserve_managed_leaves(config, read_config(target)["config"], managed)
-    credentials = _route_entered_credentials(config, target, profile_home) if profile_home is not None else {}
+def _publish_config(path: Path, target: Path, config: dict, before_replace=None) -> None:
+    """Stage ``config`` beside ``target``, verify it, run ``before_replace``, then replace ``target`` atomically."""
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         replace = getattr(importlib.import_module("hermes_cli.config"), "atomic_config_replace", None)
@@ -347,8 +346,8 @@ def write_config(path: Path, config: dict, *, profile_home: Path | None = None) 
         # A link retargeted while the temp file was being written would otherwise send the write to the wrong file.
         if _write_target(path) != target:
             raise RpcError(f"{path} was retargeted while config.yaml was being written; retry", condition="config_changed")
-        if credentials:  # last before the replace: a refusal leaves both files as they were
-            _write_credentials(profile_home, credentials)
+        if before_replace is not None:
+            before_replace()
         _drop_other_access(tmp)
         os.replace(tmp, target)
     except BaseException:
@@ -357,13 +356,39 @@ def write_config(path: Path, config: dict, *, profile_home: Path | None = None) 
         except OSError:
             pass
         raise
+
+
+def write_config(path: Path, config: dict, *, profile_home: Path | None = None) -> dict:
+    if not isinstance(config, dict):
+        raise InvalidParams("config must be an object")
+    assert_config_writable(profile_home)
+    target = _write_target(path)
+    try:
+        managed = managed_config()
+    except Exception as exc:  # noqa: BLE001
+        raise RpcError("Cannot verify administrator config policy", condition="config_policy_unavailable") from exc
+    config = copy.deepcopy(config)
+    if managed:
+        _preserve_managed_leaves(config, read_config(target)["config"], managed)
+    credentials, repointed = _route_entered_credentials(config, target, profile_home) if profile_home is not None else ({}, [])
+    if credentials:
+        # Every refusal before the first write; then a re-pointed route goes out keyless, the key lands in .env last
+        # before the reference is published, so no state a reader can see pairs the new key with the old endpoint.
+        _write_credentials(profile_home, credentials, dry_run=True)
+        if repointed:
+            references = [block.pop("api_key") for block in repointed]
+            keyless = copy.deepcopy(config)
+            for block, reference in zip(repointed, references):
+                block["api_key"] = reference
+            _publish_config(path, target, keyless)
+    _publish_config(path, target, config, (lambda: _write_credentials(profile_home, credentials)) if credentials else None)
     return {"ok": True, "path": str(path)}
 
 
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def env_write(home: Path, updates) -> dict:
+def env_write(home: Path, updates, *, dry_run: bool = False) -> dict:
     """Upsert ``updates`` into ``home``'s ``.env`` (``None`` removes a key) with the Agent's own line helpers, under
     the lock its ``save_env_value`` / ``remove_env_value`` take, in one atomic replace.
 
@@ -402,6 +427,8 @@ def env_write(home: Path, updates) -> dict:
                     refuse_mask(key, value)
                 except ValueError as exc:
                     raise RpcError(str(exc), condition="env_write_refused") from exc
+        if dry_run:  # a caller that must refuse before its own first write
+            return {"ok": True, "path": str(agent_config.get_env_path())}
         try:
             agent_config.ensure_hermes_home()
             path = agent_config.get_env_path()
