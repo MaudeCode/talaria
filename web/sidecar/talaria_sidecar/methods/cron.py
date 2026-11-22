@@ -244,7 +244,28 @@ def job_for_api(job: dict) -> dict:
     payload["monitor"] = payload.get("monitor_url") or payload.get("monitor_script") or ""
     payload["continuity"] = any(str(ref).strip().lower() == "self" for ref in (payload.get("context_from") or []))
     payload["wrap_response_supported"] = _wraps_per_task()
+    # A retained manual execution's record reads paused, but Run now on it is the recovery retry, not a new fire.
+    payload["run_now_refusal"] = None if payload.get("recovery_only") else _run_now_refusal(payload)
     return payload
+
+
+_RUN_NOW_REFUSALS = {
+    "paused": "This task is paused. Resume it to run it now.",
+    "disabled": "This task is turned off. Resume it to run it now.",
+    "terminal": "This task has finished and has no more runs.",
+}
+
+
+def _run_now_refusal(job: dict) -> str | None:
+    """Why the Agent takes no run-now claim on this record, its native ``cronjob run`` rule (TAL-2642), else ``None``.
+
+    Run now never resumes a schedule (the Agent's ``force`` claim would), so these jobs are refused, never run unclaimed."""
+    jobs = _jobs()
+    if jobs.is_terminal_job(job) and not jobs._is_recoverable_error_job(job):
+        return "terminal"
+    if not jobs.is_job_runnable(job):
+        return "paused" if jobs._has_pause_marker(job) else "disabled"
+    return None
 
 
 # ── store health and foreign runs (TAL-810) ─────────────────────────────
@@ -276,21 +297,22 @@ def _stoppable(home: Path, live: dict[str, dict]) -> dict[str, dict]:
         return {job_id: {"id": record["id"], "stopping": cancel_requested(record["id"])} for job_id, record in live.items()}
 
 
-def _claim_fire(store_home: Path, job: dict) -> dict | bool | None:
+def _claim_fire(store_home: Path, job: dict) -> dict | bool:
     """The Agent's own run-now lease (``claim_job_for_fire(manual=True)``), which a gateway tick must also win.
 
-    The exact record the claim took (the one to run), ``False`` when another process holds the job's claim, or
-    ``None`` for a job the Agent does not claim (paused, disabled, or terminal), which no tick fires. ``mark_job_run``
-    releases a claim when the run ends; the run heartbeats it meanwhile."""
+    The exact record the claim took (the one to run), or ``False`` when another process holds the job's claim. A job
+    the Agent does not claim (paused, disabled, or terminal) is refused with its reason: nothing runs, resumes, or claims
+    it. ``mark_job_run`` releases a claim when the run ends; the run heartbeats it meanwhile."""
     jobs = _jobs()
     with _owned_store(store_home):
-        if not jobs.is_job_runnable(job):
-            return None
         claimed = jobs.claim_job_for_fire(job["id"], manual=True, return_job=True)
         if not isinstance(claimed, dict):
-            # The claim only loses to a live owner's claim; any other refusal is a record the Agent never claims.
-            current = jobs.get_job(job["id"]) or {}
-            return False if isinstance(current.get("fire_claim"), dict) else None
+            current = jobs.get_job(job["id"])
+            if not current:
+                raise RpcError("Job not found", condition="not_found")
+            if reason := _run_now_refusal(current):
+                raise RpcError(_RUN_NOW_REFUSALS[reason], condition="cron_not_runnable", data={"reason": reason})
+            return False  # the Agent refuses a claimable job only for a live owner's claim
     return {key: value for key, value in claimed.items() if key != "_scheduled_instant"}
 
 
@@ -927,7 +949,7 @@ def register(registry) -> None:
             job = _jobs().pause_job(_job_ref(params), reason=params.get("reason"))
         if not job:
             raise RpcError("Job not found", condition="not_found")
-        return {"job": dict(job)}
+        return {"job": {**job, "run_now_refusal": _run_now_refusal(job)}}
 
     @registry.method("cron.resume")
     @_settled_mutation
@@ -941,7 +963,7 @@ def register(registry) -> None:
                 raise RpcError(str(exc), condition="cron_resume_failed") from exc
         if not job:
             raise RpcError("Job not found", condition="not_found")
-        return {"job": dict(job)}
+        return {"job": {**job, "run_now_refusal": _run_now_refusal(job)}}
 
     @registry.method("cron.cancel")
     def cancel(ctx: CallContext, params: dict) -> dict:
@@ -982,10 +1004,8 @@ def register(registry) -> None:
             with _RUNNING_LOCK:
                 _RUNNING.pop(job_id, None)
             return {"job_id": job_id, "status": "already_running", "elapsed": 0.0}
-        owner = None
-        if claimed:
-            job = claimed
-            owner = str((claimed.get("fire_claim") or {}).get("by") or "") or None
+        job = claimed
+        owner = str((claimed.get("fire_claim") or {}).get("by") or "") or None
         ctx.emit("started", {"job_id": job_id})
         return run_tracked(job, store_home, execution_home, ctx, owner)
 

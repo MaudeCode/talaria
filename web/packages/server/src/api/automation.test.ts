@@ -172,6 +172,28 @@ describe('crons, kanban, extensions, terminal', () => {
     } finally { guard.mockRestore() }
   })
 
+  it('ships whether Run now may start each task and answers a refused run with its reason (TAL-2642)', async () => {
+    const base = { profile: null, toast_notifications: true, monitor: '', continuity: false, schedule: { kind: 'cron', expr: '0 9 * * *' } }
+    const listed = [
+      { ...base, id: 'runnable-job', name: 'Runnable', enabled: true, state: 'scheduled', run_now_refusal: null },
+      { ...base, id: 'paused-job', name: 'Paused', enabled: false, state: 'paused', paused_at: '2026-11-01T00:00:00+00:00', run_now_refusal: 'paused' as const },
+      { ...base, id: 'disabled-job', name: 'Disabled', enabled: false, state: 'scheduled', run_now_refusal: 'disabled' as const },
+      { ...base, id: 'terminal-job', name: 'Terminal', enabled: false, state: 'completed', run_now_refusal: 'terminal' as const },
+    ]
+    sidecar.respond('cron.list', (params) => ({ jobs: params.profile_home === s.deps.config.hermesHome ? listed : [] }))
+    sidecar.respond('cron.get', (params) => ({ job: listed.find((job) => job.id === params.job_id) ?? null }))
+    sidecar.respond('cron.status', (params) => params.job_id ? { job_id: params.job_id, running: false, elapsed: 0 } : { running: {} })
+    sidecar.respond('cron.run', () => { throw new SidecarError('This task is paused. Resume it to run it now.', { condition: 'cron_not_runnable', data: { reason: 'paused' } }) })
+    const jobs = (await json(await s.get('/api/crons'))).jobs as Json[]
+    expect(Object.fromEntries(jobs.map((job) => [job.id, [job.can_run_now, job.run_now_refusal]]))).toEqual({
+      'runnable-job': [true, null], 'paused-job': [false, 'paused'], 'disabled-job': [false, 'disabled'], 'terminal-job': [false, 'terminal'],
+    })
+    const response = await post(s, '/api/crons/run', { job_id: 'paused-job' })
+    expect(response.status).toBe(409)
+    expect(await json(response)).toMatchObject({ error: 'This task is paused. Resume it to run it now.', code: 'cron_not_runnable', reason: 'paused' })
+    expect(s.deps.sessions.deps.runtime.runningCronJobs.has('paused-job')).toBe(false)
+  })
+
   it('routes retained deleted-job recovery through HTTP lookups and permits another unverified retry', async () => {
     const snapshot = { id: 'retained-job', name: 'Retained task', profile: null, toast_notifications: true, monitor: '', continuity: false,
       state: 'paused', enabled: false, running_elsewhere: false, last_run_at: null, last_status: 'error', last_error: 'Manual task outcome is unverified' }

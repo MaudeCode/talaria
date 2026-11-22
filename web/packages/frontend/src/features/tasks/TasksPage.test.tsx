@@ -31,7 +31,7 @@ const full: CronJob = {
   enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00', last_status: 'ok',
   last_error: null, last_delivery_error: null, deliver: 'telegram', workdir: '/srv/digest', reasoning_effort: 'high', profile: 'work', toast_notifications: false,
   derived_state: 'active', shown_state: 'active', diagnostics: '{"id": "ab12cd34ef56"}', needs_attention: false, resumable: false, last_failure: null, delivery_unconfirmed_platforms: [], timezone: null, catch_up: null, grace_minutes: null, can_stop: false, stopping: false, last_outcome: 'succeeded',
-  wrap_response_supported: false, wrap_response: null,
+  wrap_response_supported: false, wrap_response: null, can_run_now: true, run_now_refusal: null,
 }
 const feed: CronJob = { ...full, id: 'feed0000feed', name: 'Feed', context_from: [], continuity: false, monitor: '', skills: [], reasoning_effort: null, model: null, provider: null, model_option_id: null, workdir: null }
 const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', shown_state: 'needs_attention', diagnostics: '{"id": "a77e0000a77e", "state": "completed"}', needs_attention: true, resumable: true, attention_hint: 'croniter_missing' }
@@ -671,6 +671,24 @@ describe('TasksPage', () => {
     expect(api.cronAction).toHaveBeenCalledWith('run', { job_id: 'a77e0000a77e' })
     await userEvent.click(within(banner).getByRole('button', { name: /copy diagnostics/i }))
     expect(writeText).toHaveBeenCalledWith(attention.diagnostics)
+  })
+
+  it('offers Run now and Run once now only when the server allows it, with the server\'s refusal reason (TAL-2642)', async () => {
+    const held: CronJob = { ...feed, id: 'he1d0000he1d', name: 'Held', derived_state: 'paused', shown_state: 'paused', resumable: true, can_run_now: false, run_now_refusal: 'paused' }
+    const finished: CronJob = { ...attention, can_run_now: false, run_now_refusal: 'terminal' }
+    renderPage([held, finished, feed])
+    let detail = await selectJob('Held')
+    expect(detail.getByRole('button', { name: /^run now$/i })).toBeDisabled()
+    expect(detail.getByRole('button', { name: /^run now$/i })).toHaveAccessibleDescription('Paused. Resume it to run now.')
+    detail = await selectJob('Stuck')
+    const banner = detail.getByRole('alert')
+    expect(within(banner).getByRole('button', { name: /run once now/i })).toBeDisabled()
+    expect(within(banner).getByRole('button', { name: /run once now/i })).toHaveAccessibleDescription('Finished. It has no runs left.')
+    expect(within(banner).getByRole('button', { name: /resume and recalculate/i })).toBeEnabled()
+    detail = await selectJob('Feed')
+    expect(detail.getByRole('button', { name: /^run now$/i })).toBeEnabled()
+    expect(detail.getByRole('button', { name: /^run now$/i })).not.toHaveAccessibleDescription()
+    expect(api.cronAction).not.toHaveBeenCalled()
   })
 
   it('shows one banner for an unwritable store and a job\'s last failure after a later success (TAL-810)', async () => {

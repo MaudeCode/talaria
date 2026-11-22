@@ -3,7 +3,7 @@
  * opens as a detail with a way back (or the create/edit form). Selection lives in
  * `?job=` so a task can be linked and the browser back button works; the editor is transient.
  */
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useMutationState, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Copy, ListOrdered, Pause, Play, Plus, RefreshCw, Square, Trash2, type LucideIcon } from 'lucide-react'
@@ -31,7 +31,7 @@ import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
 import { contextFromList, cronResource, jobId, lastRunAt, nextRunAt, runningIds, usageStrip } from './cronJob'
 import { Markdown } from '../chat/render/Markdown'
-import { statusLabel } from './automationStatus'
+import { runNowRefusal, statusLabel } from './automationStatus'
 import { usePromptQueues, queueSelection } from './PromptQueue'
 import type { PromptQueueRun } from '@maudecode/talaria-web-contracts'
 import { JobForm, type EditorMode } from './JobForm'
@@ -46,11 +46,13 @@ const runKey = ['cron-run'] as const
 function cronEffect(action: CronWrite): ResourceEffect {
   if (action === 'delete') return { remove: true }
   if (action === 'stop') return { fields: { stopping: true, shown_state: 'stopping', can_stop: false } }
-  return { fields: action === 'pause' ? { derived_state: 'paused', shown_state: 'paused', resumable: true } : { derived_state: 'active', shown_state: 'active', resumable: false, needs_attention: false, paused_reason: null } }
+  return { fields: action === 'pause'
+    ? { derived_state: 'paused', shown_state: 'paused', resumable: true, can_run_now: false, run_now_refusal: 'paused' }
+    : { derived_state: 'active', shown_state: 'active', resumable: false, needs_attention: false, paused_reason: null, can_run_now: true, run_now_refusal: null } }
 }
 interface Editor { mode: EditorMode; job: CronJob | null }
-/** One entry of a job's action list, which its detail toolbar and its row's right-click and long-press menu both render. */
-interface JobAction { label: string; run: () => void; Icon?: LucideIcon; busy?: boolean; danger?: boolean }
+/** One entry of a job's action list, which its detail toolbar and its row's right-click and long-press menu both render. `unavailable` is the server's reason it cannot run. */
+interface JobAction { label: string; run: () => void; Icon?: LucideIcon; busy?: boolean; danger?: boolean; unavailable?: string | null }
 
 
 export { statusLabel } from './automationStatus'
@@ -137,7 +139,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
   const startEditor = (mode: EditorMode, job: CronJob | null) => { setEditor({ mode, job }) }
   const jobActions = (job: CronJob): JobAction[] => {
     if (job.read_only) return []
-    const actions: JobAction[] = [{ label: m.cron_run_now(), Icon: Play, busy: starting.has(cronResource(job)), run: () => run('run', job) }]
+    const actions: JobAction[] = [{ label: m.cron_run_now(), Icon: Play, busy: starting.has(cronResource(job)), unavailable: runNowRefusal(job), run: () => run('run', job) }]
     if (job.can_stop) actions.push({ label: m.cron_stop(), Icon: Square, run: () => run('stop', job) })
     if (job.resumable === true) actions.push({ label: m.cron_resume(), Icon: Play, run: () => run('resume', job) })
     if (job.resumable === false) actions.push({ label: m.cron_pause(), Icon: Pause, run: () => run('pause', job) })
@@ -317,7 +319,9 @@ function AutomationListItem({ id, title, state, status, onSelect, disabled = fal
   return <ListRow>
     {disabled || actions.length === 0 ? row : (
       <ContextMenu label={title} trigger={row}>
-        {actions.map(({ label, run, busy, danger }) => <MenuItem key={label} disabled={busy === true} {...(danger ? { className: 'text-error' } : {})} onClick={run}>{label}</MenuItem>)}
+        {actions.map(({ label, run, busy, danger, unavailable }) => <MenuItem key={label} disabled={busy === true || !!unavailable} {...(danger ? { className: 'text-error' } : {})} onClick={run}>
+          {label}{unavailable && <span className="ml-auto pl-4 text-xs text-muted">{unavailable}</span>}
+        </MenuItem>)}
       </ContextMenu>
     )}
   </ListRow>
@@ -358,6 +362,8 @@ function TaskDetail({ job, jobs, starting, unwritable, back, jobActions, onActio
   starting: boolean
 }) {
   const id = jobId(job)
+  const refusalId = useId()
+  const refusal = runNowRefusal(job)
   const state = job.shown_state
   const readOnly = !!job.read_only
   const attention = job.needs_attention === true
@@ -382,7 +388,8 @@ function TaskDetail({ job, jobs, starting, unwritable, back, jobActions, onActio
     ? <div className="text-xs text-muted" role="note">{m.cron_read_only_profile({ profile: ownerProfile })}</div>
     : (
       <fieldset className="flex flex-wrap gap-2" aria-label={job.name ?? id}>
-        {jobActions(job).map(({ label, run, Icon, busy, danger }) => <Button key={label} {...(danger ? { variant: 'ghost-danger' as const } : {})} {...(busy ? { 'aria-busy': true, disabled: true } : {})} onClick={run}>{Icon && <Icon size={12} aria-hidden="true" />} {label}</Button>)}
+        {jobActions(job).map(({ label, run, Icon, busy, danger, unavailable }) => <Button key={label} {...(danger ? { variant: 'ghost-danger' as const } : {})} {...(busy ? { 'aria-busy': true, disabled: true } : {})} {...(unavailable ? { disabled: true, 'aria-describedby': `${refusalId}-toolbar` } : {})} onClick={run}>{Icon && <Icon size={12} aria-hidden="true" />} {label}</Button>)}
+        {refusal && <span id={`${refusalId}-toolbar`} className="self-center text-xs text-muted">{refusal}</span>}
       </fieldset>
     )
   return (
@@ -398,8 +405,9 @@ function TaskDetail({ job, jobs, starting, unwritable, back, jobActions, onActio
             {job.last_delivery_error && <p className="font-mono text-[12px] text-error">{job.last_delivery_error}</p>}
             <fieldset className="flex flex-wrap gap-2">
               <Button onClick={() => onAction('resume')}>{m.cron_attention_resume()}</Button>
-              <Button disabled={starting} aria-busy={starting || undefined} onClick={() => onAction('run')}>{m.cron_attention_run_once()}</Button>
+              <Button disabled={starting || !!refusal} aria-busy={starting || undefined} aria-describedby={refusal ? `${refusalId}-attention` : undefined} onClick={() => onAction('run')}>{m.cron_attention_run_once()}</Button>
               <Button onClick={copyDiagnostics}>{m.cron_attention_copy_diagnostics()}</Button>
+              {refusal && <span id={`${refusalId}-attention`} className="self-center text-xs text-muted">{refusal}</span>}
             </fieldset>
           </ErrorState>
         )}

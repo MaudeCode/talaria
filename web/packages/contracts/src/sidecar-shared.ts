@@ -4,6 +4,9 @@
  */
 import { z } from 'zod'
 
+/** TAL-2642: why the Agent refuses Run now on a task, by its own run-now rule: a paused, turned-off or finished task. Run now never resumes a schedule. */
+export const CronRunNowRefusalSchema = z.enum(['paused', 'disabled', 'terminal'])
+export type CronRunNowRefusal = z.infer<typeof CronRunNowRefusalSchema>
 /** Warnings and wording come from the Agent's selection guard registry, including future guard kinds. */
 export const ModelSelectionWarningSchema = z.object({ kind: z.string(), title: z.string(), model: z.string(), provider: z.string(), message: z.string() })
 const Json = z.unknown()

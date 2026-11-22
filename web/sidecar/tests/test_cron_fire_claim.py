@@ -79,6 +79,7 @@ def _stub_jobs(monkeypatch, *, owns: bool = True, heartbeat=lambda job_id, *, ex
         _jobs_lock=contextlib.nullcontext,
         get_job=lambda job_id: record or {"id": job_id, "name": "Job", "prompt": "before edit"},
         is_job_runnable=lambda job: True,
+        is_terminal_job=lambda job: False,
         claim_job_for_fire=claim or (lambda job_id, **kw: {"id": job_id, "name": "Job", "prompt": "after edit", "fire_claim": {"by": "owner-1"}, "_scheduled_instant": None}),
         heartbeat_fire_claim=heartbeat,
         fire_claim_fence=fence,
@@ -162,13 +163,8 @@ def test_a_worker_that_ignores_terminate_is_killed_before_the_run_ends(monkeypat
             os.kill(pid, signal.SIGKILL)
 
 
-def test_an_unclaimable_terminal_job_still_runs_and_a_held_claim_refuses(monkeypatch, tmp_path) -> None:
-    completed = {"id": "job-1", "name": "Job", "state": "completed", "enabled": True, "fire_claim": None}
-    _stub_jobs(monkeypatch, claim=lambda job_id, **kw: False, record=completed)
-    result, seen = _run_now(monkeypatch, tmp_path)
-    assert result.get("status") == "completed" and len(seen) == 1, result
-    assert seen[0][1][-1] is None  # no claim to heartbeat or fence
-    held = {**completed, "state": "scheduled", "fire_claim": {"at": "2026-10-14T03:00:00+00:00", "by": "gateway"}}
+def test_a_held_claim_answers_already_running(monkeypatch, tmp_path) -> None:
+    held = {"id": "job-1", "name": "Job", "state": "scheduled", "enabled": True, "fire_claim": {"at": "2026-10-14T03:00:00+00:00", "by": "gateway"}}
     _stub_jobs(monkeypatch, claim=lambda job_id, **kw: False, record=held)
     result, seen = _run_now(monkeypatch, tmp_path)
     assert result.get("status") == "already_running" and seen == [], result
