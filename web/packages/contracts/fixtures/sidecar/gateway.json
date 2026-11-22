@@ -260,7 +260,7 @@
     {
       "params": {
         "profile_home": "<home>",
-        "session_id": "<session>"
+        "session_id": "not-running"
       },
       "result": {
         "state": "not_bot_chat",
