@@ -127370,6 +127370,103 @@
         }
       }
     },
+    "/api/model/fallback": {
+      "get": {
+        "operationId": "models.fallback",
+        "summary": "TAL-2655: the active profile's fallback models in chain order, each with the Agent's static readiness verdict. Sends no inference request, moves no credential pool and installs no plugin.",
+        "tags": [
+          "settings"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean",
+                      "description": "False when the Agent cannot check its fallback chain; nothing is known about readiness and `entries` is empty."
+                    },
+                    "entries": {
+                      "type": "array",
+                      "maxItems": 32,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "position": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0,
+                            "description": "1-based place in the effective chain (`fallback_providers`, then legacy `fallback_model`)."
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "provider_label": {
+                            "type": "string",
+                            "description": "The provider as the catalog names it; the configured id when the Agent does not know the provider."
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "configured": {
+                            "type": "boolean",
+                            "description": "The Agent resolved a route for the entry."
+                          },
+                          "auth_ready": {
+                            "type": "boolean",
+                            "description": "The resolved route has usable credentials. Always false when `configured` is false."
+                          },
+                          "status": {
+                            "enum": [
+                              "ready",
+                              "auth",
+                              "config"
+                            ],
+                            "type": "string",
+                            "description": "`ready`: configured with usable credentials (static; no request was sent). `auth`: configured, credentials missing or unusable. `config`: unknown provider or a route the Agent cannot build."
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 300
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The Agent's reason, redacted by the server; null when `status` is `ready`."
+                          }
+                        },
+                        "required": [
+                          "position",
+                          "provider",
+                          "provider_label",
+                          "model",
+                          "configured",
+                          "auth_ready",
+                          "status",
+                          "error"
+                        ]
+                      },
+                      "description": "Empty while available: the profile has no fallback chain."
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "entries"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/model/set": {
       "post": {
         "operationId": "models.set",

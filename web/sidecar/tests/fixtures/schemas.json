@@ -9299,6 +9299,60 @@
     ],
     "additionalProperties": false
   },
+  "providers.fallback_check": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "available": {
+        "type": "boolean",
+        "description": "False when the Agent has no static fallback check; `entries` is then empty."
+      },
+      "entries": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "configured": {
+              "type": "boolean"
+            },
+            "auth_ready": {
+              "type": "boolean"
+            },
+            "ready": {
+              "type": "boolean"
+            },
+            "error_class": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "model",
+            "configured",
+            "auth_ready",
+            "ready",
+            "error_class",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "available",
+      "entries"
+    ],
+    "additionalProperties": false
+  },
   "models.parse_switch_args": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

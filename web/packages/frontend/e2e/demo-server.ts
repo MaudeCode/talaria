@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { bootTestServer } from '../../server/dist/test/harness.js'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
@@ -74,6 +74,9 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   writeEnvFile(join(server.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-demo-0000', OPENROUTER_API_KEY: 'sk-or-demo-0000' })
   // The main model's reasoning levels, so Settings › Models shows its effort and Show thinking rows (TAL-2078).
   sidecar.respond('models.reasoning_efforts', () => ({ efforts: ['low', 'medium', 'high'], supports_reasoning: true }))
+  // TAL-2655: a fallback chain with a ready route, an unknown provider, a provider that left core and a missing key.
+  const fallback = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../contracts/fixtures/fallback-check.json'), 'utf8'))
+  sidecar.respond('providers.fallback_check', () => fallback.mixed.sidecar)
   // TAL-2132: a stock Agent's plugins (v0.23.1's 62, by key) and two the profile installed, one with an update waiting.
   sidecar.respond('plugins.list', () => ({ plugins: DEMO_PLUGINS, supported_hooks: [] }))
   sidecar.respond('plugins.settings', () => ({ supported: true, plugins: [{ key: 'meshy', fields: [{ key: 'quality', type: 'enum', label: 'Quality', description: '', required: false, choices: ['draft', 'final'], value: 'draft' }] }, { key: 'image_gen/fal', fields: [{ key: 'model', type: 'string', label: 'Model', description: '', required: false, value: 'flux-2-pro' }] }] }))

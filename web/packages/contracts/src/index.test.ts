@@ -3,6 +3,7 @@ import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.
 import { SessionStreamEventSchema } from './sse.js'
 import { ScreenLeaseInputSchema, ScreenViewSchema } from './screen.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
+import { SIDECAR_METHODS } from './sidecar/index.js'
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
 import { BackgroundTasksResponseSchema, ConnectorsPageSchema, ChatStartResponseSchema, DelegationStatusSchema, MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
 import { ExecutionModesSchema, GatewaySessionParamsSchema, ModelChangeSchema, OwnerAttachmentSchema, OwnerActionRequestSchema, GatewaySessionResultSchema, SideLaunchSchema } from './gateway-session.js'
@@ -322,6 +323,13 @@ describe('contracts package', () => {
     expect(ModelsSchema.parse(fixture.never_saved).favorites).toBeNull()
     expect(settingsContract.models.favorite['~orpc'].outputSchema!.parse(fixture.favorite)).toEqual(fixture.favorite)
     expect(settingsContract.models.importFavorites['~orpc'].outputSchema!.parse(fixture.import)).toEqual(fixture.import)
+  })
+  it('shares every fallback check state between the sidecar, the server route and every client (TAL-2655)', () => {
+    const fixture = shared('fixtures/fallback-check.json') as Record<string, { sidecar: unknown; view: unknown }>
+    for (const { sidecar, view } of Object.values(fixture)) {
+      expect(SIDECAR_METHODS['providers.fallback_check'].result.parse(sidecar)).toEqual(sidecar)
+      expect(settingsContract.models.fallback['~orpc'].outputSchema!.parse(view)).toEqual(view)
+    }
   })
   it('shares the filtered Settings picker identity, flags and unfiltered provider menu (TAL-2193)', () => {
     const value = SettingsModelPickerSchema.parse(shared('fixtures/settings-model-picker.json'))

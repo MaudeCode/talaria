@@ -208,3 +208,6 @@ UNEXERCISED.add("skills.replay_case")
 
 # Delegation edits are covered by the disposable native configuration contract test.
 UNEXERCISED.update({"aux.delegation", "aux.delegation_backend", "aux.delegation_routes"})
+
+# TAL-2655: the static fallback check's verdicts, pool and plugin invariants and unavailable capability are owned by test_fallback_check.py.
+UNEXERCISED.add("providers.fallback_check")

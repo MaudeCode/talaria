@@ -203,6 +203,13 @@ export class AgentConfig {
     }
   }
 
+  /** TAL-2655: the profile's fallback chain through the Agent's static check; never sends a request. */
+  async fallbackCheck(profileHome: string): Promise<SidecarResult<'providers.fallback_check'>> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; fallback checks are unavailable')
+    return sidecar.call('providers.fallback_check', { profile_home: profileHome })
+  }
+
   /** The Agent owns speed eligibility. A failed lookup must not erase a saved tier. */
   async speedTiers(profileHome: string, config: Config, models: { model: string; provider: string }[]): Promise<SpeedTier[][]> {
     const sidecar = this.deps.sidecar()

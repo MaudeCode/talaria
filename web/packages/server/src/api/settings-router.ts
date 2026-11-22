@@ -28,6 +28,7 @@ import { str } from '../util.js'
 import { checkExternalLink, linkPreferences } from '../links.js'
 import { titleGenerationEnabled } from '../sessions/turn.js'
 import { forgetPluginFlow, isPluginFlow, rememberPluginFlow } from '../tools/plugin-oauth.js'
+import { fallbackCheckView } from '../providers/fallback-check.js'
 
 const os = implement(settingsContract).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -594,6 +595,12 @@ export const settingsRouter = os.router({
       } catch (error) { return failure(error, 400) }
     })),
     auxiliary: os.models.auxiliary.handler(({ context: { ctx } }) => run(() => auxiliaryState(ctx) as never)),
+    fallback: os.models.fallback.handler(({ context: { ctx } }) => run(async () => {
+      const profileHome = home(ctx)
+      // Labels are cosmetic: a catalog failure must not hide the verdicts.
+      const [result, catalog] = await Promise.all([ctx.deps.agentConfig.fallbackCheck(profileHome), ctx.deps.catalog.models(profileHome).catch(() => undefined)])
+      return fallbackCheckView(result, catalog)
+    })),
     set: os.models.set.handler(({ input, context: { ctx } }) => run(async () => {
       const scope = str(input.scope).trim()
       const provider = str(input.provider).trim() || 'auto'

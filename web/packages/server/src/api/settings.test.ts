@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
-import { AccountUsageSnapshotSchema, BootstrapSchema, ProviderQuotaSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { AccountUsageSnapshotSchema, BootstrapSchema, ProviderQuotaSchema, type FallbackCheck, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.js'
 import { loadStartupEnv } from '../cli/dotenv.js'
 import { OAUTH_PROVIDERS, PROVIDER_ENV_VAR, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
@@ -77,6 +77,26 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, provider: params.provider ?? '', error: 'not logged in' } }))
   })
   afterAll(() => s.close())
+
+  it('publishes the Agent\'s static fallback verdicts in chain order as the shared fixture shows them (TAL-2655)', async () => {
+    const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/fallback-check.json'), 'utf8')) as Record<'mixed' | 'none' | 'unavailable', { sidecar: SidecarResult<'providers.fallback_check'>; view: Json }>
+    try {
+      for (const { sidecar: result, view } of Object.values(fixture)) {
+        sidecar.respond('providers.fallback_check', () => result)
+        expect(await json(await s.get('/api/model/fallback'))).toEqual(view)
+      }
+      expect(sidecar.calls.filter((c) => c.method === 'providers.fallback_check').at(-1)?.params).toEqual({ profile_home: s.state })
+      // The server redacts and bounds the Agent's reason.
+      const secret = 'sk-ant-api03-synthetic0123456789abcdefghijkl'
+      sidecar.respond('providers.fallback_check', () => ({ available: true, entries: [{ provider: 'anthropic', model: 'm', configured: true, auth_ready: false, ready: false, error_class: 'auth', error: `Rejected key ${secret} ${'x'.repeat(400)}` }] }))
+      const error = ((await json(await s.get('/api/model/fallback'))) as FallbackCheck).entries[0]?.error ?? ''
+      expect(error).toMatch(/^Rejected key /)
+      expect(error).not.toContain(secret)
+      expect(error.length).toBe(300)
+    } finally {
+      sidecar.respond('providers.fallback_check', undefined)
+    }
+  })
 
   it('projects the saved delegation backend and redacted named routes instead of a fixed model alone (TAL-1499)', async () => {
     const routeKeys = [{ name: 'daybreak', type: 'boolean' as const }, { name: 'note', type: 'value' as const }]

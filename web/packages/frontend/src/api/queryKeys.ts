@@ -30,6 +30,7 @@ export const keys = {
   providerCostHistory: ['providers', 'cost-history', 'openrouter'] as const,
   personalities: ['personalities'] as const,
   auxiliaryModels: ['models', 'auxiliary'] as const,
+  fallbackCheck: ['models', 'fallback'] as const,
   transcribeCapability: ['transcribe', 'capability'] as const,
   feedbackDiagnostics: ['feedback', 'diagnostics'] as const,
   feedbackOptions: ['feedback', 'options'] as const,
