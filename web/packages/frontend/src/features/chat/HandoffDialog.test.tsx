@@ -65,6 +65,25 @@ describe('HandoffDialog (TAL-2641)', () => {
     expect(vi.mocked(api.nativeHandoff).mock.calls.map(([input]) => input.action)).toEqual(['read', 'request', 'read'])
   })
 
+  it('neither polls nor offers another write while a request is in flight', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      let answer!: (view: SessionHandoff) => void
+      vi.mocked(api.nativeHandoff).mockResolvedValueOnce(views.read!).mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+        .mockResolvedValue(views.read!)
+      open()
+      await userEvent.click(await screen.findByRole('button', { name: 'Hand off' }))
+      await act(() => vi.advanceTimersByTimeAsync(5000))
+      expect(vi.mocked(api.nativeHandoff).mock.calls.map(([input]) => input.action)).toEqual(['read', 'request'])
+      expect(screen.getByRole('button', { name: 'Hand off' })).toBeDisabled()
+      answer(views.queued!)
+      expect(await screen.findByRole('button', { name: 'Cancel handoff' })).toBeEnabled()
+      // Once the write settles, the queued handoff is followed again.
+      await act(() => vi.advanceTimersByTimeAsync(2000))
+      expect(vi.mocked(api.nativeHandoff).mock.calls.map(([input]) => input.action)).toEqual(['read', 'request', 'read'])
+    } finally { vi.useRealTimers() }
+  })
+
   it('keeps reading a state the owner could not read until it answers', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {

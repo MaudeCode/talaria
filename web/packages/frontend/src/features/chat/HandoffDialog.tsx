@@ -47,12 +47,15 @@ function statusLine(view: SessionHandoff): string | null {
 export function HandoffDialog({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const qc = useQueryClient()
   const key = keys.sessions.handoff(sessionId)
+  const writeKey = [...key, 'write']
   const read = useQuery({
     queryKey: key, queryFn: () => api.nativeHandoff({ session_id: sessionId, action: 'read' }),
-    refetchInterval: (query) => query.state.data && FOLLOWED.has(query.state.data.state) ? FOLLOW_MS : false,
+    // A read started before an open write settles could restore the controls it took away: follow only between writes.
+    refetchInterval: (query) => query.state.data && FOLLOWED.has(query.state.data.state) && qc.isMutating({ mutationKey: writeKey }) === 0 ? FOLLOW_MS : false,
   })
   const [picked, setPicked] = useState<string | null>(null)
   const write = useMutation({
+    mutationKey: writeKey,
     mutationFn: (input: { action: 'request'; platform: string } | { action: 'cancel' }) => api.nativeHandoff({ session_id: sessionId, ...input }),
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: key })
@@ -74,12 +77,13 @@ export function HandoffDialog({ sessionId, onClose }: { sessionId: string; onClo
     },
   })
   const view = read.data
+  const writing = write.isPending
   const platform = picked ?? view?.destinations[0]?.platform ?? ''
   const status = view ? statusLine(view) : null
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }} title={m.handoff_title()}>
       {!view ? <LoadingState compact /> : (
-        <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); if (view.can_request && platform) write.mutate({ action: 'request', platform }) }}>
+        <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); if (view.can_request && platform && !writing) write.mutate({ action: 'request', platform }) }}>
           {view.destinations.length > 0 && (
             <Select value={platform} onValueChange={setPicked} aria-label={m.handoff_destination()} disabled={!view.can_request} className="w-full">
               {view.destinations.map((d) => <option key={d.platform} value={d.platform}>{m.handoff_destination_option({ label: d.label, platform: d.platform })}</option>)}
@@ -87,9 +91,9 @@ export function HandoffDialog({ sessionId, onClose }: { sessionId: string; onClo
           )}
           {status && <p role="status" className="text-sm text-muted [overflow-wrap:anywhere]">{status}</p>}
           <DialogFooter>
-            {view.can_cancel && <Button onClick={() => write.mutate({ action: 'cancel' })}>{m.handoff_cancel()}</Button>}
+            {view.can_cancel && <Button disabled={writing} onClick={() => write.mutate({ action: 'cancel' })}>{m.handoff_cancel()}</Button>}
             <Button onClick={onClose}>{m.close()}</Button>
-            <Button type="submit" variant="primary" disabled={!view.can_request || !platform}>{m.handoff_request()}</Button>
+            <Button type="submit" variant="primary" disabled={!view.can_request || !platform || writing}>{m.handoff_request()}</Button>
           </DialogFooter>
         </form>
       )}
