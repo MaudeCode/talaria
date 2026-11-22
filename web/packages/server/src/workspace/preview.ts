@@ -5,7 +5,8 @@
 import { basename, dirname, extname, relative, sep } from 'node:path'
 import type { FilePreviewKind } from '@maudecode/talaria-web-contracts'
 import { signAssetGrant, assetGrantValue } from '../auth/crypto.js'
-import { readFileContent, safeResolve, type FileContent } from './fs.js'
+import { readFileBytes, readFileContent, safeResolve, type FileContent } from './fs.js'
+import { officeFormat, previewOffice, type OfficePreview } from './office.js'
 import { AUDIO_VIDEO_PDF_TYPES, INLINE_IMAGE_TYPES, mimeFor } from './media.js'
 
 /** Rows a CSV preview ships, header included; the rest stay in the editable text. */
@@ -13,7 +14,7 @@ export const CSV_PREVIEW_ROWS = 500
 
 const TEXT_KINDS: Record<string, FilePreviewKind> = { '.md': 'markdown', '.markdown': 'markdown', '.mdown': 'markdown', '.csv': 'csv', '.html': 'html', '.htm': 'html' }
 
-export type FilePreview = FileContent & { preview: FilePreviewKind; mime?: string; table?: string[][]; table_truncated?: boolean; preview_url?: string }
+export type FilePreview = FileContent & Partial<Pick<OfficePreview, 'office_format' | 'editable' | 'edit_blocked_reason' | 'truncated'>> & { preview: FilePreviewKind; mime?: string; table?: string[][]; table_truncated?: boolean; preview_url?: string }
 
 function mediaKind(mime: string): FilePreviewKind | null {
   if (INLINE_IMAGE_TYPES.has(mime) || mime === 'image/svg+xml') return 'image'
@@ -26,6 +27,8 @@ export function readFilePreview(workspace: string, rel: string): FilePreview {
   const mime = mimeFor(rel)
   const media = mediaKind(mime)
   if (media) return { ...readFileContent(workspace, rel, { statOnly: true }), preview: media, mime }
+  // TAL-262: an Office file previews as its text; a hostile or unreadable archive throws `OfficeError`.
+  if (officeFormat(rel)) return { ...previewOffice(rel, readFileBytes(workspace, rel)), preview: 'office' }
   const file = readFileContent(workspace, rel)
   if (file.binary) return { ...file, preview: 'binary' }
   const preview = TEXT_KINDS[extname(rel).toLowerCase()] ?? 'text'

@@ -1,6 +1,8 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Page, TestInfo } from '@playwright/test'
+import { docx, xlsx } from '../../server/dist/test/office-fixtures.js'
 import { expect, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
@@ -13,6 +15,28 @@ function wav(): Buffer {
   header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22); header.writeUInt32LE(8000, 24); header.writeUInt32LE(8000, 28); header.writeUInt16LE(1, 32); header.writeUInt16LE(8, 34)
   header.write('data', 36); header.writeUInt32LE(samples.length, 40)
   return Buffer.concat([header, samples])
+}
+
+/** A session in `workspace`, added as a space first. */
+async function workspaceSession(page: Page, workspace: string): Promise<string> {
+  expect((await page.request.post('/api/workspaces/add', { data: { path: workspace } })).ok()).toBe(true)
+  const created = (await (await page.request.post('/api/session/new', { data: { workspace } })).json()) as { session: { session_id: string } }
+  return created.session.session_id
+}
+
+/** Opens the side panel's Files page on the session's workspace; `open` shows a file from the tree, `back` returns to it. */
+async function filesPanel(page: Page, testInfo: TestInfo, workspace: string): Promise<{ open: (name: string) => Promise<void>; back: () => Promise<void> }> {
+  if (testInfo.project.name === 'mobile') await page.locator('#btnTitlebarSidePanel').click()
+  else await page.getByRole('button', { name: 'Show workspace panel' }).click()
+  await page.getByRole('tablist', { name: 'Side panel' }).getByRole('tab', { name: 'Files' }).click()
+  // Until the session record loads the panel has no workspace to list; it then mounts the session's own.
+  await expect(page.locator('[data-files-workspace]')).toHaveAttribute('title', workspace)
+  const tree = page.getByRole('tree', { name: 'Files' })
+  const open = async (name: string) => {
+    await tree.getByRole('treeitem', { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')},`) }).click()
+    await expect(page.getByRole('button', { name: 'Back' })).toBeVisible()
+  }
+  return { open, back: () => page.getByRole('button', { name: 'Back' }).click() }
 }
 
 /** TAL-566: the Files page renders each server-named preview kind from a synthetic workspace. */
@@ -31,10 +55,7 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   put('table.csv', 'name,note\n"Ada","said ""hi"", twice"\nGrace,compilers\n')
   put('notes.md', '# Notes heading\n')
   put('blob.bin', Buffer.from([0x68, 0, 0xff]))
-  expect((await page.request.post('/api/workspaces/add', { data: { path: workspace } })).ok()).toBe(true)
-  const created = (await (await page.request.post('/api/session/new', { data: { workspace } })).json()) as { session: { session_id: string } }
-  const sid = created.session.session_id
-
+  const sid = await workspaceSession(page, workspace)
   await page.goto(`/session/${sid}`)
   // A real VP8 clip, recorded from a canvas so the workspace stays synthetic.
   const webm = await page.evaluate(async () => {
@@ -58,17 +79,7 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   })
   put('clip.webm', Buffer.from(webm))
 
-  if (testInfo.project.name === 'mobile') await page.locator('#btnTitlebarSidePanel').click()
-  else await page.getByRole('button', { name: 'Show workspace panel' }).click()
-  await page.getByRole('tablist', { name: 'Side panel' }).getByRole('tab', { name: 'Files' }).click()
-  // Until the session record loads the panel has no workspace to list; it then mounts the session's own.
-  await expect(page.locator('[data-files-workspace]')).toHaveAttribute('title', workspace)
-  const tree = page.getByRole('tree', { name: 'Files' })
-  const open = async (name: string) => {
-    await tree.getByRole('treeitem', { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')},`) }).click()
-    await expect(page.getByRole('button', { name: 'Back' })).toBeVisible()
-  }
-  const back = () => page.getByRole('button', { name: 'Back' }).click()
+  const { open, back } = await filesPanel(page, testInfo, workspace)
 
   for (const name of ['pixel.png', 'logo.svg']) {
     await open(name)
@@ -133,4 +144,38 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   rmSync(workspace, { recursive: true, force: true })
   // `serviceWorkers: 'block'` injects a script that reads `navigator.serviceWorker`, which throws in the opaque-origin HTML frame.
   errors.splice(0, errors.length, ...errors.filter((e) => !/serviceWorker.*context is sandboxed/.test(e)))
+})
+
+/** TAL-262: Office files show their server-extracted text; a plain Word document saves, a workbook stays read-only. */
+test('the Files page previews Office files and saves an edited Word document', async ({ page }, testInfo) => {
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'tal262-')))
+  writeFileSync(join(workspace, 'plan.docx'), await docx('Goals', 'Ship it'))
+  writeFileSync(join(workspace, 'budget.xlsx'), await xlsx([{ name: 'Q1', rows: [{ A1: { v: '42' } }] }]))
+  const sid = await workspaceSession(page, workspace)
+  await page.goto(`/session/${sid}`)
+  const { open, back } = await filesPanel(page, testInfo, workspace)
+  const text = page.getByRole('textbox', { name: 'Preview' })
+  const save = page.getByRole('button', { name: 'Save', exact: true })
+
+  await open('plan.docx')
+  await expect(text).toHaveValue('Goals\nShip it')
+  await text.fill('Goals\nShipped')
+  await save.click()
+  await expect(page.getByText('File saved')).toBeVisible()
+  await back()
+  const reread = await page.request.get(`/api/file?session_id=${sid}&path=plan.docx`)
+  expect(await reread.json()).toMatchObject({ preview: 'office', content: 'Goals\nShipped', editable: true })
+  await open('plan.docx')
+  await expect(text).toHaveValue('Goals\nShipped')
+  await back()
+
+  await open('budget.xlsx')
+  await expect(text).toHaveValue('Sheet: Q1\n42')
+  await expect(text).not.toBeEditable()
+  await expect(save).toHaveCount(0)
+  await expect(page.getByText('xlsx preview is read-only')).toBeVisible()
+  await back()
+
+  await page.request.post('/api/workspaces/remove', { data: { path: workspace } })
+  rmSync(workspace, { recursive: true, force: true })
 })

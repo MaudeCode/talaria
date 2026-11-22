@@ -632,8 +632,18 @@ export function decodeText(raw: Buffer): string | null {
   return isBinary(raw) ? null : raw.toString('utf8')
 }
 
-/** Python `read_file_content` (office previews were dropped with TAL-245). */
+/** Python `read_file_content`; an Office file's preview reads its bytes with `readFileBytes` (TAL-262). */
 export function readFileContent(workspace: string, rel: string, opts: { statOnly?: boolean } = {}): FileContent {
+  if (opts.statOnly) return { path: rel, size: readAnchoredFile(workspace, rel, false).size }
+  return decodedContent(rel, readAnchoredFile(workspace, rel, true).raw ?? Buffer.alloc(0))
+}
+
+/** A workspace file's bytes through the anchored walk, refused past `MAX_FILE_BYTES`. */
+export function readFileBytes(workspace: string, rel: string): Buffer {
+  return readAnchoredFile(workspace, rel, true).raw ?? Buffer.alloc(0)
+}
+
+function readAnchoredFile(workspace: string, rel: string, read: boolean): { size: number; raw?: Buffer } {
   const target = safeResolveWs(workspace, rel)
   let st
   try {
@@ -646,9 +656,10 @@ export function readFileContent(workspace: string, rel: string, opts: { statOnly
   try {
     const fst = fstatSync(fd)
     if (!fst.isFile()) throw new NotFoundError(`Not a file: ${rel}`)
-    if (opts.statOnly) return { path: rel, size: fst.size }
+    if (!read) return { size: fst.size }
     if (fst.size > MAX_FILE_BYTES) throw new FileTooLargeError(`File too large (${fst.size} bytes, max ${MAX_FILE_BYTES})`)
-    return decodedContent(rel, readFdUpTo(fd, MAX_FILE_BYTES + 1))
+    const raw = readFdUpTo(fd, MAX_FILE_BYTES + 1)
+    return { size: raw.length, raw }
   } finally {
     closeSync(fd)
   }

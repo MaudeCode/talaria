@@ -1529,8 +1529,9 @@ export const FileEntrySchema = z.looseObject({
 export const FileSourceSchema = z.enum(['workspace', 'managed'])
 const ManagedFileFields = { source: FileSourceSchema.describe('Which store the reply reads: workspace files or the session\'s managed buffers.'), read_only: z.boolean().optional(), write_semantics: z.literal('unconditional').optional() }
 export const DirListingSchema = z.looseObject({ ...ManagedFileFields, unavailable: z.boolean().optional(), path: z.string().optional(), entries: z.array(FileEntrySchema), signature: z.string().optional(), workspace: z.string().optional(), workspace_recovered: z.boolean().optional(), is_git: z.boolean().optional() })
-/** How a workspace file renders (TAL-566): media streams from `/api/file/raw`; text kinds carry `content`. */
-export const FilePreviewKindSchema = z.enum(['text', 'markdown', 'csv', 'html', 'image', 'pdf', 'audio', 'video', 'binary'])
+/** How a workspace file renders (TAL-566): media streams from `/api/file/raw`; text kinds carry `content`. `office` is a
+ * `.docx`, `.xlsx` or `.pptx` file's extracted text (TAL-262). */
+export const FilePreviewKindSchema = z.enum(['text', 'markdown', 'csv', 'html', 'image', 'pdf', 'audio', 'video', 'binary', 'office'])
 export type FilePreviewKind = z.infer<typeof FilePreviewKindSchema>
 /** `table` is a `csv` preview's leading rows (header first); `table_truncated` says the file has more. `preview_url` is an
  * `html` preview's app-relative frame URL, under which the page's relative assets also resolve. */
@@ -1538,6 +1539,9 @@ export const FileContentSchema = z.looseObject({ ...ManagedFileFields, name: z.s
   path: z.string().optional(), content: z.string().optional(), lines: z.number().optional(), size: z.number().optional(), truncated: z.boolean().optional(), binary: z.boolean().optional(), mime: z.string().optional(),
   preview: FilePreviewKindSchema, table: z.array(z.array(z.string())).optional(), table_truncated: z.boolean().optional(),
   preview_url: z.string().optional(),
+  office_format: z.enum(['docx', 'xlsx', 'pptx']).optional().describe('An `office` preview\'s format (TAL-262).'),
+  editable: z.boolean().optional().describe('An `office` preview\'s text saves back through `files.officeSave`; only a plain-paragraph `.docx` is editable.'),
+  edit_blocked_reason: z.string().optional().describe('Why an `office` preview is not editable, in English; clients show it as sent.'),
 })
 /** `indicator` is `changes` while there is uncommitted work or upstream commits to pull (TAL-2499). */
 const GitBadgeSchema = z.looseObject({

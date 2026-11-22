@@ -29,6 +29,7 @@ import { ZipWriter } from '../workspace/zip.js'
 import { anchoredAt } from '../workspace/escape.js'
 import { guessMime, parseMultipart, sanitizeUploadName, uploadDestination, UploadConflict, UploadRejected, type MultipartResult } from '../workspace/upload.js'
 import { ArchiveRejected, CorruptArchive, extractArchive, isArchiveName } from '../workspace/extract.js'
+import { OfficeError, officeFormat, previewOffice } from '../workspace/office.js'
 import { writeFully } from '../fs/atomic.js'
 import { pythonPrettyJson, renderSessionHtml, renderSessionMarkdown } from '../sessions/export.js'
 import type { Session } from '../sessions/session.js'
@@ -579,6 +580,28 @@ async function handleUploadExtract(ctx: RequestContext): Promise<void> {
 type WorkspaceUploadResult = Record<string, unknown>
 
 /**
+ * TAL-262: an uploaded Office file's preview text as `<name>.md` beside it, reported as `sidecar`. Any failure, an
+ * existing `.md` included, reports `sidecar_error`, leaves no partial `.md` and keeps the upload.
+ */
+function officeSidecar(ctx: RequestContext, workspace: string, dest: string, bytes: Buffer): WorkspaceUploadResult {
+  const format = officeFormat(dest)
+  if (!format) return {}
+  const path = `${dest}.md`
+  let created = false
+  try {
+    const data = Buffer.from(previewOffice(basename(dest), bytes).content, 'utf8')
+    const fd = openAnchoredCreateFd(workspace, path)
+    created = true
+    try { writeFully(fd, data) } finally { closeSync(fd) }
+    return { sidecar: { filename: basename(path), path, size: data.length, office_format: format } }
+  } catch (error) {
+    if (!(error instanceof OfficeError || error instanceof FileExistsError)) ctx.deps.log(`[webui] office sidecar error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
+    if (created) try { unlinkAnchored(workspace, path) } catch { /* already gone */ }
+    return { sidecar_error: 'Office sidecar extraction failed' }
+  }
+}
+
+/**
  * Python `handle_workspace_upload`: store each multipart file under `<workspace>/<path>` (deduplicated `-1`...`-999`);
  * an archive is extracted into `<path>/<stem>` and removed, and a failed extraction is reported on that file.
  */
@@ -649,7 +672,7 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
           results.push(outcome)
           continue
         }
-        results.push({ filename: basename(dest), path: dest, size: file.body.length, mime, is_image: mime.startsWith('image/'), extracted: false })
+        results.push({ filename: basename(dest), path: dest, size: file.body.length, mime, is_image: mime.startsWith('image/'), extracted: false, ...officeSidecar(ctx, workspace, dest, file.body) })
       }
     })
   } catch (error) {

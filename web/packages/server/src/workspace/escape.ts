@@ -141,7 +141,9 @@ export class EscapeGrants {
 
   /** Python `read_authorized_escape_file_content`, with the `/api/file` preview kind. */
   read(req: EscapeRequest): FilePreview & { source: 'workspace'; escape_read_only: true } {
-    return { ...anchoredAt(req, () => readFilePreview(req.externalRoot, req.externalRel)), source: 'workspace', path: req.requestPath, escape_read_only: true }
+    const file = anchoredAt(req, () => readFilePreview(req.externalRoot, req.externalRel))
+    // An escape grant is read-only, so an Office preview never offers its save.
+    return { ...file, ...(file.preview === 'office' ? { editable: false } : {}), source: 'workspace', path: req.requestPath, escape_read_only: true }
   }
 
   /** Python `raw_authorized_escape_target`: the file to serve, anchored at the grant root. */

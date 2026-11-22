@@ -4,7 +4,7 @@ import { sessionsContract, workspacesContract, type Attachment, type SessionDele
 import { mkdirSync } from 'node:fs'
 import { closeSync, existsSync, lstatSync, statSync } from 'node:fs'
 import { writeFully } from '../fs/atomic.js'
-import { basename, dirname, extname, join, relative } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { platform } from 'node:os'
 import { spawn } from 'node:child_process'
 import { ifNoneMatchMatches, type AppDeps, type RequestContext } from '../http/context.js'
@@ -21,7 +21,8 @@ import { folderBrowse, isBlockedSystemPath, isDir, REMOTE_WORKSPACE_UNSUPPORTED_
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { fileSourceSession, managedBuffers } from '../workspace/managed-buffers.js'
 import { previewUrl, readFilePreview } from '../workspace/preview.js'
-import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
+import { OfficeError, officeFormat, saveDocx } from '../workspace/office.js'
+import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, readFileBytes, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
 import { pyOsError, pyRepr, str } from '../util.js'
 import { activeProfileName, ensureTrustedAuthSession, requestCanManageServer, sessionCanManageServer } from '../auth/gate.js'
@@ -795,7 +796,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       requireFields(input, 'session_id', 'path')
       const s = (await fileOpsSession(ctx, input.session_id))
       try {
-        if (['.docx', '.xlsx', '.pptx'].includes(extname(input.path).toLowerCase())) throw new HttpError(400, 'Office documents cannot be saved from the Web UI')
+        if (officeFormat(input.path)) throw new HttpError(400, 'Use /api/file/office-save for Office documents')
         const root = s.workspace
         assertWorkspaceFree(ctx.deps, root)
         const target = workspaceFileTarget(ctx, root, input.path)
@@ -805,6 +806,33 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
         const data = Buffer.from(input.content ?? '', 'utf8')
         replaceAnchoredFile(root, target, data)
         return { ok: true as const, path: input.path, size: data.length }
+      } catch (error) {
+        throw fileError(error)
+      }
+    })),
+    /**
+     * TAL-262: an editable `.docx` preview's text saved back as its paragraphs. The checks run in the text save's order,
+     * then the save holds the workspace against Git while it rebuilds the package, and replaces the file only once the
+     * rebuilt package still previews as editable.
+     */
+    officeSave: os.files.officeSave.handler(({ input, context: { ctx } }) => run(async () => {
+      requireFields(input, 'session_id', 'path')
+      const s = (await fileOpsSession(ctx, input.session_id))
+      try {
+        const root = s.workspace
+        assertWorkspaceFree(ctx.deps, root)
+        const target = workspaceFileTarget(ctx, root, input.path)
+        if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot save to a symlinked entry')
+        if (!existsSync(target)) throw new HttpError(404, 'File not found')
+        if (statSync(target).isDirectory()) throw new HttpError(400, 'Cannot save: path is a directory')
+        const format = officeFormat(input.path)
+        if (!format) throw new HttpError(400, 'Office save is only available for .docx, .xlsx, and .pptx files')
+        if (format !== 'docx') throw new HttpError(400, `${format} is preview-only`)
+        return await ctx.deps.git.holdWrite(root, async () => {
+          const saved = await saveDocx(readFileBytes(root, input.path), input.content ?? '')
+          replaceAnchoredFile(root, target, saved.bytes)
+          return { ...saved.preview, ok: true as const, path: input.path, size: saved.bytes.length, preview: 'office' as const, source: 'workspace' as const }
+        })
       } catch (error) {
         throw fileError(error)
       }
@@ -1019,6 +1047,7 @@ function assertWorkspaceFree(deps: AppDeps, path: string): void {
 export function fileError(error: unknown, notFoundStatus = 400): Error {
   if (error instanceof HttpError) return error
   if (error instanceof HttpFailure) return new HttpError(error.status, error.message, error.extra)
+  if (error instanceof OfficeError) return new HttpError(400, error.message)
   if (error instanceof NotFoundError || error instanceof PathTraversalError || error instanceof FileTooLargeError) return new HttpError(notFoundStatus, sanitizeError(error))
   if (error instanceof Error && 'code' in error) return new HttpError(notFoundStatus, sanitizeError(error))
   return error as Error

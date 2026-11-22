@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EscapeGrants } from './escape.js'
+import { docx } from '../test/office-fixtures.js'
 
 const blocked = vi.hoisted(() => ({ dir: '' }))
 // A test-owned directory stands in for a system directory below a grantable parent, as /private/etc sits below
@@ -52,5 +53,12 @@ describe('EscapeGrants system directories', () => {
     }
     expect(g.read(g.resolve(ws, 'sid', null, token, 'escape/note.txt')).content).toBe('granted')
     expect(g.list(g.resolve(ws, 'sid', null, token, 'escape')).entries.map((e) => e.name)).toContain('note.txt')
+  })
+
+  it('reads an editable Office document behind a grant as read-only (TAL-262)', async () => {
+    writeFileSync(join(outside, 'plan.docx'), await docx('Goals'))
+    const g = grants()
+    const { token } = g.authorize(ws, 'sid', null, 'escape')
+    expect(g.read(g.resolve(ws, 'sid', null, token, 'escape/plan.docx'))).toMatchObject({ preview: 'office', content: 'Goals', editable: false, escape_read_only: true })
   })
 })

@@ -172,10 +172,10 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   }, [opened, file, content.data])
   // The saved text shows until the reread of that same file confirms it; edits typed meanwhile stay as the draft.
   const save = useResourceMutation({
-    resource: ({ path }: { path: string; text: string }) => contentResource(workspace, path),
+    resource: ({ path }: { path: string; text: string; office: boolean }) => contentResource(workspace, path),
     queryKey: keys.files.contents(workspace), readKeys: ({ path }) => [{ queryKey: keys.files.content(workspace, path), exact: true }],
     effect: ({ text }) => ({ value: text }),
-    mutationFn: ({ path, text }) => api.saveFile(sessionId, path, text, ...sourceArgs),
+    mutationFn: ({ path, text, office }) => office ? api.saveOfficeFile(sessionId, path, text) : api.saveFile(sessionId, path, text, ...sourceArgs),
     onSuccess: (_, { path, text }) => { showToast(m.ws_panel_saved()); putDraft(path, null, text) },
     onError: (e) => showErrorToast(e),
   })
@@ -237,9 +237,12 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
     items[Math.max(0, Math.min(to, items.length - 1))]?.focus()
   }
   const g = git.data?.git
-  const readOnly = managed && (content.data?.read_only !== false || content.isError)
-  const fileName = content.data?.name ?? listing.data?.entries.find((entry) => entry.path === file)?.name ?? file
   const kind = content.data?.preview
+  // TAL-262: an Office preview saves only when the server marks it editable; otherwise it shows the server's reason.
+  const office = kind === 'office'
+  const officeBlocked = office && content.data?.editable !== true
+  const readOnly = (managed && (content.data?.read_only !== false || content.isError)) || officeBlocked
+  const fileName = content.data?.name ?? listing.data?.entries.find((entry) => entry.path === file)?.name ?? file
   // Markdown, CSV and HTML show their rendered form until Edit opens the text; TAL-2323: a file opened at a line shows its text.
   const atLine = opened?.line !== undefined && opened.path === file
   const renderable = kind === 'markdown' || kind === 'csv' || kind === 'html'
@@ -283,7 +286,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
               <div className="border-t border-border-subtle px-2 py-1.5 text-right text-[11px] text-muted">{formatBytes(content.data?.size)}</div>
             </div>
           )}
-          {content.data && (kind === 'text' || renderable || draft !== null) && (
+          {content.data && (kind === 'text' || office || renderable || draft !== null) && (
             <div className="flex min-h-0 flex-1 flex-col">
               {rendered && kind === 'markdown' && <div className="min-h-0 flex-1 overflow-auto p-3 text-[13px]"><Markdown text={text} /></div>}
               {rendered && kind === 'csv' && <CsvTable rows={content.data.table ?? []} truncated={!!content.data.table_truncated} />}
@@ -297,9 +300,9 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
               )}
               <div className="flex items-center gap-2 border-t border-border-subtle px-2 py-1.5">
                 {rendered && !readOnly && <Button variant="ghost" onClick={() => setDraft(text)}>{m.edit()}</Button>}
-                <Button variant="primary" disabled={draft === null || readOnly} onClick={() => { if (draft !== null && file) save.mutate({ path: file, text: draft }) }}>{m.save()}</Button>
+                {!officeBlocked && <Button variant="primary" disabled={draft === null || readOnly} onClick={() => { if (draft !== null && file) save.mutate({ path: file, text: draft, office }) }}>{m.save()}</Button>}
                 {draft !== null && <Button variant="ghost" onClick={() => setDraft(null)}>{m.cancel()}</Button>}
-                <span className="ml-auto text-[11px] text-muted">{readOnly ? m.ws_panel_read_only() : ''}</span>
+                <span className="ml-auto text-[11px] text-muted">{officeBlocked ? content.data.edit_blocked_reason ?? m.ws_panel_read_only() : readOnly ? m.ws_panel_read_only() : ''}</span>
                 {managed && <HelpTip label={m.ws_panel_write_semantics()}>{m.ws_panel_unconditional_save()}</HelpTip>}
                 <span className="text-[11px] text-muted">{content.data.truncated ? m.logs_truncated({ n: content.data.lines ?? 0 }) : formatBytes(content.data.size)}</span>
               </div>
