@@ -56,6 +56,11 @@ describe('docx preview', () => {
     expect(drawing).toMatchObject({ content: 'Logo', editable: false, edit_blocked_reason: 'docx contains unsupported inline content' })
   })
 
+  it('keeps run tabs and line breaks, not paragraph tab stops', async () => {
+    const body = '<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs></w:pPr><w:r><w:t>First</w:t><w:br/><w:t>Second</w:t><w:tab/><w:t>X</w:t><w:cr/><w:t>Y</w:t></w:r></w:p>'
+    expect(previewOffice('t.docx', await docxPackage(`${body}${BLANK_SECTION}`))).toMatchObject({ content: 'First\nSecond\tX\nY', editable: false })
+  })
+
   it('truncates past 120,000 characters and is then read-only', async () => {
     const long = previewOffice('l.docx', await docx(incompressible(70_000).toString(), incompressible(70_000).toString()))
     expect(long).toMatchObject({ truncated: true, editable: false, edit_blocked_reason: 'docx preview exceeds safe limits' })

@@ -122,10 +122,6 @@ const rootOf = (doc: XNode[]): XNode | undefined => doc.find((node) => { const t
 /** The concatenated text of a leaf element such as `w:t`. */
 const textOf = (node: XNode): string => childrenOf(node).map((child) => (typeof child['#text'] === 'string' ? child['#text'] : '')).join('')
 
-function* descendants(node: XNode): Generator<XNode> {
-  for (const child of elements(node)) { yield child; yield* descendants(child) }
-}
-
 // ── Preview text ─────────────────────────────────────────────────────────
 
 /** `_PreviewBuilder`: appends pieces until the character budget runs out, then marks itself truncated. */
@@ -202,8 +198,19 @@ function readDocx(parts: Map<string, Buffer>): Docx {
   return { doc, body, w: (name) => `${prefix}${name}` }
 }
 
+/** Run text, tabs and line breaks in document order; property elements (`w:pPr` tab stops, `w:rPr`) are not content. */
+function* runContent(node: XNode, w: Docx['w']): Generator<string> {
+  for (const child of elements(node)) {
+    const tag = tagOf(child)
+    if (tag === w('t')) yield textOf(child)
+    else if (tag === w('tab')) yield '\t'
+    else if (tag === w('br') || tag === w('cr')) yield '\n'
+    else if (!tag.endsWith('Pr')) yield* runContent(child, w)
+  }
+}
+
 function docxText(builder: PreviewBuilder, node: XNode, w: Docx['w']): boolean {
-  for (const t of descendants(node)) if (tagOf(t) === w('t') && !builder.value(textOf(t), true)) return false
+  for (const text of runContent(node, w)) if (!builder.value(text, true)) return false
   return true
 }
 
@@ -357,11 +364,11 @@ function readWorkbook(parts: Map<string, Buffer>): Workbook {
   // Rich-text runs concatenate; phonetic guides (`rPh`) are not part of the value.
   const shared = sst ? named(sst, 'si').map((si) => [...elements(si)].filter((n) => ['t', 'r'].includes(localName(tagOf(n)))).map((n) => (localName(tagOf(n)) === 't' ? textOf(n) : named(n, 't').map(textOf).join(''))).join('')) : []
   const styles = parts.has('xl/styles.xml') ? rootOf(parseXml('xlsx', parts.get('xl/styles.xml'))) : undefined
-  const custom = new Map(named(first(styles, 'numFmts') ?? {}, 'numFmt').map((fmt) => [Number(attr(fmt, 'numFmtId')), attr(fmt, 'formatCode') ?? '']))
+  // Each custom format is classified once, however many cell styles share it.
+  const customDates = new Map(named(first(styles, 'numFmts') ?? {}, 'numFmt').map((fmt) => [Number(attr(fmt, 'numFmtId')), isDateFormat(attr(fmt, 'formatCode') ?? '')]))
   const dateStyles = named(first(styles, 'cellXfs') ?? {}, 'xf').map((xf) => {
     const id = Number(attr(xf, 'numFmtId') ?? 0)
-    const code = custom.get(id)
-    return code === undefined ? BUILTIN_DATE_FORMATS.has(id) : isDateFormat(code)
+    return customDates.get(id) ?? BUILTIN_DATE_FORMATS.has(id)
   })
   return { sheets, shared, dateStyles, date1904 }
 }
