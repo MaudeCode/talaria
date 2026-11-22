@@ -36,13 +36,4 @@ export function useCommandDecision(text: string, sessionId: string | null, enabl
 
 export interface CommandSuggestion { name: string; desc: string; args?: string | undefined; category?: string | undefined }
 
-const names = (c: Command) => [c.name, ...c.aliases].map((n) => n.toLowerCase())
-
-/** Catalog entries Web runs whose name or any alias starts with `prefix` (case-insensitive), in server order. */
-export function suggestCommands(prefix: string, catalog: Command[]): CommandSuggestion[] {
-  const p = prefix.toLowerCase()
-  return catalog
-    .filter((c) => c.clients.includes('web') && names(c).some((n) => n.startsWith(p)))
-    .slice(0, 40)
-    .map((c) => ({ name: c.name, desc: c.description ?? '', args: c.args_hint, category: c.category }))
-}
+export const toSuggestion = (c: Command): CommandSuggestion => ({ name: c.name, desc: c.description ?? '', args: c.args_hint, category: c.category })

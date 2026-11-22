@@ -137718,8 +137718,34 @@
     "/api/commands": {
       "get": {
         "operationId": "commands.list",
+        "summary": "The active profile's slash-command catalog for the requester. TAL-2314: with `prefix` or `client`, the palette's rows for that typed prefix instead: commands `client` runs (without one, commands some client runs) whose name or alias starts with `prefix`, ignoring case, the exact name or alias first, the rest in catalog order, at most 40.",
         "tags": [
           "tools"
+        ],
+        "parameters": [
+          {
+            "name": "prefix",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "client",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "web",
+                "ios"
+              ],
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
         ],
         "responses": {
           "200": {
