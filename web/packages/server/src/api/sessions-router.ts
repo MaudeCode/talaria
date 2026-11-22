@@ -158,10 +158,12 @@ async function sidebarListParams(ctx: RequestContext, input: SessionsListQuery):
 /** The row selection `/api/sessions` makes for `input` under `settings`; the agent's `session_list` uses it with no input (TAL-1164). */
 export function sidebarListSelection(settings: Settings, input: SessionsListQuery, reach: ProfileReach): Parameters<RequestContext['deps']['sessions']['list']>[0] {
   const sidebarSourceRaw = (input.sidebar_source ?? '').trim().toLowerCase()
+  const archivedOnly = queryFlag(input.archived_only)
   return {
     allProfiles: reach === 'all',
     countOtherProfiles: reach === 'counted',
-    includeArchived: queryFlag(input.include_archived),
+    includeArchived: archivedOnly || queryFlag(input.include_archived),
+    archivedOnly,
     visibleOnly: true,
     showCliSessions: queryBool(input.show_cli_sessions, Boolean(settings.show_cli_sessions)),
     showClaudeCodeSessions: queryBool(input.show_claude_code_sessions, Boolean(settings.show_claude_code_sessions)),
@@ -577,6 +579,13 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
     handoffSummary: os.session.handoffSummary.handler(({ input, context: { ctx } }) => run(async () => {
       const { sid, since } = (await handoffInput(ctx, input))
       return (await ctx.deps.sessions.handoffSummary(sid, since))
+    })),
+    // TAL-2641: the chat's native handoff, through its own owner only.
+    nativeHandoff: os.session.nativeHandoff.handler(({ input, context: { ctx } }) => run(async () => {
+      await guardVisibility(ctx, input.session_id)
+      const owner = ctx.deps.sessions.owner
+      if (!owner) throw new HttpError(503, 'Native session controls are unavailable')
+      return owner.handoff(input)
     })),
     compressStatus: os.session.compressStatus.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = input.session_id.trim()

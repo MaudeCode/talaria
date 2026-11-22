@@ -787,6 +787,35 @@ describe('sidebar search filters (TAL-308)', () => {
   })
 })
 
+describe('archived-only session list (TAL-2649)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('lists only archived rows in the list order; without the flag the list is unchanged', async () => {
+    const seed = async (fields: Partial<Session>, ts: number): Promise<string> => {
+      const sid = String((await newSession(s)).session_id)
+      const stored = (await s.deps.sessionStore.get(sid))
+      Object.assign(stored, fields)
+      stored.messages = [{ role: 'user', content: 'hi', timestamp: ts }, { role: 'assistant', content: 'ok', timestamp: ts + 1 }]
+      await s.deps.sessionStore.save(stored)
+      return sid
+    }
+    const olderArchived = await seed({ archived: true }, 5000)
+    const visible = await seed({}, 6000)
+    const newerArchived = await seed({ archived: true }, 7000)
+    const list = async (query: string): Promise<Json[]> => (await json(await s.get(`/api/sessions${query}`))).sessions as Json[]
+    const ids = (rows: Json[]): string[] => rows.map((r) => String(r.session_id))
+
+    const archivedOnly = await list('?archived_only=1')
+    expect(ids(archivedOnly)).toEqual([newerArchived, olderArchived])
+    expect(archivedOnly.map((r) => [r.archived, r.can_archive, r.can_delete])).toEqual([[true, true, true], [true, true, true]])
+    expect(ids(await list('?archived_only=1&archived_limit=1&archived_offset=1'))).toEqual([olderArchived])
+    expect(ids(await list(''))).toEqual([visible])
+    expect(ids(await list('?include_archived=1'))).toEqual([newerArchived, visible, olderArchived])
+  })
+})
+
 describe('multi-word session search (TAL-453)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

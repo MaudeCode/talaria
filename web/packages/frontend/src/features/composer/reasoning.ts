@@ -37,6 +37,25 @@ export function useSetReasoningEffort(onSaved?: (status: ReasoningStatus) => voi
   })
 }
 
+/** TAL-1423: one chat's speed pick, a separate optimistic owner beside its effort on the same reasoning key. */
+export const speedResource = (key: ReasoningKey) => `${reasoningResource(key)}:speed`
+
+/**
+ * TAL-1423: the one write owner for a chat's speed. The pick shows at once; a refusal rolls it back with the error toast, and
+ * the reread of the chat's status (also after an unknown outcome) settles it on the server's answer. Never replayed.
+ */
+export function useSetChatSpeed(onSaved?: (status: ReasoningStatus) => void) {
+  const qc = useQueryClient()
+  return useResourceMutation({
+    resource: ({ key }: { key: ReasoningKey; sid: string; tier: 'default' | 'priority' | 'ultrafast' }) => speedResource(key),
+    queryKey: ['reasoning'], readKeys: ({ key }) => [{ queryKey: key, exact: true }],
+    effect: ({ tier }) => ({ value: tier }),
+    mutationFn: ({ sid, tier }) => api.setChatSpeed(tier, sid),
+    onSuccess: (status, { key }) => { qc.setQueryData(key, status); onSaved?.(status) },
+    onError: showErrorToast,
+  })
+}
+
 /** Whether Web shows thinking, as the user just chose it, until the server's reread confirms it. */
 export function useReasoningDisplayChoice() {
   return useResourceEffects<'show' | 'hide'>()['reasoning-display']?.value

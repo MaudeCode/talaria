@@ -51,5 +51,36 @@
         "unavailable": null
       }
     }
+  },
+  "speed": {
+    "write": {
+      "session_id": "direct-chat",
+      "service_tier": "priority"
+    },
+    "status": {
+      "reasoning_effort": "medium",
+      "supports_session_scope": true,
+      "service_tier": "priority",
+      "supported_speed_tiers": [
+        {
+          "id": "standard",
+          "service_tier": "default"
+        },
+        {
+          "id": "fast",
+          "service_tier": "priority"
+        }
+      ]
+    },
+    "unavailable": {
+      "reasoning_effort": "medium",
+      "supports_session_scope": true,
+      "service_tier": "default",
+      "supported_speed_tiers": []
+    },
+    "refusal": {
+      "error": "This speed is not available for the conversation's model",
+      "code": "speed_unsupported"
+    }
   }
 }

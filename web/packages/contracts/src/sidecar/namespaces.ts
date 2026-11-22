@@ -701,6 +701,11 @@ export const ChatStreamSchema = z.discriminatedUnion('event', [
   /** TAL-821: the Agent's live rate-limit wait (`until`, epoch seconds: the limit's reset or the Agent's retry, as `until_kind` says); a null `until` ends it. */
   z.object({ event: z.literal('rate_limit_wait'), data: z.looseObject({ provider: z.string().nullable(), until: z.number().nullable(), until_kind: z.enum(['reset', 'retry']).optional() }) }),
 ])
+/**
+ * TAL-1423: the speed the server resolved for the chat (its own pick, else the profile's main-model tier), which replaces
+ * the profile's `model.service_tier` for this agent; the Agent's resolver still decides what it sends. Absent: the profile's.
+ */
+const ServiceTierParam = z.enum(['default', 'priority', 'ultrafast']).optional()
 export const CHAT_METHODS = {
   'chat.start': {
     params: ProfileHomeParams.extend({
@@ -710,6 +715,7 @@ export const CHAT_METHODS = {
       clarify_timeout_seconds: z.number().nullable().optional(),
       /** Python `parse_reasoning_effort` output (`{enabled, effort}`) and the WebUI-only runtime instructions. */
       reasoning_config: z.object({ enabled: z.boolean(), effort: z.string().optional() }).nullable().optional(), ephemeral_system_prompt: z.string().nullable().optional(),
+      service_tier: ServiceTierParam,
       /** TAL-529: the user's own text, which state.db stores in place of `user_message` (workspace prefix, attachment parts). */
       persist_user_message: z.string().optional(),
       /** TAL-529: a `/btw` side question, whose throwaway session the Agent keeps out of the profile's state.db. */
@@ -787,6 +793,7 @@ export const CHAT_METHODS = {
       session_id: z.string().min(1), messages: z.array(Loose), focus: z.string(), model: z.string(), model_provider: z.string().nullable().optional(),
       enabled_toolsets: z.array(z.string()).nullable().optional(), max_iterations: z.number().int().nullable().optional(), max_tokens: z.number().int().nullable().optional(),
       reasoning_config: z.object({ enabled: z.boolean(), effort: z.string().optional() }).nullable().optional(),
+      service_tier: ServiceTierParam,
       /** TAL-903: the session's workspace, as `chat.start` sends it, so the agent built here is the one its next turn reuses. */
       workspace: z.string().optional(), workspace_local: z.boolean().optional(),
     }),

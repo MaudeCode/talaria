@@ -95,7 +95,7 @@ def shared_owner(tmp_path_factory):
 
 @requires_agent
 @pytest.mark.parametrize("mode", ["shared", "reactions", "reaction-watch", "images", "batch", "approval", "approval-tell", "clarify", "detail",
-                                  "queued-controls", "model", "voice-stop", "connections", "work", "complete", "transcript", "bridge", "commands"])
+                                  "queued-controls", "model", "voice-stop", "connections", "work", "complete", "handoff", "transcript", "bridge", "commands"])
 def test_real_native_owner_shared_admission_and_detach(request, shared_owner, mode):
     shared_owner(request, mode)
 
@@ -229,7 +229,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter
 
-    owner = SimpleNamespace(receipt=None, replay=[], events=[], frames=[], info={}, payload=None, calls=[], config_failure=None,
+    owner = SimpleNamespace(receipt=None, replay=[], events=[], frames=[], info={}, payload=None, calls=[], config_failure=None, handoff={},
                             export=None, export_failure=None, transcript=None, completion=None, checkpoint_diff=None, checkpoint_failure=None, checkpoints=[], shell=None, shell_failure=None,
                             described={"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
                                        "capabilities": ["durable-admission-v1", "event-replay-v1"]})
@@ -304,6 +304,11 @@ def native_owner_stub(tmp_path, monkeypatch):
             return owner.completion
         if method in {"command.dispatch", "commands.catalog"}:
             reply = owner.command if method == "command.dispatch" else owner.catalog
+            if isinstance(reply, BaseException):
+                raise reply
+            return reply
+        if method.startswith("handoff."):
+            reply = owner.handoff[method]
             if isinstance(reply, BaseException):
                 raise reply
             return reply
@@ -1753,3 +1758,100 @@ def test_complete_path_takes_no_root_and_one_bounded_word(tmp_path, native_owner
     with pytest.raises(InvalidParams):
         native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": "complete_path", **params})
     assert native_owner_stub.calls == []
+
+
+class OwnerRefusal(RuntimeError):
+    """A received owner refusal with its bounded ``error.data``, as the native client raises it."""
+
+    def __init__(self, message, **data):
+        super().__init__(message)
+        self.data = data
+
+
+HANDOFF_DESTINATIONS = [{"platform": "telegram", "home_name": "Phone"}]
+
+
+@pytest.fixture
+def handoff_owner(native_owner_stub, monkeypatch):
+    from talaria_sidecar.methods import gateway_sessions as adapter
+    monkeypatch.setattr(adapter, "_handoff_destinations", lambda: HANDOFF_DESTINATIONS)
+    native_owner_stub.handoff = {"handoff.state": {"state": "", "platform": "", "error": ""}}
+    return native_owner_stub
+
+
+def handoff_calls(owner):
+    return [(method, params) for method, params in owner.calls if method.startswith("handoff.")]
+
+
+@pytest.mark.parametrize("action,extra", [("handoff_state", {}), ("handoff_request", {"platform": "telegram"}), ("handoff_fail", {})])
+def test_handoff_needs_a_verified_owner_revision(handoff_owner, action, extra):
+    handoff_owner.endpoint.code_sha = SUPPORTED_REVISIONS[0]
+    result = handoff_owner.run(None, {"session_id": "native", "action": action, **extra})
+    assert (result["state"], result["reason"]) == ("incompatible", "owner_handoff_unsupported")
+    assert handoff_owner.calls == []
+
+
+def test_handoff_state_reads_the_owner_record_and_the_configured_destination(handoff_owner):
+    handoff_owner.handoff["handoff.state"] = {"state": "failed", "platform": "Telegram", "error": " " + "x" * 600}
+    result = handoff_owner.run(None, {"session_id": "native", "action": "handoff_state"})
+    assert result["state"] == "attached" and result["snapshot"] is None
+    assert result["handoff"] == {"session_id": "native", "destinations": HANDOFF_DESTINATIONS, "state": "failed", "platform": "telegram",
+                                 "error": "x" * 500, "outcome": None, "refusal": None, "home_name": None}
+    assert handoff_calls(handoff_owner) == [("handoff.state", {"session_id": "native"})]
+
+
+def test_handoff_request_queues_through_the_owner_and_reads_its_state(handoff_owner):
+    handoff_owner.handoff.update({"handoff.request": {"queued": True, "session_key": "native", "platform": "telegram", "home_name": "Phone"},
+                                  "handoff.state": {"state": "pending", "platform": "telegram", "error": ""}})
+    result = handoff_owner.run(None, {"session_id": "native", "action": "handoff_request", "platform": "telegram"})
+    assert {k: result["handoff"][k] for k in ("state", "platform", "outcome", "refusal", "home_name")} == {
+        "state": "pending", "platform": "telegram", "outcome": "queued", "refusal": None, "home_name": "Phone"}
+    assert handoff_calls(handoff_owner) == [("handoff.request", {"session_id": "native", "platform": "telegram"}),
+                                            ("handoff.state", {"session_id": "native"})]
+
+
+@pytest.mark.parametrize("refusal,code", [
+    (OwnerRefusal("session_busy", reason="session_busy"), "session_busy"),
+    (OwnerRefusal("session_busy", reason="session_busy", field="handoff"), "handoff_in_flight"),
+    (OwnerRefusal("unknown_execution", reason="unknown_execution", detail="send /discard"), "unknown_execution"),
+    (OwnerRefusal("invalid_params", reason="invalid_params", field="platform"), "destination_unavailable"),
+    (OwnerRefusal("permission_denied", reason="permission_denied"), "permission_denied"),
+    (OwnerRefusal("request_failed", reason="disk_full"), "refused")])
+def test_handoff_refusal_is_a_closed_code_and_leaves_the_owner_state(handoff_owner, refusal, code):
+    handoff_owner.handoff["handoff.request"] = refusal
+    result = handoff_owner.run(None, {"session_id": "native", "action": "handoff_request", "platform": "telegram"})
+    assert (result["handoff"]["outcome"], result["handoff"]["refusal"], result["handoff"]["state"]) == ("refused", code, "")
+    assert [method for method, _ in handoff_calls(handoff_owner)] == ["handoff.request", "handoff.state"]
+
+
+@pytest.mark.parametrize("lost", [ConnectionError("disconnected"), TimeoutError(), {"queued": "yes"}])
+def test_a_lost_handoff_reply_is_unknown_never_resent_and_reconciled_from_state(handoff_owner, lost):
+    handoff_owner.handoff.update({"handoff.request": lost, "handoff.state": {"state": "running", "platform": "telegram", "error": ""}})
+    result = handoff_owner.run(None, {"session_id": "native", "action": "handoff_request", "platform": "telegram"})
+    assert (result["handoff"]["outcome"], result["handoff"]["state"], result["handoff"]["home_name"]) == ("unknown", "running", None)
+    assert [method for method, _ in handoff_calls(handoff_owner)] == ["handoff.request", "handoff.state"]
+
+
+def test_an_unreadable_handoff_state_stays_unknown(handoff_owner):
+    handoff_owner.handoff.update({"handoff.request": ConnectionError("disconnected"), "handoff.state": ConnectionError("disconnected")})
+    result = handoff_owner.run(None, {"session_id": "native", "action": "handoff_request", "platform": "telegram"})
+    assert (result["handoff"]["outcome"], result["handoff"]["state"]) == ("unknown", None)
+
+
+@pytest.mark.parametrize("reply,state,outcome", [({"failed": True, "state": "failed"}, "failed", "cancelled"),
+                                                 ({"failed": False, "state": "running"}, "running", "not_pending")])
+def test_a_cancel_fails_only_a_handoff_no_watcher_claimed(handoff_owner, reply, state, outcome):
+    handoff_owner.handoff.update({"handoff.fail": reply, "handoff.state": {"state": state, "platform": "telegram", "error": ""}})
+    result = handoff_owner.run(None, {"session_id": "native", "action": "handoff_fail"})
+    assert (result["handoff"]["outcome"], result["handoff"]["state"]) == (outcome, state)
+    assert handoff_calls(handoff_owner)[0] == ("handoff.fail", {"session_id": "native", "error": "cancelled from Talaria"})
+
+
+@pytest.mark.parametrize("action,extra", [("handoff_request", {}), ("handoff_request", {"platform": "Telegram"}),
+    ("handoff_request", {"platform": "tele gram"}), ("handoff_request", {"platform": "telegram", "home": "x"}),
+    ("handoff_state", {"platform": "telegram"}), ("handoff_fail", {"error": "mine"})])
+def test_handoff_inputs_are_closed_before_owner_discovery(handoff_owner, tmp_path, action, extra):
+    from talaria_sidecar.errors import InvalidParams
+    with pytest.raises(InvalidParams):
+        handoff_owner.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": action, **extra})
+    assert handoff_owner.calls == []

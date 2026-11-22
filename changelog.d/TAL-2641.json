@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web's /handoff moves a chat to a messaging platform's home channel through its gateway, shows the destination before you send, and follows the handoff until the gateway finishes or refuses it.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

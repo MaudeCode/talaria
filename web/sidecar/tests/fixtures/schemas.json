@@ -12878,6 +12878,140 @@
         ],
         "additionalProperties": false
       },
+      "handoff": {
+        "description": "`handoff_state`, `handoff_request`, `handoff_fail`: the owner's verdict and its handoff record.",
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "destinations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "platform": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "home_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "platform",
+                "home_name"
+              ],
+              "additionalProperties": false
+            },
+            "description": "The home channels this profile's owner would deliver to, by the Agent's own rule; never a chat id."
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "",
+                  "pending",
+                  "running",
+                  "completed",
+                  "failed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The watcher's failure reason, redacted and bounded."
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "refused",
+                  "unknown",
+                  "cancelled",
+                  "not_pending"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "refusal": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "session_busy",
+                  "handoff_in_flight",
+                  "unknown_execution",
+                  "destination_unavailable",
+                  "permission_denied",
+                  "not_found",
+                  "profile_mismatch",
+                  "runtime_draining",
+                  "refused"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "home_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "session_id",
+          "destinations",
+          "state",
+          "platform",
+          "error",
+          "outcome",
+          "refusal",
+          "home_name"
+        ],
+        "additionalProperties": false
+      },
       "lock": {
         "description": "`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.",
         "type": "object",
@@ -14577,6 +14711,140 @@
         },
         "required": [
           "items"
+        ],
+        "additionalProperties": false
+      },
+      "handoff": {
+        "description": "`handoff_state`, `handoff_request`, `handoff_fail`: the owner's verdict and its handoff record.",
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "destinations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "platform": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "home_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "platform",
+                "home_name"
+              ],
+              "additionalProperties": false
+            },
+            "description": "The home channels this profile's owner would deliver to, by the Agent's own rule; never a chat id."
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "",
+                  "pending",
+                  "running",
+                  "completed",
+                  "failed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The watcher's failure reason, redacted and bounded."
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "refused",
+                  "unknown",
+                  "cancelled",
+                  "not_pending"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "refusal": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "session_busy",
+                  "handoff_in_flight",
+                  "unknown_execution",
+                  "destination_unavailable",
+                  "permission_denied",
+                  "not_found",
+                  "profile_mismatch",
+                  "runtime_draining",
+                  "refused"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "home_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "session_id",
+          "destinations",
+          "state",
+          "platform",
+          "error",
+          "outcome",
+          "refusal",
+          "home_name"
         ],
         "additionalProperties": false
       },

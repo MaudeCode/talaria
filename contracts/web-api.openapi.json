@@ -3740,6 +3740,16 @@
             "allowReserved": true
           },
           {
+            "name": "archived_only",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "TAL-2649: lists only archived rows, in the list order; implies `include_archived`."
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
             "name": "show_cli_sessions",
             "in": "query",
             "schema": {
@@ -77287,6 +77297,240 @@
         }
       }
     },
+    "/api/session/native-handoff": {
+      "post": {
+        "operationId": "session.nativeHandoff",
+        "summary": "TAL-2641: read, request or cancel moving the chat to a messaging platform's home channel through its own native owner. An unknown outcome is never replayed; read again.",
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "action": {
+                        "const": "read"
+                      }
+                    },
+                    "required": [
+                      "session_id",
+                      "action"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "action": {
+                        "const": "request"
+                      },
+                      "platform": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+                      }
+                    },
+                    "required": [
+                      "session_id",
+                      "action",
+                      "platform"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "action": {
+                        "const": "cancel"
+                      }
+                    },
+                    "required": [
+                      "session_id",
+                      "action"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "profile": {
+                      "type": "string",
+                      "description": "The profile whose owner holds the chat and its handoff record."
+                    },
+                    "available": {
+                      "type": "boolean",
+                      "description": "The chat's owner serves handoff and has at least one configured destination."
+                    },
+                    "unavailable_reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "not_owned",
+                            "unsupported",
+                            "owner_unavailable",
+                            "no_destination"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "destinations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "platform",
+                          "label"
+                        ]
+                      },
+                      "description": "Where a request delivers, shown before the user asks: the platform and its configured home channel name."
+                    },
+                    "state": {
+                      "enum": [
+                        "none",
+                        "pending",
+                        "running",
+                        "completed",
+                        "failed",
+                        "unknown"
+                      ],
+                      "type": "string",
+                      "description": "`pending`: queued for the gateway; `running`: the gateway claimed it; `unknown`: the owner's record could not be read."
+                    },
+                    "platform": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The platform of the latest handoff."
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Why the latest handoff failed, redacted and bounded."
+                    },
+                    "outcome": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "queued",
+                            "refused",
+                            "unknown",
+                            "cancelled",
+                            "not_pending"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "What the owner did with this request or cancel; null on a read."
+                    },
+                    "refusal": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "session_busy",
+                            "handoff_in_flight",
+                            "unknown_execution",
+                            "destination_unavailable",
+                            "permission_denied",
+                            "not_found",
+                            "profile_mismatch",
+                            "runtime_draining",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "can_request": {
+                      "type": "boolean",
+                      "description": "A request may be sent now."
+                    },
+                    "can_cancel": {
+                      "type": "boolean",
+                      "description": "The handoff is queued and no gateway claimed it, so a cancel can still fail it."
+                    }
+                  },
+                  "required": [
+                    "session_id",
+                    "profile",
+                    "available",
+                    "unavailable_reason",
+                    "destinations",
+                    "state",
+                    "platform",
+                    "error",
+                    "outcome",
+                    "refusal",
+                    "can_request",
+                    "can_cancel"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/draft": {
       "get": {
         "operationId": "session.draftGet",
@@ -131813,6 +132057,46 @@
                     },
                     "supports_session_scope": {
                       "type": "boolean"
+                    },
+                    "service_tier": {
+                      "enum": [
+                        "default",
+                        "priority",
+                        "ultrafast"
+                      ],
+                      "type": "string",
+                      "description": "TAL-1423, with session_id only: the speed this chat's turns run at now. Its own pick when its route offers it, else the profile's main-model tier when the chat runs on that model and route, else `default`."
+                    },
+                    "supported_speed_tiers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "enum": [
+                              "standard",
+                              "priority",
+                              "ultrafast",
+                              "fast"
+                            ],
+                            "type": "string"
+                          },
+                          "service_tier": {
+                            "enum": [
+                              "default",
+                              "priority",
+                              "ultrafast"
+                            ],
+                            "type": "string",
+                            "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "service_tier"
+                        ]
+                      },
+                      "description": "TAL-1423, with session_id only: the speeds a picker offers this chat, from the Agent's resolver for its turn model and route. Empty when the route has no faster tier, the Agent cannot say, or the chat cannot change speed here (a read-only or owner chat). Absent from an older server: hide the control."
                     }
                   },
                   "additionalProperties": {}
@@ -131824,7 +132108,7 @@
       },
       "post": {
         "operationId": "reasoning.set",
-        "summary": "Body is `{display: show|hide}` or `{effort, session_id?, model?, provider?, base_url?}`. TAL-1647: an effort with session_id is that chat's alone (`''` is the provider default) and answers its status as GET does; the profile default is unchanged. Read-only/native targets return 409 reasoning_unsupported and missing ones 404, without writes. Omit session_id only for explicit profile settings.",
+        "summary": "Body is `{display: show|hide}` or `{effort, session_id?, model?, provider?, base_url?}`. TAL-1647: an effort with session_id is that chat's alone (`''` is the provider default) and answers its status as GET does; the profile default is unchanged. Read-only/native targets return 409 reasoning_unsupported and missing ones 404, without writes. Omit session_id only for explicit profile settings. TAL-1423: `{service_tier, session_id}` sets that chat's speed alone, one of its `supported_speed_tiers` (else 409 speed_unsupported, nothing written; 503 when the Agent cannot say), and answers its status; the profile's `model.service_tier` is never written here.",
         "tags": [
           "settings"
         ],
@@ -131837,6 +132121,14 @@
                 "properties": {
                   "display": {},
                   "effort": {},
+                  "service_tier": {
+                    "enum": [
+                      "default",
+                      "priority",
+                      "ultrafast"
+                    ],
+                    "type": "string"
+                  },
                   "session_id": {
                     "type": "string",
                     "minLength": 1
@@ -131991,6 +132283,46 @@
                     },
                     "supports_session_scope": {
                       "type": "boolean"
+                    },
+                    "service_tier": {
+                      "enum": [
+                        "default",
+                        "priority",
+                        "ultrafast"
+                      ],
+                      "type": "string",
+                      "description": "TAL-1423, with session_id only: the speed this chat's turns run at now. Its own pick when its route offers it, else the profile's main-model tier when the chat runs on that model and route, else `default`."
+                    },
+                    "supported_speed_tiers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "enum": [
+                              "standard",
+                              "priority",
+                              "ultrafast",
+                              "fast"
+                            ],
+                            "type": "string"
+                          },
+                          "service_tier": {
+                            "enum": [
+                              "default",
+                              "priority",
+                              "ultrafast"
+                            ],
+                            "type": "string",
+                            "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "service_tier"
+                        ]
+                      },
+                      "description": "TAL-1423, with session_id only: the speeds a picker offers this chat, from the Agent's resolver for its turn model and route. Empty when the route has no faster tier, the Agent cannot say, or the chat cannot change speed here (a read-only or owner chat). Absent from an older server: hide the control."
                     }
                   },
                   "additionalProperties": {}

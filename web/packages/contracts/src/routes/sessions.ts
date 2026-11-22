@@ -4,7 +4,7 @@ import { ContextDetailSchema } from '../context-detail.js'
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { ModelSelectionWarningSchema, SessionDeleteRefusedSchema } from '../sidecar-shared.js'
-import { ExecutionModesSchema } from '../gateway-session.js'
+import { ExecutionModesSchema, SessionHandoffRequestSchema, SessionHandoffSchema } from '../gateway-session.js'
 import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionSkillsSchema, SessionOutlineSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivityGroupSchema, ActivitySceneRowSchema, ActivitySummarySchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
@@ -36,6 +36,7 @@ export const TruncateConfirmRequiredSchema = z.object({ ok: z.literal(false), co
 export const SessionsListQuerySchema = z.object({
   include_archived: z.string().optional(), all_profiles: z.string().optional(), sidebar_source: z.string().optional(), project_id: z.string().optional(),
   archived_limit: z.string().optional(), archived_offset: z.string().optional(),
+  archived_only: z.string().optional().describe('TAL-2649: lists only archived rows, in the list order; implies `include_archived`.'),
   show_cli_sessions: z.string().optional(), show_claude_code_sessions: z.string().optional(), show_cron_sessions: z.string().optional(),
   show_messaging_sessions: z.string().optional().describe('TAL-2159: overrides the `show_messaging_sessions` setting for this request.'),
   show_webhook_sessions: z.string().optional(), show_kanban_sessions: z.string().optional(),
@@ -47,7 +48,7 @@ export type SessionsListQuery = z.infer<typeof SessionsListQuerySchema>
  * selects the `/api/sessions` rows and order, so the response is the complete result and says `sidebar_filtered: true`.
  * Without one the search keeps its older store-only behavior.
  */
-export const SessionsSearchQuerySchema = SessionsListQuerySchema.omit({ archived_limit: true, archived_offset: true }).extend({
+export const SessionsSearchQuerySchema = SessionsListQuerySchema.omit({ archived_limit: true, archived_offset: true, archived_only: true }).extend({
   q: z.string().optional(), content: z.string().optional(), depth: z.string().optional(),
 })
 
@@ -208,6 +209,7 @@ export const sessionsContract = {
     compressStatus: oc.route({ method: 'GET', path: '/api/session/compress/status', tags }).input(SessionQuery).output(CompressionStatusSchema),
     conversationRounds: oc.route({ method: 'POST', path: '/api/session/conversation-rounds', tags, summary: 'Count the session\'s conversation rounds in state.db and whether the handoff dock is due.' }).input(HandoffInputSchema).output(ConversationRoundsSchema),
     handoffSummary: oc.route({ method: 'POST', path: '/api/session/handoff-summary', tags, summary: 'Summarize the session\'s recent conversation for a handoff and append the summary card; needs the dock\'s round threshold.' }).input(HandoffInputSchema).output(HandoffSummarySchema),
+    nativeHandoff: oc.route({ method: 'POST', path: '/api/session/native-handoff', tags, summary: 'TAL-2641: read, request or cancel moving the chat to a messaging platform\'s home channel through its own native owner. An unknown outcome is never replayed; read again.' }).input(SessionHandoffRequestSchema).output(SessionHandoffSchema),
     draftGet: oc.route({ method: 'GET', path: '/api/session/draft', tags }).input(SessionQuery).output(z.object({ draft: DraftSchema, draft_version: z.string().nullable() })),
     draftSave: oc.route({ method: 'POST', path: '/api/session/draft', tags }).input(z.object({ session_id: z.string(), text: Json.optional(), files: Json.optional(), draft_version: Json.optional() })).output(DraftResponseSchema),
     anchorSceneGet: oc.route({ method: 'GET', path: '/api/session/anchor-scene', tags }).input(z.object({ session_id: z.string(), message_ref: z.string().optional(), message_index: z.string().optional(), before: z.string().optional(), limit: z.string().optional() })).output(z.object({ scene_ref: z.string(), rows: z.array(ActivitySceneRowSchema), /** TAL-2332: the activity groups of these rows. */ activity_groups: z.array(ActivityGroupSchema).optional(), start: z.number().int(), end: z.number().int(), total: z.number().int(), complete: z.boolean() })),

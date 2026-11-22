@@ -98,6 +98,10 @@ only when private control discovery reports one of those revisions and the authe
 instance, authority epoch and session capabilities match. A local checkout or
 package version cannot authorize the connection. Missing or unreadable evidence retains
 `served_profile_sessions_unavailable`. Diagnostic creation remains dedicated-only.
+TAL-2641 records `session-handoff-v1` for v0.23.2 and v0.23.3, whose owners serve
+`handoff.request`, `handoff.state` and `handoff.fail` with their durable-work fence;
+on any other revision the sidecar refuses a handoff as `owner_handoff_unsupported`
+before calling the owner, and Web shows the chat's handoff as unavailable.
 The existing `[profiles]` compatibility case uses separate loopback model peers,
 creates the primary LOCAL adapter first, and checks the secondary model pick,
 workspace, credentials, tool policy and transcript during a concurrent primary

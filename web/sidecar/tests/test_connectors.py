@@ -260,7 +260,7 @@ chat._resolve_runtime = lambda provider, model: {"model": "m", "provider": "p"}
 chat._discover_mcp_tools = lambda run: None
 chat._profile_toolsets = lambda cfg=None: ["connections"]
 chat._profile_fallback_chain = lambda cfg=None: None
-chat._main_model_request_overrides = lambda model, provider, base_url="", cfg=None: None
+chat._main_model_request_overrides = lambda model, provider, base_url="", cfg=None, service_tier=None: None
 chat.checkpoint_kwargs = lambda cfg=None: {}
 result = chat.start(Ctx(), {"profile_home": home, "session_id": "s-connect", "stream_id": "st-connect", "user_message": "Connect Gmail",
                             "model": "m", "model_provider": "p", **({"connect_card": True} if sys.argv[2] == "card" else {})})

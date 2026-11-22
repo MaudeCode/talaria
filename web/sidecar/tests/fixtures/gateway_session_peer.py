@@ -85,15 +85,21 @@ def websocket(home, desc):
     return owner_websocket(home, desc, max_queue=None)
 
 
-async def drained(call, ceiling=40):
-    """The session's snapshot once nothing is pending: the owner announces no drain to a sidecar reader, so this polls."""
+async def polled(call, action, settled, ceiling=40):
+    """The first ``action`` read that ``settled`` accepts. The owner announces neither a drain nor its handoff watcher's
+    verdict to a sidecar reader, so this polls."""
     deadline = time.monotonic() + ceiling
     while True:
-        final = await asyncio.to_thread(call, "snapshot")
-        if final["snapshot"] and not final["snapshot"]["pending"]:
-            return final
-        assert time.monotonic() < deadline, final
+        read = await asyncio.to_thread(call, action)
+        if settled(read):
+            return read
+        assert time.monotonic() < deadline, read
         await asyncio.sleep(POLL_SECONDS)
+
+
+async def drained(call, ceiling=40):
+    """The session's snapshot once nothing is pending."""
+    return await polled(call, "snapshot", lambda read: read["snapshot"] and not read["snapshot"]["pending"], ceiling)
 
 
 async def probe(home, peer, desc, *, require_gap=False):
@@ -449,6 +455,61 @@ async def probe_commands(home, peer, desc):
             assert (unknown["state"], unknown["reason"]) == ("refused", "unsupported_command"), unknown
             assert not peer.requests, "no command reached the model"
     finally:
+        sidecar.close()
+
+
+async def probe_handoff(home, peer, desc):
+    """TAL-2641: Web's handoff verbs against the installed owner and its watcher, on a synthetic Telegram home channel no
+    adapter serves. Durable work refuses the request and writes no row; a settled session queues it and the watcher
+    claims it, fails it (no adapter) and leaves the route; a cancel then changes nothing. An owner without the verbs
+    refuses before any owner call."""
+    config = home / "config.yaml"
+    original = config.read_text()
+    config.write_text(json.dumps({**json.loads(original), "platforms": {"telegram": {
+        "enabled": True, "token": "123456789:AAFakeTokenForTestsOnly_abcdefghij",
+        "home_channel": {"platform": "telegram", "chat_id": "4242", "name": "Phone"}}}}))
+    sidecar = SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, "session.create", request_id="handoff-create", source="cli", toolsets=[])
+            sid = created["result"]["session_id"]
+            def call(action, **params):
+                return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+            if not (agent / "gateway/session_handoff.py").exists():
+                refused = await asyncio.to_thread(call, "handoff_request", platform="telegram")
+                assert (refused["state"], refused["reason"]) == ("incompatible", "owner_handoff_unsupported"), refused
+                return
+            read = await asyncio.to_thread(call, "handoff_state")
+            assert read["state"] == "attached", read
+            assert read["handoff"]["destinations"] == [{"platform": "telegram", "home_name": "Phone"}], read
+            assert read["handoff"]["state"] == "", read
+            # A running turn with a queued one behind it: the owner refuses in its own transaction and writes no row.
+            await asyncio.to_thread(call, "submit", request_id="handoff-running", text="BLOCK_STARTED")
+            assert await asyncio.to_thread(peer.blocked.wait, 25), "running turn did not reach provider"
+            queued = await asyncio.to_thread(call, "submit", request_id="handoff-queued", text="HANDOFF_QUEUED")
+            assert queued["receipt"]["status"] == "queued", queued
+            busy = await asyncio.to_thread(call, "handoff_request", platform="telegram")
+            assert (busy["handoff"]["outcome"], busy["handoff"]["refusal"], busy["handoff"]["state"]) == ("refused", "session_busy", ""), busy
+            peer.release.set()
+            await drained(call)
+            missing = await asyncio.to_thread(call, "handoff_request", platform="discord")
+            assert (missing["handoff"]["refusal"], missing["handoff"]["state"]) == ("destination_unavailable", ""), missing
+            requested = await asyncio.to_thread(call, "handoff_request", platform="telegram")
+            assert (requested["handoff"]["outcome"], requested["handoff"]["home_name"]) == ("queued", "Phone"), requested
+            assert requested["handoff"]["state"] in {"pending", "running", "failed"}, requested
+            settled = await polled(call, "handoff_state", lambda read: read["handoff"]["state"] not in {"pending", "running"}, 30)
+            assert settled["handoff"]["state"] == "failed", settled
+            assert settled["handoff"]["platform"] == "telegram" and "not active" in settled["handoff"]["error"], settled
+            cancel = await asyncio.to_thread(call, "handoff_fail")
+            assert (cancel["handoff"]["outcome"], cancel["handoff"]["state"], cancel["handoff"]["error"]) == (
+                "not_pending", "failed", settled["handoff"]["error"]), cancel
+            # The failed handoff moved no route: the chat still answers here.
+            after = await asyncio.to_thread(call, "submit", request_id="handoff-after", text="HANDOFF_AFTER")
+            assert after["state"] == "attached", after
+            await drained(call)
+    finally:
+        peer.release.set()
+        config.write_text(original)
         sidecar.close()
 
 
@@ -1657,6 +1718,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_complete(home, peer, desc)
     if mode == "commands":
         return probe_commands(home, peer, desc)
+    if mode == "handoff":
+        return probe_handoff(home, peer, desc)
     if mode == "transcript":
         return probe_transcript(home, peer, desc)
     if mode == "session-open":

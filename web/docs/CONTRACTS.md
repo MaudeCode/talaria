@@ -276,6 +276,22 @@ profile default; `""` is the provider default. Duplicates, forks, focused contin
 provider its turns run on, and `chat.start` builds the same value. A chat Web keeps no record
 of (a native chat) reads the profile default for the `model`/`provider` the client sends.
 
+A chat's speed is its own too (TAL-1423). With `session_id`, the reasoning status also
+carries `supported_speed_tiers`, the tiers the Agent's resolver offers the chat's turn
+model and route, and `service_tier`, the one its turns run at: its stored pick when the
+route offers it, else the profile's `model.service_tier` when the chat runs on that main
+model and route, else `default`. The list is empty when the route has no faster tier, the
+Agent cannot say, or the chat is read-only (an owner chat); an older server omits both
+fields, and clients then hide the control. `POST /api/reasoning` with `{service_tier,
+session_id}` stores that chat's pick after checking it against the chat's current route:
+an unoffered tier answers 409 `speed_unsupported` and an unanswered lookup 503, both
+without a write. A `service_tier` without `session_id` is 400; the profile tier is only
+written by Settings › Models. The stored pick (`null` inherits) survives a model change,
+so moving back to a route that offers it restores it. Duplicates, forks, focused
+continuations, `/background`, `/btw` and imports keep it. `chat.start` and `chat.refine`
+send the resolved tier, which replaces the profile tier in the sidecar's request
+overrides; the Agent's resolver still decides what each route is sent.
+
 `GET /api/reasoning` advertises `supports_session_scope: true` only with this guard.
 Independently updated clients check that capability before chat effort/reset writes.
 An absent or false flag prevents the write and requires a server update. A failed

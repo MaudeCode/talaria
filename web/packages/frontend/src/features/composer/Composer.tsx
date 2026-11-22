@@ -16,7 +16,7 @@ import { AttachmentTray, pastedText, type PendingFile } from './Attachments'
 import { AttachControl } from './AttachControl'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { useCommandDecision, type CommandSuggestion } from './commands'
-import { ContextRing, QuotaChip, type ContextFigures } from './chips'
+import { ContextRing, QuotaChip, type ChatSpeed, type ContextFigures } from './chips'
 import { ComposerControls, chatModelChoice, hideComposerControl, quotaChipShown } from './ComposerControls'
 import { beginUpload, clearDraft, dropStagedFiles, finishUpload, moveStagedFiles, readLocalDraft, stagedFiles, useDraftPersistence, useServerDraft, useStagedFiles } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError, type DictationErrorKind } from '../voice/dictation'
@@ -85,6 +85,8 @@ export interface ComposerProps {
   /** False when the model has neither an effort ladder nor a thinking toggle; the chip is hidden, as legacy did. */
   reasoningSupported?: boolean | undefined
   reasoning: string | null
+  /** TAL-1423: the chat's speed as the server offers it; absent hides the speed section (no tiers, an owner chat, an older server). */
+  speed?: ChatSpeed | undefined
   yolo: boolean
   onToggleYolo: () => void
   queued: QueuedTurn[]
@@ -186,7 +188,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     terminalOpen: false, onToggleTerminal: unusedChatControl, onModelChange: unusedChatControl, onWorkspaceChange: unusedChatControl, onToolsetsChange: unusedChatControl,
     onReasoningChange: unusedChatControl, reasoning: null, yolo: false, onToggleYolo: unusedChatControl, queued: [], onQueue: unusedChatControl, onQueueChange: unusedChatControl,
     locked: !input.room.canSend }
-  const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = EMPTY_NOTICES, liveStatusHidden = false } = props
+  const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, speed, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = EMPTY_NOTICES, liveStatusHidden = false } = props
   const bootstrap = useBootstrap()
   const launchBackground = useStartBackground()
   const room = props.room
@@ -925,7 +927,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   if (readOnly) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{session?.owner_attachment?.reason === 'served_profile_sessions_unavailable' ? m.owner_profile_unverified() : m.session_read_only_notice()}</div></div>
 
   const changeWorkspace = (path: string) => onWorkspaceChange(path, handover)
-  const controls = { sessionId, session, settings, pendingChoices, onExecutionModeChange, onModelChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported, onWorkspaceChange: changeWorkspace, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, terminalOpen, onToggleTerminal, answering, stage, phone, collapsed, configOpen, setConfigOpen, context }
+  const controls = { sessionId, session, settings, pendingChoices, onExecutionModeChange, onModelChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported, speed, onWorkspaceChange: changeWorkspace, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, terminalOpen, onToggleTerminal, answering, stage, phone, collapsed, configOpen, setConfigOpen, context }
 
   return (
     // Drops land anywhere on the composer, the image strip above the card included (TAL-1552).

@@ -31,6 +31,7 @@ export const CLIENT_COMMANDS: readonly Command[] = [
   client('theme', 'Switch theme', { args_hint: '<light|dark|system>', ...webOnly('Theme switching is not available from mobile slash commands.') }),
   client('yolo', 'Toggle YOLO mode (skip approvals)', webOnly('YOLO mode is not available in the mobile app.')),
   client('branch', 'Branch the conversation', { aliases: ['fork'] }),
+  client('handoff', 'Hand off this chat to a messaging platform', webOnly('Handoff is not available in the mobile app yet.')),
   client('voice', 'Toggle voice mode', webOnly('Voice commands are not available in the mobile app.')),
   client('reasoning', 'Set reasoning effort', { args_hint: '[show|hide|<level>]' }),
   client('personality', 'Set the personality', { args_hint: '[name]' }),

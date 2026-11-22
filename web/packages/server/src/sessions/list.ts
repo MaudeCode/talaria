@@ -371,6 +371,8 @@ export interface ListParams {
   /** Whether `other_profile_count` counts the rows other profiles hold. */
   countOtherProfiles: boolean
   includeArchived: boolean
+  /** TAL-2649: only the archived rows of the `includeArchived` listing (the iOS Archived Chats screen). */
+  archivedOnly?: boolean
   visibleOnly: boolean
   showCliSessions: boolean
   showClaudeCodeSessions: boolean
@@ -916,6 +918,7 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
     const offset = Math.max(0, Math.trunc(params.archivedOffset || 0))
     result = [...visibleFiltered.filter((r) => !r.archived), ...archivedFiltered.filter((r) => Boolean(r.archived)).slice(offset, offset + limit)]
   }
+  if (params.archivedOnly) result = result.filter((r) => Boolean(r.archived))
   const references = params.includeArchived ? [] : hiddenArchivedReferences(visibleFiltered, archivedFiltered)
   const truncated = params.truncatedSources ?? new Set<string>()
   // TAL-1151: a subagent row nests under its host when the host is listed too, and files in the host's project.

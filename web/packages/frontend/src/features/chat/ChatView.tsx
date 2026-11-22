@@ -13,7 +13,7 @@ import { keys } from '../../api/queryKeys'
 import { invalidateSessionQueries } from '../../api/sessionQueries'
 import { useBootstrap } from '../../app/bootstrap'
 import { useExecutionModesQuery, useProjectsQuery, useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
-import { reasoningResource, useReasoningDisplayChoice, useReasoningQuery, useSetReasoningDisplay, useSetReasoningEffort } from '../composer/reasoning'
+import { reasoningResource, speedResource, useReasoningDisplayChoice, useReasoningQuery, useSetChatSpeed, useSetReasoningDisplay, useSetReasoningEffort } from '../composer/reasoning'
 import type { Session } from '../../contracts'
 import { configureStream, cancelTurn, getStreamContext, startTurn } from '../../stream/connection'
 import { dispatch, useTurnIntent } from '../../stream/store'
@@ -26,7 +26,7 @@ import { SwapText } from '../../ui/SwapText'
 import { useSessionTitle } from '../sessions/useSessionTitle'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
 import { Composer, turnRequest, type DraftHandover } from '../composer/Composer'
-import { reasoningLevelLabel } from '../composer/chips'
+import { reasoningLevelLabel, speedTierLabel, type ChatSpeed, type ServiceTier } from '../composer/chips'
 import { composerStateId, useQueuedTurns, type QueuedTurn } from '../composer/queue'
 import { returnToComposer } from '../composer/composerReturn'
 import { ApprovalCards } from './ApprovalCard'
@@ -56,6 +56,7 @@ import { createSessionNow, useCreationId } from '../sessions/useNewChat'
 import { SessionReferences } from '../sessions/SessionReferences'
 import type { AcceptedSourceReference, ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { WorktreeRemoveDialog } from '../sessions/WorktreeRemoveDialog'
+import { HandoffDialog } from './HandoffDialog'
 import { beginDock, playDock, requestScroll } from './sendMotion'
 import { bindFirstSend, ownsFirstSend, useFirstSend } from './firstSend'
 
@@ -197,6 +198,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
   }
 
   const [removingWorktree, setRemovingWorktree] = useState(false)
+  const [handingOff, setHandingOff] = useState(false)
   const onRemoveWorktree = () => setRemovingWorktree(true)
   // TAL-605: a new conversation in its own git worktree of the chosen workspace; the server creates the worktree.
   const newWorktreeChat = async (workspace: string | undefined) => {
@@ -239,6 +241,18 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
     else sendReasoning({ key: keys.reasoning(sessionId, reasoningModel, reasoningProvider), level })
   }
   const { mutate: setReasoningDisplay } = useSetReasoningDisplay()
+  // TAL-1423: the chat's speed is its own server state on the same key; an owner chat's status carries none, so it shows no speed.
+  const speedEffect = effects[speedResource(reasoningKey)]
+  const speedTiers = session?.owner_attachment ? undefined : reasoningQuery.data?.supported_speed_tiers
+  const sendSpeed = useSetChatSpeed((status) => {
+    const tier = status.supported_speed_tiers?.find((t) => t.service_tier === status.service_tier)
+    if (tier) showToast(`${m.settings_model_speed()}: ${speedTierLabel(tier)}`)
+  }).mutate
+  const speed: ChatSpeed | undefined = sessionId && speedTiers?.length ? {
+    value: (speedEffect?.value as ServiceTier | undefined) ?? reasoningQuery.data?.service_tier ?? 'default',
+    tiers: speedTiers,
+    onChange: (tier) => { sendSpeed({ key: keys.reasoning(sessionId, reasoningModel, reasoningProvider), sid: sessionId, tier }) },
+  } : undefined
 
   // Session controls (toolsets, personality) show the choice at once; the reread of the session confirms it.
   const sessionWrite = useSessionWrite({
@@ -375,6 +389,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
       case 'compress': if (sessionId) { void runCompression(sessionId) } return true
       case 'usage': if (sessionId) { const u = await api.fetchSessionUsage(sessionId); showToast(`${(u.input_tokens ?? 0).toLocaleString()} in · ${(u.output_tokens ?? 0).toLocaleString()} out${u.estimated_cost ? ` · $${u.estimated_cost.toFixed(4)}` : ''}`, 4000) } return true
       case 'yolo': onToggleYolo(); return true
+      case 'handoff': if (sessionId) setHandingOff(true); return true
       case 'branch': if (sessionId) { const r = await api.branchSession(sessionId); void invalidateSessionQueries(qc, r.session_id); await navigate({ to: '/session/$sessionId', params: { sessionId: r.session_id } }) } return true
       case 'reasoning': {
         const arg = args.trim().toLowerCase()
@@ -633,6 +648,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
           reasoning={reasoning}
           reasoningLevels={reasoningLevels}
           reasoningSupported={reasoningSupported}
+          speed={speed}
           yolo={yoloOn}
           onToggleYolo={onToggleYolo}
           queued={queued}
@@ -651,6 +667,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
       {editDialog}{modelDialog}
       {session?.screen && <ScreenViewer open={screenOpen} onOpenChange={setScreenOpen} screen={session.screen} />}
       {sessionId && removingWorktree && <WorktreeRemoveDialog sessionId={sessionId} onClose={() => setRemovingWorktree(false)} />}
+      {sessionId && handingOff && <HandoffDialog key={sessionId} sessionId={sessionId} onClose={() => setHandingOff(false)} />}
       {sessionId && <ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} todoState={session?.todo_state} open={sidePanelOpen} onToggle={toggleSidePanel} onClose={closeSidePanel} />}
     </>
   )

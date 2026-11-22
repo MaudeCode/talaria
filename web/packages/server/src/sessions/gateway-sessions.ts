@@ -1,14 +1,14 @@
 import { pickerEfforts, validReasoningEffort } from '../config/agent-config.js'
 import { applyPlanGauge } from './session.js'
 import { reasoningProjection } from './reasoning-display.js'
-import { CHECKPOINT_DIFF_MAX_BYTES, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail, type ApprovalInstructionOutcome } from '@maudecode/talaria-web-contracts'
+import { CHECKPOINT_DIFF_MAX_BYTES, HandoffRefusalSchema, ReactionEmojiSchema, unavailableContextDetail, type ReactionState, type MessageReactionView, type CheckpointDiff, type SessionActivityPhase, type ContextDetail, type ApprovalInstructionOutcome } from '@maudecode/talaria-web-contracts'
 import { checkpointDiffFiles } from '../workspace/rollback.js'
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import type { QueueAdmissionFence } from './admission.js'
 import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { ConnectorOperationSnapshotSchema, OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ConnectorOperationSnapshot, type ConnectorOperationView, type OwnerReasoning, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange, type OwnerWork } from '@maudecode/talaria-web-contracts'
+import { ConnectorOperationSnapshotSchema, OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ConnectorOperationSnapshot, type ConnectorOperationView, type OwnerReasoning, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange, type OwnerWork, type SessionHandoff, type SessionHandoffRequest } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts/sidecar'
 import { QUICK_COMMAND_CATEGORY, QUICK_COMMAND_OWNER_MESSAGE } from '../tools/commands.js'
@@ -773,6 +773,22 @@ export class GatewaySessions {
       throw new HttpFailure(409, messages[result.reason ?? ''] ?? 'The command outcome is unknown. Check the native workspace before running it again.', { code: 'owner_shell_failed' })
     }
     return { stdout: redactString(result.shell.stdout, true), stderr: redactString(result.shell.stderr, true), code: result.shell.code }
+  }
+
+  /**
+   * TAL-2641: one native handoff verb on the chat's own owner, in the active profile. The owner authorizes it and fences
+   * durable work; its watcher moves the route. A request or cancel is sent once: an unknown outcome is read back, never
+   * resent. A chat of another profile, or with no canonical owner, is `not_owned` and reaches no owner.
+   */
+  async handoff(input: SessionHandoffRequest): Promise<SessionHandoff> {
+    const profile = this.deps.activeProfile()
+    const target = await this.target(input.session_id, profile)
+    if (!target) return sessionHandoffView(input.session_id, profile, null, input.action)
+    const params = input.action === 'request' ? { action: 'handoff_request' as const, platform: input.platform }
+      : { action: input.action === 'cancel' ? 'handoff_fail' as const : 'handoff_state' as const }
+    const view = sessionHandoffView(input.session_id, profile, await this.call(target, params), input.action)
+    if (input.action !== 'read' && view.outcome !== 'refused') this.deps.events.publish('owner_changed', { profile, sessionId: input.session_id })
+    return view
   }
 
   async export(sid: string, format: NonNullable<GatewaySessionParams['format']>): Promise<NonNullable<GatewaySessionResult['export']> | null> {
@@ -1846,5 +1862,31 @@ export class GatewaySessions {
     await Promise.allSettled([...this.runWorkers])
     await Promise.allSettled(observations.map((observation) => observation.ended))
     this.modelChanges.clear()
+  }
+}
+
+const HANDOFF_REFUSALS = new Set<string>(HandoffRefusalSchema.options)
+
+/**
+ * TAL-2641: the server's handoff decision from one owner answer. `result` null: the chat has no canonical owner here. A
+ * write the owner never answered is `unknown`, never a refusal; a request needs an available owner with no handoff in
+ * flight, and a cancel only a handoff no watcher claimed.
+ */
+export function sessionHandoffView(sid: string, profile: string, result: GatewaySessionResult | null, action: SessionHandoffRequest['action']): SessionHandoff {
+  const handoff = result?.state === 'attached' ? result.handoff : undefined
+  const unavailable = result === null ? 'not_owned' as const
+    : result.state === 'incompatible' && result.reason === 'owner_handoff_unsupported' ? 'unsupported' as const
+    : !handoff ? 'owner_unavailable' as const : handoff.destinations.length === 0 ? 'no_destination' as const : null
+  const state = handoff ? handoff.state === null ? 'unknown' as const : handoff.state || 'none' as const
+    : unavailable === 'owner_unavailable' ? 'unknown' as const : 'none' as const
+  const write = action !== 'read' && result !== null
+  const outcome = handoff?.outcome ?? (!write ? null : result.state === 'unavailable' ? 'unknown' as const : 'refused' as const)
+  const refusal = handoff ? handoff.refusal : outcome === 'refused' ? (HANDOFF_REFUSALS.has(str(result?.reason)) ? result!.reason as SessionHandoff['refusal'] : 'refused') : null
+  return {
+    session_id: sid, profile, available: unavailable === null, unavailable_reason: unavailable,
+    destinations: (handoff?.destinations ?? []).map((d) => ({ platform: d.platform, label: d.home_name })),
+    state, platform: handoff?.platform ?? null, error: handoff?.error ?? null, outcome, refusal,
+    can_request: unavailable === null && !['pending', 'running', 'unknown'].includes(state),
+    can_cancel: handoff !== undefined && state === 'pending',
   }
 }

@@ -106,6 +106,13 @@ describe('contracts package', () => {
     expect(settingsContract.reasoning.get['~orpc'].inputSchema!.safeParse({ session_id: '  ' }).success).toBe(false)
     for (const row of [scoped.session, scoped.inherited]) expect(SessionSchema.pick({ session_id: true, reasoning_effort: true }).parse(row)).toEqual(row)
   })
+  it('pins a chat speed write, its status and refusal for every consumer (TAL-1423)', () => {
+    const { speed } = shared('fixtures/reasoning-scope.json') as { speed: { write: unknown; status: unknown; unavailable: unknown; refusal: unknown } }
+    expect(settingsContract.reasoning.set['~orpc'].inputSchema!.parse(speed.write)).toEqual(speed.write)
+    expect(settingsContract.reasoning.set['~orpc'].inputSchema!.safeParse({ session_id: 'direct-chat', service_tier: 'fast' }).success).toBe(false)
+    for (const status of [speed.status, speed.unavailable]) expect(settingsContract.reasoning.get['~orpc'].outputSchema!.parse(status)).toEqual(status)
+    expect(ReasoningUnsupportedSchema.parse(speed.refusal)).toEqual(speed.refusal)
+  })
   it('pins every auxiliary reasoning state and the effort write for every consumer (TAL-1285)', () => {
     const fixture = shared('fixtures/auxiliary-reasoning.json') as Record<string, unknown>
     for (const state of Object.values(fixture)) expect(AuxiliaryReasoningSchema.parse(state)).toEqual(state)
@@ -486,4 +493,13 @@ it('pins the explicit native captured-command route and bounded result', async (
   expect(automationContract.terminal.exec['~orpc'].inputSchema?.parse(fixture.command)).toEqual(fixture.command)
   expect(CapturedCommandResultSchema.parse(fixture.result)).toEqual(fixture.result)
   expect(CapturedCommandResultSchema.safeParse({ stdout: 'x'.repeat(8001), stderr: '', code: 0 }).success).toBe(false)
+})
+
+it('pins the native handoff views and closes its request (TAL-2641)', async () => {
+  const { SessionHandoffSchema, SessionHandoffRequestSchema } = await import('./index.js')
+  const views = shared('fixtures/native-handoff.json') as Record<string, unknown>
+  for (const view of Object.values(views)) expect(SessionHandoffSchema.parse(view)).toEqual(view)
+  expect(SessionHandoffRequestSchema.safeParse({ session_id: 's', action: 'request', platform: 'telegram' }).success).toBe(true)
+  for (const invalid of [{ session_id: 's', action: 'request' }, { session_id: 's', action: 'request', platform: 'Tele gram' }, { session_id: 's', action: 'read', platform: 'telegram' }])
+    expect(SessionHandoffRequestSchema.safeParse(invalid).success).toBe(false)
 })

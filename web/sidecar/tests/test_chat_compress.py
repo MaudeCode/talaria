@@ -132,7 +132,7 @@ def _compression_env(monkeypatch, manual, bind):
     monkeypatch.setattr(chat, "disabled_toolsets", lambda cfg=None: [])
     monkeypatch.setattr(chat, "_profile_toolsets", lambda cfg=None: ["file", "web"])
     monkeypatch.setattr(chat, "_checkpoint_required", lambda: False)
-    monkeypatch.setattr(chat, "_main_model_request_overrides", lambda model, provider, base_url="", cfg=None: None)
+    monkeypatch.setattr(chat, "_main_model_request_overrides", lambda model, provider, base_url="", cfg=None, service_tier=None: None)
     monkeypatch.setattr(chat, "_profile_prefill_messages", lambda cfg=None: PREFILL)
     monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
     return calls, outcome

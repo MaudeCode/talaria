@@ -83,7 +83,7 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('menuitemradio')).toHaveText(['Default', 'Low', 'Medium', 'High', 'None'])
     await page.screenshot({ path: testInfo.outputPath(`auxiliary-reasoning-${String(width)}.png`) })
     await page.getByRole('menuitemradio', { name: 'High' }).click()
-    await page.getByRole('menu').press('Escape')
+    await expect(page.getByRole('menu')).toHaveCount(0)
     await expect(list.getByRole('row', { name: /Title generation/ })).toContainText('Claude Haiku 4.5 · High')
     // An effort-only write keeps the route: it names neither model nor provider.
     expect(writes).toEqual([{ scope: 'auxiliary', task: 'title_generation', reasoning_effort: 'high' }])

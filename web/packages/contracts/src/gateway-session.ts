@@ -125,6 +125,20 @@ export const OwnerTranscriptPageSchema = z.object({
   reset: z.boolean().describe('The cursor no longer holds (a compaction, rewind or rewrite since): this page starts again from the first row.'),
 })
 export const SideLaunchSchema = z.object({ state: SideLaunchStateSchema, task_id: z.string().min(1).nullable() })
+/** TAL-2641: why the owner did not take a handoff request or cancel. Clients word each code. */
+export const HandoffRefusalSchema = z.enum(['session_busy', 'handoff_in_flight', 'unknown_execution', 'destination_unavailable',
+  'permission_denied', 'not_found', 'profile_mismatch', 'runtime_draining', 'refused'])
+/** TAL-2641: what the owner did with one handoff request or cancel. `unknown` is never sent again; the state read reconciles it. */
+export const HandoffOutcomeSchema = z.enum(['queued', 'refused', 'unknown', 'cancelled', 'not_pending'])
+/** TAL-2641: the owner's `handoff.*` answer as the sidecar bounds it. `state` null: the owner's record could not be read. */
+export const GatewayHandoffSchema = z.object({
+  session_id: z.string().min(1),
+  destinations: z.array(z.object({ platform: z.string().min(1).max(64), home_name: z.string().min(1).max(120) }))
+    .describe("The home channels this profile's owner would deliver to, by the Agent's own rule; never a chat id."),
+  state: z.enum(['', 'pending', 'running', 'completed', 'failed']).nullable(), platform: z.string().max(64).nullable(),
+  error: z.string().max(500).nullable().describe("The watcher's failure reason, redacted and bounded."),
+  outcome: HandoffOutcomeSchema.nullable(), refusal: HandoffRefusalSchema.nullable(), home_name: z.string().max(120).nullable(),
+})
 export type SideLaunch = z.infer<typeof SideLaunchSchema>
 export const GatewaySessionResultSchema = z.object({
   state: z.enum(['attached', 'stopped', 'unavailable', 'incompatible', 'refused']), reason: z.string().nullable(),
@@ -151,6 +165,7 @@ export const GatewaySessionResultSchema = z.object({
   work_outcome: OwnerWorkOutcomeSchema.optional().describe('`work_stop`, `work_steer`: what the owner did with this one row.'),
   completion: z.object({ items: z.array(z.object({ text: z.string(), display: z.string(), meta: z.string() })).max(100) }).optional()
     .describe("`complete_path`: the owner's listing for `word` in the session's frozen workspace, as it answered."),
+  handoff: GatewayHandoffSchema.optional().describe('`handoff_state`, `handoff_request`, `handoff_fail`: the owner\'s verdict and its handoff record.'),
   lock: z.object({ status: z.enum(['ok', 'expired']), remaining: z.array(z.string()).optional() }).optional()
     .describe('`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.'),
   command_result: OwnerCommandResultSchema.optional().describe('`command_dispatch`: what the owner did with the command.'),
@@ -170,7 +185,7 @@ export const ConnectionAnswerSchema = z.union([
 export type ConnectionAnswer = z.infer<typeof ConnectionAnswerSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'transcript', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry', 'work_list', 'work_tail', 'work_transcript', 'work_stop', 'work_steer', 'launch_background', 'launch_btw', 'command_dispatch', 'command_catalog', 'complete_path']),
+  action: z.enum(['snapshot', 'watch', 'transcript', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry', 'work_list', 'work_tail', 'work_transcript', 'work_stop', 'work_steer', 'launch_background', 'launch_btw', 'command_dispatch', 'command_catalog', 'handoff_state', 'handoff_request', 'handoff_fail', 'complete_path']),
   row_id: z.number().int().positive().optional(), emoji: ReactionEmojiSchema.nullable().optional(),
   format: OwnerExportFormatSchema.optional(), redact: z.boolean().optional(),
   command: CapturedCommandSchema.optional(),
@@ -197,6 +212,7 @@ export const GatewaySessionParamsSchema = z.object({
   work_kind: z.enum(['process', 'subagent']).optional().describe('`work_tail`, `work_transcript`, `work_stop`, `work_steer`: the roster `work_id` comes from; bound by `authority_epoch` to this owner.'),
   work_id: z.string().min(1).optional(),
   word: z.string().min(1).max(512).optional().describe('`complete_path`: the word to complete. No root travels with it: the owner lists the session\'s own workspace.'),
+  platform: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/).optional().describe('`handoff_request`: the destination platform, one of the owner\'s `destinations`.'),
   reaction_poll_seconds: z.number().positive().optional().describe("`watch`: how often an idle watch rereads the transcript for another viewer's reaction, which the owner announces with no event. Defaults to 10."),
 })
 /**
@@ -238,6 +254,36 @@ export const OwnerActionRequestSchema = z.discriminatedUnion('action', [
     operation: z.enum(['rename', 'rewind', 'reset', 'model', 'reasoning', 'workspace', 'compress']), payload: ObjectSchema.describe('`reasoning`: `{effort}`, null resets to the profile. `model` may carry `reasoning` to commit both at once.') }),
 ])
 export type OwnerActionRequest = z.infer<typeof OwnerActionRequestSchema>
+/**
+ * TAL-2641: one native handoff verb on the chat's own owner. `read` changes nothing; `request` asks the owner to move the
+ * chat to `platform`'s home channel; `cancel` fails a request no watcher claimed yet. A request or cancel whose outcome is
+ * unknown is never replayed: read the state again.
+ */
+export const SessionHandoffRequestSchema = z.discriminatedUnion('action', [
+  z.strictObject({ session_id: z.string().min(1), action: z.literal('read') }),
+  z.strictObject({ session_id: z.string().min(1), action: z.literal('request'), platform: GatewaySessionParamsSchema.shape.platform.unwrap() }),
+  z.strictObject({ session_id: z.string().min(1), action: z.literal('cancel') }),
+])
+export type SessionHandoffRequest = z.infer<typeof SessionHandoffRequestSchema>
+/** TAL-2641: why a chat cannot be handed off now. Clients word each code. */
+export const HandoffUnavailableSchema = z.enum(['not_owned', 'unsupported', 'owner_unavailable', 'no_destination'])
+/** TAL-2641: the chat's native handoff as the server decides it. Clients render these fields and derive none. */
+export const SessionHandoffSchema = z.object({
+  session_id: z.string().min(1), profile: z.string().describe('The profile whose owner holds the chat and its handoff record.'),
+  available: z.boolean().describe('The chat\'s owner serves handoff and has at least one configured destination.'),
+  unavailable_reason: HandoffUnavailableSchema.nullable(),
+  destinations: z.array(z.object({ platform: z.string().min(1), label: z.string().min(1) }))
+    .describe('Where a request delivers, shown before the user asks: the platform and its configured home channel name.'),
+  state: z.enum(['none', 'pending', 'running', 'completed', 'failed', 'unknown'])
+    .describe('`pending`: queued for the gateway; `running`: the gateway claimed it; `unknown`: the owner\'s record could not be read.'),
+  platform: z.string().nullable().describe('The platform of the latest handoff.'),
+  error: z.string().nullable().describe('Why the latest handoff failed, redacted and bounded.'),
+  outcome: HandoffOutcomeSchema.nullable().describe('What the owner did with this request or cancel; null on a read.'),
+  refusal: HandoffRefusalSchema.nullable(),
+  can_request: z.boolean().describe('A request may be sent now.'),
+  can_cancel: z.boolean().describe('The handoff is queued and no gateway claimed it, so a cancel can still fail it.'),
+})
+export type SessionHandoff = z.infer<typeof SessionHandoffSchema>
 /** TAL-1319: one owner chat's own level, in `ReasoningStatus` terms. Read from its owner, never from the profile config. */
 export const OwnerReasoningSchema = z.object({
   reasoning_effort: z.string().nullable().describe('The level this chat runs now, clamped for its route. Null is the provider default.'),

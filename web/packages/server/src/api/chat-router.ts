@@ -326,7 +326,7 @@ export const chatRouter = os.router({
       const parent = (await getSession(ctx.deps, str(body.session_id)))
       if ((await ctx.deps.sessions.isReadOnly(parent)) || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const [model, modelProvider] = ctx.deps.sessions.turnModel(parent, {})
-      const bg = (await ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model, modelProvider, profile: parent.profile, reasoningEffort: parent.reasoning_effort }))
+      const bg = (await ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model, modelProvider, profile: parent.profile, reasoningEffort: parent.reasoning_effort, serviceTier: parent.service_tier }))
       bg.title = `bg: ${prompt.slice(0, 60)}`
       await ctx.deps.sessionStore.save(bg)
       // Python: `uuid.uuid4().hex[:8]`; a failed run still completes the task so `/api/background/tasks` reports it,
@@ -404,7 +404,7 @@ export const chatRouter = os.router({
     if ((await ctx.deps.sessions.isReadOnly(s)) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     // TAL-518: a side question runs in its own hidden session, so the chat's running turn does not block it.
     const [model, modelProvider] = ctx.deps.sessions.turnModel(s, {})
-    const ephemeral = (await ctx.deps.sessionStore.newSession({ workspace: s.workspace, model, modelProvider, profile: s.profile, reasoningEffort: s.reasoning_effort }))
+    const ephemeral = (await ctx.deps.sessionStore.newSession({ workspace: s.workspace, model, modelProvider, profile: s.profile, reasoningEffort: s.reasoning_effort, serviceTier: s.service_tier }))
     const context = await ctx.deps.sessions.sideQuestionContext(s)
     ephemeral.messages = structuredClone(s.messages)
     ephemeral.context_messages = context
