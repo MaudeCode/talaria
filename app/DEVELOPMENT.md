@@ -235,7 +235,9 @@ a diagnostic's repeated attempts add no Duo shard. `--dry-run` shows the shard.
   App suite and CI Gate.
 - It shares the shard test step's limits: one minute per test, the runner-connect
   stall check, and the step's 30 minutes, which sits above the slowest measured
-  four-shard full-run shard (13 minutes).
+  four-shard full-run shard (13 minutes). The full native Duo selection took
+  195 s of testing on a local iPhone Duo at iOS 27.1: 36 cases, 30 passed,
+  3 skipped, and only the 3 known TAL-2563 failures failed.
 
 ### Repeat one test
 

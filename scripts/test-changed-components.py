@@ -23,9 +23,9 @@ spec.loader.exec_module(routing)
 spec = importlib.util.spec_from_file_location("web_browser_plan", SCRIPT.with_name("web_browser_plan.py"))
 browser = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(browser)
-spec = importlib.util.spec_from_file_location("app_test_plan", SCRIPT.with_name("app_test_plan.py"))
-app_plan = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(app_plan)
+# By name, as routing imports it: a module loaded from a spec outside sys.modules breaks its dataclasses on Python 3.14.
+sys.path.insert(0, str(SCRIPT.parent))
+import app_test_plan as app_plan  # noqa: E402
 MAX_SPECS = browser.MAX_SPECS
 ALL = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "web_sidecar", "relay", "contracts"}
