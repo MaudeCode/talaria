@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Run now on a paused, turned-off or finished scheduled task in Talaria Web is now unavailable and says why, so a task can no longer run twice when it is resumed or another Web server runs it at the same time.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

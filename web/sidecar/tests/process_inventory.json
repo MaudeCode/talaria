@@ -1234,11 +1234,18 @@
     },
     "tests/test_cron_owner.py::test_successful_manual_run_books_once_and_preserves_operator_schedule_state": {
       "layer": "compatibility",
-      "reason": "A real gateway owner books a manual run once through mark_job_run and the operator's state, enabled flag and pause reason survive; scheduled, paused and disabled jobs take different Agent booking branches.",
+      "reason": "A real gateway owner books a scheduled task's manual run once through mark_job_run, and its state, enabled flag and pause reason survive.",
       "cases": [
-        "[scheduled]",
+        ""
+      ]
+    },
+    "tests/test_cron_owner.py::test_run_now_refuses_a_task_that_cannot_fire_so_a_separate_claimer_never_double_runs_it": {
+      "layer": "compatibility",
+      "reason": "TAL-2642: a direct cron.run on a paused, disabled or terminal task is refused before any claim, resume or execution, and a separate Agent process taking the native Trigger-now claim is then the only runner. Needs the real gateway owner and a second Agent process on the same store.",
+      "cases": [
         "[paused]",
-        "[disabled]"
+        "[disabled]",
+        "[terminal]"
       ]
     },
     "tests/test_cron_owner.py::test_schedule_mutations_cannot_remove_a_manual_execution_recovery_barrier": {

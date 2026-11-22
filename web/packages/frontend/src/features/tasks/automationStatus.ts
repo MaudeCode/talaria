@@ -1,5 +1,5 @@
 import { m } from '../../paraglide/messages.js'
-import type { CronShownState, PromptQueueRun, PromptQueueCard } from '@maudecode/talaria-web-contracts'
+import type { CronJob, CronRunNowRefusal, CronShownState, PromptQueueRun, PromptQueueCard } from '@maudecode/talaria-web-contracts'
 
 export function statusLabel(state: CronShownState | PromptQueueRun['phase'] | PromptQueueCard['status']): { label: string; tone: string } {
   switch (state) {
@@ -20,4 +20,13 @@ export function statusLabel(state: CronShownState | PromptQueueRun['phase'] | Pr
     case 'active': return { label: m.cron_status_active(), tone: 'text-success' }
     default: return { label: '', tone: 'text-muted' }
   }
+}
+
+const RUN_NOW_REFUSAL: Record<CronRunNowRefusal, () => string> = {
+  paused: m.cron_run_now_refused_paused, disabled: m.cron_run_now_refused_disabled, terminal: m.cron_run_now_refused_terminal,
+}
+
+/** TAL-2642: why the server refuses Run now on a job, in the reader's language; null while Run now may start it. */
+export function runNowRefusal(job: CronJob): string | null {
+  return !job.can_run_now && job.run_now_refusal ? RUN_NOW_REFUSAL[job.run_now_refusal]() : null
 }

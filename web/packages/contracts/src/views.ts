@@ -19,7 +19,7 @@ import { TerminalRefSchema } from './terminal.js'
 import { DiffLineSchema } from './diff-line.js'
 import { DisplayMediaSchema } from './display-media.js'
 import { ProviderPhaseSchema, RateLimitWaitSchema } from './run-status.js'
-import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema } from './sidecar-shared.js'
+import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema, CronRunNowRefusalSchema } from './sidecar-shared.js'
 import { SpeedTierSchema } from './speed.js'
 import { ExecutionModeSchema, OwnerAttachmentSchema, MessageReactionViewSchema, SideLaunchStateSchema } from './gateway-session.js'
 import { NousAccountSchema, KanbanInspectionNodeSchema, KanbanInspectionSnapshotSchema, CanonicalBotChatSchema, GatewayModeSchema, PluginDisabledReasonSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar-shared.js'
@@ -2144,6 +2144,8 @@ export const CronJobViewSchema = z.looseObject({
   attention_hint: z.enum(['croniter_missing']).nullable(),
   /** Server-derived (TAL-1819): a live run this client may stop, whoever started it; a stop on its way until that run ends; and how the latest run ended. */
   can_stop: z.boolean(), stopping: z.boolean(), last_outcome: CronRunOutcomeSchema,
+  /** Server-derived (TAL-2642): whether Run now may start this task, and else why: a paused, turned-off or finished task is refused, never resumed. */
+  can_run_now: z.boolean(), run_now_refusal: CronRunNowRefusalSchema.nullable(),
   /** Server-normalized (TAL-810): the job's latest failed run, kept after later successes; `at` is epoch seconds, null when unparseable. */
   last_failure: z.object({ at: z.number().nullable(), detail: z.string() }).nullable(),
   /** Server-derived (TAL-1850): the distinct platforms whose last delivery may not have arrived, empty when none. A re-send may duplicate the post, so clients offer no retry. */

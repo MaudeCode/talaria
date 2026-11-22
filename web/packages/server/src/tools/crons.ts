@@ -1,5 +1,6 @@
 /** Cron jobs across profiles through the sidecar `cron.*` namespace (Python `api/routes.py` cron section). */
 import { join } from 'node:path'
+import { CronRunNowRefusalSchema } from '@maudecode/talaria-web-contracts'
 import type { CronRecentCompletion, CronContextSources, CronDerivedState, CronJob, CronStoreHealth, GroupCatalog, SidecarMethodName, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import { parseProviderQualifiedModel, type Dict } from '../config/agent-config.js'
@@ -87,6 +88,9 @@ export function jobForApi(job: Dict, running = false): Dict {
   payload.stopping = live?.stopping === true
   payload.can_stop = Boolean(live) && !payload.stopping
   delete payload.live_execution
+  // TAL-2642: the sidecar classifies, by the Agent's own run-now rule, a task Run now refuses; it never resumes one to run it.
+  payload.run_now_refusal = CronRunNowRefusalSchema.safeParse(job.run_now_refusal).data ?? null
+  payload.can_run_now = payload.run_now_refusal === null
   payload.last_outcome = completionOutcome(job.last_status)
   payload.last_failure = lastFailure(job.last_failure)
   payload.delivery_unconfirmed_platforms = unconfirmedPlatforms(job.last_delivery_unverified)
@@ -718,6 +722,7 @@ export class CronService {
             done()
             if (started) return
             // Python only ever answered 200 for `running`/`already_running`; a run that never started is the error it was.
+            if (!answered && error instanceof SidecarError && error.condition === 'cron_not_runnable') { answered = true; reject(new HttpFailure(409, str(error.message), { code: 'cron_not_runnable', reason: CronRunNowRefusalSchema.safeParse(error.data.reason).data ?? null })); return }
             if (!answered) { answered = true; reject(error instanceof HttpFailure ? error : new HttpFailure(error instanceof SidecarError && error.condition === 'sidecar_unavailable' ? 503 : 500, str((error as Error).message))) }
           })
       })

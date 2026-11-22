@@ -157490,6 +157490,24 @@
                             ],
                             "type": "string"
                           },
+                          "can_run_now": {
+                            "type": "boolean"
+                          },
+                          "run_now_refusal": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "paused",
+                                  "disabled",
+                                  "terminal"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "last_failure": {
                             "anyOf": [
                               {
@@ -157578,6 +157596,8 @@
                           "can_stop",
                           "stopping",
                           "last_outcome",
+                          "can_run_now",
+                          "run_now_refusal",
                           "last_failure",
                           "delivery_unconfirmed_platforms",
                           "timezone",
@@ -158392,6 +158412,24 @@
                           ],
                           "type": "string"
                         },
+                        "can_run_now": {
+                          "type": "boolean"
+                        },
+                        "run_now_refusal": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "paused",
+                                "disabled",
+                                "terminal"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -158480,6 +158518,8 @@
                         "can_stop",
                         "stopping",
                         "last_outcome",
+                        "can_run_now",
+                        "run_now_refusal",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",
@@ -159227,6 +159267,24 @@
                           ],
                           "type": "string"
                         },
+                        "can_run_now": {
+                          "type": "boolean"
+                        },
+                        "run_now_refusal": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "paused",
+                                "disabled",
+                                "terminal"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -159315,6 +159373,8 @@
                         "can_stop",
                         "stopping",
                         "last_outcome",
+                        "can_run_now",
+                        "run_now_refusal",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",
@@ -159800,6 +159860,24 @@
                           ],
                           "type": "string"
                         },
+                        "can_run_now": {
+                          "type": "boolean"
+                        },
+                        "run_now_refusal": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "paused",
+                                "disabled",
+                                "terminal"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -159888,6 +159966,8 @@
                         "can_stop",
                         "stopping",
                         "last_outcome",
+                        "can_run_now",
+                        "run_now_refusal",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",
@@ -160344,6 +160424,24 @@
                           ],
                           "type": "string"
                         },
+                        "can_run_now": {
+                          "type": "boolean"
+                        },
+                        "run_now_refusal": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "paused",
+                                "disabled",
+                                "terminal"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -160432,6 +160530,8 @@
                         "can_stop",
                         "stopping",
                         "last_outcome",
+                        "can_run_now",
+                        "run_now_refusal",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",
@@ -160889,6 +160989,24 @@
                           ],
                           "type": "string"
                         },
+                        "can_run_now": {
+                          "type": "boolean"
+                        },
+                        "run_now_refusal": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "paused",
+                                "disabled",
+                                "terminal"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -160977,6 +161095,8 @@
                         "can_stop",
                         "stopping",
                         "last_outcome",
+                        "can_run_now",
+                        "run_now_refusal",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",
@@ -161443,6 +161563,24 @@
                           ],
                           "type": "string"
                         },
+                        "can_run_now": {
+                          "type": "boolean"
+                        },
+                        "run_now_refusal": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "paused",
+                                "disabled",
+                                "terminal"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -161531,6 +161669,8 @@
                         "can_stop",
                         "stopping",
                         "last_outcome",
+                        "can_run_now",
+                        "run_now_refusal",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",
@@ -161987,6 +162127,24 @@
                           ],
                           "type": "string"
                         },
+                        "can_run_now": {
+                          "type": "boolean"
+                        },
+                        "run_now_refusal": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "paused",
+                                "disabled",
+                                "terminal"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "last_failure": {
                           "anyOf": [
                             {
@@ -162075,6 +162233,8 @@
                         "can_stop",
                         "stopping",
                         "last_outcome",
+                        "can_run_now",
+                        "run_now_refusal",
                         "last_failure",
                         "delivery_unconfirmed_platforms",
                         "timezone",

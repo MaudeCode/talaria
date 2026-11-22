@@ -382,28 +382,59 @@ def test_owner_disconnect_and_restart_leave_unknown_guarded_without_resubmission
 
 
 @requires_agent
-@pytest.mark.parametrize("state", ["scheduled", "paused", "disabled"])
-def test_successful_manual_run_books_once_and_preserves_operator_schedule_state(owner, state):
+def test_successful_manual_run_books_once_and_preserves_operator_schedule_state(owner):
     home, model, sidecar, job = owner
     params = {"profile_home": str(home), "job_id": job["id"]}
-    if state == "paused":
-        sidecar.result("cron.pause", {**params, "reason": "operator pause"})
-    elif state == "disabled":
-        sidecar.result("cron.update", {**params, "updates": {"enabled": False}})
     before = sidecar.result("cron.get", params)["job"]
     model.release.set()
     result = sidecar.result("cron.run", params)
     assert result["success"] is True, result
     stored = sidecar.result("cron.get", params)["job"]
     assert (stored["state"], stored["enabled"], stored.get("paused_reason")) == (before["state"], before["enabled"], before.get("paused_reason"))
-    if state == "scheduled":
-        assert_manual_run_booked(stored, before)
-    else:
-        assert stored["repeat"]["completed"] == 1  # TAL-997 owns the paused/disabled booking.
+    assert_manual_run_booked(stored, before)
     assert len(sidecar.result("cron.output", params)["outputs"]) == 1
     assert len(model.requests) == 1
     assert len(admissions(home)) == 1
     assert not (home / "cron/manual_runs" / (job["id"] + ".json")).exists()
+
+
+def reply_to(sidecar, request):
+    """The sidecar's answer to ``request`` when one is waiting, else ``None``."""
+    with contextlib.suppress(queue.Empty):
+        message = sidecar.next_message(timeout=.05)
+        if message and message.get("id") == request:
+            return message
+    return None
+
+
+@requires_agent
+@pytest.mark.parametrize("state", ["paused", "disabled", "terminal"])
+def test_run_now_refuses_a_task_that_cannot_fire_so_a_separate_claimer_never_double_runs_it(owner, state):
+    home, model, sidecar, job = owner
+    params = {"profile_home": str(home), "job_id": job["id"]}
+    if state == "paused":
+        sidecar.result("cron.pause", {**params, "reason": "operator pause"})
+    elif state == "disabled":
+        sidecar.result("cron.update", {**params, "updates": {"enabled": False}})
+    else:
+        subprocess.run([AGENT_PYTHON, "-c", "import sys; from cron.jobs import update_job; assert update_job(sys.argv[1], {'state': 'completed'})", job["id"]],
+                       cwd=AGENT_DIR, env=isolated_env(home), check=True, capture_output=True, text=True, timeout=30)
+    before = sidecar.result("cron.get", params)["job"]
+    # A stale client sends cron.run straight to the sidecar, past Web's can_run_now.
+    request = sidecar.request("cron.run", params)
+    reply = wait_for(lambda: "executed" if model.started.is_set() else reply_to(sidecar, request))
+    stored = sidecar.result("cron.get", params)["job"]
+    # A separate process takes the Agent's own Trigger-now claim, which resumes a paused or disabled job.
+    claimer = subprocess.run([AGENT_PYTHON, "-c", "import sys; from cron.jobs import claim_job_for_fire; print(bool(claim_job_for_fire(sys.argv[1], force=True)))", job["id"]],
+                             cwd=AGENT_DIR, env=isolated_env(home), check=True, capture_output=True, text=True, timeout=30)
+    runners = (["web"] if reply == "executed" else []) + (["claimer"] if claimer.stdout.strip() == "True" else [])
+    assert runners == ([] if state == "terminal" else ["claimer"]), runners
+    assert reply["error"]["data"]["condition"] == "cron_not_runnable", reply
+    assert before["run_now_refusal"] == state and reply["error"]["data"]["reason"] == state, (before, reply)
+    # Refused before any claim, resume or execution: the operator's schedule state is untouched.
+    assert {key: stored.get(key) for key in ("state", "enabled", "paused_at", "paused_reason", "next_run_at", "fire_claim")} == \
+        {key: before.get(key) for key in ("state", "enabled", "paused_at", "paused_reason", "next_run_at", "fire_claim")}
+    assert model.requests == [] and admissions(home) == []
 
 
 @requires_agent

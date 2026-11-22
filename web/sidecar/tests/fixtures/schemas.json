@@ -8370,6 +8370,21 @@
             },
             "wrap_response_supported": {
               "type": "boolean"
+            },
+            "run_now_refusal": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "paused",
+                    "disabled",
+                    "terminal"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -8486,6 +8501,21 @@
               },
               "wrap_response_supported": {
                 "type": "boolean"
+              },
+              "run_now_refusal": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "paused",
+                      "disabled",
+                      "terminal"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -8570,6 +8600,21 @@
           },
           "wrap_response_supported": {
             "type": "boolean"
+          },
+          "run_now_refusal": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "paused",
+                  "disabled",
+                  "terminal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -8649,6 +8694,21 @@
           },
           "wrap_response_supported": {
             "type": "boolean"
+          },
+          "run_now_refusal": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "paused",
+                  "disabled",
+                  "terminal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

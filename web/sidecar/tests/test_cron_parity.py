@@ -26,8 +26,9 @@ def test_create_keeps_monitor_fields_and_update_clears_profile(handshaken: Sidec
     assert updated["job"]["profile"] is None
     paused = handshaken.result("cron.pause", {"profile_home": home, "job_id": job["id"], "reason": "hold"})
     assert paused["job"]["id"] == job["id"] and "monitor" not in paused["job"]  # raw store record, no API decoration
+    assert paused["job"]["run_now_refusal"] == "paused"  # TAL-2642: Run now's refusal follows the write
     resumed = handshaken.result("cron.resume", {"profile_home": home, "job_id": job["id"]})
-    assert resumed["job"]["id"] == job["id"]
+    assert resumed["job"]["id"] == job["id"] and resumed["job"]["run_now_refusal"] is None
     # The store also resolves a job by name, as the predecessor passed ids verbatim.
     handshaken.result("cron.update", {"profile_home": home, "job_id": job["id"], "updates": {"name": "nightly report"}})
     assert handshaken.result("cron.pause", {"profile_home": home, "job_id": "nightly report"})["job"]["id"] == job["id"]
@@ -274,7 +275,7 @@ def test_schedule_policy_round_trips_clears_and_returns_the_agents_refusal(hands
 def test_an_agent_without_per_task_wrapping_reports_none_and_refuses_an_explicit_wrap(monkeypatch) -> None:  # agent-shim: cron-wrap-response
     """TAL-2634: an Agent before 0.23.2 never reads a task's ``wrap_response``, so nothing stores one there; a null asks
     for the default that Agent already applies."""
-    monkeypatch.setattr(cron, "_jobs", lambda: SimpleNamespace(create_job=lambda prompt, schedule, catch_up=None: None))
+    monkeypatch.setattr(cron, "_jobs", lambda: SimpleNamespace(create_job=lambda prompt, schedule, catch_up=None: None, is_terminal_job=lambda job: False, is_job_runnable=lambda job: True))
     assert cron.job_for_api({"id": "a", "wrap_response": True})["wrap_response_supported"] is False
     assert cron._field_updates({"wrap_response": None, "catch_up": True}) == {"catch_up": True}
     for value in (True, False, "yes"):

@@ -42,6 +42,15 @@ selected profile differs from its store, recreate it in the intended execution
 profile. Web refuses manual run and resume for that mismatch; pause and delete
 remain available. Existing Agent schedules are unchanged until recreated.
 
+Run now takes the Agent's own run-now claim, so a gateway tick or another Web
+server cannot run the same job at the same time. A paused, turned-off or
+finished job takes no such claim, and Run now never resumes a schedule to run
+it: the sidecar refuses `cron.run` with `cron_not_runnable` and the reason
+(`paused`, `disabled` or `terminal`), and the server answers `409`. Each listed
+job carries `can_run_now` and `run_now_refusal`; Web shows Run now and the
+needs-attention banner's Run once now disabled with that reason. Resume the job
+first to run it.
+
 ## Advanced
 
 The section opens automatically whenever a job already has one of these set.
