@@ -81,6 +81,7 @@ import { TurnRunner } from './sessions/turn.js'
 import { SessionChannels, StreamRegistry } from './sessions/streams.js'
 import { PendingPrompts } from './sessions/pending.js'
 import { SSE_STREAM_LEASE_MS, StreamSlots } from './api/sse-routes.js'
+import { ScreenService, UNAVAILABLE_SCREEN } from './tools/screen.js'
 import { AgentConfig, agentApprovals, showReasoning, coerceProviderCostBudgetValue, dict as asDict, modelBaseUrl, parseProviderQualifiedModel, profileReasoningEffort } from './config/agent-config.js'
 import { ProviderCatalog } from './providers/catalog.js'
 import { containedProfileHome, escapedProfileMessage, ProfileError, ProfileService } from './profiles/profiles.js'
@@ -378,7 +379,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   // TAL-259: record when this server started stamping deliberate shrinks; older backups go to manual review.
   try { await recoveryStampingSince(storage.documents) } catch (error) { log(`[webui] WARNING: could not record recovery_stamping_since: ${(error as Error).message}`) }
+  const screens = new ScreenService({ sidecar: () => sidecar, now, log })
   const sessions: SessionService = new SessionService({
+    // TAL-2380: owner-only like the host terminal (TAL-2201): a session without owner authority is offered no screen.
+    screen: async (profile) => ((await requestServerOwner()) ? screens.view(profileHome(profile ?? activeProfile())) : UNAVAILABLE_SCREEN),
     recoveryStampingSince: async () => await recoveryStampingSince(storage.documents),
     showReasoning: async (profile) => { try { return showReasoning(await agentConfig.read(profileHome(profile ?? activeProfile()))) } catch { return false } },
     sidecar: () => sidecar,
@@ -1058,6 +1062,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     onboardingCompleted: () => truthy(env.TALARIA_WEB_SKIP_ONBOARDING) || Boolean(settings.peek().onboarding_completed),
     health: () => ({ sessions: store.sessions.size, activeStreams: activeStreamIds.size, activeRuns: registry.activeRuns.size, runs: [...registry.activeRuns.values()].map((r) => ({ phase: r.phase, started_at: r.started_at })), lastRunFinishedAt: registry.lastRunFinishedAt }),
     sessions,
+    screens,
     sessionStore: store,
     events,
     projects,

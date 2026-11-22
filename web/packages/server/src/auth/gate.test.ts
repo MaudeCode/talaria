@@ -11,6 +11,8 @@ const ROUTES: { method: string; path: string; owner: boolean }[] = [
   ...['start', 'exec', 'input', 'resize', 'close'].map((name) => ({ method: 'POST', path: `/api/terminal/${name}`, owner: true })),
   { method: 'GET', path: '/api/terminal/read', owner: true },
   { method: 'GET', path: '/api/terminal/output?session_id=synthetic', owner: true },
+  { method: 'POST', path: '/api/screen/lease', owner: true },
+  { method: 'GET', path: '/api/screen/ws?view_id=synthetic-view', owner: true },
   // Path variants reach the handler as the canonical path, so they get its decision.
   { method: 'POST', path: '/api/terminal/start/', owner: true },
   { method: 'POST', path: '//api/terminal/start', owner: true },

@@ -2832,6 +2832,8 @@ export function publicToolFrame(data: Record<string, unknown>, enabled: boolean,
   if (!frame.target) delete frame.target
   // A completion that moved its code into its result keeps its empty rows, which replace the start frame's.
   if (Array.isArray(frame.args_fields) && !frame.args_fields.length && !showsItsCode(frame.result_view)) delete frame.args_fields
+  // TAL-2380: a live computer call's row offers to open the profile's screen; settled history never does.
+  if (toolName(data) === 'computer_use') frame.screen_action = true
   return frame
 }
 

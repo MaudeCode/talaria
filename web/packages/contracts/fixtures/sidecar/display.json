@@ -1,0 +1,14 @@
+{
+  "display.status": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "state": "unavailable",
+        "reason": "absent",
+        "status": null
+      }
+    }
+  ]
+}

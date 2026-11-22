@@ -1,10 +1,11 @@
 import { type Dispatch, type SetStateAction } from 'react'
-import { SlidersHorizontal, TerminalSquare } from 'lucide-react'
+import { Monitor, SlidersHorizontal, TerminalSquare } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { ProfileMenu } from '../../shell/ProfileMenu'
 import { ContextRow, ExecutionModeChip, ModelChip, QuotaChip, ReasoningChip, ToolsetsChip, WorkspaceChip, type ContextFigures } from './chips'
 import type { ComposerProps } from './Composer'
+import { requestOpenScreen } from '../screen/openScreenRequest'
 
 type ControlsProps = Pick<ComposerProps, 'sessionId' | 'session' | 'settings' | 'pendingChoices' | 'onModelChange' | 'onReasoningChange' | 'reasoning' | 'reasoningLevels' | 'reasoningSupported' | 'onWorkspaceChange' | 'onNewWorktreeChat' | 'onRemoveWorktree' | 'onToolsetsChange' | 'terminalOpen' | 'onToggleTerminal'> & {
   onExecutionModeChange: ComposerProps['onExecutionModeChange']
@@ -54,6 +55,8 @@ export function ComposerControls({ placement, sessionId, session, settings, pend
       {stage === 'burger' && reasoningShown && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
       {/* The chat header carries the terminal toggle above phone width. */}
       {stage === 'burger' && phone && onToggleTerminal && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
+      {/* TAL-2380: likewise the Screen button, while the server offers the profile's screen. */}
+      {stage === 'burger' && phone && sessionId && session?.screen?.available && <button type="button" className="icon-btn" id="btnScreenMobile" title={m.screen_title()} aria-label={m.screen_title()} onClick={() => { setConfigOpen(false); requestOpenScreen({ sessionId }) }}><Monitor size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.screen_title()}</span></button>}
       {configOpen && stage === 'burger' && quotaChipShown(settings) && <QuotaChip row {...chatModelChoice(session, pendingChoices)} />}
       {configOpen && stage === 'burger' && !hide('hide_composer_context') && <ContextRow {...context} />}
     </div>

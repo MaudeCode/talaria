@@ -1,7 +1,7 @@
 import { DecisionReviewResult, OutboundDraftResult, ProposalResult, TerminalResult } from './OutboundDraftResult'
 import { ShowBlockResult } from './ShowBlockResult'
 import { useApprovalFlash, useDisclosure } from './Worklog'
-import { Braces, ChevronRight, Copy } from 'lucide-react'
+import { Braces, ChevronRight, Copy, Monitor } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
 import type { ApprovalAnsweredBy, BackgroundAgent, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApp, ToolApprovalOutcome, ToolField, ToolKind, ToolOutcome, ToolProgress, ToolResultView, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
@@ -20,6 +20,8 @@ import { SwapText } from '../../../ui/SwapText'
 import { useArrival } from '../arrival'
 import { lazy, Suspense, useState, type ReactNode } from 'react'
 import { requestOpenFile } from '../../workspace/openFileRequest'
+import { requestOpenScreen } from '../../screen/openScreenRequest'
+import { RowActionButtons } from '../../../ui/RowActionsMenu'
 import { RowContextMenu, type RowAction } from '../../../ui/Menu'
 import { copyWithToast } from '../../../lib/clipboard'
 import { Markdown } from '../render/Markdown'
@@ -68,6 +70,8 @@ export interface ToolCardData {
   startedAt?: number | undefined
   /** TAL-2340: the background process the call started (server field `process_id`), whose latest output line shows under it. */
   processId?: string | undefined
+  /** TAL-2380: a live computer call; its row offers Open screen (server field `screen_action`). */
+  screenAction?: true | undefined
 }
 
 /** The row's label from its server display fields; an approval card (TAL-2333) labels the call it holds the same way. */
@@ -462,6 +466,12 @@ function ProcessOutputTail({ sessionId, processId }: { sessionId: string; proces
   return tail ? <div className="tool-card-output-tail" title={tail}>{tail}</div> : null
 }
 
+/** TAL-2380: a live computer call's row that opens its session's screen, from its button and its row menu alike. */
+function ScreenRow({ sessionId }: { sessionId: string }) {
+  const open = { label: m.screen_open(), icon: Monitor, run: () => { requestOpenScreen({ sessionId }) } }
+  return <RowContextMenu label={open.label} actions={[open]} trigger={<div className="tool-card-screen flex items-center px-1.5 pb-1.5"><RowActionButtons actions={[open]} /></div>} />
+}
+
 /** One tool invocation. Collapsed by default: verb + target; details show arguments and result preview as text. */
 export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: ToolCardData; timestamp?: string | undefined; sessionId?: string | undefined; /** Its row in a running turn, which opens as it arrives. */ arrivalKey?: string | undefined }) {
   const locale = useLocale()
@@ -502,6 +512,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
       {rowsInView(call) && call.resultView?.rows && <div className="tool-card-rows px-2.5 pb-2">{call.resultTruncated && sessionId ? <ClippedResult sessionId={sessionId} callId={call.id} view={call.resultView} clipped={result} wrap /> : <ToolRowsResult rows={call.resultView.rows} wrap />}</div>}
       {call.background?.agents_detail?.length ? <DelegateAgents agents={call.background.agents_detail} sessionId={sessionId} /> : null}
       {sessionId && call.processId && <ProcessOutputTail sessionId={sessionId} processId={call.processId} />}
+      {sessionId && call.screenAction && <ScreenRow sessionId={sessionId} />}
       {/* TAL-2325: the images, speech or video a media tool made, in view without opening the call (TAL-2341: only open, while the server says so). */}
       {call.resultView?.media?.length && (open || !call.mediaInDetails) ? <div className="tool-card-media px-2.5 pb-2"><MediaTiles media={call.resultView.media} sessionId={sessionId} images /></div> : null}
       {sessionId && call.resultView?.terminal && <TerminalResult key={call.resultView.terminal.terminal_id} sessionId={sessionId} reference={call.resultView.terminal} />}

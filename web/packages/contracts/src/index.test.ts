@@ -1,6 +1,7 @@
 import { AcceptedSourceReferenceSchema, ApprovalPendingSchema, CommandDecisionSchema, BackgroundLinkSchema, ApprovalRespondRequestSchema, ApprovalRespondResponseSchema, AuxiliaryReasoningSchema, SessionNewRequestSchema } from './views.js'
 import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.js'
 import { SessionStreamEventSchema } from './sse.js'
+import { ScreenLeaseInputSchema, ScreenViewSchema } from './screen.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
 import { BackgroundTasksResponseSchema, ConnectorsPageSchema, ChatStartResponseSchema, DelegationStatusSchema, MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
@@ -323,6 +324,13 @@ describe('contracts package', () => {
     expect(value.groups[0]?.models[0]).toMatchObject({ id: 'shared', provider_id: 'alpha', bare_id: 'shared', favorite: true, hidden: false, preferences_editable: true })
     expect(value.hidden_models).toEqual([{ provider_id: 'beta', model: 'shared' }])
     expect(value.total_count).toBe(1)
+  })
+  it('parses the shared screen views, live computer row and lease request (TAL-2380)', () => {
+    const fixture = shared('fixtures/screen.json') as { views: Record<string, unknown>; live_tool: unknown; lease: unknown }
+    expect(Object.values(fixture.views).map((view) => ScreenViewSchema.parse(view).state)).toEqual(['running', 'not_installed', 'unsupported'])
+    const frame = ChatEventSchema.parse(fixture.live_tool)
+    expect(frame.event === 'tool' && frame.data.screen_action).toBe(true)
+    expect(ScreenLeaseInputSchema.parse(fixture.lease).action).toBe('acquire')
   })
   it('parses the shared live dictation exchange (TAL-802)', () => {
     const fixture = shared('fixtures/transcribe-stream.json') as { start: unknown; end: unknown; events: unknown[]; unavailable: unknown }

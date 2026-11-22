@@ -14,8 +14,10 @@ import { switchProfile } from '../../../api/endpoints'
 
 vi.mock('../../workspace/openFileRequest', () => ({ requestOpenFile: vi.fn() }))
 vi.mock('../../background/openAgentRequest', () => ({ requestOpenAgent: vi.fn() }))
+vi.mock('../../screen/openScreenRequest', () => ({ requestOpenScreen: vi.fn() }))
 vi.mock('../../../api/endpoints', async (actual) => ({ ...(await actual<typeof import('../../../api/endpoints')>()), switchProfile: vi.fn(() => Promise.resolve({ profiles: [] })), fetchBootstrap: vi.fn(async () => (await import('../../../contracts/adapters/memory')).DEFAULT_BOOTSTRAP) }))
 import { requestOpenAgent } from '../../background/openAgentRequest'
+import { requestOpenScreen } from '../../screen/openScreenRequest'
 
 const call: ToolCardData = { id: 'c1', name: 'terminal', kind: 'shell', target: 'make', args: {}, preview: 'flat preview', done: true, isError: false, duration: null, costUsd: null, resultView: null }
 
@@ -429,4 +431,14 @@ describe('a long-running call (TAL-2340)', () => {
     expect(screen.getByText('<1s')).toBeInTheDocument()
   })
 
+})
+
+it('offers Open screen only on a live computer row the server marks, which asks its chat to open the screen (TAL-2380)', () => {
+  const computer: ToolCardData = { ...call, id: 'cu1', name: 'computer_use', kind: 'computer', done: false }
+  const { unmount } = render(<ToolCard call={computer} sessionId="s1" />)
+  expect(screen.queryByRole('button', { name: 'Open screen' })).toBeNull()
+  unmount()
+  render(<ToolCard call={{ ...computer, screenAction: true }} sessionId="s1" />)
+  fireEvent.click(screen.getByRole('button', { name: 'Open screen' }))
+  expect(requestOpenScreen).toHaveBeenCalledWith({ sessionId: 's1' })
 })

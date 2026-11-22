@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { MAIN_VIEW } from '../../shell/AppShell'
-import { PanelRight, TerminalSquare } from 'lucide-react'
+import { Monitor, PanelRight, TerminalSquare } from 'lucide-react'
 
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -37,6 +37,8 @@ import { VaultPromptCard, useVaultPrompt } from './VaultPromptCard'
 import { useMarkViewed } from './useMarkViewed'
 import { setWatchingRun } from '../presence/presence'
 import { TerminalPanelFrame } from '../terminal/TerminalPanelFrame'
+import { ScreenViewer } from '../screen/ScreenViewer'
+import { onOpenScreenRequest, takeOpenScreenRequest } from '../screen/openScreenRequest'
 import { onOpenTerminalRequest, peekOpenTerminalRequest } from '../terminal/openTerminalRequest'
 import { ChatSidePanel } from './ChatSidePanel'
 import { ChatTaskList } from '../todos/TodosPage'
@@ -121,6 +123,14 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
   const canOpenTerminal = bootstrap.auth.can_manage_server
   // TAL-1974: a `terminal_open` card opens this session's pane, expanded; the pane takes the request and focuses itself.
   useEffect(() => onOpenTerminalRequest(() => { if (sessionId && peekOpenTerminalRequest(sessionId)) setTerminal('open') }), [sessionId])
+  // TAL-2380: the profile's screen viewer, from the header or a live computer row; each opening rereads the screen's state.
+  const [screenOpen, setScreenOpen] = useState(false)
+  const openScreen = (sid: string) => { setScreenOpen(true); void qc.invalidateQueries({ queryKey: keys.sessions.detail(sid) }) }
+  useEffect(() => onOpenScreenRequest(() => {
+    if (!sessionId || !takeOpenScreenRequest(sessionId)) return
+    setScreenOpen(true)
+    void qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId) })
+  }), [sessionId, qc])
   const { sidePanelOpen } = useShellState()
   const [queued, setQueued] = useQueuedTurns(composerStateId(session))
   const onQueue = (entry: QueuedTurn) => setQueued((q) => [...q, entry])
@@ -537,6 +547,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
           </div>
           {/* T3 Code keeps the terminal toggle in the thread header; phones reach it from the composer's overflow menu. */}
           {sessionId && canOpenTerminal && <button type="button" className={cn('icon-btn has-tooltip has-tooltip--left', terminalOpen && 'active')} id="btnTerminalInline" data-tooltip={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={onToggleTerminal}><TerminalSquare size={16} aria-hidden="true" /></button>}
+          {sessionId && session?.screen?.available && <button type="button" className={cn('icon-btn has-tooltip has-tooltip--left', screenOpen && 'active')} id="btnScreen" data-tooltip={m.screen_title()} aria-label={m.screen_title()} aria-pressed={screenOpen} onClick={() => { openScreen(sessionId) }}><Monitor size={16} aria-hidden="true" /></button>}
           {/* TAL-373: the side panel's edge tab is hidden below 901px; tablets open it here, phones from the titlebar. */}
           {sessionId && <button type="button" className={cn('icon-btn chat-header-side-panel has-tooltip has-tooltip--left', sidePanelOpen && 'active')} id="btnSidePanelInline" data-tooltip={m.panel_label()} aria-label={m.panel_label()} aria-pressed={sidePanelOpen} onClick={toggleSidePanel}><PanelRight size={16} aria-hidden="true" /></button>}
         </div>
@@ -638,6 +649,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
       </div>
       {/* Always mounted beside main (its queries run only while open) so opening and closing animate and the edge tab is always there. */}
       {editDialog}{modelDialog}
+      {session?.screen && <ScreenViewer open={screenOpen} onOpenChange={setScreenOpen} screen={session.screen} />}
       {sessionId && removingWorktree && <WorktreeRemoveDialog sessionId={sessionId} onClose={() => setRemovingWorktree(false)} />}
       {sessionId && <ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} todoState={session?.todo_state} open={sidePanelOpen} onToggle={toggleSidePanel} onClose={closeSidePanel} />}
     </>

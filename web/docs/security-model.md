@@ -169,7 +169,7 @@ handler runs when `isOperatorOnly(method, path)` is true:
 
 - Every method on `OPERATOR_ONLY_PATHS`, `/api/groups`, and every path under
   `OPERATOR_ONLY_PREFIXES` (`/api/terminal/`, `/api/onboarding/oauth/`,
-  `/api/groups/`).
+  `/api/groups/`, `/api/screen/`).
 - Every method but GET and HEAD on `OPERATOR_ONLY_WRITES`
   (`/api/mcp/servers`, `/api/mcp/servers/{name}`, `/api/providers`).
 
@@ -203,7 +203,20 @@ Some routes stay open but refuse owner-only fields inside the handler:
 - The server ships capability fields so clients hide what a non-owner cannot
   do: `can_manage_server` in auth status, read-only MCP and plugin rows
   (`tools/mcp.ts` `readOnlyRow`), and no `/terminal` command
-  (`tools/commands.ts` `OWNER_COMMANDS`).
+  (`tools/commands.ts` `OWNER_COMMANDS`). A non-owner's session detail carries
+  an unavailable `screen` (`runtime.ts`, TAL-2380).
+
+**The agent's screen (TAL-2380).** The viewer WebSocket (`/api/screen/ws`) and
+`POST /api/screen/lease` are owner-only, because a taken-over screen drives the
+agent's desktop as its user. The server reaches the profile owner through the
+sidecar's `display.*` proxy (`methods/display.py`): `display.view` mints the
+owner's single-use display ticket on its own owner connection and hands the
+server an `rfb_url` that `tools/screen.ts` dials. The ticket and the owner's
+viewer id never reach the browser, which names its viewer by a client-chosen
+`view_id`. Keyboard and pointer input reach the screen only while that viewer
+holds the owner's lease, which the Agent's bridge enforces. Closing a viewer
+hands control back. A private-bridge owner (TAL-1977) or a served profile has no
+reachable display socket, so its screen is unavailable.
 
 **When a new route belongs on the owner-only list.** Add it to
 `OPERATOR_ONLY_PATHS`, `OPERATOR_ONLY_PREFIXES` or `OPERATOR_ONLY_WRITES`, and

@@ -137,6 +137,7 @@ export async function startServer(app: App, config: ServerConfig, opts: StartSer
     server.closeAllConnections()
     // Upgraded sockets left the HTTP server's connection list.
     closeTranscribeStreams()
+    app.deps.screens.close()
     await stopped
     await hygiene
     await gatewayRestarts

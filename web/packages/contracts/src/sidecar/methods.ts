@@ -10,6 +10,7 @@ import {
   RuntimeAgentRecoveryParamsSchema, RuntimeAgentRecoveryResultSchema,
 } from './runtime.js'
 import { MESHY_METHODS } from '../meshy-sidecar.js'
+import { DISPLAY_METHODS } from '../screen-sidecar.js'
 
 const Empty = z.object({})
 
@@ -33,6 +34,7 @@ export const SIDECAR_METHODS = {
   ...GOALS_METHODS,
   ...COMMANDS_METHODS,
   ...MESHY_METHODS,
+  ...DISPLAY_METHODS,
   ...KANBAN_METHODS,
   ...STATE_DB_METHODS,
   ...PROFILES_METHODS,

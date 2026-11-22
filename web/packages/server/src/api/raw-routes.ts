@@ -60,6 +60,7 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
   '/api/folder/download': handleFolderDownload,
   '/api/session/export': handleSessionExport,
   '/api/transcribe/stream': handleTranscribeStream,
+  '/api/screen/ws': async (ctx) => { await ctx.deps.screens.handle(ctx) },
   '/api/approval/inject_test': testHook(handleApprovalInject),
   '/api/clarify/inject_test': testHook(handleClarifyInject),
 }

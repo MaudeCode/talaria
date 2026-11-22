@@ -50,6 +50,7 @@ import type { BootstrapFeatures, ReleaseInfo, WhatsNewAnnouncement } from '@maud
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras, CSP_REPORT_TO, type CspExtras } from './csp.js'
 import { forwardedLogFields, rawPeerIsTrustedProxy, type CsrfFailure } from './origin.js'
 import type { AgentConfig } from '../config/agent-config.js'
+import type { ScreenService } from '../tools/screen.js'
 import type { ProviderCatalog } from '../providers/catalog.js'
 import type { ProfileService } from '../profiles/profiles.js'
 import type { Onboarding } from '../onboarding.js'
@@ -188,6 +189,8 @@ export interface AppDeps {
   // ── settings, profiles, providers, onboarding (checkpoint 7a) ──
   /** Home directory for a logical profile name (root aliases and invalid names clamp to the base home). */
   profileHome: (name: string) => string
+  /** TAL-2380: each profile's Bot Screen: its `screen` view, viewers and control. */
+  screens: ScreenService
   agentConfig: AgentConfig
   catalog: ProviderCatalog
   profiles: ProfileService
