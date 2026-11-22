@@ -6,6 +6,26 @@ import XCTest
 @testable import Talaria
 @testable import TalariaKit
 
+@MainActor @Observable
+private final class HostedChatPaneSize {
+    var size: CGSize
+
+    init(_ size: CGSize) {
+        self.size = size
+    }
+}
+
+private struct ResizableHostedChatPane<Content: View>: View {
+    let pane: HostedChatPaneSize
+    let content: Content
+
+    var body: some View {
+        content
+            .frame(width: pane.size.width, height: pane.size.height)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
@@ -306,7 +326,13 @@ final class ChatHostedTests: XCTestCase {
         let session = try await fixture.session()
         // The chat loads in portrait: at this size a landscape composer leaves the transcript no room.
         let portrait = CGSize(width: 402, height: 874)
-        let window = try hostWindow(fixture.chat(session), size: portrait) {
+        let landscape = CGSize(width: 874, height: 200)
+        let pane = HostedChatPaneSize(portrait)
+        // Resize the pane inside the key window so UIKit does not reconfigure its software keyboard window.
+        let window = try hostWindow(
+            ResizableHostedChatPane(pane: pane, content: fixture.chat(session)),
+            size: CGSize(width: landscape.width, height: portrait.height)
+        ) {
             $0.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
         }
         // At this size only the newest reply fits on screen.
@@ -328,9 +354,8 @@ final class ChatHostedTests: XCTestCase {
         let lineHeight = try XCTUnwrap(editor.font).lineHeight
         let selection = editor.selectedRange
         // The keyboard leaves a landscape chat about 200 pt. Rotate there, back to portrait, and there again.
-        let landscape = CGSize(width: 874, height: 200)
         for (size, name) in [(landscape, "landscape"), (portrait, "portrait"), (landscape, "landscape-again")] {
-            window.frame.size = size
+            pane.size = size
             let settled = await awaitRenderedQuiet(in: window) { editor.convert(editor.bounds, to: window) }
             XCTAssertTrue(settled, "\(name): the composer must settle")
             attachHostedScreenshot(window, name: "composer-accessibility-\(name)")
@@ -344,12 +369,13 @@ final class ChatHostedTests: XCTestCase {
             XCTAssertTrue(editor.bounds.insetBy(dx: -1, dy: -1).contains(caret),
                           "\(name): the caret \(caret) is outside the editor's visible \(editor.bounds)")
             let editorFrame = editor.convert(editor.bounds, to: window)
-            XCTAssertTrue(window.bounds.contains(editorFrame), "\(name): the editor \(editorFrame) leaves the window")
+            let paneBounds = CGRect(origin: window.safeAreaLayoutGuide.layoutFrame.origin, size: size)
+            XCTAssertTrue(paneBounds.contains(editorFrame), "\(name): the editor \(editorFrame) leaves the pane")
             let send = try await requireElement(in: window, label: "Send")
             // At this size Send is about half the pane tall, so its circle may meet the keyboard; its hit point may not.
             let sendFrame = window.convert(send.accessibilityFrame, from: nil)
-            XCTAssertTrue(window.bounds.contains(CGPoint(x: sendFrame.midX, y: sendFrame.midY)),
-                          "\(name): Send \(sendFrame) has its hit point outside the window")
+            XCTAssertTrue(paneBounds.contains(CGPoint(x: sendFrame.midX, y: sendFrame.midY)),
+                          "\(name): Send \(sendFrame) has its hit point outside the pane")
             XCTAssertEqual(editor.text, draft, name)
             XCTAssertEqual(editor.selectedRange, selection, name)
             XCTAssertTrue(editor.isFirstResponder, name)
