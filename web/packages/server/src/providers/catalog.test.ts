@@ -7,7 +7,7 @@ import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, WEB_ROOT, type TestServer } from '../test/harness.js'
-import { classifyQuotaSource, composerQuota, openRouterCredits, ProviderCatalog, quotaSummary, repairSessionModel, withProviderHeadlines, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
+import { classifyQuotaSource, composerQuota, openRouterCredits, pinnedCustomRepair, ProviderCatalog, quotaSummary, repairSessionModel, withProviderHeadlines, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
 import { OAUTH_PROVIDERS, PROVIDER_MODELS } from './tables.js'
 import { writeEnvFile } from '../test/env-file.js'
 import { QUOTA_THRESHOLD_DEFAULTS } from '../settings.js'
@@ -524,6 +524,104 @@ describe('stale session model repair (TAL-542)', () => {
 
   it('prefers a provider that lists a providerless model over the default', () => {
     expect(repairSessionModel(catalog('openai-codex', 'gpt-5.5', { 'openai-codex': ['gpt-5.5'], gemini: ['gemini-3.1-pro-preview'] }), 'gemini-3.1-pro-preview', null)).toEqual(['gemini-3.1-pro-preview', 'gemini'])
+  })
+})
+
+describe('removed named-custom model repair from a pinned list (TAL-1132)', () => {
+  const lab = (entry: Json): Json => ({ model: { provider: 'anthropic', default: 'claude-sonnet-4' }, custom_providers: [{ name: 'Lab', base_url: 'http://lab.invalid/v1', ...entry }] })
+  const repair = (entry: Json, model = 'lab-gone', resolved: Json = lab(entry)): ReturnType<typeof pinnedCustomRepair> => pinnedCustomRepair(lab(entry), resolved, model, 'custom:lab')
+
+  it.each([
+    ['the pinned default', { model: 'lab-b', models: ['lab-a', 'lab-b'] }, 'lab-b'],
+    ['the first pinned model when the default is unpinned', { model: 'lab-z', models: ['lab-a', 'lab-b'] }, 'lab-a'],
+    ['the first pinned model without a default', { models: ['lab-a', 'lab-b'] }, 'lab-a'],
+    ['a JSON-array string list', { models: '["lab-a", "lab-b"]' }, 'lab-a'],
+    ['a Python-literal string list', { models: "['lab-a', 'lab-b']" }, 'lab-a'],
+    ['a single-model string', { models: 'lab-a' }, 'lab-a'],
+    ['a mapping pinned by `discover_models: false`, sentinels skipped', { discover_models: 'false', models: { __explicit_model_allowlist__: true, 'lab-a': {}, 'lab-b': {} } }, 'lab-a'],
+    ['a discovered snapshot pinned by `discover_models: false`', { models_discovered: true, discover_models: false, models: ['lab-a'] }, 'lab-a'],
+    ['the provider\'s own wrapper unwrapped', { model: '@custom:lab:lab-b', models: ['@custom:lab:lab-a', '@custom:lab:lab-b'] }, 'lab-b'],
+  ])('replaces a removed model with %s', (_case, entry, replacement) => {
+    expect(repair(entry)).toEqual([replacement, 'custom:lab'])
+  })
+
+  it.each([
+    ['a pinned model', { models: ['lab-a'] }, 'lab-a'],
+    ['the singular default outside the list', { model: 'lab-z', models: ['lab-a'] }, 'lab-z'],
+    ['a model the list pins under a namespace', { models: ['vendor/lab-a'] }, 'lab-a'],
+  ])('keeps %s', (_case, entry, model) => {
+    expect(repair(entry, model)).toBeNull()
+  })
+
+  it.each([
+    ['a discovered snapshot', { models_discovered: true, models: ['lab-a'] }],
+    ['per-model metadata', { models: { 'lab-a': { context_length: 128_000 } } }],
+    ['an undecodable serialized list', { models: '["lab-a",' }],
+    ['an unresolved list entry', { models: ['${LAB_MODEL}', 'lab-a'] }],
+    ['only a singular default', { model: 'lab-a' }],
+  ])('offers no evidence from %s', (_case, entry) => {
+    expect(repair(entry)).toBeUndefined()
+  })
+
+  it('offers no evidence for an ambiguous slug, another provider or bare `custom`', () => {
+    const twins = { model: { provider: 'anthropic' }, custom_providers: [{ name: 'Lab', models: ['lab-a'] }, { name: 'lab', models: ['lab-b'] }] }
+    expect(pinnedCustomRepair(twins, twins, 'lab-gone', 'custom:lab')).toBeUndefined()
+    const config = lab({ models: ['lab-a'] })
+    expect(pinnedCustomRepair(config, config, 'lab-gone', 'custom:other')).toBeUndefined()
+    expect(pinnedCustomRepair(config, config, 'lab-gone', 'custom')).toBeUndefined()
+    expect(pinnedCustomRepair(config, config, 'lab-gone', 'anthropic')).toBeUndefined()
+  })
+
+  it('reads the default from the profile-resolved view, falling back to the list when it stays unresolved', () => {
+    const entry = { model: '${LAB_DEFAULT}', models: ['lab-a', 'lab-b'] }
+    expect(repair(entry, 'lab-gone', lab({ ...entry, model: 'lab-b' }))).toEqual(['lab-b', 'custom:lab'])
+    expect(repair(entry, 'lab-z', lab({ ...entry, model: 'lab-z' }))).toBeNull()
+    expect(repair(entry, 'lab-gone', lab({ models: entry.models }))).toEqual(['lab-a', 'custom:lab'])
+  })
+})
+
+describe('pinned-list repair against a profile catalog (TAL-1132)', () => {
+  let home: string
+  let sidecar: FakeSidecar
+  let catalog: ProviderCatalog
+  let config: Json
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'talaria-pinned-repair-'))
+    writeFileSync(join(home, 'config.yaml'), '# synthetic config\n')
+    config = { model: { provider: 'anthropic', default: 'claude-sonnet-4' }, custom_providers: [{ name: 'Lab', base_url: 'http://lab.invalid/v1', api_key: 'sk-lab-12345678', model: 'lab-b', models: ['lab-a', 'lab-b'] }] }
+    sidecar = new FakeSidecar()
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    sidecar.respond('usage.pool_providers', () => ({ providers: [], keys: {} }))
+    sidecar.respond('plugins.providers', () => ({ providers: [] }))
+    sidecar.respond('providers.auth_status', () => ({ status: { logged_in: false } }))
+    sidecar.respond('providers.local_models', () => ({ provider_id: 'llamacpp', models: [], current_endpoint: null }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+  })
+  afterEach(() => { rmSync(home, { recursive: true, force: true }) })
+
+  it('replaces a removed model, bare or unwrapped from a qualified id, on its own provider', async () => {
+    await catalog.warmSessionModelRepair(home)
+    expect(catalog.sessionModelRepair(home, 'lab-gone', 'custom:lab')).toEqual(['lab-b', 'custom:lab'])
+    expect(catalog.sessionModelRepair(home, 'lab-gone', 'custom:lab', true)).toEqual(['lab-b', 'custom:lab'])
+    expect(catalog.sessionModelRepair(home, 'lab-a', 'custom:lab', true)).toBeNull()
+  })
+
+  it('keeps the pair while config.yaml changed since the catalog was built', async () => {
+    await catalog.warmSessionModelRepair(home)
+    writeFileSync(join(home, 'config.yaml'), '# edited outside Web\n')
+    expect(catalog.sessionModelRepair(home, 'lab-gone', 'custom:lab')).toBeNull()
+    await catalog.warmSessionModelRepair(home)
+    expect(catalog.sessionModelRepair(home, 'lab-gone', 'custom:lab')).toEqual(['lab-b', 'custom:lab'])
+  })
+
+  it('keeps the pair once an edited config.yaml cannot be read, never repairing from the earlier read', async () => {
+    await catalog.warmSessionModelRepair(home)
+    expect(catalog.sessionModelRepair(home, 'lab-gone', 'custom:lab')).toEqual(['lab-b', 'custom:lab'])
+    sidecar.respond('config.get', () => { throw new SidecarError('config.yaml is not valid YAML', { condition: 'config_invalid' }) })
+    writeFileSync(join(home, 'config.yaml'), 'custom_providers: [\n')
+    await catalog.warmSessionModelRepair(home)
+    expect(catalog.sessionModelRepair(home, 'lab-gone', 'custom:lab')).toBeNull()
   })
 })
 

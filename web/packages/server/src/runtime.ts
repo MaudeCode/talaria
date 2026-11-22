@@ -533,8 +533,9 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       // A bypass owner reads no custom_providers entry, so a named custom endpoint launches as `custom` at its own URL.
       return { provider: baseUrl && provider.toLowerCase().startsWith('custom:') ? 'custom' : provider, baseUrl: baseUrl || null }
     },
-    repairSessionModel: (profile, model, provider) => catalog.sessionModelRepair(profileHome(profile ?? activeProfile()), model, provider),
-    warmSessionModelRepair: (profile) => catalog.warmSessionModelRepair(profileHome(profile ?? activeProfile())),
+    // A session without a profile belongs to the root profile, whichever profile is active (TAL-1132).
+    repairSessionModel: (profile, model, provider, qualified) => catalog.sessionModelRepair(profileHome(profile ?? 'default'), model, provider, qualified),
+    warmSessionModelRepair: (profile) => catalog.warmSessionModelRepair(profileHome(profile ?? 'default')),
     yolo: { isEnabled: (sid) => yoloSessions.has(sid), set: (sid, enabled) => { if (enabled) yoloSessions.add(sid); else yoloSessions.delete(sid) } },
   })
   // A working-tree mutation refuses while a run is active anywhere it would change files.

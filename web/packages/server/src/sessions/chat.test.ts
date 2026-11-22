@@ -1,7 +1,8 @@
 import { filterAsync } from '../util.js'
 import { sessionPath, sessionDirectory, useJsonStorage } from '../test/storage.js'
-import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
@@ -4406,6 +4407,39 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     expect(seen).toMatchObject({ model: 'claude-sonnet-4', model_provider: 'anthropic' })
   })
 
+  it('replaces a persisted removed named-custom model, bare or qualified, with its pinned default and persists it (TAL-1132)', async () => {
+    const config = { model: { provider: 'anthropic', default: 'claude-sonnet-4', api_key: 'sk-test-key-123456' }, custom_providers: [{ name: 'Lab', base_url: 'http://lab.test/v1', api_key: 'sk-lab-12345678', model: 'lab-b', models: ['lab-a', 'lab-b'] }] }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    for (const stale of ['lab-gone', '@custom:lab:lab-gone']) {
+      const sid = await sessionWith(stale, 'custom:lab')
+      expect(await start({ session_id: sid })).toMatchObject({ effective_model: 'lab-b', effective_model_provider: 'custom:lab' })
+      expect(seen).toMatchObject({ model: 'lab-b', model_provider: 'custom:lab' })
+      expect((await s.deps.sessionStore.get(sid))).toMatchObject({ model: 'lab-b', model_provider: 'custom:lab' })
+    }
+  })
+
+  it('keeps a pinned model and a fresh explicit pick of a removed one (TAL-1132)', async () => {
+    const config = { model: { provider: 'anthropic', default: 'claude-sonnet-4', api_key: 'sk-test-key-123456' }, custom_providers: [{ name: 'Lab', base_url: 'http://lab.test/v1', api_key: 'sk-lab-12345678', model: 'lab-b', models: ['lab-a', 'lab-b'] }] }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    const kept = await sessionWith('lab-a', 'custom:lab')
+    expect((await start({ session_id: kept })).effective_model).toBeUndefined()
+    expect(seen).toMatchObject({ model: 'lab-a', model_provider: 'custom:lab' })
+    const picked = await sessionWith('lab-a', 'custom:lab')
+    expect((await start({ session_id: picked, model: 'lab-gone', model_provider: 'custom:lab', explicit_model_pick: true })).effective_model).toBeUndefined()
+    expect(seen).toMatchObject({ model: 'lab-gone', model_provider: 'custom:lab' })
+  })
+
+  it('keeps a qualified pick on its own provider when only catalog absence says it is stale (TAL-1132)', async () => {
+    useConfig('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['kilo/auto', 'kilo/minimax/minimax-m3'] })
+    const sid = await sessionWith('@ollama:kilo/minimax/minimax-m3', 'ollama')
+    await start({ session_id: sid })
+    expect(seen).toMatchObject({ model: 'kilo/minimax/minimax-m3', model_provider: 'ollama' })
+  })
+
   it('keeps a goal kickoff on its existing pair while a cold catalog refreshes', async () => {
     useConfig('openai-codex', 'gpt-5.5')
     sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
@@ -4614,6 +4648,35 @@ describe('the compression span on the session (TAL-1006)', () => {
       finish()
       await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
     } finally { await s.close() }
+  })
+})
+
+describe('pinned-list model repair for a root session under another active profile (TAL-1132)', () => {
+  it.each([null, 'default'])('repairs a %s-profile session from the root config, never the active profile\'s', async (profile) => {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-pinned-root-')))
+    writeFileSync(join(base, 'active_profile'), 'work\n')
+    writeFileSync(join(base, 'config.yaml'), '# root\n')
+    const workHome = join(base, 'profiles', 'work')
+    mkdirSync(workHome, { recursive: true })
+    writeFileSync(join(workHome, 'config.yaml'), '# work\n')
+    const lab = (models: string[]): Json => ({ model: { provider: 'anthropic', default: 'claude-sonnet-4' }, custom_providers: [{ name: 'Lab', base_url: 'http://lab.test/v1', api_key: 'sk-lab-12345678', model: models[0], models }] })
+    const sidecar = new FakeSidecar()
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: p.profile_home === workHome ? lab(['lab-gone']) : lab(['lab-root']) }))
+    sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
+    sidecar.respond('plugins.providers', () => ({ providers: [] }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    const server = await bootTestServer({ sidecar, env: { HERMES_BASE_HOME: base } })
+    try {
+      const sid = String(((await json(await post(server, '/api/session/new', {}))).session as Json).session_id)
+      const session = await server.deps.sessionStore.get(sid)
+      Object.assign(session, { profile, model: 'lab-gone', model_provider: 'custom:lab' })
+      await server.deps.catalog.warmSessionModelRepair(base)
+      await server.deps.catalog.warmSessionModelRepair(workHome)
+      expect(server.deps.sessions.turnModel(session)).toEqual(['lab-root', 'custom:lab', true])
+    } finally {
+      await server.close()
+      rmSync(base, { recursive: true, force: true })
+    }
   })
 })
 

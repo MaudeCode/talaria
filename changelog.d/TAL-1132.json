@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A chat whose custom provider model was removed from that provider's configured model list continues on the provider's default, or its first listed model.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
