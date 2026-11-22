@@ -226,7 +226,7 @@ export async function authorizePublisherMutation(
   return { label: publisher.label };
 }
 
-async function grantsForProfile(
+export async function grantsForProfile(
   ctx: MutationCtx,
   publisherOwnerUserId: string,
   publisherId: string,
@@ -470,7 +470,7 @@ export const acceptSessionStarted = internalMutation({
     if (grants.length === 0) return { status: "unauthorized" as const };
     // TAL-232: delivery runs in its own transaction, so a push it cannot queue never refuses the event.
     await ctx.scheduler.runAfter(0, internal.delivery.enqueueSessionStarted, {
-      userIds: grants.map((grant) => grant.userId),
+      publisherOwnerUserId: args.publisherOwnerUserId,
       publisherId: args.publisherId,
       profileId: args.profileId,
       sessionId: args.sessionId,

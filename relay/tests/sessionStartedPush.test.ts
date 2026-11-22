@@ -75,3 +75,26 @@ it("queues nothing more when the same event arrives again after its pushes went 
   await runScheduledRecomputes(backend);
   expect(await pushes(backend)).toHaveLength(4);
 });
+
+it("sends nothing to a user who re-enrolled the publisher under another profile", async () => {
+  const backend = await relay();
+  const enroll = (profileId: string) => backend.run(async (ctx) => {
+    const grant = (await ctx.db.query("publisherGrants").collect()).find((row) => row.userId === "user-1")!;
+    await ctx.db.patch(grant._id, { profileId });
+  });
+  await backend.mutation(internal.publishers.acceptSessionStarted, sessionStarted("n1"));
+  await runScheduledRecomputes(backend);
+  const [queued] = await pushes(backend);
+
+  // Re-enrolled after the push was queued: claiming it drops it.
+  await enroll("profile-3");
+  await expect(backend.mutation(internal.delivery.claimJob, { jobId: queued!._id, now: now + 2 }))
+    .resolves.toEqual({ status: "stale" });
+
+  // Re-enrolled between the event and the scheduled fan-out: nothing is queued.
+  await enroll("profile-1");
+  await backend.mutation(internal.publishers.acceptSessionStarted, sessionStarted("n2", "started:session-4"));
+  await enroll("profile-3");
+  await runScheduledRecomputes(backend);
+  expect(await pushes(backend)).toHaveLength(2);
+});

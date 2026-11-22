@@ -1,6 +1,7 @@
 import { v, type Infer } from "convex/values";
 
 import { retainedStates } from "./completions";
+import { grantsForProfile } from "./publishers";
 import { sha256 } from "./lib/crypto";
 import { isPublisherStateVisible, publisherForGrant, visiblePublisherStates } from "./lib/publisherVisibility";
 import { activityPhase, isCurrentActivityState, isTerminalPhase } from "./lib/model";
@@ -233,6 +234,8 @@ async function enqueueJob(
     sourceApprovalHeadId?: string;
     sourceDecisionReviewId?: string;
     sourceAgentNotifyId?: string;
+    sourcePublisherOwnerUserId?: string;
+    sourceProfileId?: string;
     kind: Infer<typeof deliveryJobKindValidator>;
     request: ApnsRequest;
     aggregate?: ActivityAggregate;
@@ -261,6 +264,8 @@ async function enqueueJob(
     sourceApprovalHeadId: input.sourceApprovalHeadId,
     sourceDecisionReviewId: input.sourceDecisionReviewId,
     sourceAgentNotifyId: input.sourceAgentNotifyId,
+    sourcePublisherOwnerUserId: input.sourcePublisherOwnerUserId,
+    sourceProfileId: input.sourceProfileId,
     kind: input.kind,
     expectedToken: input.request.token,
     stateFingerprint: input.stateFingerprint,
@@ -311,13 +316,15 @@ export async function enqueueDisplacedActivityEnd(
 }
 
 // TAL-232: one silent push per enrolled device of each user the profile grant reaches, once per event and device. A
-// replayed or retried event finds the job it already queued, whatever its status, and queues nothing.
+// replayed or retried event finds the job it already queued, whatever its status, and queues nothing. Grants are read
+// here, not when the event arrived, so an enrollment that moved in between receives nothing.
 export const enqueueSessionStarted = internalMutation({
-  args: { userIds: v.array(v.string()), publisherId: v.string(), profileId: v.string(), sessionId: v.string(), eventId: v.string() },
+  args: { publisherOwnerUserId: v.string(), publisherId: v.string(), profileId: v.string(), sessionId: v.string(), eventId: v.string() },
   returns: v.null(),
   handler: async (ctx, args) => {
     const now = Date.now();
-    for (const userId of new Set(args.userIds)) {
+    const grants = await grantsForProfile(ctx, args.publisherOwnerUserId, args.publisherId, args.profileId);
+    for (const userId of new Set(grants.map((grant) => grant.userId))) {
       const devices = await ctx.db
         .query("devices")
         .withIndex("by_user_id_and_updated_at", (query) => query.eq("userId", userId))
@@ -339,6 +346,8 @@ export const enqueueSessionStarted = internalMutation({
           kind: "background",
           sourcePublisherId: args.publisherId,
           sourceSessionId: args.sessionId,
+          sourcePublisherOwnerUserId: args.publisherOwnerUserId,
+          sourceProfileId: args.profileId,
           request: makeSessionStartedPush({
             token: device.pushToken,
             bundleId: device.bundleId,
@@ -885,20 +894,23 @@ export const claimJob = internalMutation({
         if (
           !grant ||
           !isPublisherStateVisible(publisher, job.createdAt) ||
-          // TAL-232: a session-started push needs only the grant; the session may not have published state yet.
-          (job.kind !== "background" && (
-            !state ||
-            state.deleted ||
-            !isPublisherStateVisible(publisher, state.receivedAt) ||
-            // TAL-1970: a queued agent notice stays deliverable while its session state exists; the publisher decided muting.
-            (job.sourceAgentNotifyId === undefined && (
-              state.alertEligible === false ||
-              (job.sourceDecisionReviewId !== undefined
-                ? state.decisionReviewId !== job.sourceDecisionReviewId || !device.preferences.notifyOnInput
-                : (job.kind === "notification" && !alertForState(state, device.preferences)) ||
-                  (job.sourceApprovalHeadId === undefined
-                    ? !job.stateFingerprint.includes(`:${state.eventId}:`)
-                    : activityPhase(state) !== "waiting_for_approval" || state.approvalHeadId !== job.sourceApprovalHeadId))))))
+          // TAL-232: a session-started push needs only the enrollment it came from; the session may not have published
+          // state yet.
+          (job.kind === "background"
+            ? grant.publisherOwnerUserId !== job.sourcePublisherOwnerUserId || grant.profileId !== job.sourceProfileId
+            : (
+              !state ||
+              state.deleted ||
+              !isPublisherStateVisible(publisher, state.receivedAt) ||
+              // TAL-1970: a queued agent notice stays deliverable while its session state exists; the publisher decided muting.
+              (job.sourceAgentNotifyId === undefined && (
+                state.alertEligible === false ||
+                (job.sourceDecisionReviewId !== undefined
+                  ? state.decisionReviewId !== job.sourceDecisionReviewId || !device.preferences.notifyOnInput
+                  : (job.kind === "notification" && !alertForState(state, device.preferences)) ||
+                    (job.sourceApprovalHeadId === undefined
+                      ? !job.stateFingerprint.includes(`:${state.eventId}:`)
+                      : activityPhase(state) !== "waiting_for_approval" || state.approvalHeadId !== job.sourceApprovalHeadId))))))
         ) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           return { status: "stale" as const };
