@@ -25,42 +25,60 @@ function shownText(m: Row): string {
  */
 const fold = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replaceAll('ς', 'σ')
 
-/** `text` folded, with each folded UTF-16 unit's source code point as `[start, end)` in `text`. */
-function folded(text: string): { text: string; from: number[]; to: number[] } {
-  let out = ''
-  const from: number[] = []
-  const to: number[] = []
-  let at = 0
-  for (const cp of text) {
-    const f = fold(cp)
-    out += f
-    for (let units = f.length; units > 0; units -= 1) { from.push(at); to.push(at + cp.length) }
-    at += cp.length
-  }
-  return { text: out, from, to }
+/** How many folded units the code point at `at` becomes, and its UTF-16 length; ASCII folds to one unit without normalizing. */
+function unitAt(text: string, at: number): { width: number; length: number } {
+  const code = text.codePointAt(at)!
+  if (code < 0x80) return { width: 1, length: 1 }
+  const cp = String.fromCodePoint(code)
+  return { width: fold(cp).length, length: cp.length }
 }
 
-/** Non-overlapping ranges of `query` in `text`, case- and accent-blind; a match keeps the combining marks that follow it. */
-export function findRanges(text: string, query: string): { start: number; end: number }[] {
+interface Range { start: number; end: number }
+
+/**
+ * At most `limit` non-overlapping ranges of `query` in `text`, case- and accent-blind; a match keeps the combining marks
+ * that follow it. Offsets are mapped back in one walk that stops at the last match, holding no per-character index.
+ */
+export function findRanges(text: string, query: string, limit = Number.POSITIVE_INFINITY): Range[] {
   const needle = fold(query)
-  // The whole-text fold is native and cheap; only a row that matches pays for the per-character map.
-  if (!needle.trim() || !fold(text).includes(needle)) return []
-  const hay = folded(text)
-  const ranges: { start: number; end: number }[] = []
-  for (let i = hay.text.indexOf(needle); i >= 0; i = hay.text.indexOf(needle, i + needle.length)) {
-    let end = hay.to[i + needle.length - 1]!
-    // Marks fold to nothing, so the next folded unit starts past them: they belong to the last matched character.
+  if (!needle.trim() || limit <= 0) return []
+  const hay = fold(text)
+  const starts: number[] = []
+  for (let i = hay.indexOf(needle); i >= 0 && starts.length < limit; i = hay.indexOf(needle, i + needle.length)) starts.push(i)
+  const ranges: Range[] = []
+  // `unit` folded units come before the code point at `at`.
+  let at = 0
+  let unit = 0
+  let cp = starts.length ? unitAt(text, 0) : { width: 0, length: 0 }
+  const step = () => { unit += cp.width; at += cp.length; cp = unitAt(text, at) }
+  for (const first of starts) {
+    while (unit + cp.width <= first) step()
+    const start = at
+    const last = first + needle.length - 1
+    while (unit + cp.width <= last) step()
+    let end = at + cp.length
+    // Marks fold to nothing: they belong to the last matched character.
     while (end < text.length) {
-      const next = String.fromCodePoint(text.codePointAt(end)!)
-      if (fold(next)) break
+      const next = unitAt(text, end)
+      if (next.width) break
       end += next.length
     }
-    ranges.push({ start: hay.from[i]!, end })
+    ranges.push({ start, end })
   }
   return ranges
 }
 
-/** Every match among public detail `rows` starting at absolute `offset`, in transcript order. */
-export function sessionFindMatches(rows: readonly unknown[], offset: number, query: string): SessionFindMatch[] {
-  return rows.flatMap((m, index) => (isDict(m) ? findRanges(shownText(m), query).map((range) => ({ message_id: transcriptRowKey(m, offset + index), range })) : []))
+/** Find answers at most this many matches; `truncated` says more exist. */
+export const FIND_MATCH_LIMIT = 1000
+
+/** The first `FIND_MATCH_LIMIT` matches among public detail `rows` starting at absolute `offset`, in transcript order. */
+export function sessionFindMatches(rows: readonly unknown[], offset: number, query: string): { matches: SessionFindMatch[]; truncated: boolean } {
+  const matches: SessionFindMatch[] = []
+  for (const [index, m] of rows.entries()) {
+    if (matches.length > FIND_MATCH_LIMIT) break
+    if (!isDict(m)) continue
+    // One past the limit, to know whether more exist.
+    for (const range of findRanges(shownText(m), query, FIND_MATCH_LIMIT + 1 - matches.length)) matches.push({ message_id: transcriptRowKey(m, offset + index), range })
+  }
+  return { matches: matches.slice(0, FIND_MATCH_LIMIT), truncated: matches.length > FIND_MATCH_LIMIT }
 }

@@ -1608,7 +1608,8 @@ export type SessionOutline = z.infer<typeof SessionOutlineSchema>
  */
 export const SessionFindMatchSchema = z.object({ message_id: z.string(), range: z.object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative() }) })
 export type SessionFindMatch = z.infer<typeof SessionFindMatchSchema>
-export const SessionFindSchema = z.object({ session_id: z.string(), matches: z.array(SessionFindMatchSchema).describe('In transcript order, then text order; non-overlapping.') })
+export const SessionFindSchema = z.object({ session_id: z.string(), matches: z.array(SessionFindMatchSchema).max(1000).describe('In transcript order, then text order; non-overlapping; the first 1,000.'),
+  truncated: z.boolean().describe('Whether more matches exist past the first 1,000, which `matches` leaves out.') })
 export type SessionFind = z.infer<typeof SessionFindSchema>
 export const SkillsUsageSchema = z.looseObject({ usage: z.record(z.string(), z.looseObject({ use_count: z.number().optional(), view_count: z.number().optional(), patch_count: z.number().optional() })), skill_names: z.array(z.string()).optional(), total_invocations: z.number().optional(), unique_skills_used: z.number().optional() })
 export const MemorySchema = z.looseObject({

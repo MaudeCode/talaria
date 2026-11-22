@@ -1956,7 +1956,7 @@ export class SessionService {
     // A blank query matches nothing; its metadata read still answers 404 for an unknown session.
     const detail = await this.detail(sid, { messages: q.trim() ? '1' : '0' })
     const rows = q.trim() && Array.isArray(detail.messages) ? detail.messages : []
-    return { session_id: str(detail.session_id) || sid, matches: sessionFindMatches(rows, Number(detail._messages_offset) || 0, q) }
+    return { session_id: str(detail.session_id) || sid, ...sessionFindMatches(rows, Number(detail._messages_offset) || 0, q) }
   }
 
   /**

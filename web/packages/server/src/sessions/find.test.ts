@@ -51,8 +51,19 @@ describe('GET /api/session/find (TAL-2666)', () => {
 
   it('answers no matches for an empty or missing query', async () => {
     const sid = await seeded('find-empty', [{ role: 'user', content: '  spaced  ', message_id: 'u1', timestamp: 1 }])
-    expect(await find(sid, '  ')).toEqual({ session_id: sid, matches: [] })
-    expect(await find(sid)).toEqual({ session_id: sid, matches: [] })
+    expect(await find(sid, '  ')).toEqual({ session_id: sid, matches: [], truncated: false })
+    expect(await find(sid)).toEqual({ session_id: sid, matches: [], truncated: false })
+  })
+
+  it('answers the first 1,000 matches across rows and says more exist', async () => {
+    const sid = await seeded('find-capped', [
+      { role: 'user', content: 'a'.repeat(999), message_id: 'u1', timestamp: 1 },
+      { role: 'user', content: 'aa', message_id: 'u2', timestamp: 2 },
+    ])
+    const { matches, truncated } = await find(sid, 'A')
+    expect([matches.length, truncated]).toEqual([1000, true])
+    expect(matches.at(-1)).toEqual({ message_id: 'u2', range: { start: 0, end: 1 } })
+    expect((await find(sid, 'aaa')).truncated).toBe(false)
   })
 
   it('answers 404 for an unknown session', async () => {

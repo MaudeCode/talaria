@@ -16,6 +16,7 @@
       { "message_id": "u1", "range": { "start": 13, "end": 17 } },
       { "message_id": "a2", "range": { "start": 4, "end": 8 } },
       { "message_id": "a2", "range": { "start": 38, "end": 42 } }
-    ]
+    ],
+    "truncated": false
   }
 }

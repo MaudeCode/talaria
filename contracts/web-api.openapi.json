@@ -15607,6 +15607,7 @@
                     },
                     "matches": {
                       "type": "array",
+                      "maxItems": 1000,
                       "items": {
                         "type": "object",
                         "properties": {
@@ -15638,12 +15639,17 @@
                           "range"
                         ]
                       },
-                      "description": "In transcript order, then text order; non-overlapping."
+                      "description": "In transcript order, then text order; non-overlapping; the first 1,000."
+                    },
+                    "truncated": {
+                      "type": "boolean",
+                      "description": "Whether more matches exist past the first 1,000, which `matches` leaves out."
                     }
                   },
                   "required": [
                     "session_id",
-                    "matches"
+                    "matches",
+                    "truncated"
                   ]
                 }
               }
