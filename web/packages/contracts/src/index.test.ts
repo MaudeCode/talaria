@@ -487,3 +487,12 @@ it('pins the explicit native captured-command route and bounded result', async (
   expect(CapturedCommandResultSchema.parse(fixture.result)).toEqual(fixture.result)
   expect(CapturedCommandResultSchema.safeParse({ stdout: 'x'.repeat(8001), stderr: '', code: 0 }).success).toBe(false)
 })
+
+it('pins the native handoff views and closes its request (TAL-2641)', async () => {
+  const { SessionHandoffSchema, SessionHandoffRequestSchema } = await import('./index.js')
+  const views = shared('fixtures/native-handoff.json') as Record<string, unknown>
+  for (const view of Object.values(views)) expect(SessionHandoffSchema.parse(view)).toEqual(view)
+  expect(SessionHandoffRequestSchema.safeParse({ session_id: 's', action: 'request', platform: 'telegram' }).success).toBe(true)
+  for (const invalid of [{ session_id: 's', action: 'request' }, { session_id: 's', action: 'request', platform: 'Tele gram' }, { session_id: 's', action: 'read', platform: 'telegram' }])
+    expect(SessionHandoffRequestSchema.safeParse(invalid).success).toBe(false)
+})

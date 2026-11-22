@@ -22,7 +22,7 @@ _ACTIONS = {"snapshot", "watch", "transcript", "context_detail", "submit", "rece
             "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec", "react",
             "connection_status", "connection_wake", "connection_respond", "connection_retry",
             "work_list", "work_tail", "work_transcript", "work_stop", "work_steer", "launch_background", "launch_btw",
-            "command_dispatch", "command_catalog"}
+            "command_dispatch", "command_catalog", "handoff_state", "handoff_request", "handoff_fail"}
 _SIDE_EVENTS = {"background.complete", "btw.complete"}
 # TAL-1338: a review's summary (a ``/refine`` or a turn's own review) belongs to the session, not to a turn.
 _REVIEW_EVENT = "review.summary"
@@ -33,6 +33,13 @@ _COMMAND_NAME = re.compile(r"[A-Za-z][\w-]{0,63}", re.ASCII)
 _COMMAND_OUTPUT_MAX = 64000
 _CONNECTION_ACTIONS = {action for action in _ACTIONS if action.startswith("connection_")}
 _WORK_ACTIONS = {action for action in _ACTIONS if action.startswith("work_")}
+_HANDOFF_ACTIONS = {action for action in _ACTIONS if action.startswith("handoff_")}
+# TAL-2641: the owner's ``handoff.*`` states; anything else it sends is not one of them.
+_HANDOFF_STATES = {"pending", "running", "completed", "failed"}
+# The owner's refusal codes Web words itself; any other refusal is ``refused``.
+_HANDOFF_REFUSALS = {"session_busy", "unknown_execution", "permission_denied", "not_found", "profile_mismatch", "runtime_draining"}
+# What a user's cancel records as the failed handoff's reason, and how long a watcher's reason may be.
+_HANDOFF_CANCELLED, _HANDOFF_ERROR_MAX = "cancelled from Talaria", 500
 # The owner's own refusals for a row it no longer lists for this session (a cold session, an exited child or process).
 _WORK_GONE = {"not_found", "process_not_found"}
 _CONNECTION_EVENTS = {"connection.request", "connection.update"}
@@ -491,6 +498,78 @@ async def _work_action(client, params: dict, described: dict) -> dict:
         return {**result, "work_outcome": "not_found"}
 
 
+def _handoff_destinations() -> list[dict]:
+    """TAL-2641: the home channels the bound profile's owner would hand a session to, by the Agent's own rule
+    (``resolve_handoff_home``), so the user sees where it goes before asking. Only the platform and the channel's display
+    name leave; never a chat id or a credential. Runs under the caller's profile binding."""
+    try:
+        from gateway.config import load_gateway_config
+        from gateway.handoff_target import resolve_handoff_home
+        platforms = load_gateway_config().platforms
+    except Exception:  # noqa: BLE001 - an unreadable gateway config offers no destination
+        return []
+    rows = []
+    for platform, config in platforms.items():
+        if not getattr(getattr(config, "home_channel", None), "chat_id", None):
+            continue
+        try:
+            channel = resolve_handoff_home(platform.value)
+        except Exception:  # noqa: BLE001 - the owner would refuse this platform too
+            continue
+        name = channel.name if isinstance(channel.name, str) and channel.name.strip() else platform.value
+        rows.append({"platform": platform.value, "home_name": name.strip()[:120]})
+    return sorted(rows, key=lambda row: row["platform"])
+
+
+def _handoff_refusal(exc) -> str:
+    """The owner's refusal as a closed code. Its wire message is human text and never leaves; ``data`` names the reason."""
+    data = getattr(exc, "data", None)
+    data = data if isinstance(data, dict) else {}
+    reason = data.get("reason") or str(exc)
+    if reason == "session_busy" and data.get("field") == "handoff":
+        return "handoff_in_flight"
+    if reason == "invalid_params" and data.get("field") == "platform":
+        return "destination_unavailable"
+    return reason if reason in _HANDOFF_REFUSALS else "refused"
+
+
+async def _handoff_action(client, params: dict, sid: str) -> dict:
+    """TAL-2641: one ``handoff.*`` verb on the session's owner, then its state read back. The owner authorizes each verb
+    and fences durable work in its own transaction; the gateway's watcher claims and moves the route. A request or cancel
+    whose reply is lost is ``unknown`` and is never sent again: the state read, here or on the caller's next read, says
+    what happened. A cancel is the owner's compare-and-swap on ``pending``, so it never fails a claimed handoff."""
+    from hermes_cli.gateway_client import GatewayRPCError
+    from ..redaction import redact_key_shapes
+    action, outcome, refusal, home_name = params["action"], None, None, None
+    try:
+        if action == "handoff_request":
+            reply = await client.rpc("handoff.request", session_id=sid, platform=params["platform"])
+            queued = isinstance(reply, dict) and reply.get("queued") is True
+            outcome = "queued" if queued else "unknown"
+            if queued and isinstance(reply.get("home_name"), str):
+                home_name = reply["home_name"].strip()[:120] or None
+        elif action == "handoff_fail":
+            reply = await client.rpc("handoff.fail", session_id=sid, error=_HANDOFF_CANCELLED)
+            outcome = "unknown" if not isinstance(reply, dict) else "cancelled" if reply.get("failed") is True else "not_pending"
+    except GatewayRPCError as exc:
+        outcome, refusal = "refused", _handoff_refusal(exc)
+    except Exception:  # noqa: BLE001 - no native idempotency key: an uncertain reply must never be resent
+        outcome = "unknown"
+    try:
+        record = await client.rpc("handoff.state", session_id=sid)
+    except Exception:  # noqa: BLE001 - the state stays unread; the caller reads it again
+        record = None
+    record = record if isinstance(record, dict) else None
+    state = record.get("state") if record else None
+    error = record.get("error") if record else None
+    platform = record.get("platform") if record else None
+    return {"session_id": sid, "destinations": await asyncio.to_thread(_handoff_destinations),
+            "state": None if record is None else state if state in _HANDOFF_STATES else "",
+            "platform": platform.strip().lower()[:64] or None if isinstance(platform, str) else None,
+            "error": redact_key_shapes(error.strip())[:_HANDOFF_ERROR_MAX] or None if isinstance(error, str) else None,
+            "outcome": outcome, "refusal": refusal, "home_name": home_name}
+
+
 async def _run(ctx, params: dict, home: Path, discovery) -> dict:
     from hermes_cli.gateway_client import GatewayClientError, GatewayRPCError
 
@@ -499,6 +578,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
         return _refused("incompatible", "served_profile_sessions_unavailable")
     if params["action"] in {"terminal_info", "shell_exec"} and not _verified_contract(endpoint, "captured-command-v1"):
         return _refused("incompatible", "owner_shell_unsupported")
+    if params["action"] in _HANDOFF_ACTIONS and not _verified_contract(endpoint, "session-handoff-v1"):
+        return _refused("incompatible", "owner_handoff_unsupported")
     restarting = discovery.state != "ready"
     if restarting and params["action"] not in _RESTART_ACTIONS:
         return _refused("refused", "gateway_restarting")
@@ -581,6 +662,10 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                         "export": {"format": params["format"], "filename": value["filename"], "content": value["content"]}}
             snap = await snapshot()
             action = params["action"]
+            if action in _HANDOFF_ACTIONS:
+                # The resume makes the session resident, as the owner's verbs require; the session may be a compression tip.
+                return {"state": "attached", "reason": None, "snapshot": None, "receipt": None,
+                        "handoff": await _handoff_action(client, params, sid)}
             common = {"session_id": sid}
             if action in {"launch_background", "launch_btw"}:
                 launch = {"state": "failed", "task_id": None}
@@ -917,6 +1002,10 @@ def session(ctx, params: dict) -> dict:
         raise InvalidParams("images go with a submit, its owner identity and at most ten staged image kinds")
     if action in _CONNECTION_ACTIONS:
         _validate_connection(action, params)
+    if action in _HANDOFF_ACTIONS and (set(params) - {"profile_home", "session_id", "action", "platform"}
+            or (action == "handoff_request") != ("platform" in params)
+            or action == "handoff_request" and not (isinstance(params["platform"], str) and re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", params["platform"]))):
+        raise InvalidParams("a handoff takes its session and, to request one, a platform name")
     if action in _WORK_ACTIONS - {"work_list"} and (
             params.get("work_kind") not in ({"process", "subagent"} if action == "work_stop" else {"subagent"})
             or not isinstance(params.get("work_id"), str) or not params["work_id"]

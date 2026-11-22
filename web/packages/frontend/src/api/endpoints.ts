@@ -9,7 +9,7 @@ import { randomUuid } from '../lib/randomHex'
 import { orpc, timeout } from './orpc'
 import type { GroupOperation } from '@maudecode/talaria-web-contracts'
 
-import type { ConnectorOperationView, OwnerActionRequest, AgentImportSource } from '@maudecode/talaria-web-contracts'
+import type { ConnectorOperationView, OwnerActionRequest, AgentImportSource, SessionHandoffRequest } from '@maudecode/talaria-web-contracts'
 import type { DecisionAnswerInput, OutboundDraftAction, OutboundDraftRef, WebPushPreferences } from '@maudecode/talaria-web-contracts'
 import { postForm } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
@@ -42,6 +42,8 @@ const flag = (v: boolean | undefined) => (v ? '1' : undefined)
 const num = (v: number | undefined) => (v === undefined ? undefined : String(v))
 
 export const ownerAction = (input: OwnerActionRequest) => orpc().chat.ownerAction(input)
+/** TAL-2641: read, request or cancel the chat's native handoff. */
+export const nativeHandoff = (input: SessionHandoffRequest) => orpc().session.nativeHandoff(input)
 
 // Bootstrap and auth
 export const fetchBootstrap = () => orpc().bootstrap()

@@ -44,6 +44,8 @@ export const keys = {
     /** TAL-1649: refreshed with the session's other per-session reads when its turn settles. */
     skills: (id: string) => ['sessions', 'skills', id] as const,
     worktree: (id: string) => ['sessions', 'worktree', id] as const,
+    /** TAL-2641: the chat's native handoff, read while its dialog is open. */
+    handoff: (id: string) => ['sessions', 'handoff', id] as const,
     search: (q: string, filters: object) => ['sessions', 'search', q, filters] as const,
   },
   projects: ['projects'] as const,
