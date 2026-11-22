@@ -203,4 +203,3 @@ describe('screen viewer bridge (TAL-2380)', () => {
     expect(holder.holder).toBe('agent')
   })
 })
-
