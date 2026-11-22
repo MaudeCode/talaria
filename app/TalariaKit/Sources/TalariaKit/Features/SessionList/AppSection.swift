@@ -88,6 +88,16 @@ public enum RegularSplitLayout {
 public struct SidebarPresentation: Equatable, Sendable {
     public enum ToggleTarget: Equatable, Sendable { case column, drawer }
 
+    /// The chat's companion page where it shows only with the sidebar column hidden (TAL-1540).
+    public enum CompanionPage: Equatable, Sendable {
+        /// No page there, or one the reader hid with its own button: the column leaves it alone.
+        case none
+        /// The page shows beside the chat in the column's room.
+        case shown
+        /// The column took the page's room; hiding the column brings it back.
+        case suspended
+    }
+
     public let isLandscape: Bool
     public let tiled: Bool
     public let showsColumn: Bool
@@ -103,12 +113,19 @@ public struct SidebarPresentation: Equatable, Sendable {
     public let filesInspectorFits: Bool
     public let showsFilesInspector: Bool
     public let dismissesFilesInspector: Bool
+    public let companionPage: CompanionPage
+    /// The column the reader's toggle asks for: a page in the column's room gives way to it.
+    public let toggleShowsColumn: Bool
 
+    /// `hidesSidebarColumn`: a chat beside this one needs the column's room.
     public init(isRegularWidth: Bool, splitSize: CGSize, hasVerticalBar: Bool, storedChoice: Bool,
                 drawerIsPresented: Bool = false, columnIsVisible: Bool = false,
                 hidesSidebarColumn: Bool = false, hasVerticalDivision: Bool = false, hasSecondaryChat: Bool = false,
+                companionPage: CompanionPage = .none,
                 filesInspectorPresented: Bool = false, filesInspectorIsEligible: Bool = true,
                 filesInspectorOpeningIsLandscape: Bool? = nil) {
+        self.companionPage = companionPage
+        toggleShowsColumn = companionPage == .shown || !storedChoice
         isLandscape = Self.isLandscape(splitSize)
         columnIsForced = isRegularWidth && hasVerticalDivision && !hasSecondaryChat
         tiled = isRegularWidth && (columnIsForced || (isLandscape && splitSize.width >= 900))
@@ -119,7 +136,8 @@ public struct SidebarPresentation: Equatable, Sendable {
             && (filesInspectorOpeningIsLandscape == nil || filesInspectorOpeningIsLandscape == isLandscape)
         dismissesFilesInspector = filesInspectorPresented && !showsFilesInspector
         let filesNeedsRoom = showsFilesInspector && RegularSplitLayout.hidesSidebarForFilesInspector(splitWidth: splitSize.width)
-        showsColumn = columnIsForced || (tiled && storedChoice && !hidesSidebarColumn && !filesNeedsRoom && !drawerIsPresented)
+        showsColumn = columnIsForced || (tiled && storedChoice && !hidesSidebarColumn && companionPage != .shown
+            && !filesNeedsRoom && !drawerIsPresented)
         let secondaryUsesDrawer = hasSecondaryChat && hidesSidebarColumn
         drawerEnabled = secondaryUsesDrawer || (!tiled && !columnIsVisible)
         overlaysContent = isRegularWidth
@@ -130,6 +148,16 @@ public struct SidebarPresentation: Equatable, Sendable {
 
     public static func isLandscape(_ size: CGSize) -> Bool {
         size.height > 0 && size.width > size.height
+    }
+
+    /// The page once the reader shows or hides the column: showing it suspends a page in its room, and hiding it brings
+    /// back only a suspended page, so one the reader hid stays hidden.
+    public func companionPage(showingColumn: Bool) -> CompanionPage {
+        switch (companionPage, showingColumn) {
+        case (.shown, true): .suspended
+        case (.suspended, false): .shown
+        default: companionPage
+        }
     }
 
     /// Leaving a tiled layout consumes its native primary column, including a late UIKit visibility report.

@@ -118,4 +118,33 @@ final class SidebarPresentationTests: XCTestCase {
             XCTAssertEqual(presentation.toggleTarget, .drawer)
         }
     }
+
+    /// TAL-1540: the first Sidebar press suspends the page in the column's room; the second brings it back. A page the
+    /// reader hid stays hidden through both presses.
+    func testTheSecondSidebarPressRestoresOnlyASuspendedCompanionPage() {
+        func presentation(_ page: SidebarPresentation.CompanionPage, stored: Bool) -> SidebarPresentation {
+            SidebarPresentation(isRegularWidth: true, splitSize: CGSize(width: 951, height: 669), hasVerticalBar: true,
+                                storedChoice: stored, companionPage: page)
+        }
+        let shown = presentation(.shown, stored: false)
+        XCTAssertFalse(shown.showsColumn, "The page holds the column's room")
+        XCTAssertTrue(shown.toggleShowsColumn, "The reader's press opens the column beside the page")
+        XCTAssertEqual(shown.companionPage(showingColumn: true), .suspended)
+        // A page shown over a column the reader had open still gives way to the first press.
+        XCTAssertTrue(presentation(.shown, stored: true).toggleShowsColumn)
+
+        let suspended = presentation(.suspended, stored: true)
+        XCTAssertTrue(suspended.showsColumn, "A suspended page leaves the column its room")
+        XCTAssertFalse(suspended.toggleShowsColumn, "The second press hides the column")
+        XCTAssertEqual(suspended.companionPage(showingColumn: false), .shown, "The second press brings the page back")
+        XCTAssertFalse(presentation(.shown, stored: false).showsColumn, "The page takes its room back")
+
+        let hidden = presentation(.none, stored: false)
+        XCTAssertTrue(hidden.toggleShowsColumn)
+        XCTAssertEqual(hidden.companionPage(showingColumn: true), .none, "Opening the column suspends no hidden page")
+        let hiddenOpen = presentation(.none, stored: true)
+        XCTAssertTrue(hiddenOpen.showsColumn)
+        XCTAssertFalse(hiddenOpen.toggleShowsColumn)
+        XCTAssertEqual(hiddenOpen.companionPage(showingColumn: false), .none, "Hiding the column brings back no hidden page")
+    }
 }

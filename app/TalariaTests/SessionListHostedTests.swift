@@ -2174,19 +2174,20 @@ extension RegularSplitHostedTests {
     }
 
     /// The fixture chat opened from the sidebar in a window of `size`, with the companion run started when `writes`.
-    /// A `display` lets the test fold the Duo; `reducesMotion` forces Reduce Motion on.
+    /// A `display` lets the test fold the Duo; `reducesMotion` forces Reduce Motion on; `animated` lets panels move.
     private func openCompanionChat(
         _ scenario: [String],
         size: CGSize,
         compact: Bool = false,
         writes: Bool = true,
         display: HostedDuoDisplay? = nil,
-        reducesMotion: Bool = false
+        reducesMotion: Bool = false,
+        animated: Bool = false
     ) async throws -> UIWindow {
         let fixture = try FixtureApp(scenario, for: self)
         let list = AnyView(fixture.sessionList().environment(\._accessibilityReduceMotion, reducesMotion))
         let content = display.map { AnyView(FoldingDisplay(display: $0, content: list)) } ?? list
-        let window = try hostWindow(content, size: size) {
+        let window = try hostWindow(content, size: size, animationsEnabled: animated) {
             $0.horizontalSizeClass = compact ? .compact : .regular
             $0.verticalSizeClass = .regular
         }
@@ -2229,18 +2230,7 @@ extension RegularSplitHostedTests {
 
     /// The page's opacity as drawn: every view above the file's scroll view, below its heading.
     private func companionPageOpacity(in window: UIWindow) -> Float? {
-        guard let heading = companionPage(in: window)?.accessibilityFrame else { return nil }
-        func scrollView(in view: UIView) -> UIScrollView? {
-            if let scroll = view as? UIScrollView, view.window != nil {
-                let frame = scroll.convert(scroll.bounds, to: nil)
-                if frame.minX >= heading.minX - 32, frame.minY >= heading.maxY - 8 { return scroll }
-            }
-            for subview in view.subviews {
-                if let scroll = scrollView(in: subview) { return scroll }
-            }
-            return nil
-        }
-        guard let file = scrollView(in: window) else { return nil }
+        guard let file = companionPageScrollView(in: window) else { return nil }
         return sequence(first: file as UIView, next: \.superview).reduce(Float(1)) { $0 * ($1.layer.presentation() ?? $1.layer).opacity }
     }
 
@@ -2263,11 +2253,14 @@ extension RegularSplitHostedTests {
     private func isBarButtonDrawn(_ label: String, in window: UIWindow) -> Bool { barButtonDrawn(label, in: window) != nil }
 
     /// The chat's Companion Page item among the detail column's bar items.
-    private func companionPageItem(in window: UIWindow) -> UIBarButtonItem? {
+    private func companionPageItem(in window: UIWindow) -> UIBarButtonItem? { detailBarItem("Companion Page", in: window) }
+
+    /// The detail column's bar item titled `title`.
+    private func detailBarItem(_ title: String, in window: UIWindow) -> UIBarButtonItem? {
         guard let detail = HostedAccessibility.splitViewController(under: window.rootViewController)?.viewController(for: .secondary)
         else { return nil }
         return HostedAccessibility.toolbarItems(under: detail).first {
-            $0.title == "Companion Page" || $0.accessibilityLabel == "Companion Page" || $0.primaryAction?.title == "Companion Page"
+            $0.title == title || $0.accessibilityLabel == title || $0.primaryAction?.title == title
         }
     }
 
@@ -2410,6 +2403,274 @@ extension RegularSplitHostedTests {
             let toggled = await awaitCondition { showsSidebar() == opens }
             XCTAssertTrue(toggled, "After hiding the page the Sidebar button did not \(opens ? "open" : "close") the column")
         }
+    }
+
+    /// TAL-1540: the first Sidebar press suspends the page and the second brings it back as the reader left it, Changes
+    /// on, the chat fitting its pane and keeping the reader's draft each time.
+    func testTheSecondSidebarPressBringsBackTheSuspendedCompanionPage() async throws {
+        let (window, split) = try await openChatBesideCompanionPage()
+        func showsSidebar() -> Bool { split.displayMode == .oneBesideSecondary }
+        // The reader's draft survives both presses.
+        let draft = "Keep this draft"
+        try await typeIntoComposer(draft, in: window)
+        window.endEditing(true)
+        let changes = await drawnBarButton("Changes", in: window)
+        press(try XCTUnwrap(changes, "The page offers no Changes"))
+        let changesOn = await awaitCondition { self.detailBarItem("Changes", in: window)?.isSelected == true }
+        XCTAssertTrue(changesOn, "Changes did not turn on")
+        attachHostedScreenshot(window, name: "duo-companion-beside-chat")
+        for opens in [true, false] {
+            let moment = opens ? "opening the column" : "closing the column"
+            try await pressSidebar(in: window)
+            let settled = await awaitCondition { showsSidebar() == opens && (self.companionPage(in: window) == nil) == opens }
+            XCTAssertTrue(settled, "\(moment.capitalized) left the sidebar \(showsSidebar() ? "shown" : "hidden") and the page "
+                          + "\(companionPage(in: window) == nil ? "hidden" : "shown")")
+            XCTAssertEqual(companionPageItem(in: window)?.isSelected, !opens, "After \(moment) the Companion Page button misreads")
+            if !opens {
+                let keptChanges = await awaitCondition { self.detailBarItem("Changes", in: window)?.isSelected == true }
+                XCTAssertTrue(keptChanges, "The page came back with Changes off")
+            }
+            let kept = await awaitCondition { self.composerDraftText(in: window) == draft }
+            XCTAssertTrue(kept, "After \(moment) the composer holds \(String(describing: composerDraftText(in: window)))")
+            let paneMaxX = opens ? window.bounds.maxX : frame(await companionTitle("Alpha.swift", in: window)).minX
+            try await assertTheChatLiesInsideItsPane(in: window, split: split, paneMaxX: paneMaxX, "after \(moment)")
+            attachHostedScreenshot(window, name: opens ? "duo-companion-suspended-by-sidebar" : "duo-companion-restored-by-sidebar")
+        }
+    }
+
+    /// TAL-1540: the page the column suspends comes back at the reader's place in its file, not at the file's top.
+    func testTheSuspendedCompanionPageComesBackAtTheReadersPlace() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat([UITestFixtureEnvironment.companionFocusArgument], size: HostedSize.duoInnerLandscape,
+                                                 writes: false)
+        let split = try XCTUnwrap(HostedAccessibility.splitViewController(under: window.rootViewController))
+        let gamma = await companionTitle("Gamma.swift", in: window)
+        XCTAssertNotNil(gamma, "The companion page never showed")
+        var file: UIScrollView?
+        let scrollable = await awaitCondition {
+            file = self.companionPageScrollView(in: window)
+            return (file?.contentSize.height ?? 0) > (file?.bounds.height ?? 0) + 400
+        }
+        XCTAssertTrue(scrollable, "The page's file never ran past its pane")
+        let reading = try XCTUnwrap(file).contentOffset.y + 400
+        file?.setContentOffset(CGPoint(x: 0, y: reading), animated: false)
+        settle(window: window)
+        for opens in [true, false] {
+            try await pressSidebar(in: window)
+            let toggled = await awaitCondition { (split.displayMode == .oneBesideSecondary) == opens }
+            XCTAssertTrue(toggled, "The Sidebar button did not \(opens ? "open" : "close") the column")
+        }
+        let kept = await awaitCondition {
+            abs((self.companionPageScrollView(in: window)?.contentOffset.y ?? 0) - reading) < 1
+        }
+        XCTAssertTrue(kept, "The page came back at \(String(describing: companionPageScrollView(in: window)?.contentOffset.y)), "
+                      + "not the reader's \(reading)")
+    }
+
+    /// TAL-1540: a page the reader hid with its own button stays hidden as the Sidebar button opens and closes the column.
+    func testSidebarPressesLeaveAHiddenCompanionPageHidden() async throws {
+        let (window, split) = try await openChatBesideCompanionPage()
+        try await pressCompanionPageButton(in: window)
+        let hidden = await awaitCondition { self.companionPage(in: window) == nil }
+        XCTAssertTrue(hidden, "The Companion Page button did not hide the page")
+        for opens in [true, false] {
+            try await pressSidebar(in: window)
+            let toggled = await awaitCondition { (split.displayMode == .oneBesideSecondary) == opens }
+            XCTAssertTrue(toggled, "Beside a hidden page the Sidebar button did not \(opens ? "open" : "close") the column")
+            settle(0.5)
+            XCTAssertNil(companionPage(in: window), "A Sidebar press brought back the page the reader hid")
+        }
+    }
+
+    /// TAL-1540: as the column opens, the page slides out with it in the same frames, the chat taking its width first.
+    func testTheCompanionPageSlidesOutAsTheSidebarColumnOpens() async throws {
+        try await assertThePageMovesWithTheColumn(opening: true, reducesMotion: false)
+    }
+
+    /// TAL-1540: as the column closes, the suspended page slides back with it in the same frames.
+    func testTheSuspendedCompanionPageSlidesBackAsTheSidebarColumnCloses() async throws {
+        try await assertThePageMovesWithTheColumn(opening: false, reducesMotion: false)
+    }
+
+    /// TAL-1540: under Reduce Motion the page leaves in the same frame the column jumps open.
+    func testUnderReduceMotionTheCompanionPageLeavesAsTheColumnJumpsOpen() async throws {
+        try await assertThePageMovesWithTheColumn(opening: true, reducesMotion: true)
+    }
+
+    /// TAL-1540: under Reduce Motion the suspended page returns in the same frame the column jumps closed.
+    func testUnderReduceMotionTheSuspendedCompanionPageReturnsAsTheColumnJumpsClosed() async throws {
+        try await assertThePageMovesWithTheColumn(opening: false, reducesMotion: true)
+    }
+
+    /// The fixture chat at the Duo's inner landscape with its page showing in the sidebar column's room.
+    private func openChatBesideCompanionPage(reducesMotion: Bool = false,
+                                             animated: Bool = false) async throws -> (UIWindow, UISplitViewController) {
+        try requireArrangement()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInnerLandscape,
+                                                 reducesMotion: reducesMotion, animated: animated)
+        let split = try XCTUnwrap(HostedAccessibility.splitViewController(under: window.rootViewController))
+        let alpha = await companionTitle("Alpha.swift", in: window)
+        XCTAssertNotNil(alpha, "The companion page never showed")
+        let pageHasRoom = await awaitCondition { split.displayMode != .oneBesideSecondary }
+        XCTAssertTrue(pageHasRoom, "The page did not take the sidebar column's room")
+        window.endEditing(true)
+        return (window, split)
+    }
+
+    private func pressSidebar(in window: UIWindow) async throws {
+        let button = await barButton("Sidebar", in: window) { window.bounds.contains($0) }
+        press(try XCTUnwrap(button, "The chat has no Sidebar button"))
+    }
+
+    /// The press `opening` or closing the column beside the page, sampled frame by frame in a window that animates; a
+    /// close first opens the column unsampled.
+    private func assertThePageMovesWithTheColumn(opening: Bool, reducesMotion: Bool) async throws {
+        let (window, split) = try await openChatBesideCompanionPage(reducesMotion: reducesMotion, animated: true)
+        let loaded = await awaitCondition { self.companionPageScrollView(in: window) != nil }
+        XCTAssertTrue(loaded, "The page shows no file")
+        let pageWidth = try XCTUnwrap(companionPageScrollView(in: window)).bounds.width
+        if !opening {
+            try await pressSidebar(in: window)
+            let opened = await awaitCondition { split.displayMode == .oneBesideSecondary && self.companionPage(in: window) == nil }
+            XCTAssertTrue(opened, "The column did not open in the page's room")
+            _ = await awaitQuiet { self.transcriptScrollView(in: window)?.bounds.width }
+        }
+        let motion = try await sampleSidebarPress(in: window, split: split, pageWidth: pageWidth)
+        let settled = await awaitCondition { (split.displayMode == .oneBesideSecondary) == opening }
+        XCTAssertTrue(settled, "The column did not \(opening ? "open" : "close")")
+        motion.assertCoordinated(opening ? "opening the column" : "closing the column", reducesMotion: reducesMotion)
+    }
+
+    /// Each committed frame of one Sidebar press: the column's trailing edge and the page's leading edge as drawn, and the
+    /// chat transcript's laid-out width. A hidden column's edge is the window's leading edge; a page off screen, its
+    /// trailing edge.
+    @MainActor private struct SidebarPressMotion {
+        struct Sample { let column: CGFloat; let page: CGFloat; let chat: CGFloat? }
+        /// The chat's width before the press; the destination width can land before the first committed frame.
+        var chatBefore: CGFloat?
+        var samples: [Sample] = []
+
+        /// How far each frame's `edge` has moved from where it started toward where it ended.
+        private func progress(_ edge: (Sample) -> CGFloat) -> [CGFloat] {
+            guard let first = samples.first.map(edge), let last = samples.last.map(edge), abs(last - first) > 1 else {
+                return samples.map { _ in 0 }
+            }
+            return samples.map { (edge($0) - first) / (last - first) }
+        }
+
+        /// Whether some committed frame drew `edge` strictly between where it started and where it ended. A loaded runner
+        /// can commit a single frame inside a slide, near either end, so any such frame tells a slide from a jump.
+        private func drawsBetweenEnds(_ edge: (Sample) -> CGFloat) -> Bool {
+            guard let first = samples.first.map(edge), let last = samples.last.map(edge) else { return false }
+            return samples.map(edge).contains { abs($0 - first) > 0.5 && abs($0 - last) > 0.5 }
+        }
+
+        /// The panels move in the same frames: each frame finds them the same way along their moves, a slide drawing a
+        /// frame between its ends and a jump none. The slow host commits few frames, so the test compares progress rather
+        /// than counting moving frames.
+        func assertCoordinated(_ moment: String, reducesMotion: Bool, file: StaticString = #filePath, line: UInt = #line) {
+            let moment = "\(moment) (frames column/page/chat: \(trace))"
+            let column = progress(\.column)
+            let page = progress(\.page)
+            XCTAssertGreaterThan(abs((samples.last?.column ?? 0) - (samples.first?.column ?? 0)), 1,
+                                 "The column did not move while \(moment)", file: file, line: line)
+            XCTAssertGreaterThan(abs((samples.last?.page ?? 0) - (samples.first?.page ?? 0)), 1,
+                                 "The page did not move while \(moment)", file: file, line: line)
+            for index in samples.indices where abs(column[index] - page[index]) > 0.35 {
+                XCTFail("Frame \(index) found the column \(Int(column[index] * 100))% and the page \(Int(page[index] * 100))% "
+                        + "along while \(moment)", file: file, line: line)
+            }
+            if reducesMotion {
+                XCTAssertFalse(drawsBetweenEnds(\.column) || drawsBetweenEnds(\.page),
+                               "Under Reduce Motion a panel slid while \(moment)", file: file, line: line)
+            } else {
+                XCTAssertTrue(drawsBetweenEnds(\.column) && drawsBetweenEnds(\.page),
+                              "A panel jumped while \(moment)", file: file, line: line)
+            }
+
+            let widths = ([chatBefore] + samples.map(\.chat)).compactMap { $0 }
+                .reduce(into: [CGFloat]()) { widths, width in
+                    if widths.last.map({ abs($0 - width) > 0.5 }) ?? true { widths.append(width) }
+                }
+            XCTAssertEqual(widths.count, 2, "While \(moment) the chat took widths \(widths), not one change", file: file, line: line)
+            if let change = samples.indices.first(where: { samples[$0].chat.map { abs($0 - (chatBefore ?? $0)) > 0.5 } ?? false }),
+               let firstMove = column.indices.first(where: { column[$0] > 0.05 || page[$0] > 0.05 }) {
+                XCTAssertLessThanOrEqual(change, firstMove, "While \(moment) the chat changed width after the panels began to move",
+                                         file: file, line: line)
+            }
+        }
+
+        /// Each frame's edges, for a failure's report.
+        var trace: String {
+            samples.enumerated().map { index, sample in
+                "\(index):\(Int(sample.column))/\(Int(sample.page))/\(sample.chat.map { String(Int($0)) } ?? "-")"
+            }.joined(separator: " ")
+        }
+    }
+
+    /// Presses Sidebar and samples every committed frame until both panels settle. The page is the scroll view `pageWidth`
+    /// wide: the one sliding replaces the one beside the chat.
+    private func sampleSidebarPress(in window: UIWindow, split: UISplitViewController,
+                                    pageWidth: CGFloat) async throws -> SidebarPressMotion {
+        func presented(_ view: UIView?) -> CGRect? {
+            guard let view, view.window === window else { return nil }
+            guard let layer = view.layer.presentation(), let windowLayer = window.layer.presentation() else {
+                return view.convert(view.bounds, to: window)
+            }
+            return layer.convert(layer.bounds, to: windowLayer)
+        }
+        // The accessibility tree trails the drawn frames, so both panes are found in the view tree.
+        var page: UIView?
+        func pageView() -> UIView? {
+            if let page, page.window === window { return page }
+            page = window.firstView(ofType: UIScrollView.self) {
+                !($0 is UICollectionView) && abs($0.bounds.width - pageWidth) < 2 && $0.bounds.height > window.bounds.height / 2
+                    && $0.convert($0.bounds, to: window).minX >= window.bounds.width / 3
+            }
+            return page
+        }
+        let button = await barButton("Sidebar", in: window) { window.bounds.contains($0) }
+        let sidebar = try XCTUnwrap(button, "The chat has no Sidebar button")
+        var motion = SidebarPressMotion()
+        motion.chatBefore = transcriptScrollView(in: window)?.bounds.width
+        func edges() -> [CGFloat] {
+            [max(0, presented(split.viewController(for: .primary)?.view)?.maxX ?? 0),
+             min(window.bounds.maxX, presented(pageView())?.minX ?? window.bounds.maxX)]
+        }
+        let showedColumn = split.displayMode == .oneBesideSecondary
+        try await sampleCommittedLayouts(in: window) {
+            let edges = edges()
+            motion.samples.append(.init(column: edges[0], page: edges[1], chat: self.transcriptScrollView(in: window)?.bounds.width))
+        } during: {
+            press(sidebar)
+            // Both panels have arrived once the column has its new mode and neither drawn edge moves.
+            _ = await awaitCondition { (split.displayMode == .oneBesideSecondary) != showedColumn }
+            _ = await awaitQuiet(edges)
+        }
+        return motion
+    }
+
+    /// The chat transcript's scroll view.
+    private func transcriptScrollView(in window: UIWindow) -> UIScrollView? {
+        window.firstView(ofType: ChatMessageMenuHostView.self)?.superview.flatMap {
+            sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
+        }
+    }
+
+    /// The scroll view of the companion page's file, below its heading.
+    private func companionPageScrollView(in window: UIWindow) -> UIScrollView? {
+        guard let heading = companionPage(in: window)?.accessibilityFrame else { return nil }
+        func find(_ view: UIView) -> UIScrollView? {
+            if let scroll = view as? UIScrollView, view.window != nil {
+                let frame = scroll.convert(scroll.bounds, to: nil)
+                if frame.minX >= heading.minX - 32, frame.minY >= heading.maxY - 8 { return scroll }
+            }
+            for subview in view.subviews {
+                if let scroll = find(subview) { return scroll }
+            }
+            return nil
+        }
+        return find(window)
     }
 
     /// TAL-1538: with the sidebar column already hidden, a page the agent opens takes no room from the column, so the

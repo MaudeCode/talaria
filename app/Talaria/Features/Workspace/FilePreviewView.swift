@@ -21,6 +21,10 @@ struct FilePreviewView: View {
     private let initialLine: Int?
     /// Off where the host names the file itself and the bar's title is someone else's, as beside a chat (TAL-1539).
     private let showsNavigationTitle: Bool
+    /// Off for a copy of the page whose controls another copy keeps in the bar (TAL-1540).
+    private let showsControls: Bool
+    /// Where the reader scrolled, kept by a host that shows the file in more than one place (TAL-1540).
+    private let scrollOffset: Binding<CGPoint>?
     @State private var viewModel: FilePreviewViewModel
     @State private var selectableText: SelectableTextPresentation?
     @State private var exportPayload: FileExportPayload?
@@ -36,13 +40,18 @@ struct FilePreviewView: View {
         entry: WorkspaceEntry,
         initialLine: Int? = nil,
         showsNavigationTitle: Bool = true,
+        showsControls: Bool = true,
+        scrollOffset: Binding<CGPoint>? = nil,
+        viewModel: FilePreviewViewModel? = nil,
         onAPIError: @escaping (Error) -> Void
     ) {
         self.entry = entry
         self.initialLine = initialLine
         self.showsNavigationTitle = showsNavigationTitle
+        self.showsControls = showsControls
+        self.scrollOffset = scrollOffset
         self.onAPIError = onAPIError
-        _viewModel = State(initialValue: FilePreviewViewModel(session: session, server: server, path: entry.path ?? ""))
+        _viewModel = State(initialValue: viewModel ?? FilePreviewViewModel(session: session, server: server, path: entry.path ?? ""))
     }
 
     var body: some View {
@@ -72,41 +81,7 @@ struct FilePreviewView: View {
         }
         .adaptiveReadableScrollContent(maxWidth: AdaptiveReadableContentWidth.workspace)
         .inlineNavigationTitle(showsNavigationTitle ? displayName : nil)
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if isSourcePreview {
-                    Button {
-                        wrapsLines.toggle()
-                    } label: {
-                        Image(systemName: wrapsLines ? "arrow.turn.down.left" : "arrow.left.and.right")
-                    }
-                    .accessibilityLabel(wrapsLines ? "Disable code line wrapping" : "Enable code line wrapping")
-                }
-
-                if viewModel.canSaveImageToPhotos {
-                    Button {
-                        Task { await saveImageToPhotos() }
-                    } label: {
-                        Image(systemName: "photo")
-                    }
-                    .disabled(exportActionsAreDisabled)
-                    .accessibilityLabel("Save image to Photos")
-                }
-            }
-
-            if viewModel.canExportFile {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await exportFile() }
-                    } label: {
-                        Label("Export file", systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(exportActionsAreDisabled)
-                    .accessibilityLabel("Export file")
-                }
-                .overflowPriority(.share)
-            }
-        }
+        .toolbar { if showsControls { previewToolbar } }
         .task(id: entry.path) {
             await loadFile()
         }
@@ -121,6 +96,43 @@ struct FilePreviewView: View {
             SelectableTextPresentationView(selection: selection)
         }
         .messageAlert("Saved", message: $saveConfirmationMessage)
+    }
+
+    @ToolbarContentBuilder
+    private var previewToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if isSourcePreview {
+                Button {
+                    wrapsLines.toggle()
+                } label: {
+                    Image(systemName: wrapsLines ? "arrow.turn.down.left" : "arrow.left.and.right")
+                }
+                .accessibilityLabel(wrapsLines ? "Disable code line wrapping" : "Enable code line wrapping")
+            }
+
+            if viewModel.canSaveImageToPhotos {
+                Button {
+                    Task { await saveImageToPhotos() }
+                } label: {
+                    Image(systemName: "photo")
+                }
+                .disabled(exportActionsAreDisabled)
+                .accessibilityLabel("Save image to Photos")
+            }
+        }
+
+        if viewModel.canExportFile {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await exportFile() }
+                } label: {
+                    Label("Export file", systemImage: "square.and.arrow.up")
+                }
+                .disabled(exportActionsAreDisabled)
+                .accessibilityLabel("Export file")
+            }
+            .overflowPriority(.share)
+        }
     }
 
     @ViewBuilder
@@ -162,6 +174,7 @@ struct FilePreviewView: View {
             }
             .padding()
         }
+        .keepsScrollOffset(scrollOffset)
         .contentShape(Rectangle())
         .contextMenu { copyActions(for: content) }
         .background(background)
@@ -181,7 +194,8 @@ struct FilePreviewView: View {
                 path: displayPath,
                 serverLanguage: file.language,
                 targetLine: initialLine,
-                wrapsLines: wrapsLines
+                wrapsLines: wrapsLines,
+                scrollOffset: scrollOffset
             )
         }
         .contentShape(Rectangle())
