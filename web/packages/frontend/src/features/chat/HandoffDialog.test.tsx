@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -51,13 +51,30 @@ describe('HandoffDialog (TAL-2641)', () => {
     expect(screen.getByRole('button', { name: 'Hand off' })).toBeEnabled()
   })
 
-  it('reads the state again after a failed write and never resends it', async () => {
-    vi.mocked(api.nativeHandoff).mockResolvedValueOnce(views.read!).mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(views.not_pending!)
+  it('offers no request while a failed write is reconciled, and never resends it', async () => {
+    let reread!: (view: SessionHandoff) => void
+    vi.mocked(api.nativeHandoff).mockResolvedValueOnce(views.read!).mockRejectedValueOnce(new Error('network'))
+      .mockReturnValueOnce(new Promise((resolve) => { reread = resolve }))
     open()
     await userEvent.click(await screen.findByRole('button', { name: 'Hand off' }))
+    await waitFor(() => { expect(screen.getByRole('status')).toHaveTextContent('did not confirm the request') })
+    expect(screen.getByRole('button', { name: 'Hand off' })).toBeDisabled()
+    reread(views.not_pending!)
     await waitFor(() => { expect(screen.getByRole('status')).toHaveTextContent('Handing off to telegram') })
     expect(showErrorToast).toHaveBeenCalledTimes(1)
     expect(vi.mocked(api.nativeHandoff).mock.calls.map(([input]) => input.action)).toEqual(['read', 'request', 'read'])
+  })
+
+  it('keeps reading a state the owner could not read until it answers', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      vi.mocked(api.nativeHandoff).mockResolvedValueOnce(views.unknown!).mockResolvedValueOnce(views.failed!)
+      open()
+      expect(await screen.findByText('The gateway did not confirm the request. Reading its state again.')).toBeInTheDocument()
+      await act(() => vi.advanceTimersByTimeAsync(2000))
+      expect(await screen.findByText(/not active in this gateway/)).toBeInTheDocument()
+      expect(vi.mocked(api.nativeHandoff).mock.calls.map(([input]) => input.action)).toEqual(['read', 'read'])
+    } finally { vi.useRealTimers() }
   })
 
   it.each([['unsupported', 'This Agent version cannot hand off chats.'], ['no_destination', 'No messaging platform has a home channel.']])('says why a %s chat cannot be handed off', async (name, text) => {

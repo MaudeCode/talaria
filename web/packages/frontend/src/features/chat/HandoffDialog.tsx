@@ -10,8 +10,9 @@ import { Select } from '../../ui/Select'
 import { LoadingState } from '../../ui/States'
 import { showErrorToast } from '../toast/errorToast'
 
-/** How often an open dialog rereads a handoff the gateway has yet to settle. */
+/** How often an open dialog rereads a handoff the gateway has yet to settle, or whose state it could not read. */
 const FOLLOW_MS = 2000
+const FOLLOWED = new Set<SessionHandoff['state']>(['pending', 'running', 'unknown'])
 
 const UNAVAILABLE: Record<NonNullable<SessionHandoff['unavailable_reason']>, () => string> = {
   not_owned: m.handoff_unavailable_not_owned, unsupported: m.handoff_unavailable_unsupported,
@@ -40,14 +41,15 @@ function statusLine(view: SessionHandoff): string | null {
 /**
  * TAL-2641: `/handoff`. Shows where the chat's own owner would hand it off, sends the request only on the user's
  * explicit action and follows the gateway until it settles. Every field is the server's; a request shows as queued at
- * once and falls back to the server's answer, and an unknown outcome is read again, never resent.
+ * once and converges on the server's answer. A write whose outcome is unknown, or a state the owner could not read, offers
+ * no request and is read again until the owner answers, never resent.
  */
 export function HandoffDialog({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const qc = useQueryClient()
   const key = keys.sessions.handoff(sessionId)
   const read = useQuery({
     queryKey: key, queryFn: () => api.nativeHandoff({ session_id: sessionId, action: 'read' }),
-    refetchInterval: (query) => query.state.data?.state === 'pending' || query.state.data?.state === 'running' ? FOLLOW_MS : false,
+    refetchInterval: (query) => query.state.data && FOLLOWED.has(query.state.data.state) ? FOLLOW_MS : false,
   })
   const [picked, setPicked] = useState<string | null>(null)
   const write = useMutation({
@@ -65,8 +67,8 @@ export function HandoffDialog({ sessionId, onClose }: { sessionId: string; onClo
       if (view.outcome === 'unknown') void qc.invalidateQueries({ queryKey: key })
     },
     onError: (error, _input, context) => {
-      if (context?.before) qc.setQueryData(key, context.before)
-      // The request may have reached the owner: read its state, never send again.
+      // The write may have reached the owner: offer nothing until a read says what it did, and never send it again.
+      if (context?.before) qc.setQueryData<SessionHandoff>(key, { ...context.before, state: 'unknown', outcome: 'unknown', refusal: null, can_request: false, can_cancel: false })
       void qc.invalidateQueries({ queryKey: key })
       showErrorToast(error)
     },
