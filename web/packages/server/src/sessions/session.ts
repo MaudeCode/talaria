@@ -64,7 +64,7 @@ export const METADATA_FIELDS = [
   'pinned', 'archived', 'project_id', 'profile',
   'input_tokens', 'output_tokens', 'estimated_cost',
   'cache_read_tokens', 'cache_write_tokens',
-  'personality', 'reasoning_effort', 'service_tier', 'active_stream_id',
+  'personality', 'reasoning_effort', 'active_stream_id',
   'pending_user_message', 'pending_attachments', 'pending_started_at', 'pending_user_source',
   'compression_anchor_visible_idx', 'compression_anchor_message_key',
   'compression_anchor_summary', 'pre_compression_snapshot',
@@ -557,6 +557,8 @@ export class Session {
     // Written only when set, so an unowned session's document keeps its existing shape; it precedes `messages`, so
     // metadata-only reads see it.
     if (this.owner_person_id) meta.owner_person_id = this.owner_person_id
+    // TAL-1423: likewise a chat's own speed, so a chat without one keeps its existing document bytes.
+    if (this.service_tier !== null) meta.service_tier = this.service_tier
     meta.message_count = this.messages.length
     meta.anchor_scene_index = anchorSceneIndexFromRecords(this.anchor_activity_scenes)
     this.anchorSceneIndex = { ...(meta.anchor_scene_index as Record<string, number>) }

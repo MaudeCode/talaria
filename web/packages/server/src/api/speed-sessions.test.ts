@@ -115,7 +115,7 @@ describe('per-chat speed tier', () => {
     tiersAnswer = 'fail'
     expect((await setSpeed(sid, 'priority')).status).toBe(503)
     expect((await speedOf(sid)).supported_speed_tiers).toEqual([])
-    expect((await persisted(sid)).service_tier).toBeNull()
+    expect(await persisted(sid)).not.toHaveProperty('service_tier')
     expect((await post(s, '/api/reasoning', { service_tier: 'priority' })).status).toBe(400)
     expect(configs.get(s.state)?.model).toEqual({ default: 'gpt-6-astra', provider: 'openai-codex', service_tier: 'priority' })
   })

@@ -64,8 +64,11 @@ test('an owner chat shows, sets and resets its own level through its owner', asy
   await expect(shown(page, 'Low')).toBeAttached()
   await expect.poll(() => chat.state.writes).toEqual([expect.objectContaining({ session_id: sid, action: 'mutate', operation: 'reasoning', payload: { effort: 'low' }, expected_revision: 2, execution_generation: 1 })])
   await page.screenshot({ path: info.outputPath(`chosen.png`) })
+  // A choice closes the menu (TAL-1423); reopened, it shows the owner's confirmed level.
+  await expect(page.getByRole('menu')).toHaveCount(0)
   answer()
-  await expect.poll(() => page.getByRole('menuitemradio', { name: 'Low' }).isChecked()).toBe(true)
+  await openPicker(page)
+  await expect(page.getByRole('menuitemradio', { name: 'Low' })).toBeChecked()
 
   // Reset gives the level back to the profile: the owner's answer names what that is.
   chat.state.apply = () => { chat.state.attachment = atLevel('medium', 4) }
