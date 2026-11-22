@@ -266,6 +266,18 @@ use as a session workspace:
 - Listings drop symlinks that resolve to system paths (`workspace/fs.ts`
   `listAnchored`).
 
+**Native owner path completion (TAL-1342).** `POST /api/chat/path-completions`
+never lists a directory on the Web host. It resolves the chat's owner for the
+request's profile (`sessions/gateway-sessions.ts` `completePath`) and asks that
+owner's `complete.path` for one word through the sidecar's closed `complete_path`
+action, which carries no root: the owner lists the session's frozen workspace and
+nothing for a remote or sandboxed backend. A request with any field besides
+`session_id` and `before` is refused. A word that is absolute, starts with `~` or a
+drive, or holds a `..` segment is refused before the owner is asked, and a
+candidate of that shape is dropped (`sessions/path-completion.ts`
+`outsideWorkspace`). The owner follows workspace symlinks as the agent's own file
+tools do, so a name it lists is one the session's agent can already read.
+
 **Escape grants.** A workspace symlink that points outside the workspace opens
 only through a read-only grant (`workspace/escape.ts` `EscapeGrants`):
 

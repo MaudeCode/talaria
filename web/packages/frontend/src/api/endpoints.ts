@@ -42,6 +42,7 @@ const flag = (v: boolean | undefined) => (v ? '1' : undefined)
 const num = (v: number | undefined) => (v === undefined ? undefined : String(v))
 
 export const ownerAction = (input: OwnerActionRequest) => orpc().chat.ownerAction(input)
+export const completePaths = (session_id: string, before: string, signal?: AbortSignal) => orpc().chat.pathCompletions({ session_id, before }, signal ? { signal } : {})
 
 // Bootstrap and auth
 export const fetchBootstrap = () => orpc().bootstrap()

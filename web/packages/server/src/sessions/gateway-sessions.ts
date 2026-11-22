@@ -13,7 +13,7 @@ import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
 import { taskView, taskTitle, isTerminal, startsBackgroundWork, type BackgroundTaskStore, type Receipt } from './background-tasks.js'
-import type { BackgroundTask, BackgroundTaskResult, SideLaunch } from '@maudecode/talaria-web-contracts'
+import type { BackgroundTask, BackgroundTaskResult, PathCompletions, SideLaunch } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts } from './pending.js'
 import { wrapExportHtml, renderSessionHtml, renderSessionMarkdown } from './export.js'
 import { approvalAllows, clarifyReply } from './pending.js'
@@ -34,6 +34,7 @@ import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles
 import { LiveActivityGroups } from './activity-groups.js'
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
 import { toolProgress } from './tool-display.js'
+import { outsideWorkspace, pathCompletionItems, pathCompletionWord } from './path-completion.js'
 import { deriveTodoState, normalizeTodoSnapshot, type PlanProgress } from './todo.js'
 import { catalogNames, offeredMove, ownerConnection, settledConnection, type ConnectorMove } from '../tools/connectors.js'
 
@@ -1203,6 +1204,22 @@ export class GatewaySessions {
     }
     const result = await this.call(target, { action: 'work_tail', ...fields })
     return result.state === 'attached' && result.work_tail?.available ? redactString(result.work_tail.text, this.deps.redactEnabled()) : null
+  }
+
+  /**
+   * TAL-1342: the path or reference before the caret, completed by the chat's owner from its frozen workspace. A word that
+   * names another root is refused before the owner is asked; the owner answers nothing for a remote or sandboxed backend.
+   */
+  async completePath(sid: string, before: string): Promise<PathCompletions> {
+    const none = (available: boolean, reason: PathCompletions['reason'] = null): PathCompletions => ({ available, reason, replace_from: null, items: [] })
+    const target = await this.target(sid)
+    if (!target) return none(false, 'not_owner_chat')
+    const word = pathCompletionWord(before)
+    if (!word) return none(true)
+    if (outsideWorkspace(word.word)) return none(true, 'outside_workspace')
+    const result = await this.call(target, { action: 'complete_path', word: word.word })
+    if (result.state !== 'attached' || !result.completion) return none(false, 'owner_unavailable')
+    return { available: true, reason: null, replace_from: word.replace_from, items: pathCompletionItems(result.completion.items, word.word) }
   }
 
   /** TAL-2072: a child's completion as its owner announced it, kept for the roster read that no longer lists the child. */

@@ -50,6 +50,7 @@ export const keys = {
   commands: ['commands'] as const,
   /** TAL-2314: the server's palette rows, one read per typed prefix. */
   commandSuggestions: (prefix: string) => ['commands', 'suggestions', prefix] as const,
+  pathCompletions: (sessionId: string, before: string) => ['chat', 'path-completions', sessionId, before] as const,
   /** TAL-1927: under `commands`, so a catalog refresh drops the decisions it made. */
   commandDecision: (text: string, sessionId: string | null) => ['commands', 'decision', sessionId, text] as const,
   commandExec: (sessionId: string | null) => ['command-exec', sessionId] as const,

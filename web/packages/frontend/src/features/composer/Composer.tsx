@@ -343,7 +343,13 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     if (next.trim()) clarify.clearSelection()
   }
   const canAnswer = !!value.trim() || !!clarify?.selected.length
-  const palette = useCommandPalette(clarify || room ? '' : text)
+  // TAL-1342: where the caret sits in the draft, so an owner chat's path completion reads and replaces the word before it.
+  // Kept per chat: another chat's draft starts with its caret at the end. A clarification answer never moves it.
+  const [caretAt, setCaretAt] = useState<{ sessionId: string | null; at: number } | null>(null)
+  const caret = caretAt?.sessionId === sessionId ? caretAt.at : null
+  const setCaret = (at: number) => { if (!clarify) setCaretAt({ sessionId, at }) }
+  const before = text.slice(0, caret ?? text.length)
+  const palette = useCommandPalette(clarify || room ? '' : text, nativeOwner && sessionId && !clarify && !room ? { sessionId, before } : null)
   // A newly resolved identity first adopts its text. Persisting the previous render would erase
   // the loaded draft or copy another owner's text; the identity state also preserves early typing.
   useDraftPersistence(draftIdentity === localStateId ? localStateId : null, text, !room && !session?.owner_attachment)
@@ -741,7 +747,14 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     await submit().finally(() => { submitting.current = false })
   }
 
-  const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
+  const applySuggestion = (s: CommandSuggestion) => {
+    if (!s.path) { setText(`/${s.name} `); textarea.current?.focus(); return }
+    // The server's insertion replaces the completed word; the rest of the draft stays as typed.
+    const end = s.path.from + s.path.insert.length
+    setText(text.slice(0, s.path.from) + s.path.insert + text.slice(before.length))
+    setCaret(end)
+    requestAnimationFrame(() => { textarea.current?.focus(); textarea.current?.setSelectionRange(end, end) })
+  }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     trackModifiers(e)
     wake()
@@ -933,9 +946,10 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
           rows={1}
           value={value}
           // Typing silences a reply being read aloud (Settings > Speech).
-          onChange={(e) => { stopSpeaking(); setValue(e.target.value) }}
+          onChange={(e) => { stopSpeaking(); setValue(e.target.value); setCaret(e.target.selectionEnd) }}
           onSelect={(event) => {
             const el = event.currentTarget
+            setCaret(el.selectionEnd)
             if (document.activeElement === el) lastCursor.current = { sessionId, cursor: { start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection } }
           }}
           onKeyDown={onKeyDown}

@@ -21,7 +21,7 @@ from .connectors import snapshot_view
 _ACTIONS = {"snapshot", "watch", "transcript", "context_detail", "submit", "receipt", "cancel", "steer", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
             "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec", "react",
             "connection_status", "connection_wake", "connection_respond", "connection_retry",
-            "work_list", "work_tail", "work_transcript", "work_stop", "work_steer", "launch_background", "launch_btw"}
+            "work_list", "work_tail", "work_transcript", "work_stop", "work_steer", "launch_background", "launch_btw", "complete_path"}
 _SIDE_EVENTS = {"background.complete", "btw.complete"}
 _CONNECTION_ACTIONS = {action for action in _ACTIONS if action.startswith("connection_")}
 _WORK_ACTIONS = {action for action in _ACTIONS if action.startswith("work_")}
@@ -39,6 +39,8 @@ _TRANSCRIPT = "session-transcript-v1"
 # A child's transcript as Background Work shows it: its newest rows, one page.
 _WORK_TRANSCRIPT_ROWS = 200
 _CONTROL_REFUSALS = {"owner_controls_unverified"}
+# TAL-1342: the owner lists at most 30 paths plus its directive and profile hints; anything past this is not its listing.
+_COMPLETION_MAX_ITEMS, _COMPLETION_MAX_TEXT = 100, 4096
 # The owner held state.db past the read budget while committing; the caller may retry.
 _STATE_BUSY, _STATE_BUSY_BUDGET = "owner_state_busy", 5.0
 # A read refused while the owner commits (its transcript kept changing under the read, or state.db stayed locked).
@@ -444,6 +446,25 @@ async def _work_action(client, params: dict, described: dict) -> dict:
         return {**result, "work_outcome": "not_found"}
 
 
+async def _complete_path(client, params: dict) -> dict:
+    """TAL-1342: the owner's ``complete.path`` for one word, rooted in the session's frozen workspace. Only the session and
+    the word go out: the owner ignores a client cwd, and none is sent. No resume: a cold session reads as not found."""
+    from hermes_cli.gateway_client import GatewayRPCError
+    try:
+        value = await client.rpc("complete.path", session_id=params["session_id"], word=params["word"])
+    except GatewayRPCError as exc:
+        if str(exc) in _WORK_GONE:
+            return _refused("refused", "not_found")
+        raise
+    items = value.get("items") if isinstance(value, dict) else None
+    if (not isinstance(items, list) or len(items) > _COMPLETION_MAX_ITEMS
+            or not all(isinstance(item, dict) and all(isinstance(item.get(key), str) and len(item[key]) <= _COMPLETION_MAX_TEXT
+                                                       for key in ("text", "display", "meta")) for item in items)):
+        return _refused("refused", "owner_completion_invalid")
+    return {"state": "attached", "reason": None, "snapshot": None, "receipt": None,
+            "completion": {"items": [{key: item[key] for key in ("text", "display", "meta")} for item in items]}}
+
+
 async def _run(ctx, params: dict, home: Path, discovery) -> dict:
     from hermes_cli.gateway_client import GatewayClientError, GatewayRPCError
 
@@ -496,6 +517,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 return await _connection_action(client, params, described)
             if params["action"] in _WORK_ACTIONS:
                 return await _work_action(client, params, described)
+            if params["action"] == "complete_path":
+                return await _complete_path(client, params)
             if params["action"] == "checkpoint_diff":
                 # The owner resolves the physical target and frozen policy. Never resume or read host files.
                 value = await asyncio.wait_for(client.rpc("rollback.session_diff", session_id=sid, _timeout=25), timeout=30)
@@ -791,6 +814,9 @@ def session(ctx, params: dict) -> dict:
         raise InvalidParams("transcript requires an order, a limit of 1 to 500 and at most a cursor")
     if action in _CONNECTION_ACTIONS:
         _validate_connection(action, params)
+    if action == "complete_path" and (set(params) - {"profile_home", "session_id", "action", "word"}
+                                      or not isinstance(params.get("word"), str) or not 0 < len(params["word"]) <= 512):
+        raise InvalidParams("complete_path takes one word and no root of its own")
     if action in _WORK_ACTIONS - {"work_list"} and (
             params.get("work_kind") not in ({"process", "subagent"} if action == "work_stop" else {"subagent"})
             or not isinstance(params.get("work_id"), str) or not params["work_id"]

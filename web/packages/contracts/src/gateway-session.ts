@@ -73,6 +73,25 @@ export const OwnerWorkSchema = z.object({
 export type OwnerWork = z.infer<typeof OwnerWorkSchema>
 /** TAL-1336: the owner's verdict on one work control. `found: false` and an exited process are distinct from a refusal. */
 export const OwnerWorkOutcomeSchema = z.enum(['stopped', 'not_running', 'not_found', 'queued', 'rejected'])
+/**
+ * TAL-1342: path and reference completion from a native owner chat's frozen workspace. The server finds the word before the
+ * caret, refuses one that names a root of its own (absolute, home or parent), asks the owner, and ships each candidate's
+ * label, kind and exact insertion text in the owner's order. Clients replace `before` from `replace_from` with `insert`.
+ */
+export const PATH_COMPLETION_LIMIT = 30
+export const PathCompletionRequestSchema = z.strictObject({
+  session_id: z.string().min(1), before: z.string().max(1024).describe('The draft up to the caret; at most its last 1024 UTF-16 units.'),
+})
+export const PathCompletionsSchema = z.object({
+  available: z.boolean().describe('False when this chat has no native owner to ask, or its owner could not answer.'),
+  reason: z.enum(['outside_workspace', 'not_owner_chat', 'owner_unavailable']).nullable(),
+  replace_from: z.number().int().nonnegative().nullable().describe('Where in `before` the completed word starts. Null: nothing to complete.'),
+  items: z.array(z.object({
+    label: z.string(), detail: z.string(), kind: z.enum(['file', 'folder', 'reference']),
+    insert: z.string().min(1).describe('Replaces `before` from `replace_from`; a reference value that needs quoting is quoted.'),
+  })).max(PATH_COMPLETION_LIMIT),
+})
+export type PathCompletions = z.infer<typeof PathCompletionsSchema>
 /** A detached native launch has no idempotency key. Unknown never permits an automatic resend. */
 export const SideLaunchStateSchema = z.enum(['pending', 'accepted', 'failed', 'unsupported', 'unknown'])
 /**
@@ -109,6 +128,8 @@ export const GatewaySessionResultSchema = z.object({
   work_transcript: z.object({ available: z.boolean(), running: z.boolean(), rows: OwnerTranscriptRowsSchema }).optional()
     .describe("`work_transcript`: a child's newest stored rows, running or finished; unavailable when its owner cannot place it."),
   work_outcome: OwnerWorkOutcomeSchema.optional().describe('`work_stop`, `work_steer`: what the owner did with this one row.'),
+  completion: z.object({ items: z.array(z.object({ text: z.string(), display: z.string(), meta: z.string() })).max(100) }).optional()
+    .describe("`complete_path`: the owner's listing for `word` in the session's frozen workspace, as it answered."),
   lock: z.object({ status: z.enum(['ok', 'expired']), remaining: z.array(z.string()).optional() }).optional()
     .describe('`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.'),
 })
@@ -126,7 +147,7 @@ export const ConnectionAnswerSchema = z.union([
 export type ConnectionAnswer = z.infer<typeof ConnectionAnswerSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'transcript', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry', 'work_list', 'work_tail', 'work_transcript', 'work_stop', 'work_steer', 'launch_background', 'launch_btw']),
+  action: z.enum(['snapshot', 'watch', 'transcript', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry', 'work_list', 'work_tail', 'work_transcript', 'work_stop', 'work_steer', 'launch_background', 'launch_btw', 'complete_path']),
   row_id: z.number().int().positive().optional(), emoji: ReactionEmojiSchema.nullable().optional(),
   format: OwnerExportFormatSchema.optional(), redact: z.boolean().optional(),
   command: CapturedCommandSchema.optional(),
@@ -148,6 +169,7 @@ export const GatewaySessionParamsSchema = z.object({
   limit: z.number().int().min(1).max(500).optional().describe('`transcript`: rows per page; a tool result may ride with its call beyond it.'),
   work_kind: z.enum(['process', 'subagent']).optional().describe('`work_tail`, `work_transcript`, `work_stop`, `work_steer`: the roster `work_id` comes from; bound by `authority_epoch` to this owner.'),
   work_id: z.string().min(1).optional(),
+  word: z.string().min(1).max(512).optional().describe('`complete_path`: the word to complete. No root travels with it: the owner lists the session\'s own workspace.'),
   reaction_poll_seconds: z.number().positive().optional().describe("`watch`: how often an idle watch rereads the transcript for another viewer's reaction, which the owner announces with no event. Defaults to 10."),
 })
 /**

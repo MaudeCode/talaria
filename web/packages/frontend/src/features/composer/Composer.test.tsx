@@ -21,7 +21,7 @@ import { resolve } from 'node:path'
 import type { DelegationStatus } from '@maudecode/talaria-web-contracts'
 import { keys } from '../../api/queryKeys'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), fetchBackgroundResult: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), classifyCommand: vi.fn(), fetchModels: vi.fn(() => Promise.reject(new Error('offline'))), fetchProviderQuotas: vi.fn(() => Promise.reject(new Error('offline'))), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn(), fetchExecutionModes: vi.fn(() => Promise.resolve({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false }, { mode: 'safe', available: true, reason: null, can_attach: false }], selectable: true } satisfies ExecutionModes)) }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), fetchBackgroundResult: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), completePaths: vi.fn(), classifyCommand: vi.fn(), fetchModels: vi.fn(() => Promise.reject(new Error('offline'))), fetchProviderQuotas: vi.fn(() => Promise.reject(new Error('offline'))), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn(), fetchExecutionModes: vi.fn(() => Promise.resolve({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false }, { mode: 'safe', available: true, reason: null, can_attach: false }], selectable: true } satisfies ExecutionModes)) }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
@@ -48,7 +48,7 @@ vi.mock('./ComposerNotices', async (original) => {
   return { ...notices, ComposerNotices: countRenders(notices.ComposerNotices, () => renders.notices++) }
 })
 import { Composer, type ComposerProps } from './Composer'
-import type { ExecutionModes } from '@maudecode/talaria-web-contracts'
+import type { ExecutionModes, PathCompletions } from '@maudecode/talaria-web-contracts'
 import { dictateLive, NoSpeechError } from '../voice/liveDictation'
 import * as browserDictation from '../voice/dictation'
 
@@ -970,6 +970,50 @@ describe('Composer', () => {
     expect(box).toHaveValue('/bra')
     fireEvent.keyDown(box, { key: 'Enter' })
     expect(box).toHaveValue('/branch ')
+  })
+
+  // TAL-1342: an owner chat completes the path before the caret from its owner's frozen workspace.
+  const owned = (session_id: string): Session => ({ ...writable, is_streaming: false, session_id, owner_attachment: { state: 'attached', reason: null, can_submit: true,
+    can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], queued_input_count: 0 } })
+  const pathRows = (before: string, ...rows: [label: string, insert: string, kind: 'file' | 'folder'][]): PathCompletions => ({ available: true, reason: null,
+    replace_from: before.lastIndexOf(' ') + 1, items: rows.map(([label, insert, kind]) => ({ label, detail: '', kind, insert })) })
+  const noPath: PathCompletions = { available: true, reason: null, replace_from: null, items: [] }
+
+  it('inserts only the picked server text at the caret, keeping the rest of the draft, and Escape closes the list (TAL-1342)', async () => {
+    vi.mocked(api.completePaths).mockReset().mockImplementation((_sid, before) => Promise.resolve(
+      ['read src/ma', 'read src/mai'].includes(before) ? pathRows(before, ['main.py', 'src/main.py', 'file'], ['mail/', 'src/mail/', 'folder']) : noPath))
+    renderComposer(owned('owner-chat'))
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, 'read src/ma please')
+    await userEvent.keyboard('{ArrowLeft>7/}')
+    const list = await screen.findByRole('listbox', { name: 'Files' })
+    await waitFor(() => expect(list).not.toHaveAttribute('aria-busy', 'true'))
+    expect(api.completePaths).toHaveBeenLastCalledWith('owner-chat', 'read src/ma', expect.anything())
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox')).toBeNull()
+    // A changed draft asks again.
+    await userEvent.keyboard('i')
+    await waitFor(() => expect(screen.getByRole('listbox', { name: 'Files' })).not.toHaveAttribute('aria-busy', 'true'))
+    await userEvent.keyboard('{ArrowDown}{Tab}')
+    expect(box).toHaveValue('read src/mail/ please')
+    await waitFor(() => expect((box as HTMLTextAreaElement).selectionStart).toBe('read src/mail/'.length))
+  })
+
+  it('never shows one chat\'s completions in another, shown or arriving late (TAL-1342)', async () => {
+    const late = deferred<PathCompletions>()
+    vi.mocked(api.completePaths).mockReset().mockImplementation((sid, before) => sid !== 'chat-a' ? new Promise<PathCompletions>(() => undefined)
+      : before === 'src/' ? Promise.resolve(pathRows(before, ['main.py', 'src/main.py', 'file'])) : late.promise)
+    const view = renderComposer(owned('chat-a'))
+    await userEvent.type(screen.getByRole('textbox'), 'src/')
+    await screen.findByRole('option', { name: /main\.py/ })
+    await userEvent.keyboard('m')
+    await waitFor(() => expect(api.completePaths).toHaveBeenCalledWith('chat-a', 'src/m', expect.anything()))
+    view.rerenderSession(owned('chat-b'))
+    await userEvent.type(screen.getByRole('textbox'), 'src/')
+    await waitFor(() => expect(api.completePaths).toHaveBeenCalledWith('chat-b', 'src/', expect.anything()))
+    expect(screen.queryByRole('listbox')).toBeNull()
+    await act(async () => { late.resolve(pathRows('src/m', ['main.py', 'src/main.py', 'file'])); await late.promise })
+    expect(screen.queryByRole('listbox')).toBeNull()
   })
 
   // TAL-2314: the server answers each typed prefix with its ranked rows; without a prefix it returns the whole catalog.

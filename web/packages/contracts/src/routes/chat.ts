@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { ModelChangeSchema, OwnerActionRequestSchema, SideLaunchSchema } from '../gateway-session.js'
+import { ModelChangeSchema, OwnerActionRequestSchema, PathCompletionRequestSchema, PathCompletionsSchema, SideLaunchSchema } from '../gateway-session.js'
 import { ChatStartRequestSchema, ChatStartResponseSchema, StreamStatusSchema, CancelResponseSchema, SteerResponseSchema, SteerWithdrawRequestSchema, SteerWithdrawResponseSchema, SteerSendNowRequestSchema, SteerSendNowResponseSchema, ApprovalPendingEnvelopeSchema, ApprovalRespondResponseSchema, ClarifyPendingEnvelopeSchema, ClarifyRespondResponseSchema, ClarifyAnswersSchema, GoalResponseSchema, SessionSchema, BackgroundTaskSchema, BackgroundTasksResponseSchema, BackgroundTaskResultSchema, BackgroundDismissRequestSchema, BackgroundDismissResponseSchema, BackgroundStopResponseSchema, BackgroundSteerRequestSchema, BackgroundSteerResponseSchema } from '../views.js'
 
 /** Agent turns, approvals, clarify prompts, goals, background tasks, and side questions. */
@@ -20,6 +20,8 @@ export const chatContract = {
     ownerAction: oc.route({ method: 'POST', path: '/api/chat/owner-action', tags, summary: 'A typed, generation-fenced action through the canonical session owner. Retry acknowledges unknown work and returns its text to the draft; it never executes it.' })
       .input(OwnerActionRequestSchema)
       .output(z.object({ ok: z.literal(true), session: SessionSchema, model_change: ModelChangeSchema.optional(), draft: z.string().optional() })),
+    pathCompletions: oc.route({ method: 'POST', path: '/api/chat/path-completions', tags, summary: "Complete the path or reference before the caret from a native owner chat's frozen workspace (TAL-1342)." })
+      .input(PathCompletionRequestSchema).output(PathCompletionsSchema),
     sync: oc.route({ method: 'POST', path: '/api/chat', tags, summary: 'Legacy blocking turn: runs one turn to its end and answers with the reply.' }).input(ChatSyncRequestSchema).output(ChatSyncResponseSchema),
     start: oc.route({ method: 'POST', path: '/api/chat/start', tags, summary: 'Admit one agent turn and return the stream id for `/api/chat/stream`.' }).input(ChatStartRequestSchema).output(ChatStartResponseSchema),
     steer: oc.route({ method: 'POST', path: '/api/chat/steer', tags }).input(z.object({ session_id: z.string().optional(), text: z.string().optional(), display_text: z.string().optional(), steer_id: z.string().optional() }).catchall(Json)).output(SteerResponseSchema),

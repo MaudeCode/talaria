@@ -354,6 +354,33 @@ async def probe_work(home, peer, desc):
         sidecar.close()
 
 
+async def probe_complete(home, peer, desc):
+    """TAL-1342: Web's path completion reaches the installed owner's complete.path, rooted in the session's own frozen
+    workspace: a partial segment, a name with spaces and Unicode, and a directory that does not exist there."""
+    sidecar = SidecarProcess(home)
+    workspace = Path(tempfile.mkdtemp(prefix="complete-ws-"))
+    (workspace / "src").mkdir()
+    (workspace / "src" / "main.py").write_text("")
+    (workspace / "notes été.md").write_text("")
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, "session.create", request_id="complete-create", source="cli", toolsets=[], cwd=str(workspace))
+            sid = created["result"]["session_id"]
+            def call(word):
+                return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": "complete_path", "word": word})
+            assert (await asyncio.to_thread(sidecar.result, "gateway.session",
+                                            {"profile_home": str(home), "session_id": sid, "action": "snapshot"}))["state"] == "attached"
+            texts = lambda result: [item["text"] for item in result["completion"]["items"]]
+            nested = await asyncio.to_thread(call, "src/ma")
+            assert nested["state"] == "attached" and texts(nested) == ["src/main.py"], nested
+            spaced = await asyncio.to_thread(call, "@file:not")
+            assert "@file:notes été.md" in texts(spaced), spaced
+            missing = await asyncio.to_thread(call, "absent/")
+            assert missing["completion"]["items"] == [], missing
+    finally:
+        sidecar.close()
+
+
 SIDECAR = Path(__file__).resolve().parents[2]
 
 
@@ -1553,6 +1580,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_connections(home, peer, desc)
     if mode == "work":
         return probe_work(home, peer, desc)
+    if mode == "complete":
+        return probe_complete(home, peer, desc)
     if mode == "transcript":
         return probe_transcript(home, peer, desc)
     if mode == "session-open":

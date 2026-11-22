@@ -216,6 +216,11 @@ export const chatRouter = os.router({
       const model_change = (session.owner_attachment as OwnerAttachment | undefined)?.model_change
       return { ok: true as const, session: session as never, ...(draft === undefined ? {} : { draft }), ...(model_change ? { model_change } : {}) }
     })),
+    pathCompletions: os.chat.pathCompletions.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!(await ctx.deps.sessions.sessionIdVisible(input.session_id))) throw new HttpError(404, 'Session not found')
+      return await ctx.deps.sessions.owner?.completePath(input.session_id, input.before)
+        ?? { available: false, reason: 'not_owner_chat' as const, replace_from: null, items: [] }
+    })),
     sync: os.chat.sync.handler(({ input, context: { ctx } }) => run(async () => (await syncChat(ctx, input as Record<string, unknown>)))),
     start: os.chat.start.handler(({ input, context: { ctx } }) => run(async () => (await startChat(ctx, input as Record<string, unknown>)))),
     steer: os.chat.steer.handler(({ input, context: { ctx } }) => run(async () => {
