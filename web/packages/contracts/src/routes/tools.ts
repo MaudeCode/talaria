@@ -118,8 +118,8 @@ export const toolsContract = {
   },
   notes: {
     sources: oc.route({ method: 'GET', path: '/api/notes/sources', tags }).output(NotesSourcesSchema),
-    search: oc.route({ method: 'GET', path: '/api/notes/search', tags, summary: 'Joplin notes matching `q` (`limit` 1-50, default 20). 404 while external notes sources are disabled; 502 when Joplin fails.' }).input(z.object({ source: z.string().optional(), q: z.string().optional(), limit: z.string().optional() })).output(NotesSearchSchema),
-    item: oc.route({ method: 'GET', path: '/api/notes/item', tags, summary: 'One Joplin note for preview. 404 while external notes sources are disabled; 502 for an invalid id or a Joplin failure.' }).input(z.object({ source: z.string().optional(), id: z.string().optional() })).output(NoteItemSchema),
+    search: oc.route({ method: 'GET', path: '/api/notes/search', tags, summary: 'Notes in `source` (default `joplin`) matching `q` (`limit` 1-50, default 20). 404 while external notes sources are disabled or for an unknown source; 400 for a source that cannot be searched; 502 when the provider fails.' }).input(z.object({ source: z.string().optional(), q: z.string().optional(), limit: z.string().optional() })).output(NotesSearchSchema),
+    item: oc.route({ method: 'GET', path: '/api/notes/item', tags, summary: 'One note from `source` (default `joplin`) for preview. 404 while external notes sources are disabled, for an unknown source, or for an unknown folder note; 400 for a source that cannot be searched or an invalid folder path; 502 for an invalid Joplin id or a provider failure.' }).input(z.object({ source: z.string().optional(), id: z.string().optional() })).output(NoteItemSchema),
   },
   wiki: {
     status: oc.route({ method: 'GET', path: '/api/wiki/status', tags, summary: 'LLM wiki summary from `WIKI_PATH` (env, then the profile `.env`), `skills.config.wiki.path` or `wiki.path` in config.yaml, else `~/wiki`. Always 200.' }).output(WikiStatusSchema),

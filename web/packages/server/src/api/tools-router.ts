@@ -16,7 +16,8 @@ import { stateDbSessionReadAsync } from '../sessions/state-db.js'
 import { ConfigUnavailable, type Config, type Dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
 import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, requestPromptRefresh, writeMemory, previewMemoryCompaction, applyMemoryCompaction, type MemoryWriteDeps } from '../tools/memory.js'
-import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } from '../tools/mcp.js'
+import { notesSources, notesSourcesFor, type NotesDeps } from '../tools/notes/registry.js'
+import { NotesSourceError, type NotesSource } from '../tools/notes/source.js'
 import { catalogNames, connectorOperation, connectorsPage, connectorTools, offeredMove, rememberCatalogNames } from '../tools/connectors.js'
 import { rememberConnectorLogos } from '../sessions/tool-display.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
@@ -70,14 +71,19 @@ const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfile
 /** TAL-1514: Meshy work for the active profile, aborted when the request goes away. */
 function meshy<T>(ctx: RequestContext, fn: (signal: AbortSignal) => Promise<T>): Promise<never> {
   return run(async () => {
-    const abort = new AbortController()
-    const close = (): void => { abort.abort() }
-    ctx.res.once('close', close)
-    try { return await fn(abort.signal) } catch (error) {
+    try { return await untilClosed(ctx, fn) } catch (error) {
       if (error instanceof MeshyError) throw new HttpFailure(error.status, error.message)
       throw error
-    } finally { ctx.res.off('close', close) }
+    }
   })
+}
+
+/** `fn` with a signal that aborts when the request goes away. */
+async function untilClosed<T>(ctx: RequestContext, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const abort = new AbortController()
+  const close = (): void => { abort.abort() }
+  ctx.res.once('close', close)
+  try { return await fn(abort.signal) } finally { ctx.res.off('close', close) }
 }
 
 /** Profile homes with an `stt.warm` in flight (TAL-916). */
@@ -477,19 +483,28 @@ async function memoryWorkspace(ctx: RequestContext, sessionId: string, workspace
   try { return (await ctx.deps.workspaces.resolveTrusted(raw, profile, await requestCanManageServer(ctx))) } catch { return null }
 }
 
-/** The external notes drawer's Joplin access; 404 while the drawer is disabled. */
-async function joplinDeps(ctx: RequestContext, disabled: Dict): Promise<JoplinDeps> {
+const notesDeps = (ctx: RequestContext): NotesDeps => ({ env: ctx.deps.config.env, fetch: ctx.deps.fetch, redact: ctx.deps.sessions.deps.redactEnabled(), home: ctx.deps.config.homeDir })
+
+/**
+ * The requested notes source (default `joplin`, matched case-insensitively): 404 while the drawer is disabled or for
+ * an unknown id, 400 for an MCP server no adapter reads. `extra` rides on every refusal.
+ */
+async function notesSource(ctx: RequestContext, raw: string | undefined, extra: Dict): Promise<NotesSource> {
   const config = await ctx.deps.agentConfig.read(home(ctx))
-  if (!externalNotesEnabled(ctx.deps.config.env, config)) throw new HttpError(404, 'External notes sources are disabled.', { source: 'disabled', ...disabled })
-  return { config, env: ctx.deps.config.env, fetch: ctx.deps.fetch, redact: ctx.deps.sessions.deps.redactEnabled() }
+  if (!externalNotesEnabled(ctx.deps.config.env, config)) throw new HttpError(404, 'External notes sources are disabled.', { source: 'disabled', ...extra })
+  const id = str(raw).trim().toLowerCase() || 'joplin'
+  const entry = notesSourcesFor(config, notesDeps(ctx)).find((e) => e.id.toLowerCase() === id)
+  if (!entry) throw new HttpError(404, 'Unknown notes source', { source: id, ...extra })
+  if (!entry.source) throw new HttpError(400, 'This notes source cannot be searched', { source: entry.id, ...extra })
+  return entry.source
 }
 
-/** A Joplin failure answers 502 with its fixed message. */
-async function joplin<T>(extra: Dict, fn: () => Promise<T>): Promise<T> {
+/** A provider failure answers 502 with its fixed message. */
+async function notesCall<T>(source: NotesSource, extra: Dict, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
   } catch (error) {
-    if (error instanceof JoplinError) throw new HttpError(502, error.message, { source: 'joplin', ...extra })
+    if (error instanceof NotesSourceError) throw new HttpError(502, error.message, { source: source.id, ...extra })
     throw error
   }
 }
@@ -732,20 +747,16 @@ export const toolsRouter = os.router({
   notes: {
     sources: os.notes.sources.handler(({ context: { ctx } }) => run(async () => {
       const config = await ctx.deps.agentConfig.read(home(ctx))
-      return notesSources(config, externalNotesEnabled(ctx.deps.config.env, config)) as never
+      return notesSources(config, externalNotesEnabled(ctx.deps.config.env, config), notesDeps(ctx)) as never
     })),
     search: os.notes.search.handler(({ input, context: { ctx } }) => run(async () => {
-      const deps = await joplinDeps(ctx, { results: [] })
-      const source = str(input.source).trim().toLowerCase() || 'joplin'
+      const source = await notesSource(ctx, input.source, { results: [] })
       const query = str(input.q).trim()
-      if (source !== 'joplin') throw new HttpError(400, 'Search is currently implemented for Joplin sources only.', { source, results: [] })
-      return { source: 'joplin' as const, query, results: await joplin({ query, results: [] }, () => joplinSearch(deps, query, notesLimit(input.limit))) }
+      return { source: source.id, query, results: await notesCall(source, { query, results: [] }, () => untilClosed(ctx, (signal) => source.search(query, notesLimit(input.limit), signal))) }
     })),
     item: os.notes.item.handler(({ input, context: { ctx } }) => run(async () => {
-      const deps = await joplinDeps(ctx, {})
-      const source = str(input.source).trim().toLowerCase() || 'joplin'
-      if (source !== 'joplin') throw new HttpError(400, 'Preview is currently implemented for Joplin sources only.', { source })
-      return { source: 'joplin' as const, note: await joplin({}, () => joplinNote(deps, str(input.id))) }
+      const source = await notesSource(ctx, input.source, {})
+      return { source: source.id, note: await notesCall(source, {}, () => source.item(str(input.id))) }
     })),
   },
   wiki: {

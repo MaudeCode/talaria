@@ -34,7 +34,7 @@ const stat = async (path: string): Promise<Stats | undefined> => { try { return 
 const lstat = async (path: string): Promise<Stats | undefined> => { try { return await fsLstat(path) } catch { return undefined } }
 
 /** Python `os.path.expandvars`: `$NAME` and `${NAME}` from `env`; unknown names stay as written. */
-function expandVars(text: string, env: Record<string, string | undefined>): string {
+export function expandVars(text: string, env: Record<string, string | undefined>): string {
   return text.replace(/\$(\w+|\{[^}]*\})/g, (match, name: string) => env[name.startsWith('{') ? name.slice(1, -1) : name] ?? match)
 }
 
@@ -76,16 +76,18 @@ function isoSeconds(ms: number): string {
 
 /**
  * Entries under `dir`, like `Path.rglob`: directory symlinks are not followed; dot directories (never listed) are
- * skipped. Every entry spends one unit of `budget`, so a huge tree cannot hold the event loop.
+ * skipped, and so is any entry `keep` refuses, before its subtree is read. Every entry spends one unit of `budget`,
+ * so a huge tree cannot hold the event loop.
  */
-async function* walk(dir: string, budget: { left: number }): AsyncGenerator<{ path: string; name: string; dir: boolean }> {
+async function* walk(dir: string, budget: { left: number }, keep: (path: string) => boolean = () => true): AsyncGenerator<{ path: string; name: string; dir: boolean }> {
   let names
   try { names = await readdir(dir, { withFileTypes: true }) } catch { return }
   for (const d of names) {
     if (budget.left-- <= 0) return
     const path = join(dir, d.name)
+    if (!keep(path)) continue
     yield { path, name: d.name, dir: d.isDirectory() }
-    if (d.isDirectory() && !d.name.startsWith('.')) yield* walk(path, budget)
+    if (d.isDirectory() && !d.name.startsWith('.')) yield* walk(path, budget, keep)
   }
 }
 
@@ -120,12 +122,23 @@ async function verifiedEntry(rootReal: string, listed: string, sectionReal: stri
 
 interface Cached<T> { signature: string; expiresAt: number; value: T }
 
+/**
+ * Which pages a reader lists: the `*.md` files under each of `sections` (relative to the root; `''` is the root itself)
+ * whose path relative to that section passes `include`. A directory `include` refuses is never read, so its entries
+ * spend none of the walk budget. The default is the LLM wiki's four page sections.
+ */
+export interface PageRule { sections: readonly string[]; include?: (rel: string) => boolean }
+
 export class WikiPages {
   /** Per resolved root: each listed page mapped to its section's real path. */
   private readonly pages = new Map<string, Cached<ReadonlyMap<string, string>>>()
   private readonly rawCounts = new Map<string, Cached<number>>()
 
-  constructor(private readonly opts: { now?: () => number; ttlMs?: number; maxFiles?: number } = {}) {}
+  constructor(private readonly opts: { now?: () => number; ttlMs?: number; maxFiles?: number; rule?: PageRule } = {}) {}
+
+  private get sections(): readonly string[] {
+    return this.opts.rule?.sections ?? SECTIONS
+  }
 
   private now(): number {
     return (this.opts.now ?? Date.now)()
@@ -146,12 +159,13 @@ export class WikiPages {
     const rootReal = await realpath(root)
     if (!rootReal || FORBIDDEN_ROOTS.has(rootReal)) return pages
     const budget = { left: this.opts.maxFiles ?? MAX_FILES }
-    for (const name of SECTIONS) {
+    const include = this.opts.rule?.include
+    for (const name of this.sections) {
       const section = join(root, name)
       const sectionReal = await realpath(section)
       // A symlinked section must still resolve under the wiki root, so it cannot expose an outside tree.
       if (!sectionReal || !(await stat(sectionReal))?.isDirectory() || !isWithin(sectionReal, rootReal)) continue
-      for await (const item of walk(section, budget)) {
+      for await (const item of walk(section, budget, include && ((path) => include(relative(section, path).split(sep).join('/'))))) {
         if (!item.name.endsWith('.md') || !isClean(relative(section, item.path))) continue
         // A hard link at a clean page name can carry any inode, and the identity check at read time cannot tell it apart.
         const [st, link, itemReal] = await Promise.all([stat(item.path), lstat(item.path), realpath(item.path)])
@@ -169,7 +183,7 @@ export class WikiPages {
    */
   async pageFiles(root: string): Promise<ReadonlyMap<string, string>> {
     const key = await realpath(root) ?? root
-    return this.cached(this.pages, key, await directorySignature(SECTIONS.map((s) => join(key, s))), () => this.pageFilesUncached(key))
+    return this.cached(this.pages, key, await directorySignature(this.sections.map((s) => join(key, s))), () => this.pageFilesUncached(key))
   }
 
   /** Python `_llm_wiki_allowlisted_entries`: listed relpaths (posix) mapped to their real path and identity, rechecked now. */
@@ -203,6 +217,19 @@ export class WikiPages {
     try { if (sameFile(await handle.stat(), identity)) return handle } catch { /* closed below */ }
     await handle.close()
     return null
+  }
+
+  /** An allowlisted entry's mtime while it is still that file; `undefined` when it changed or vanished. */
+  async mtimeOf(entry: WikiEntry): Promise<number | undefined> {
+    const st = await stat(entry.target)
+    return st && sameFile(st, entry) ? st.mtimeMs : undefined
+  }
+
+  /** An allowlisted entry's text (cut at `MAX_PAGE_BYTES`) and mtime through the identity-checked open; `null` when it changed or vanished. */
+  async readEntry(entry: WikiEntry): Promise<{ content: string; mtimeMs: number } | null> {
+    const handle = await this.openVerified(entry.target, entry)
+    if (handle === null) return null
+    try { return { content: (await readHandleUpTo(handle, MAX_PAGE_BYTES)).toString('utf8'), mtimeMs: (await handle.stat()).mtimeMs } } catch { return null } finally { await handle.close() }
   }
 
   /** Lines from an open file (UTF-8 with replacement), at most `maxLines`, reading at most `MAX_PAGE_BYTES`. */
@@ -329,7 +356,11 @@ export class WikiPages {
    * inside its TTL needs no section signature: only the requested page is verified, and that is what admits the read.
    */
   async page(location: WikiLocation, path: string): Promise<{ content: string; path: string }> {
-    const root = location.path
+    return { content: (await this.read(location.path, path)).content, path }
+  }
+
+  /** `page`'s checked read under any root, with the open file's mtime. */
+  async read(root: string, path: string): Promise<{ content: string; mtimeMs: number }> {
     if (!path) throw new HttpFailure(400, 'Wiki not configured or path not provided')
     const parts = path.split('/')
     // A `..` or empty or `.` segment is refused; `v1..v2.md` is a legitimate name.
@@ -351,8 +382,9 @@ export class WikiPages {
       throw new HttpFailure(404, code === 'ENOENT' || code === 'EISDIR' ? 'Page not found' : 'Could not read page')
     }
     try {
-      if (!sameFile(await handle.stat(), entry)) throw new HttpFailure(404, 'Page not found')
-      return { content: (await readHandleUpTo(handle, MAX_PAGE_BYTES)).toString('utf8'), path }
+      const st = await handle.stat()
+      if (!sameFile(st, entry)) throw new HttpFailure(404, 'Page not found')
+      return { content: (await readHandleUpTo(handle, MAX_PAGE_BYTES)).toString('utf8'), mtimeMs: st.mtimeMs }
     } catch (error) {
       if (error instanceof HttpFailure) throw error
       throw new HttpFailure(404, 'Could not read page')

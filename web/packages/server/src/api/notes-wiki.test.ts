@@ -4,7 +4,7 @@
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { chmodSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -58,12 +58,13 @@ describe('notes and wiki routes', () => {
     configs.clear()
   })
 
-  const enableJoplin = (env: Json = { JOPLIN_URL: joplinUrl, JOPLIN_TOKEN: 'secret-token' }): void => {
+  const enableNotes = (config: Json): void => {
     s.deps.config.env.TALARIA_WEB_EXTERNAL_NOTES_SOURCES = '1'
-    configs.set(s.state, { mcp_servers: { Joplin: { command: 'joplin-mcp', env } } })
+    configs.set(s.state, config)
     // config.yaml reads are memoised on the file's identity; a fresh body evicts them.
     writeFileSync(join(s.state, 'config.yaml'), `# ${String(Math.random())}\n`)
   }
+  const enableJoplin = (env: Json = { JOPLIN_URL: joplinUrl, JOPLIN_TOKEN: 'secret-token' }): void => { enableNotes({ mcp_servers: { Joplin: { command: 'joplin-mcp', env } } }) }
 
   describe('GET /api/notes/item', () => {
     it('is 404 while external notes sources are disabled', async () => {
@@ -98,8 +99,8 @@ describe('notes and wiki routes', () => {
       }
       expect(seen).toEqual([])
       const res = await s.get(`/api/notes/item?source=obsidian&id=${NOTE_ID}`)
-      expect(res.status).toBe(400)
-      expect(await json(res)).toEqual({ error: 'Preview is currently implemented for Joplin sources only.', source: 'obsidian' })
+      expect(res.status).toBe(404)
+      expect(await json(res)).toEqual({ error: 'Unknown notes source', source: 'obsidian' })
     })
 
     it('redacts the body and bounds the display fields', async () => {
@@ -153,7 +154,64 @@ describe('notes and wiki routes', () => {
       const res = await s.get('/api/notes/search?q=x')
       expect(res.status).toBe(502)
       expect(await json(res)).toEqual({ error: 'Joplin API is not reachable', source: 'joplin', query: 'x', results: [] })
-      expect((await s.get('/api/notes/search?source=notion&q=x')).status).toBe(400)
+      expect((await s.get('/api/notes/search?source=notion&q=x')).status).toBe(404)
+    })
+  })
+
+  describe('Markdown-folder notes source (TAL-1071)', () => {
+    /** A vault with every kind of page the reader must skip beside four that match `alpha beta`, each with a fixed mtime. */
+    function vault(): string {
+      const root = join(tmp, 'vault')
+      const page = (rel: string, text: string, mtime?: number): void => {
+        write(join(root, rel), text)
+        if (mtime) utimesSync(join(root, rel), mtime, mtime)
+      }
+      page('top.md', 'alpha beta at the top', 3000)
+      page('a/b/deep.md', 'Deep note with alpha and beta', 2000)
+      page('Alpha Beta Plan.md', 'title match only', 4000)
+      page('big.md', `alpha beta big start\n${'x'.repeat(2 * 1024 * 1024 + 1000)} zulutail`, 1000)
+      page('only-alpha.md', 'alpha alone')
+      page('.obsidian/workspace.md', 'alpha beta hidden')
+      page('logseq/bak/old.md', 'alpha beta backup')
+      page('notes.txt', 'alpha beta text')
+      symlinkSync(write(join(tmp, 'outside', 'secret.md'), 'alpha beta outside'), join(root, 'escape.md'))
+      linkSync(write(join(root, 'linked.md'), 'alpha beta hard'), join(root, 'hard.md'))
+      enableNotes({ webui_notes_folders: [{ name: 'Vault', path: root }], mcp_servers: { notion: { command: 'notion-mcp' } } })
+      return root
+    }
+    const search = async (q: string): Promise<Json> => json(await s.get(`/api/notes/search?source=folder%3Avault&q=${encodeURIComponent(q)}`))
+    const item = (id: string): Promise<Response> => s.get(`/api/notes/item?source=folder%3AVault&id=${encodeURIComponent(id)}`)
+
+    it('lists each source with whether it can be searched, and refuses an MCP-only source with 400', async () => {
+      vault()
+      expect((await json(await s.get('/api/notes/sources'))).sources).toEqual([
+        { id: 'folder:Vault', name: 'Vault', kind: 'folder', enabled: true, searchable: true, tools: [] },
+        { id: 'notion', name: 'notion', kind: 'mcp', enabled: true, searchable: false, tools: [] },
+      ])
+      const res = await s.get('/api/notes/search?source=notion&q=x')
+      expect(res.status).toBe(400)
+      expect(await json(res)).toEqual({ error: 'This notes source cannot be searched', source: 'notion', results: [] })
+    })
+
+    it('finds nested notes by every term, newest first, and never a hidden, non-Markdown, linked, or past-2-MiB page', async () => {
+      vault()
+      const found = await search('Alpha  beta')
+      expect(found.source).toBe('folder:Vault')
+      expect((found.results as Json[]).map((r) => r.id)).toEqual(['Alpha Beta Plan.md', 'top.md', 'a/b/deep.md', 'big.md'])
+      expect((found.results as Json[])[2]).toEqual({ id: 'a/b/deep.md', title: 'deep', snippet: 'Deep note with alpha and beta', parent_id: 'a/b', updated_time: 2_000_000, source: 'folder:Vault' })
+      expect((await search('zulutail')).results).toEqual([])
+    })
+
+    it('previews a listed note cut and redacted, and refuses any other path with 400 or 404', async () => {
+      const root = vault()
+      write(join(root, 'key.md'), 'export OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123456789')
+      const note = (await json(await item('key.md'))).note as Json
+      expect(note).toMatchObject({ id: 'key.md', title: 'key', parent_id: '', created_time: null, source: 'folder:Vault' })
+      expect(note.body).not.toContain('sk-proj-abcdefghijklmnopqrstuvwxyz0123456789')
+      expect(((await json(await item('big.md'))).note as Json).body).toMatch(/^alpha beta big start\nx{49979}\n\n\[Preview truncated at 50,000 characters\]$/)
+      for (const [id, status] of [['', 400], ['../x.md', 400], [join(root, 'top.md'), 400], ['missing.md', 404], ['escape.md', 400], ['hard.md', 404], ['.obsidian/workspace.md', 404], ['logseq/bak/old.md', 404], ['notes.txt', 404]] as const) {
+        expect((await item(id)).status, id).toBe(status)
+      }
     })
   })
 
