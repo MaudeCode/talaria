@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A 3D model preview in Talaria Web no longer stays on \"Loading model…\" when the model finishes loading the moment it appears.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
