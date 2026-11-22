@@ -5,10 +5,12 @@
  * like, while selectors, URLs and the rest of the code stay readable.
  *
  * Recognised: the typed argument of `fill_input` and `type_text` by position, `text=` keyword or splat; the arguments of a
- * CDP `insertText` call, and of any `cdp` call whose method name is built rather than written; a literal assigned to `.value` (page script that sets a value any other way is masked whole). A name the
+ * CDP `insertText` call, and of any `js` or `cdp` call whose first argument is built rather than written; a literal assigned to `.value` (page script that sets a value any other way is masked whole). A name the
  * typed value uses has every statement that mentions it masked too (its assignments, loops and mutations), with the body of
- * a function the snippet defines under that name and the calls of one that takes it as a parameter.
- * Withheld whole (`***`): a snippet whose brackets or quotes do not pair up, a typing helper used other than by calling it,
+ * a function the snippet defines under that name and the calls of one that takes it as a parameter. Code that `exec` or
+ * `eval` runs from a built string, or a helper looked up by a name the snippet may build (`globals()[...]`, `getattr`), may
+ * call anything, so every literal of such a snippet is masked.
+ * Withheld whole (`***`): a snippet whose brackets or quotes do not pair up, a typing or code-running helper used other than by calling it,
  * an `insertText` that is no call's argument, and a snippet that names more than `MAX_NAMES` bindings. Code the sidecar cut
  * at its cap has every literal masked, since the typing call may sit past the cut.
  * The stored call and the code the Agent ran are never touched.
@@ -17,8 +19,12 @@ const WITHHELD = '***'
 const MASK = "'***'"
 /** A property assignment to `value`, in either spelling (`. value =`, `['value'] =`). */
 const VALUE_ASSIGN = String.raw`(?:\.\s*value|\[\s*['"\`]value['"\`]\s*\])\s*=(?!=)`
-/** Any way a snippet types into a page. */
-const TYPING_RE = /\b(?:fill_input|type_text|value|cdp)\b|insertText/
+/** Any way a snippet types into a page, or runs code or looks up a helper by a name it may build (TAL-2629). */
+const TYPING_RE = /\b(?:fill_input|type_text|value|cdp|js|exec|eval|globals|locals|vars|getattr)\b|insertText|__dict__/
+/** A helper that runs code or page script it is handed. */
+const RUNNER_RE = /(?<![\p{L}\p{N}_])(js|cdp|exec|eval)(?![\p{L}\p{N}_])(\s*\()?/gu
+/** A lookup of a helper by a name the snippet may build: `globals()[...]`, `getattr(mod, name)`, `vars(m)['...']`. */
+const LOOKUP_RE = /(?<![\p{L}\p{N}_])(?:globals|locals|vars|getattr)\s*\(|__dict__/gu
 const NAME_RE = /[\p{L}_][\p{L}\p{N}_]*/gu
 /** A number, a leading-dot float (`.5`) included. */
 const NUMBER_RE = /(?<![\p{L}\p{N}_.])\d[\p{L}\p{N}_.]*|(?<![\p{L}\p{N}_)\].])\.\d[\p{L}\p{N}_.]*/gu
@@ -269,10 +275,13 @@ function typedSpans(code: string, cut: boolean): Span[] {
     followLiteral(literal)
     maskStatement(literal.stmt)
   }
-  // A CDP call whose method is not one plain string (`'Input.insert' + 'Text'`, a variable) may be an insertion: every
-  // argument is typed. A plain method name is an insertion only when it says so, which the next scan handles.
-  for (const match of skeleton.matchAll(/(?<![\p{L}\p{N}_])cdp(?![\p{L}\p{N}_])(\s*\()?/gu)) {
-    if (!match[1]) {
+  /** Code that may call any helper: every literal of the snippet is masked, as for code the sidecar cut. */
+  let opaque = cut
+  // A runner whose first argument is not one plain string (`'Input.insert' + 'Text'`, `'el.' + prop`, a variable, an
+  // f-string, `%`, `.format`) may build an insertion or a typing call: every argument of a `js` or `cdp` call is typed, and
+  // `exec` or `eval` may call anything. A plain string types only when it says so, which the scans around this one handle.
+  for (const match of skeleton.matchAll(RUNNER_RE)) {
+    if (!match[2]) {
       if (!IMPORT_RE.test(skeleton.slice(...stmtRange(stmtOf(match.index))))) throw new Withheld()
       continue
     }
@@ -280,8 +289,15 @@ function typedSpans(code: string, cut: boolean): Span[] {
     const close = closes.get(open)!
     const first = literalAt(open + 1 + skeleton.slice(open + 1, close).search(/\S/))
     const plain = first !== undefined && !first.f && !skeleton.slice(open + 1, first.start).trim() && /^\s*(?:,|$)/.test(skeleton.slice(first.end, close))
-    if (!plain) maskTypedArguments(open, -1)
+    if (plain) continue
+    if (match[1] === 'js' || match[1] === 'cdp') maskTypedArguments(open, -1)
+    else opaque = true
   }
+  // A helper looked up by name (`run = globals()['c' + 'dp']`) is called through a name this scan cannot tie to it, and a
+  // runner called inside a string (`exec("run = eval('c' + 'dp')")`) builds code this scan cannot read. Not in a comment.
+  const read = (at: number): boolean => skeleton[at] === code[at] || literalAt(at) !== undefined
+  for (const match of code.matchAll(LOOKUP_RE)) if (read(match.index)) opaque = true
+  for (const match of code.matchAll(RUNNER_RE)) if (match[2] && literalAt(match.index)) opaque = true
   for (const match of code.matchAll(/insertText/g)) {
     const literal = literalAt(match.index)
     if (!literal) {
@@ -360,7 +376,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
     maskLiteral(literal)
     maskStatement(literal.stmt)
   }
-  if (cut) for (let k = 0; k < stmts.length; k++) maskStatement(k)
+  if (opaque) for (let k = 0; k < stmts.length; k++) maskStatement(k)
 
   const defs = new Set<string>()
   const call = /\s*\(/y
