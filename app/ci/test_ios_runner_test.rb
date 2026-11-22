@@ -237,6 +237,50 @@ class TestIOSRunnerTest < Minitest::Test
     refute_match(/contract-fixture|LIVE_CONTRACT|CONTRACT_TEST_CLASSES|CONTRACTS_SELECTED/, shard.to_yaml)
   end
 
+  def test_hosted_tests_delete_the_non_ios_simulator_runtimes_before_booting
+    # CoreSimulator timed out personalizing the watchOS, tvOS and xrOS runtimes mid-run and detached the iOS runtime
+    # under a running shard (TAL-2385): every other platform's runtime goes before the boot, through sudo when refused.
+    steps = workflow_jobs("app-tests.yml").fetch("app-test")["steps"]
+    names = steps.map { |step| step["name"] }
+    assert_equal("Delete the other simulator runtimes", names[names.index("Boot the simulator") - 1])
+    script = steps[names.index("Boot the simulator") - 1]["run"]
+    runtime = ->(id, platform) { { id => { "identifier" => id, "platformIdentifier" => "com.apple.platform.#{platform}" } } }
+    Dir.mktmpdir("runtime-delete-test") do |root|
+      inventory, summary = File.join(root, "runtimes.json"), File.join(root, "summary.md")
+      File.write(File.join(root, "sudo"), %(#!/bin/sh\n[ "$1" = -n ] && shift\nSUDO=1 exec "$@"\n))
+      # Deletes from the inventory; a runtime listed in $REFUSE is deleted only as root.
+      File.write(File.join(root, "xcrun"), <<~'SH')
+        #!/bin/sh
+        case "$*" in
+          'simctl runtime list -j') cat "$INVENTORY" ;;
+          'simctl runtime list -v') jq -r 'keys[]' "$INVENTORY" ;;
+          "simctl runtime delete $4")
+            case " $REFUSE " in *" $4 "*) [ "$SUDO" = 1 ] || { echo "refused $4" >&2; exit 1; } ;; esac
+            jq --arg id "$4" 'del(.[$id])' "$INVENTORY" > "$INVENTORY.next" && mv "$INVENTORY.next" "$INVENTORY" ;;
+          *) echo "Unexpected xcrun arguments: $*" >&2; exit 1 ;;
+        esac
+      SH
+      %w[sudo xcrun].each { |name| File.chmod(0o755, File.join(root, name)) }
+      run = lambda do |refuse, sudo_works = true|
+        File.write(File.join(root, "sudo"), "#!/bin/sh\nexit 1\n") unless sudo_works
+        File.write(inventory, JSON.generate([runtime.call("IOS-A", "iphonesimulator"), runtime.call("WATCH", "watchsimulator"),
+                                             runtime.call("TV", "appletvsimulator"), runtime.call("IOS-B", "iphonesimulator"),
+                                             runtime.call("XR", "xrsimulator")].reduce(:merge)))
+        File.write(summary, "")
+        Open3.capture3({ "PATH" => "#{root}:#{ENV.fetch('PATH')}", "INVENTORY" => inventory, "REFUSE" => refuse,
+                         "GITHUB_STEP_SUMMARY" => summary }, "bash", "-c", script)
+      end
+      output, errors, status = run.call("TV XR")
+      assert(status.success?, "#{output}\n#{errors}")
+      assert_equal(%w[IOS-A IOS-B], JSON.parse(File.read(inventory)).keys.sort)
+      assert_equal("### Simulator runtimes\n```\nIOS-A\nIOS-B\n```\n", File.read(summary))
+      # A runtime that stays even through sudo fails the job before the boot.
+      output, _, status = run.call("WATCH TV", false)
+      refute(status.success?)
+      assert_includes(output, "::error::Non-iOS simulator runtimes remain: WATCH TV")
+    end
+  end
+
   def test_hosted_tests_record_memory_on_every_run
     # A hosted runner once swapped until every query timed out (TAL-419); every run keeps its memory samples.
     steps = workflow_jobs("app-tests.yml").fetch("app-test")["steps"].map { |step| [step["name"], step] }.to_h
@@ -355,7 +399,7 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(select_duo["run"], 'echo "${reason}" > "hosted-cases/shard-${SHARD}.skipped"')
     assert_includes(select_duo["run"], "scripts/select-ios-simulator")
     assert_equal("${{ steps.duo.outputs.udid }}", steps.fetch("Boot the simulator")["with"]["udid"])
-    ["Boot the simulator", "Prepare the simulator", "Wait for the build", "Download the test build", "Test without building",
+    ["Delete the other simulator runtimes", "Boot the simulator", "Prepare the simulator", "Wait for the build", "Download the test build", "Test without building",
      "Hold each test inside the run-time budget"].each { |name| assert_equal("env.DUO_SKIPPED != '1'", steps.fetch(name)["if"], name) }
     assert_includes(steps.fetch("Test without building")["run"], 'ci/hosted-test-shard native "${RUNNER_TEMP}/shard.json"')
     shard["steps"].select { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }.each do |upload|
