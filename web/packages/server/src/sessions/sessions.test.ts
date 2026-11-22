@@ -4676,17 +4676,20 @@ describe('runtime seams from review round 10', () => {
     }
   })
 
-  it('a settled turn syncs only a manual title with its usage, leaving an automatic title to its own provenance (TAL-2626)', async () => {
+  it('a settled turn syncs only a manual title with its usage, leaving an automatic title to its own provenance (TAL-2626, TAL-2631)', async () => {
     const usageSynced: Json[] = []
     sidecar.respond('state_db.sync_usage', (params) => { usageSynced.push(params); return { ok: true as const } })
     sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
-    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Docker volume permissions', usage: null }))
+    let generatedTitle = 'Docker volume permissions'
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: generatedTitle, usage: null }))
+    const turns = s.deps.turns as unknown as { deps: { titleRefreshEvery: (() => number) | undefined } }
+    const refreshEvery = turns.deps.titleRefreshEvery
     const newSession = async (): Promise<string> => String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const turn = async (sid: string, message: string): Promise<void> => {
       const started = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
       await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
     }
-    const titleSyncs = (sid: string): Json[] => synced.filter((params) => params.session_id === sid).map(({ title, manual, title_source }) => ({ title, manual, title_source }))
+    const titleSyncs = (sid: string): Json[] => synced.filter((params) => params.session_id === sid).map(({ title, manual, title_source, replace_automatic }) => ({ title, manual, title_source, replace_automatic }))
     // Titled while Sync to Insights was off: a later turn still fills the state.db row with it.
     const titledEarlier = await newSession()
     await turn(titledEarlier, 'fix the docker volume permissions')
@@ -4704,11 +4707,19 @@ describe('runtime seams from review round 10', () => {
       await turn(titledEarlier, 'and the log directory?')
       expect(usageSynced.at(-1)).not.toHaveProperty('title')
       expect(titleSyncs(titledEarlier)).toEqual([{ ...generated, title_source: 'derived' }])
+      // TAL-2631: an adaptive refresh is a model title over the earlier one, so only it asks state.db to replace one.
+      turns.deps.titleRefreshEvery = () => 2
+      generatedTitle = 'Docker volumes'
+      await turn(sid, 'and the volume owner?')
+      turns.deps.titleRefreshEvery = refreshEvery
+      const refreshed = { title: 'Docker volumes', manual: false }
+      expect(titleSyncs(sid).slice(2)).toEqual([{ ...refreshed, title_source: 'llm', replace_automatic: true }, { ...refreshed, title_source: 'derived' }])
       await post(s, '/api/session/rename', { session_id: sid, title: 'Volume fix' })
       await turn(sid, 'and the log directory?')
       expect(usageSynced.at(-1)).toMatchObject({ session_id: sid, title: 'Volume fix' })
       expect(titleSyncs(sid).at(-1)).toEqual({ title: 'Volume fix', manual: true, title_source: undefined })
     } finally {
+      turns.deps.titleRefreshEvery = refreshEvery
       await s.deps.settings.save({ sync_to_insights: false })
     }
   })

@@ -156,8 +156,9 @@ interface SessionGateReads {
   existing: () => Promise<Set<string>>
 }
 
-/** The Agent's title provenance, lowest to highest authority: `derived` < `llm` < `user`. */
-export type TitleProvenance = 'derived' | 'llm' | 'user'
+/** The Agent's title provenance, lowest to highest authority: `derived` < `llm` < `user`. `refresh` is an `llm` title that
+ * replaces an earlier automatic one (TAL-2631). */
+export type TitleProvenance = 'derived' | 'llm' | 'refresh' | 'user'
 
 export interface SessionServiceDeps {
   /** TAL-259: epoch seconds of the state directory's `recovery_stamping_since` marker. */

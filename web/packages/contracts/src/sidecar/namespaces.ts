@@ -205,8 +205,8 @@ const Session = ProfileHomeParams.extend({ session_id: z.string().min(1) })
 export const STATE_DB_METHODS = {
   'state_db.sync_start': { params: Session.extend({ model: z.string().nullable().optional() }), result: Ok },
   'state_db.sync_usage': { params: Session.extend({ input_tokens: z.number().int().optional(), output_tokens: z.number().int().optional(), estimated_cost: z.number().nullable().optional(), model: z.string().nullable().optional(), title: z.string().nullable().optional(), message_count: z.number().int().nullable().optional(), cache_read_tokens: z.number().int().optional(), cache_write_tokens: z.number().int().optional(), api_call_count: z.number().int().nullable().optional() }), result: Ok },
-  /** TAL-574: `manual` writes a user-requested title (rename or regenerate) with `user` provenance; otherwise it is an `llm` auto title. */
-  'state_db.sync_title': { params: Session.extend({ title: z.string(), manual: z.boolean().optional(), title_source: z.enum(['derived', 'llm']).optional() }), result: Ok },
+  /** TAL-574: `manual` writes a user-requested title (rename or regenerate) with `user` provenance; otherwise it is an `llm` auto title. TAL-2631: `replace_automatic` (an adaptive refresh) replaces an untitled, `derived` or `llm` title at `llm` provenance and never a `user` one. */
+  'state_db.sync_title': { params: Session.extend({ title: z.string(), manual: z.boolean().optional(), title_source: z.enum(['derived', 'llm']).optional(), replace_automatic: z.boolean().optional() }), result: Ok },
   /** TAL-1821: every continuing session in the profile rebuilds its stored system prompt once, on its next turn. `ok: false` without a state.db or on an Agent before v0.22.6. */
   'state_db.request_prompt_refresh': { params: ProfileHomeParams, result: Ok },
   /**

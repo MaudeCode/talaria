@@ -2300,7 +2300,8 @@ export class TurnRunner {
     current.title = next
     markSessionTitleGenerated(current)
     await this.deps.store.save(current, { touchUpdatedAt: false })
-    await this.deps.syncTitle?.(current)
+    // TAL-2631: the Agent refuses an automatic title over one of equal rank, so a refresh asks to replace the earlier one.
+    await this.deps.syncTitle?.(current, 'refresh')
     this.deps.events.publish('title', { profile: current.profile, sessionId })
     await status('refreshed', llmStatus, next, rawPreview)
     await put('title', { session_id: sessionId, title: next })

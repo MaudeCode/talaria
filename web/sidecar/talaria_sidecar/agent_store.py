@@ -122,10 +122,15 @@ def set_message_count(db, session_id: str, count: int) -> None:
     db._execute_write(lambda conn: conn.execute("UPDATE sessions SET message_count = ? WHERE id = ?", (count, session_id)))
 
 
-def set_title(db, session_id: str, title: str, *, manual: bool, derived: bool = False) -> None:
+def set_title(db, session_id: str, title: str, *, manual: bool, derived: bool = False, replace_automatic: bool = False) -> None:
     """A manual title lands with ``user`` provenance. An automatic one is ``llm``, or ``derived`` for a local summary,
-    which ranks below ``llm`` so a later model title replaces it; neither replaces a user's. A title another session
+    which ranks below ``llm`` so a later model title replaces it; neither replaces a user's. ``replace_automatic`` (an
+    adaptive refresh, TAL-2631) replaces an untitled, ``derived`` or ``llm`` row at ``llm`` provenance, which the store's
+    automatic write refuses at equal rank, and leaves a user's (or a pre-provenance) title. A title another session
     holds raises ``ValueError``."""
+    if replace_automatic:
+        _replace_automatic_title(db, session_id, title)
+        return
     if native():
         from persistence.conversation.sessions import TitleSource
 
@@ -138,6 +143,36 @@ def set_title(db, session_id: str, title: str, *, manual: bool, derived: bool = 
         db.set_session_title(session_id, title)
     else:
         db.set_auto_title(session_id, title, source=getattr(db, "TITLE_SOURCE_DERIVED", "derived") if derived else getattr(db, "TITLE_SOURCE_LLM", "llm"))
+
+
+def _replace_automatic_title(db, session_id: str, title: str) -> None:
+    """One write transaction, so a rename from another thread or process lands wholly before or after it: an untitled,
+    ``derived`` or ``llm`` row drops to ``derived`` and the store's own in-transaction title write lands ``title`` at
+    ``llm`` (it refuses equal rank), with its sanitising, Bot Chat guard and conflict rules. A conflict raises
+    ``ValueError`` and rolls the drop back. Neither store generation offers this as a public verb."""
+    if native():
+        from persistence.sqlite.conversation._store.titles import _set_session_title_in_transaction
+
+        holder = db.sessions._store.holder()
+        execute = holder._execute_write
+
+        def land(conn):
+            return _set_session_title_in_transaction(holder, conn, session_id, title, source="llm")
+    else:
+        execute = db._execute_write
+
+        def land(conn):
+            return db._set_session_title_in_transaction(conn, session_id, title, source="llm")
+
+    def write(conn) -> None:
+        row = conn.execute("SELECT title, title_source FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if row is None or (row[0] is not None and row[1] not in ("derived", "llm")):
+            return
+        conn.execute("UPDATE sessions SET title_source = 'derived' WHERE id = ? AND title IS NOT NULL", (session_id,))
+        if not land(conn):
+            conn.execute("UPDATE sessions SET title_source = ? WHERE id = ?", (row[1], session_id))
+
+    execute(write)
 
 
 def next_title_in_lineage(db, title: str) -> str:

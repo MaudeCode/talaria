@@ -487,7 +487,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
         await sessions.assertWritable(session, targetProfile)
         await sidecar.call('state_db.sync_title', {
           profile_home: profileHome(targetProfile), session_id: session.session_id, title: session.title,
-          ...(provenance === 'user' ? { manual: true } : { manual: false, title_source: provenance ?? 'llm' }),
+          ...(provenance === 'user' ? { manual: true } : provenance === 'refresh' ? { manual: false, title_source: 'llm', replace_automatic: true } : { manual: false, title_source: provenance ?? 'llm' }),
         })
       } catch (error) {
         log(`[webui] state.db title sync failed for ${session.session_id}: ${(error as Error).message}`)

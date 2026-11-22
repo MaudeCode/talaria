@@ -80,3 +80,29 @@ def test_a_usage_title_is_a_manual_name_so_a_turn_sends_none_for_an_automatic_ti
         assert _title(hermes_home, "webui-1") == ("Volume fix", "user")
     finally:
         proc.close()
+
+
+def test_a_title_refresh_replaces_an_automatic_title_and_never_a_user_name(hermes_home) -> None:
+    """TAL-2631: an adaptive refresh is an ``llm`` title over an earlier ``llm`` one, which the Agent's automatic write
+    refuses, so it syncs with ``replace_automatic``: that replaces an ``llm`` or ``derived`` title at ``llm`` provenance,
+    keeps the collision retry, and leaves a user's name."""
+    _seed(hermes_home, "webui-1")
+    _seed(hermes_home, "webui-2")
+    one = {"profile_home": str(hermes_home), "session_id": "webui-1"}
+    two = {"profile_home": str(hermes_home), "session_id": "webui-2"}
+    proc = SidecarProcess(hermes_home)
+    try:
+        assert proc.result("state_db.sync_title", {**one, "title": "Docker volume permissions", "title_source": "llm"}) == {"ok": True}
+        assert proc.result("state_db.sync_title", {**one, "title": "Docker volumes", "title_source": "llm"}) == {"ok": True}
+        assert _title(hermes_home, "webui-1") == ("Docker volume permissions", "llm")
+        result = proc.result("state_db.sync_title", {**one, "title": "Docker volumes", "title_source": "llm", "replace_automatic": True})
+        assert_matches("state_db.sync_title", result)
+        assert _title(hermes_home, "webui-1") == ("Docker volumes", "llm")
+        assert proc.result("state_db.sync_title", {**two, "title": "fix docker volumes", "title_source": "derived"}) == {"ok": True}
+        assert proc.result("state_db.sync_title", {**two, "title": "Docker volumes", "title_source": "llm", "replace_automatic": True}) == {"ok": True}
+        assert _title(hermes_home, "webui-2") == ("Docker volumes #2", "llm")
+        assert proc.result("state_db.sync_title", {**one, "title": "Volume fix", "manual": True}) == {"ok": True}
+        assert proc.result("state_db.sync_title", {**one, "title": "Docker mounts", "title_source": "llm", "replace_automatic": True}) == {"ok": True}
+        assert _title(hermes_home, "webui-1") == ("Volume fix", "user")
+    finally:
+        proc.close()
