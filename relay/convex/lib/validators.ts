@@ -33,6 +33,8 @@ export const preferencesValidator = v.object({
   notifyOnFailure: v.boolean(),
   // TAL-873: completion alerts for background turns; absent (an older App or device record) means off.
   notifyOnBackground: v.optional(v.boolean()),
+  // TAL-2665: an owner's alert that a Talaria Web or Hermes Agent update is available; absent means off.
+  notifyOnUpdateAvailable: v.optional(v.boolean()),
 });
 
 // TAL-2336: the call a Live Activity names, as the publisher sent it (`ActivityTool` in http.ts parses it).

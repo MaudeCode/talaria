@@ -1,0 +1,17 @@
+{
+  "apnsPushType": "alert",
+  "apnsPriority": "10",
+  "payload": {
+    "aps": {
+      "alert": {
+        "title": "Talaria Web update available",
+        "body": "Talaria Web 2.1.0 is available."
+      },
+      "sound": "default",
+      "thread-id": "RkSeQ4LI_HIUvx9_slcaiHuKH-FZLIQjnemOnETCE8o",
+      "interruption-level": "active"
+    },
+    "publisherId": "https://contract.example",
+    "deepLink": "/settings/system"
+  }
+}

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
-import { agentNotifyAlerts, alertForTransition } from "../convex/lib/aggregate";
+import { agentNotifyAlerts, alertForTransition, serverNoticeAllowed } from "../convex/lib/aggregate";
 import { defaultNotificationPreferences, type AgentNotify, type SessionPhase, type SessionState } from "../convex/lib/model";
 
 // Talaria Web's server applies the same vectors (web/packages/server/src/sessions/notify/alerts.test.ts).
@@ -18,7 +18,9 @@ interface Vector {
 
 interface NoticeVector { name: string; previousAgentNotifyIds: string[]; agentNotices: AgentNotify[]; alertEligible: boolean; expected: string[] }
 
-const { vectors, agentNotify } = JSON.parse(readFileSync(new URL("../../contracts/fixtures/notification-alerts.json", import.meta.url), "utf8")) as { vectors: Vector[]; agentNotify: NoticeVector[] };
+interface ServerNoticeVector { name: string; owner: boolean; preferences: { notify_on_update_available?: boolean }; expected: boolean }
+
+const { vectors, agentNotify, serverNotice } = JSON.parse(readFileSync(new URL("../../contracts/fixtures/notification-alerts.json", import.meta.url), "utf8")) as { vectors: Vector[]; agentNotify: NoticeVector[]; serverNotice: ServerNoticeVector[] };
 const bodyPrefix = { input: "Input needed", completion: "Completed", failure: "Failed" } as const;
 const now = 1_800_000_000_000;
 
@@ -58,4 +60,13 @@ it.each(agentNotify)("shared agent notice rule: $name", (vector) => {
     interruptionLevel: byId.get(id)!.level === "attention" ? "time-sensitive" : "active",
     agentNotifyId: id,
   })));
+});
+
+// TAL-2665: an update-available notice reaches only the publisher owner's devices that opted in.
+it.each(serverNotice)("shared server notice rule: $name", (vector) => {
+  const preferences = {
+    ...defaultNotificationPreferences,
+    ...(vector.preferences.notify_on_update_available === undefined ? {} : { notifyOnUpdateAvailable: vector.preferences.notify_on_update_available }),
+  };
+  expect(serverNoticeAllowed(preferences, vector.owner)).toBe(vector.expected);
 });

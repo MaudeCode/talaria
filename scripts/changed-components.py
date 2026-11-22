@@ -33,15 +33,16 @@ E2E_SERVER_FIXTURES = {"canonical-ownership.json", "compaction-carrier.json"}
 # (TAL-1674). test_fixture_readers_are_routed rescans the readers so the lists cannot fall behind them. The
 # release-note generator and stamp tests share the What's New fixture (TAL-1616).
 FIXTURE_READERS = {
-    "web_sidecar": {"connectors.json", "mcp-cost-policy.json", "mcp-events.json", "native-cron-refusal.json", "plan-allowance.json",
+    "web_sidecar": {"connectors.json", "kanban-task-age.json", "mcp-cost-policy.json", "mcp-events.json", "native-cron-refusal.json", "plan-allowance.json",
                     "talaria-tool-names.json", "tool-presentations.json", "web-native-notices.json", "web-native-todos.json", "web-native-work.json", "web-reactions.json"},
     "tooling": {"whats-new.json"},
     "app": {"answered-question.json", "connectors.json", "decision-review.json", "delegation-status.json", "execution-modes.json",
             "model-confirmation.json", "proposal.json", "provider-quotas.json", "running-subagent.json", "settings-model-picker.json", "show.json",
             "terminal-view.json", "tool-approval-and-agents.json", "vault-prompts.json", "web-native-work.json", "web-session.json"},
     "relay": {"app-registration.json", "feedback-attachment-limits.json", "feedback-report.json",
-              "feedback-report-agent.json", "notification-alerts.json", "publisher-session-started.json", "publisher-snapshot.json",
-              "relay-approval-alert.json", "relay-pairing.json", "relay-session-started-push.json", "relay-snapshot.json"},
+              "feedback-report-agent.json", "notification-alerts.json", "publisher-server-notice.json", "publisher-session-started.json",
+              "publisher-snapshot.json", "relay-approval-alert.json", "relay-pairing.json", "relay-server-notice-push.json",
+              "relay-session-started-push.json", "relay-snapshot.json"},
 }
 JOBS = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend", "web_sidecar"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
