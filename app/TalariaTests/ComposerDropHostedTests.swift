@@ -215,15 +215,11 @@ final class ComposerDropHostedTests: XCTestCase {
     }
 
     private func composerCentre(in window: UIWindow) throws -> CGPoint {
-        if let editor = window.firstView(ofType: ComposerTextView.PastingTextView.self) {
-            return editor.convert(CGPoint(x: editor.bounds.midX, y: editor.bounds.midY), to: window)
-        }
-        let shell = try XCTUnwrap(
-            HostedAccessibility.element(in: window, label: "Message")
-                ?? HostedAccessibility.element(in: window, label: "Composer options"),
+        let composer = try XCTUnwrap(
+            composerFrame(in: window) ?? HostedAccessibility.element(in: window, label: "Composer options")?.accessibilityFrame,
             "The chat has no composer"
         )
-        return CGPoint(x: shell.accessibilityFrame.midX, y: shell.accessibilityFrame.midY)
+        return CGPoint(x: composer.midX, y: composer.midY)
     }
 
     private func textProvider(_ text: String) -> NSItemProvider {

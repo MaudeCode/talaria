@@ -448,6 +448,14 @@ extension XCTestCase {
         XCTFail("\(phase): the chat kept re-evaluating through the wait. Last changes: \(report)", file: file, line: line)
     }
 
+    /// The composer as the window draws it: its editor, or the collapsed "Message" shell an unfocused empty composer
+    /// shows in its place, which has no text view (TAL-2695).
+    @MainActor
+    func composerFrame(in window: UIWindow) -> CGRect? {
+        window.firstView(ofType: ComposerTextView.PastingTextView.self) { !$0.isHidden }.map { $0.convert($0.bounds, to: window) }
+            ?? HostedAccessibility.element(in: window, label: "Message")?.accessibilityFrame
+    }
+
     /// Reads either composer presentation; a missing composer is not an empty draft.
     @MainActor
     func composerDraftText(in window: UIWindow) -> String? {
