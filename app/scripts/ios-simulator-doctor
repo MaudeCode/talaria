@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""Say why an iOS simulator is stuck, and who holds its pool lease.
+
+Usage: scripts/ios-simulator-doctor [simulator-udid]   (default: $IOS_SIMULATOR_ID)
+
+Read-only: it never restarts services, kills apps, boots, shuts down or erases a
+device, or touches a lease. Each probe runs in its own process group and is
+stopped after IOS_SIMULATOR_DOCTOR_TIMEOUT seconds (default 20), so a wedged
+CoreSimulator cannot hang it. Exit 0 means nothing is stuck, 1 names a problem.
+"""
+from contextlib import suppress
+from dataclasses import dataclass
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+
+SCRIPTS = Path(__file__).resolve().parent
+PROBE_TIMEOUT = float(os.environ.get('IOS_SIMULATOR_DOCTOR_TIMEOUT', '20'))
+# Swap past half of RAM, or this many simulator processes stuck in uninterruptible
+# waits, came with every boot and launch stalling in Hermex's 2026-10-14 wedge.
+# One day's evidence, so on its own it only warns.
+HEAVY_SWAP_RATIO = 0.5
+STALLED_LIMIT = 5
+
+
+def bundle_prefix():
+    """Talaria's base bundle ID; every build variant (the pool's .xctest app too) extends it."""
+    config = (SCRIPTS.parent / 'Config' / 'Shared.xcconfig').read_text()
+    return re.search(r'^APP_BUNDLE_IDENTIFIER = ([\w.-]+)', config, re.M).group(1)
+
+
+def probe(command):
+    """Return stdout, or None when the command fails or outlives the timeout.
+
+    xcrun runs simctl as a child, so a timeout stops the probe's whole process group,
+    and only that group. Output goes to a file, not a pipe: a child that escaped the
+    group cannot hold the doctor open by keeping a pipe."""
+    with tempfile.TemporaryFile() as output:
+        process = subprocess.Popen(command, stdout=output, stderr=subprocess.DEVNULL,
+                                   stdin=subprocess.DEVNULL, start_new_session=True)
+        try:
+            status = process.wait(timeout=PROBE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            # The unreaped leader keeps its group ID reserved, so this cannot reach a reused one.
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            # A process in an uninterruptible wait cannot die yet; leave it rather than wait.
+            with suppress(subprocess.TimeoutExpired):
+                process.wait(timeout=2)
+            return None
+        output.seek(0)
+        return output.read().decode(errors='replace') if status == 0 else None
+
+
+@dataclass
+class Lease:
+    pid: int = None
+    command: str = None   # None when the PID no longer runs: a stale lease the next acquisition reclaims
+    quarantined: bool = False
+
+    def describe(self):
+        held = ('none' if self.pid is None else f'held by PID {self.pid}: {self.command}' if self.command
+                else f'stale (PID {self.pid} has exited; the next acquisition reclaims it)')
+        return held + ('; quarantined until an erase succeeds' if self.quarantined else '')
+
+
+def lease_dir():
+    # The pool script owns the lease layout; sourcing it only sets variables.
+    script = 'source "$1" && printf %s "$lease_dir"'
+    return Path(subprocess.run(['bash', '-c', script, '_', str(SCRIPTS / 'ios-simulator-pool')],
+                               capture_output=True, text=True, check=True).stdout)
+
+
+def lease_files(directory):
+    """Lease files by upper-case name: simctl's UDIDs are upper case, but a caller may type them in any case."""
+    return {path.name.upper(): path for path in directory.iterdir()} if directory.is_dir() else {}
+
+
+def read_lease(files, udid):
+    lease = Lease(quarantined=f'{udid}.DIRTY'.upper() in files)
+    with suppress(OSError, ValueError, KeyError):
+        lease.pid = int(files[f'{udid}.LOCK'.upper()].read_text().strip())
+    if lease.pid is not None:
+        lease.command = (probe(['ps', '-o', 'command=', '-p', str(lease.pid)]) or '').strip() or None
+    return lease
+
+
+@dataclass
+class Facts:
+    lease: Lease
+    swap_used_mb: float = 0
+    ram_mb: float = 0
+    stalled: int = 0
+    service_answers: bool = True
+    udid: str = None       # CoreSimulator's spelling, once it answers
+    name: str = None
+    state: str = None      # 'missing' when CoreSimulator does not know the UDID
+    device_answers: bool = True
+    zombie_pid: int = None
+    others: tuple = ()     # live leases on other devices, which a service restart would also stop
+
+
+def gather(udid, directory, bundle):
+    files = lease_files(directory)
+    facts = Facts(read_lease(files, udid))
+    facts.ram_mb = int((probe(['sysctl', '-n', 'hw.memsize']) or '0').strip() or 0) / 2**20
+    swap = re.search(r'used = ([\d.]+)M', probe(['sysctl', '-n', 'vm.swapusage']) or '')
+    facts.swap_used_mb = float(swap.group(1)) if swap else 0.0
+    facts.stalled = sum(1 for row in (probe(['ps', '-axo', 'stat=,command=']) or '').splitlines()
+                        if row.lstrip().startswith('U') and ('xpcproxy_sim' in row or '/CoreSimulator/' in row))
+    others = [read_lease(files, name[:-5]) for name in sorted(files)
+              if name.endswith('.LOCK') and name != f'{udid}.LOCK'.upper()]
+    facts.others = tuple(lease for lease in others if lease.command)
+    listing = probe(['xcrun', 'simctl', 'list', 'devices', '--json'])
+    if listing is None:
+        facts.service_answers = False
+        return facts
+    device = next((device for devices in json.loads(listing).get('devices', {}).values() for device in devices
+                   if device.get('udid', '').upper() == udid.upper()), None)
+    if device is None:
+        facts.state = 'missing'
+        return facts
+    # Probe and print the UDID as CoreSimulator spells it, whatever case the caller typed.
+    udid, facts.udid = (device['udid'],) * 2
+    facts.name, facts.state = device.get('name'), device.get('state')
+    # Booting and Shutting Down can hang too; only Shutdown skips the device probe.
+    if facts.state == 'Shutdown':
+        return facts
+    jobs = probe(['xcrun', 'simctl', 'spawn', udid, 'launchctl', 'list'])
+    facts.device_answers = jobs is not None
+    app = re.compile(r'UIKitApplication:' + re.escape(bundle) + r'(\.[\w.-]+)?\[')
+    for line in (jobs or '').splitlines():
+        fields = line.split()
+        # Simulator processes are host processes, so the host ps sees the app's state.
+        if len(fields) == 3 and fields[0].isdigit() and app.match(fields[2]):
+            if (probe(['ps', '-o', 'stat=', '-p', fields[0]]) or '').strip().startswith('Z'):
+                facts.zombie_pid = int(fields[0])
+    return facts
+
+
+def release_step(udid, lease):
+    if lease.command:
+        return (f'Stop the run that holds the lease (PID {lease.pid}); its release shuts the device down and, '
+                'for a pool device, erases it. Do not shut it down under a live lease.')
+    return (f'No live run holds a lease, so nothing will release it: `xcrun simctl shutdown {udid}` frees it '
+            '(the pool skips booted devices).')
+
+
+def diagnose(facts, udid):
+    """Return (verdict, explanation, follow-up); the follow-up is None when nothing is stuck."""
+    heavy = (facts.ram_mb and facts.swap_used_mb >= facts.ram_mb * HEAVY_SWAP_RATIO) \
+        or facts.stalled >= STALLED_LIMIT
+    pressure = (f'The Mac is short on memory ({facts.swap_used_mb / 1024:.1f} GB swap used, '
+                f'{facts.stalled} simulator processes stuck waiting).')
+    if not facts.service_answers:
+        held = ', '.join(f'PID {lease.pid}' for lease in (facts.lease, *facts.others) if lease.command) or 'none'
+        return ('SERVICE_UNRESPONSIVE',
+                'CoreSimulator does not answer `simctl list`, so every simulator on this Mac is stuck.'
+                + (' ' + pressure if heavy else ''),
+                'Mac owner only: restarting CoreSimulatorService stops every booted simulator, including '
+                f'live pool leases ({held}). Reboot the Mac if it stays stuck.')
+    if facts.state == 'missing':
+        return ('UNKNOWN_DEVICE', f'CoreSimulator has no simulator {udid}.',
+                'Check the UDID with `xcrun simctl list devices`.')
+    if facts.state == 'Shutdown':
+        return ('NOT_BOOTED', 'The simulator is shut down; nothing on it is stuck.', None)
+    if not facts.device_answers:
+        if heavy:
+            return ('MEMORY_PRESSURE', 'The simulator does not answer while the Mac is paging. ' + pressure,
+                    'Free memory first: quit memory-heavy apps or stop an idle run. Then: '
+                    + release_step(udid, facts.lease))
+        return ('DEVICE_UNRESPONSIVE', f'This simulator ({facts.state}) does not answer, but CoreSimulator does.',
+                release_step(udid, facts.lease))
+    if facts.zombie_pid:
+        return ('ZOMBIE_APP',
+                f'Talaria (PID {facts.zombie_pid}) is a zombie the simulator still counts as running, so launch '
+                'and terminate wait on it. A debugger killed or detached mid-session leaves this.',
+                release_step(udid, facts.lease))
+    explanation = 'CoreSimulator and the simulator both answer.'
+    if heavy:
+        explanation += ' Warning: ' + pressure + ' Booting another simulator may stall.'
+    return ('HEALTHY', explanation, None)
+
+
+def main(argv):
+    udid = argv[1] if len(argv) == 2 else os.environ.get('IOS_SIMULATOR_ID', '') if len(argv) == 1 else ''
+    if not udid or udid.startswith('-'):
+        print(__doc__.strip(), file=sys.stderr)
+        return 64
+    facts = gather(udid, lease_dir(), bundle_prefix())
+    udid = facts.udid or udid
+    verdict, explanation, follow_up = diagnose(facts, udid)
+    print(f'Simulator: {udid}' + (f' ({facts.name}, {facts.state})' if facts.name else ''))
+    print('Lease: ' + facts.lease.describe())
+    print(f'{verdict}: {explanation}')
+    if follow_up:
+        print('Next: ' + follow_up)
+    return 1 if follow_up else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))
