@@ -9,7 +9,8 @@ export interface NotesSource {
   readonly id: string
   readonly name: string
   readonly kind: 'joplin' | 'folder'
-  search(query: string, limit: number): Promise<Dict[]>
+  /** `signal` aborts when the request goes away; a provider with its own short timeout may ignore it. */
+  search(query: string, limit: number, signal?: AbortSignal): Promise<Dict[]>
   item(id: string): Promise<Dict>
 }
 

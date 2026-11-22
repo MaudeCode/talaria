@@ -12,7 +12,7 @@ import { str } from '../../util.js'
 import { expandHome } from '../../workspace/paths.js'
 import { safeText } from '../mcp.js'
 import { expandVars, WikiPages, type PageRule } from '../wiki.js'
-import { noteSnippet, previewBody, searchLimit, type NotesSource } from './source.js'
+import { noteSnippet, NotesSourceError, previewBody, searchLimit, type NotesSource } from './source.js'
 
 /** Every page under the root but Logseq's `logseq/bak` (dot directories are never listed). */
 export const FOLDER_RULE = { sections: [''], include: (rel: string): boolean => rel !== 'logseq/bak' && !rel.startsWith('logseq/bak/') } satisfies PageRule
@@ -34,24 +34,49 @@ export function notesFolders(config: Config, env: Record<string, string | undefi
 
 const parentOf = (rel: string): string => (dirname(rel) === '.' ? '' : dirname(rel))
 
-export function folderSource(folder: { name: string; path: string }, redact: boolean, pages = folderPages): NotesSource {
+/** Text one search reads at most, newest pages first; a vault past it is searched only as far back as it reaches. */
+export const MAX_SCAN_BYTES = 64 * 1024 * 1024
+
+/** The scan running or queued last per folder root: one search reads a folder at a time. */
+const scans = new Map<string, Promise<unknown>>()
+
+function oneScanAt<T>(root: string, scan: () => Promise<T>): Promise<T> {
+  const next = (scans.get(root) ?? Promise.resolve()).catch(() => undefined).then(scan)
+  scans.set(root, next)
+  const forget = (): void => { if (scans.get(root) === next) scans.delete(root) }
+  next.then(forget, forget)
+  return next
+}
+
+export function folderSource(folder: { name: string; path: string }, redact: boolean, pages = folderPages, scanBytes = MAX_SCAN_BYTES): NotesSource {
   const id = `folder:${folder.name}`
   return {
     id, name: folder.name, kind: 'folder',
-    /** Newest first; a note matches when its title (the file stem) or its body holds every term. */
-    async search(rawQuery, limit) {
+    /**
+     * Newest first; a note matches when its title (the file stem) or its body holds every term. Pages are read newest
+     * first until `limit` match or `scanBytes` is spent, one search per folder at a time, stopping once `signal` aborts.
+     */
+    search(rawQuery, limit, signal) {
       const query = rawQuery.trim()
       const terms = sessionSearchTerms(query)
-      if (!terms.length) return []
-      const hits: { mtimeMs: number; row: Dict }[] = []
-      // ponytail: reads every allowlisted page per search; add an mtime-keyed text cache if vaults near the 10,000-file cap feel slow.
-      for (const [rel, entry] of await pages.allowlistedEntries(folder.path)) {
-        const page = await pages.readEntry(entry)
-        const title = basename(rel, '.md')
-        if (!page || !(sessionSearchMatches(title, terms) || sessionSearchMatches(page.content, terms))) continue
-        hits.push({ mtimeMs: page.mtimeMs, row: { id: rel, title: safeText(title || 'Untitled', 180), snippet: safeText(noteSnippet(page.content, query), 260), parent_id: parentOf(rel), updated_time: Math.round(page.mtimeMs), source: id } })
-      }
-      return hits.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, searchLimit(limit)).map((hit) => hit.row)
+      if (!terms.length) return Promise.resolve([])
+      return oneScanAt(folder.path, async () => {
+        const want = searchLimit(limit)
+        const entries = await Promise.all([...await pages.allowlistedEntries(folder.path)].map(async ([rel, entry]) => ({ rel, entry, mtimeMs: await pages.mtimeOf(entry) ?? 0 })))
+        const hits: Dict[] = []
+        let left = scanBytes
+        // ponytail: reads pages per search within the byte budget; add an mtime-keyed text cache if large vaults feel slow.
+        for (const { rel, entry } of entries.sort((a, b) => b.mtimeMs - a.mtimeMs)) {
+          if (signal?.aborted) throw new NotesSourceError('Search was cancelled')
+          if (hits.length >= want || left <= 0) break
+          const page = await pages.readEntry(entry)
+          if (!page) continue
+          left -= Buffer.byteLength(page.content)
+          const title = basename(rel, '.md')
+          if (sessionSearchMatches(title, terms) || sessionSearchMatches(page.content, terms)) hits.push({ id: rel, title: safeText(title || 'Untitled', 180), snippet: safeText(noteSnippet(page.content, query), 260), parent_id: parentOf(rel), updated_time: Math.round(page.mtimeMs), source: id })
+        }
+        return hits
+      })
     },
     /** `rel` under the root, checked by the wiki page rules; the body is cut at 50,000 characters, then redacted. */
     async item(rel) {

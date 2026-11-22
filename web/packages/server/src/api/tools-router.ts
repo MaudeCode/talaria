@@ -71,14 +71,19 @@ const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfile
 /** TAL-1514: Meshy work for the active profile, aborted when the request goes away. */
 function meshy<T>(ctx: RequestContext, fn: (signal: AbortSignal) => Promise<T>): Promise<never> {
   return run(async () => {
-    const abort = new AbortController()
-    const close = (): void => { abort.abort() }
-    ctx.res.once('close', close)
-    try { return await fn(abort.signal) } catch (error) {
+    try { return await untilClosed(ctx, fn) } catch (error) {
       if (error instanceof MeshyError) throw new HttpFailure(error.status, error.message)
       throw error
-    } finally { ctx.res.off('close', close) }
+    }
   })
+}
+
+/** `fn` with a signal that aborts when the request goes away. */
+async function untilClosed<T>(ctx: RequestContext, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const abort = new AbortController()
+  const close = (): void => { abort.abort() }
+  ctx.res.once('close', close)
+  try { return await fn(abort.signal) } finally { ctx.res.off('close', close) }
 }
 
 /** Profile homes with an `stt.warm` in flight (TAL-916). */
@@ -747,7 +752,7 @@ export const toolsRouter = os.router({
     search: os.notes.search.handler(({ input, context: { ctx } }) => run(async () => {
       const source = await notesSource(ctx, input.source, { results: [] })
       const query = str(input.q).trim()
-      return { source: source.id, query, results: await notesCall(source, { query, results: [] }, () => source.search(query, notesLimit(input.limit))) }
+      return { source: source.id, query, results: await notesCall(source, { query, results: [] }, () => untilClosed(ctx, (signal) => source.search(query, notesLimit(input.limit), signal))) }
     })),
     item: os.notes.item.handler(({ input, context: { ctx } }) => run(async () => {
       const source = await notesSource(ctx, input.source, {})

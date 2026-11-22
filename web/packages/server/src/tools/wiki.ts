@@ -219,6 +219,12 @@ export class WikiPages {
     return null
   }
 
+  /** An allowlisted entry's mtime while it is still that file; `undefined` when it changed or vanished. */
+  async mtimeOf(entry: WikiEntry): Promise<number | undefined> {
+    const st = await stat(entry.target)
+    return st && sameFile(st, entry) ? st.mtimeMs : undefined
+  }
+
   /** An allowlisted entry's text (cut at `MAX_PAGE_BYTES`) and mtime through the identity-checked open; `null` when it changed or vanished. */
   async readEntry(entry: WikiEntry): Promise<{ content: string; mtimeMs: number } | null> {
     const handle = await this.openVerified(entry.target, entry)
