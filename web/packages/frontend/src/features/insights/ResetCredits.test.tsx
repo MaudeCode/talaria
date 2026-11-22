@@ -10,8 +10,9 @@ import type { z } from 'zod'
 import { ProviderQuotasSchema } from '../../contracts'
 import { ProviderQuotaRows } from './ProviderQuotaRows'
 import { ResetCredits } from './ResetCredits'
+import { useProviderQuotas } from '../../lib/useProviderQuotas'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), fetchResetCredits: vi.fn(), redeemResetCredit: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), fetchResetCredits: vi.fn(), redeemResetCredit: vi.fn(), fetchProviderQuotas: vi.fn(), fetchOpenRouterCostHistory: vi.fn() }))
 
 const grant = (id: string, title: string, covers: ResetCredit['covers'], expires_at: string | null, extra: Partial<ResetCredit> = {}): ResetCredit =>
   ({ id, state: 'available', redeemable: true, title, description: null, covers, granted_at: '2029-12-01T00:00:00Z', expires_at, redeemed_at: null, ...extra })
@@ -111,5 +112,21 @@ describe('ResetCredits (TAL-2681)', () => {
     expect(await within(unavailable).findByText('Available 1')).toBeInTheDocument()
     expect(within(unavailable).getByRole('button', { name: 'Use reset' })).toBeEnabled()
     expect(vi.mocked(api.fetchResetCredits)).toHaveBeenCalledWith('qsrc_codex')
+  })
+
+  it('rereads the grants when the quota list is refreshed', async () => {
+    const quotas = ProviderQuotasSchema.parse({ version: 1, computed_at: '2030-01-01T00:00:00Z', scope_id: 'qscope_test', profile_id: 'default', active_provider: 'openai-codex', requested_source_id: null, missing_source: false, sources: [
+      { source_id: 'qsrc_codex', provider_id: 'openai-codex', provider_label: 'OpenAI Codex', account_label: 'work@example.test', status: 'unavailable', windows: [], reset_credits: true },
+    ] })
+    vi.mocked(api.fetchProviderQuotas).mockResolvedValue(quotas)
+    vi.mocked(api.fetchResetCredits).mockResolvedValueOnce(listed([FULL_A])).mockResolvedValue(listed([FULL_A, FULL_B]))
+    function Insights() {
+      const { quotas: query, refresh } = useProviderQuotas()
+      return <ProviderQuotaRows quotas={query} mode="used" onRefresh={() => { void refresh() }} />
+    }
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Insights /></QueryClientProvider>)
+    await screen.findByText('Available 1')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh quotas' }))
+    expect(await screen.findByText('Available 2')).toBeInTheDocument()
   })
 })

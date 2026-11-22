@@ -41,7 +41,7 @@ export function useSidebarQuotaPins(quotas: Quotas | undefined) {
 
 /**
  * The provider quota list every surface reads (Settings › Providers, Insights, the sidebar's pinned rows): one cache entry, one minute of
- * freshness, and a forced refresh that also rereads the OpenRouter cost history. The server recomputes pace on
+ * freshness, and a forced refresh that also rereads the OpenRouter cost history and the Codex banked resets (TAL-2681). The server recomputes pace on
  * every read (provider calls are cached 45 s), so a reset replaces an expired pace within a minute. `provider` (TAL-2151,
  * the composer chip) reads the same list with that provider's `composer` quota, one entry per provider under the same key.
  */
@@ -53,7 +53,7 @@ export function useProviderQuotas({ enabled = true, provider }: { enabled?: UseQ
   const quotas = useQuery({ queryKey, queryFn: () => fetchQuotas(), staleTime: 60_000, refetchInterval: 60_000, enabled })
   const refresh = () => qc.cancelQueries({ queryKey, exact: true })
     .then(() => qc.query({ queryKey, queryFn: () => fetchQuotas(true), staleTime: 0 }))
-    .then(() => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) })
+    .then(() => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }); void qc.invalidateQueries({ queryKey: keys.resetCreditsAll }) })
     .catch(() => undefined)
   return { quotas, refresh }
 }

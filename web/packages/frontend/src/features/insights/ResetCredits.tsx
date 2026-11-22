@@ -42,7 +42,8 @@ function historyText(c: ResetCredit, locale: string): string {
 export function ResetCredits({ sourceId, account, locale }: { sourceId: string; account: string; locale: string }) {
   const qc = useQueryClient()
   const key = keys.resetCredits(sourceId)
-  const credits = useQuery({ queryKey: key, queryFn: () => api.fetchResetCredits(sourceId), staleTime: 60_000 })
+  // The quota list's cadence: a grant awarded, spent or expired elsewhere shows within a minute, or at once on Refresh.
+  const credits = useQuery({ queryKey: key, queryFn: () => api.fetchResetCredits(sourceId), staleTime: 60_000, refetchInterval: 60_000 })
   const [showHistory, setShowHistory] = useState(false)
   const [confirming, setConfirming] = useState<ResetCredit | null>(null)
   const [outcome, setOutcome] = useState<Outcome | null>(null)
