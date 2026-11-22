@@ -236,7 +236,7 @@ export type FileExcerptLine = z.infer<typeof FileExcerptLineSchema>
  * a further read continues from (`next_offset`). `language` is the highlight grammar a client's highlighter resolves: the
  * path's extension, null for an extracted document or a path without one.
  */
-export const FileExcerptSchema = z.object({ path: z.string(), focus_path: FocusPathField, language: z.string().nullable(), start_line: z.number().int(), lines: z.array(FileExcerptLineSchema), total_lines: z.number().int().nullable(), truncated: z.boolean(), next_offset: z.number().int().optional() })
+export const FileExcerptSchema = z.object({ path: z.string(), focus_path: FocusPathField, language: z.string().nullable(), start_line: z.number().int(), lines: z.array(FileExcerptLineSchema), total_lines: z.number().int().nullable(), truncated: z.boolean(), next_offset: z.number().int().optional(), wrapped_at: z.number().int().positive().optional().describe('TAL-2686: the width a read of a pruned tool-result archive wrapped its long lines at (the Agent\'s `long_lines_wrapped_at`), so each line number counts a wrapped line, not a line of the file. Absent for an unwrapped read and on an older server or Agent.') })
 export type FileExcerpt = z.infer<typeof FileExcerptSchema>
 /** TAL-2323: one matching line of a `search_files` result. */
 export const SearchMatchSchema = z.object({ line: z.number().int(), text: z.string() })

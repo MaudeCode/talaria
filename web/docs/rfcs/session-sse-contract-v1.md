@@ -218,7 +218,9 @@ back to the session file.
   place of `text`; the 4000-character budget covers all rows together.
   TAL-2323: a `read_file` result adds `file_excerpt` (`path` from the call's
   arguments, `language` from its extension, numbered `lines` without the Agent's
-  `N|` gutter, `total_lines`, `truncated`, `next_offset`) and a `search_files`
+  `N|` gutter, `total_lines`, `truncated`, `next_offset`, and TAL-2686's
+  `wrapped_at`, the width an archive read wrapped long lines at, so its numbers
+  count wrapped lines) and a `search_files`
   result adds `matches` (`total`, `truncated`, `files` of `{ path, count?,
   matches: [{ line, text }] }` from every Agent encoding), in place of `fields`;
   `text` stays for older clients. A path inside the session workspace carries

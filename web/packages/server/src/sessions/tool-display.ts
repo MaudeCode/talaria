@@ -488,7 +488,8 @@ export const gutterText = (lines: readonly FileExcerptLine[]): string => lines.m
 /**
  * TAL-2323: a `read_file` result (Agent `ReadResult.to_dict`): its content as a `file_excerpt` of the file the call's `path`
  * names; a repeat read's stub, a special file's note and a not-found error (with the similar files it names) as one line.
- * Undefined for any other result (another error, a binary file), which the generic rule shows.
+ * Undefined for any other result (another error, a binary file), which the generic rule shows. TAL-2686: an archive read that
+ * wrapped its long lines carries the width as `wrapped_at`.
  */
 export function readFileView(data: Record<string, unknown>, args: unknown): { file_excerpt?: FileExcerpt; text?: string; error?: string } | undefined {
   if (data.status === 'unchanged' && data.dedup === true) return { text: 'Unchanged since the last read' }
@@ -503,9 +504,11 @@ export function readFileView(data: Record<string, unknown>, args: unknown): { fi
   const truncated = data.truncated === true
   const next = safeInt(data.next_offset) ?? (truncated && lines.length ? lines[lines.length - 1]!.n + 1 : undefined)
   const path = isDict(args) ? str(args.path) : ''
+  const wrappedAt = safeInt(data.long_lines_wrapped_at)
   return { file_excerpt: {
     path, language: data.extracted_document === true ? null : posix.extname(path).slice(1).toLowerCase() || null, start_line: lines[0]?.n ?? 1, lines, total_lines: safeInt(data.total_lines) ?? null, truncated,
     ...(next !== undefined ? { next_offset: next } : {}),
+    ...(wrappedAt !== undefined && wrappedAt > 0 ? { wrapped_at: wrappedAt } : {}),
   } }
 }
 

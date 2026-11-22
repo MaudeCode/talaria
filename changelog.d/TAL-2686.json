@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reading archived tool output on Web now says when long lines were wrapped, so its line numbers count wrapped lines.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

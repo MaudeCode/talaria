@@ -137,6 +137,13 @@ describe('read_file and search_files results (TAL-2323)', () => {
     expect(requestOpenFile).toHaveBeenCalledWith({ sessionId: 's1', path: 'src/app.ts', line: 12 })
   })
 
+  it('says an archive read wrapped its long lines, and an unwrapped read does not (TAL-2686)', async () => {
+    const excerpt = { path: '/home/u/.hermes/cache/tool_results/call_1.json', language: 'json', start_line: 1, lines: [{ n: 1, text: 'aaaa' }, { n: 2, text: 'aaaa' }], total_lines: 2, truncated: false }
+    expect(await open({ file_excerpt: { ...excerpt, wrapped_at: 2000 } })).toHaveTextContent('Long lines wrapped at 2000 characters')
+    cleanup()
+    expect(await open({ file_excerpt: excerpt })).not.toHaveTextContent('wrapped')
+  })
+
   it('shows a path outside the workspace as text', async () => {
     const result = await open({ file_excerpt: { path: '/etc/hosts', language: null, start_line: 1, lines: [{ n: 1, text: 'localhost' }], total_lines: 1, truncated: false } })
     expect(result.querySelector('.tool-file-excerpt button')).toBeNull()

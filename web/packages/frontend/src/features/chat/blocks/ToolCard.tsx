@@ -139,7 +139,10 @@ function fileOpen(path: string, focusPath: string | undefined, line: number | un
 /** The chat code block's body, from the renderer chunk the transcript's Markdown loads, so the layout bundle stays without Shiki. */
 const CodeBlockBody = lazy(() => import('../render/MarkdownRenderer').then((module) => ({ default: module.CodeBlockBody })))
 
-/** TAL-2323: a read's lines under its path, highlighted like a chat code block with their real numbers, and where a cut-short read stopped. */
+/**
+ * TAL-2323: a read's lines under its path, highlighted like a chat code block with their real numbers, and where a cut-short read stopped.
+ * TAL-2686: an archive read that wrapped its long lines says so, since its numbers count wrapped lines.
+ */
 function FileExcerptResult({ excerpt, sessionId }: { excerpt: FileExcerpt; sessionId?: string | undefined }) {
   const last = excerpt.lines.at(-1)?.n
   const code = excerpt.lines.map((line) => line.text).join('\n')
@@ -148,6 +151,7 @@ function FileExcerptResult({ excerpt, sessionId }: { excerpt: FileExcerpt; sessi
       {excerpt.path && <div className="mb-1"><FilePath path={excerpt.path} focusPath={excerpt.focus_path} line={excerpt.start_line} sessionId={sessionId} /></div>}
       {excerpt.lines.length > 0 && <div className="max-h-72 overflow-auto rounded-md text-xs"><Suspense fallback={<pre className={RESULT_PRE}>{code}</pre>}><CodeBlockBody code={code} language={excerpt.language ?? 'text'} incomplete={false} numbers={excerpt.lines.map((line) => line.n)} /></Suspense></div>}
       {excerpt.truncated && last !== undefined && <div className={cn(LABEL, 'mt-1')}>{excerpt.total_lines === null ? m.tool_read_stopped_at({ line: String(last) }) : m.tool_read_stopped({ line: String(last), total: String(excerpt.total_lines) })}</div>}
+      {excerpt.wrapped_at !== undefined && <div className={cn(LABEL, 'mt-1')}>{m.tool_read_wrapped({ width: String(excerpt.wrapped_at) })}</div>}
     </div>
   )
 }
