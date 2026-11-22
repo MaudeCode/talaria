@@ -3460,6 +3460,21 @@ extension RegularSplitHostedTests {
         XCTAssertFalse(splitComposers(in: window).contains { $0.text == "Primary draft" })
     }
 
+    func testFilesPushWhileTwoDuoChatsShareTheArrangement() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"],
+            size: HostedSize.duoInnerLandscape)
+        try await openSecondChat(in: window)
+        _ = try await requireSplitAction("Make Primary", in: window)
+        // Two chats title themselves inline; the trailing chat's native items locate the shared navigation stack.
+        let makePrimary = try XCTUnwrap(HostedAccessibility.toolbarItem("Make Primary", in: window))
+        let navigation = try XCTUnwrap(HostedAccessibility.navigationController(showing: makePrimary, in: window))
+        press(try await filesButton(in: window))
+        _ = try await requireElement(in: window, label: "Search files")
+        XCTAssertNil(filesInspector(in: window), "Files must push while two chats are beside each other")
+        XCTAssertGreaterThan(navigation.viewControllers.count, 1)
+    }
+
     func testDuoSecondChatYieldsTheCompanionPageAndSurvivesAFold() async throws {
         try requireArrangement()
         let display = HostedDuoDisplay()
@@ -3476,15 +3491,6 @@ extension RegularSplitHostedTests {
         }
         XCTAssertNil(companionPage(in: window), "The second chat must occupy the companion page's slot")
         attachHostedScreenshot(window, name: "duo-two-chats")
-        // Two chats title themselves inline; the trailing chat's native items locate the shared navigation stack.
-        let makePrimary = try XCTUnwrap(HostedAccessibility.toolbarItem("Make Primary", in: window))
-        let navigation = try XCTUnwrap(HostedAccessibility.navigationController(showing: makePrimary, in: window))
-        press(try await filesButton(in: window))
-        _ = try await requireElement(in: window, label: "Search files")
-        XCTAssertNil(filesInspector(in: window), "Files must push while two chats are beside each other")
-        XCTAssertGreaterThan(navigation.viewControllers.count, 1)
-        navigation.popViewController(animated: false)
-        _ = try await requireSplitAction("Make Primary", in: window)
         foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: true)
         let collapsed = await awaitCondition { HostedAccessibility.toolbarItem("Make Primary", in: window) == nil }
         XCTAssertTrue(collapsed)
