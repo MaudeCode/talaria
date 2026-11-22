@@ -274,11 +274,12 @@ def _route_entered_credentials(config: dict, target: Path, home: Path) -> dict[s
             key, url = value.strip(), str(block.get("base_url") or "").strip()
             name = (refs.aux_api_key_env(task) if task else
                     refs.known_endpoint_key_env(config, url) or refs.endpoint_api_key_env(url))
+            # Another reader of ``name`` shares it unless both name the same endpoint; a route with no URL of its own
+            # (delegation re-pointed at a named provider) cannot prove that, so any other reader counts.
             identity = refs.endpoint_identity(url)
-            shared = [owner for owner in refs.env_reference_owners(config, name) if owner is not block
-                      and (owner_url := str(owner.get("base_url") or owner.get("url") or owner.get("api") or "").strip())
-                      and refs.endpoint_identity(owner_url) != identity]
-            if updates.get(name, key) != key or url and shared and env.get(name) not in (None, "", key):
+            shared = [owner for owner in refs.env_reference_owners(config, name) if owner is not block and not (
+                identity and refs.endpoint_identity(str(owner.get("base_url") or owner.get("url") or owner.get("api") or "").strip()) == identity)]
+            if updates.get(name, key) != key or shared and env.get(name) not in (None, "", key):
                 raise RpcError(f"Refusing to overwrite {name}: another endpoint in config.yaml reads it and it holds a different key.",
                                condition="config_write_refused")
             updates[name] = key

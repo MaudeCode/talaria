@@ -457,24 +457,29 @@ def test_config_set_refuses_credential_before_any_write(hermes_home: pathlib.Pat
 from hermes_cli.config_secret_refs import endpoint_api_key_env
 
 name = endpoint_api_key_env(url)
-# Another endpoint already reads this endpoint's variable and holds a different key in it.
-path.write_text("model:\n  provider: custom\n  base_url: https://models.example.test/v1\nfallback_providers:\n- provider: custom\n  base_url: https://other.example.test/v1\n  api_key: ${%s}\n" % name)
-env.write_text(f"{name}=synthetic-other-key\n")
-for vision in (False, True):
+# Another endpoint already reads the saved route's variable and holds a different key in it; a route with no URL
+# of its own (delegation re-pointed at a named provider) cannot prove it owns the variable either.
+other = "fallback_providers:\n- provider: custom\n  base_url: https://other.example.test/v1\n  api_key: ${%s}\n"
+env.write_text(f"{name}=synthetic-other-key\nHERMES_DELEGATION_API_KEY=synthetic-other-key\n")
+for case in ("endpoint", "no_url", "managed"):
+    path.write_text("model:\n  provider: custom\n  base_url: https://models.example.test/v1\n" + other % (name if case != "no_url" else "HERMES_DELEGATION_API_KEY"))
     original, original_env = path.read_bytes(), env.read_bytes()
     desired = config.read_config(path)["config"]
-    if vision:  # an administrator-managed variable refuses the whole save, not just its slot
+    if case == "no_url":
+        desired["delegation"] = {"provider": "openrouter", "model": "synthetic", "api_key": "synthetic-delegation-key"}
+    else:
+        desired["model"]["api_key"] = "synthetic-model-key"
+    if case == "managed":  # an administrator-managed variable refuses the whole save, not just its slot
         desired["fallback_providers"] = []
         desired["auxiliary"] = {"vision": {"provider": "openrouter", "model": "synthetic", "api_key": "synthetic-vision-key"}}
-    desired["model"]["api_key"] = "synthetic-model-key"
     try:
         save(desired)
     except RpcError as error:
-        assert error.data["condition"] == "config_write_refused", error.data
+        assert error.data["condition"] == "config_write_refused", (case, error.data)
     else:
-        raise AssertionError("credential save succeeded")
-    assert path.read_bytes() == original
-    assert env.read_bytes() == original_env
+        raise AssertionError(f"{case}: credential save succeeded")
+    assert path.read_bytes() == original, case
+    assert env.read_bytes() == original_env, case
 ''')
 
 
