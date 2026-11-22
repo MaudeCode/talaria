@@ -13,11 +13,14 @@ import { IconButton } from '../../ui/Button'
 import { copyWithToast } from '../../lib/clipboard'
 import { showErrorToast } from '../toast/errorToast'
 import { randomUuid } from '../../lib/randomHex'
+import type RFB from '@novnc/novnc'
 
 type Connection = 'connecting' | 'connected' | 'disconnected'
 type Control = ScreenView['control']
 
 const newViewId = (): string => randomUuid().replaceAll('-', '')
+/** noVNC loads with the first viewer; module scope, because React Compiler cannot lower `import()` inside a component. */
+const loadNoVnc = () => import('@novnc/novnc')
 
 export function ScreenViewer({ open, onOpenChange, screen }: { open: boolean; onOpenChange: (open: boolean) => void; screen: ScreenView }) {
   return (
@@ -49,7 +52,7 @@ function ScreenBody({ screen }: { screen: ScreenView }) {
 /** One viewer connection; Reconnect starts a fresh one under a new view id. */
 function LiveScreen({ initialControl }: { initialControl: Control }) {
   const host = useRef<HTMLDivElement>(null)
-  const rfb = useRef<import('@novnc/novnc').default | null>(null)
+  const rfb = useRef<RFB | null>(null)
   const [viewId, setViewId] = useState(newViewId)
   const [connection, setConnection] = useState<Connection>('connecting')
   const [control, setControl] = useState<Control>(initialControl)
@@ -58,13 +61,13 @@ function LiveScreen({ initialControl }: { initialControl: Control }) {
     const target = host.current
     if (!target) return
     let cancelled = false
-    let client: import('@novnc/novnc').default | null = null
-    void import('@novnc/novnc').then(({ default: RFB }) => {
+    let client: RFB | null = null
+    void loadNoVnc().then(({ default: Client }) => {
       if (cancelled) return
       const url = resolveApiUrl(SCREEN_STREAM_PATH)
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
       url.searchParams.set('view_id', viewId)
-      client = new RFB(target, url.href, { shared: true })
+      client = new Client(target, url.href, { shared: true })
       client.viewOnly = true
       client.scaleViewport = true
       client.background = 'transparent'
