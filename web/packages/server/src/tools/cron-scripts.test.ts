@@ -1,28 +1,25 @@
 import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
-import type { FileHandle } from 'node:fs/promises'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DESCRIPTION_BYTES, listCronScripts } from './cron-scripts.js'
 
-/** Bytes read per opened handle, and how many of those handles were closed. */
-const io = vi.hoisted(() => ({ reads: [] as number[], closed: 0 }))
+/** Descriptors still open, bytes read per open (descriptor numbers are reused), and a hook run after each async `realpath`. */
+const io = vi.hoisted(() => ({ open: new Map<number, number>(), reads: [] as number[], afterRealpath: null as ((path: string) => void) | null }))
+
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  const openSync = (...args: Parameters<typeof fs.openSync>): number => { const fd = fs.openSync(...args); io.open.set(fd, io.reads.push(0) - 1); return fd }
+  const closeSync = (fd: number): void => { io.open.delete(fd); fs.closeSync(fd) }
+  const readSync = ((fd: number, ...rest: unknown[]) => { const n = (fs.readSync as (...a: unknown[]) => number)(fd, ...rest); const slot = io.open.get(fd); if (slot !== undefined) io.reads[slot]! += n; return n }) as typeof fs.readSync
+  return { ...fs, openSync, closeSync, readSync, default: { ...fs, openSync, closeSync, readSync } }
+})
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const fsp = await importOriginal<typeof import('node:fs/promises')>()
-  const open = async (...args: Parameters<typeof fsp.open>): Promise<FileHandle> => {
-    const handle = await fsp.open(...args)
-    const slot = io.reads.push(0) - 1
-    const read = handle.read.bind(handle) as (buffer: Buffer, offset: number, length: number, position: number | null) => Promise<{ bytesRead: number }>
-    const close = handle.close.bind(handle)
-    Object.assign(handle, {
-      read: async (buffer: Buffer, offset: number, length: number, position: number | null) => { const result = await read(buffer, offset, length, position); io.reads[slot]! += result.bytesRead; return result },
-      close: async () => { io.closed += 1; await close() },
-    })
-    return handle
-  }
-  return { ...fsp, open }
+  const realpath = async (...args: Parameters<typeof fsp.realpath>) => { const real = await fsp.realpath(...args); io.afterRealpath?.(String(args[0])); return real }
+  return { ...fsp, realpath }
 })
 
 describe('listCronScripts', () => {
@@ -31,8 +28,9 @@ describe('listCronScripts', () => {
   beforeEach(() => {
     home = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-cron-scripts-')))
     scripts = join(home, 'scripts')
+    io.open.clear()
     io.reads = []
-    io.closed = 0
+    io.afterRealpath = null
   })
   afterEach(() => {
     chmodSync(home, 0o700)
@@ -68,6 +66,21 @@ describe('listCronScripts', () => {
     })
   })
 
+  it('never reads a file through a subdirectory swapped for an outside link after its containment check', async () => {
+    const outside = join(home, 'outside')
+    mkdirSync(outside)
+    writeFileSync(join(outside, 'collect.py'), '"""Outside the scripts dir."""\n')
+    mkdirSync(join(scripts, 'feeds'), { recursive: true })
+    writeFileSync(join(scripts, 'feeds', 'collect.py'), '"""Inside."""\n')
+    io.afterRealpath = (path) => {
+      if (!path.endsWith(join('feeds', 'collect.py'))) return
+      io.afterRealpath = null
+      renameSync(join(scripts, 'feeds'), join(home, 'feeds-moved'))
+      symlinkSync(outside, join(scripts, 'feeds'))
+    }
+    expect((await listCronScripts(home)).scripts).toEqual([])
+  })
+
   it('answers an empty list with no reason when the profile has no scripts directory', async () => {
     expect(await listCronScripts(home)).toEqual({ directory: scripts, scripts: [], unavailable_reason: null })
   })
@@ -90,8 +103,7 @@ describe('listCronScripts', () => {
     const listing = await listCronScripts(home)
 
     expect(listing.scripts.map((s) => [s.name, s.description])).toEqual([['huge.sh', null], ['small.py', 'small']])
-    expect(io.reads.length).toBe(3)
     expect(Math.max(...io.reads)).toBe(DESCRIPTION_BYTES)
-    expect(io.closed).toBe(io.reads.length)
+    expect([...io.open.keys()]).toEqual([])
   })
 })

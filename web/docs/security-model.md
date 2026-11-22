@@ -290,9 +290,11 @@ that `workspace/media.ts` `mediaAccessFor` derives from authority:
 `listCronScripts`) lists only the caller's active profile's `scripts/` folder,
 the profile home every cron route uses; no input names another profile. It
 lists `.py` and `.sh` files at most one subdirectory deep, drops any entry whose
-real path leaves the folder, opens each file with `O_NOFOLLOW|O_NONBLOCK`,
-lists it only when the open file is a regular file, reads at most its first
-8 KiB for a description and closes it. No route returns a script's contents.
+real path leaves the folder, and opens each file through the anchored walk
+(`openAnchoredFd` under `withPinnedRoot`, the folder's inode taken first), so a
+subfolder swapped for a link after the check is refused. It lists a file only
+when the open file is a regular file, reads at most its first 8 KiB for a
+description and closes it. No route returns a script's contents.
 
 **Uploads and archives.**
 
