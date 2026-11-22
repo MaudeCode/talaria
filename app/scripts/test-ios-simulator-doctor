@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 DOCTOR = Path(__file__).resolve().parent / 'ios-simulator-doctor'
-UDID = '00000000-0000-0000-0000-000000000001'
+UDID = 'A0000000-0000-0000-0000-00000000000B'  # simctl's uppercase form; the pool names leases by it
 OTHER = '00000000-0000-0000-0000-000000000002'
 APP = 'UIKitApplication:dev.kil.talaria.xctest[1a2b][rb-legacy]'
 CEILING = 60  # Shared ceiling for one doctor run; only a hang reaches it. Wedged children outlive it.
@@ -131,6 +131,18 @@ class Doctor(unittest.TestCase):
         output = self.run_doctor(UDID)
         self.assertIn(f'Lease: held by PID {self.owner}: sleep 60\n', output)
         self.assertIn(f'Next: Stop the run that holds the lease (PID {self.owner})', output)
+
+    def test_a_lowercase_udid_probes_and_prints_coresimulators_spelling(self):
+        output = self.run_doctor(UDID.lower(), expected=0)
+        self.assertIn(f'Simulator: {UDID} (iOS Test 1, Booted)', output)
+        self.assertIn(f'simctl spawn {UDID} launchctl list', (self.fixture / 'calls').read_text())
+
+    def test_a_lowercase_udid_finds_its_own_uppercase_lease(self):
+        self.lease(UDID, self.owner)
+        self.write('list.fail')
+        output = self.run_doctor(UDID.lower())
+        self.assertIn(f'Lease: held by PID {self.owner}: sleep 60\n', output)
+        self.assertIn(f'live pool leases (PID {self.owner}).', output)
 
     def test_follow_up_for_a_stale_quarantined_lease_suggests_shutdown(self):
         exited = subprocess.Popen(['true'])
