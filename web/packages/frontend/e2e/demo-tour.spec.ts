@@ -109,24 +109,34 @@ test('every data page shows its seeded data in the light theme', async ({ page }
 })
 
 // TAL-2103: the Settings gallery. Every section, and each Tools tab, shows its heading with no sideways scroll; with
-// `TOUR_SHOTS` each is saved as `settings-<id>-<project>.png`, the picture a Settings change is reviewed against.
-async function settingsPages(page: Page, info: TestInfo, theme: Theme) {
+// `TOUR_SHOTS` each is saved as `settings-<id>-<project>.png`, the picture a Settings change is reviewed against. The
+// gallery runs as groups of at most six pages, one test each, so no test walks all 25 (TAL-2405, test-audit rule oversized).
+interface SettingsPage { name: string, path: string, tab?: (typeof ToolsTabSchema.options)[number] }
+const sections = SettingsSectionSchema.options.map((id): SettingsPage => ({ name: id, path: id }))
+const sectionGroups = Array.from({ length: Math.ceil(sections.length / 5) }, (_, i) => sections.slice(i * 5, i * 5 + 5))
+const settingsGroups: { title: string, pages: SettingsPage[] }[] = [
+  ...sectionGroups.map((pages) => ({ title: `the Settings sections ${pages[0]!.name} to ${pages.at(-1)!.name}`, pages })),
+  { title: 'every Tools tab', pages: ToolsTabSchema.options.map((tab) => ({ name: `tools-${tab}`, path: `tools?tab=${tab}`, tab })) },
+  {
+    title: 'every Settings sub-page',
+    pages: [
+      // TAL-2085: a profile's detail page.
+      { name: 'profiles-detail', path: 'profiles?name=default' },
+      // TAL-2135: a configured provider's own page.
+      { name: 'providers-anthropic', path: 'providers/anthropic' },
+      // TAL-2136: the quota alert thresholds' own page.
+      { name: 'providers-quota-alerts', path: 'providers/quota-alerts' },
+      // TAL-2138: Chat's sub-pages.
+      ...ChatPageSchema.options.map((page) => ({ name: `chat-${page}`, path: `chat/${page}` })),
+    ],
+  },
+]
+
+async function settingsPages(page: Page, info: TestInfo, theme: Theme, pages: SettingsPage[]) {
   const { server } = await bootDemoServer()
   const { check } = tour(page, info, theme)
   // Connectors is a tab only behind the server's gate; open the gate so the gallery covers every tab.
   await page.route('**/api/connectors/available', (route) => route.fulfill({ json: { available: true } }))
-  const pages = [
-    ...SettingsSectionSchema.options.map((id) => ({ name: id, path: id, tab: undefined })),
-    ...ToolsTabSchema.options.map((tab) => ({ name: `tools-${tab}`, path: `tools?tab=${tab}`, tab })),
-    // TAL-2085: a profile's detail page.
-    { name: 'profiles-detail', path: 'profiles?name=default', tab: undefined },
-    // TAL-2135: a configured provider's own page.
-    { name: 'providers-anthropic', path: 'providers/anthropic', tab: undefined },
-    // TAL-2136: the quota alert thresholds' own page.
-    { name: 'providers-quota-alerts', path: 'providers/quota-alerts', tab: undefined },
-    // TAL-2138: Chat's sub-pages.
-    ...ChatPageSchema.options.map((page) => ({ name: `chat-${page}`, path: `chat/${page}`, tab: undefined })),
-  ]
   try {
     if (theme === 'light') await pickLightTheme(page, server.base)
     for (const { name, path, tab } of pages) {
@@ -156,14 +166,16 @@ async function settingsPages(page: Page, info: TestInfo, theme: Theme) {
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 }
 
-test('every Settings section and Tools tab shows its heading without horizontal overflow', async ({ page }, info) => {
-  await settingsPages(page, info, 'dark')
-})
+for (const { title, pages } of settingsGroups) {
+  test(`${title}: each shows its heading without horizontal overflow`, async ({ page }, info) => {
+    await settingsPages(page, info, 'dark', pages)
+  })
 
-test('every Settings section and Tools tab shows its heading in the light theme', async ({ page }, info) => {
-  test.skip(!process.env.TOUR_SHOTS, LIGHT_SHOTS_ONLY)
-  await settingsPages(page, info, 'light')
-})
+  test(`${title}: each shows its heading in the light theme`, async ({ page }, info) => {
+    test.skip(!process.env.TOUR_SHOTS, LIGHT_SHOTS_ONLY)
+    await settingsPages(page, info, 'light', pages)
+  })
+}
 
 for (const theme of ['dark', 'light'] as const) {
   test(`feedback form fits the viewport in the ${theme} theme`, async ({ page }, info) => {

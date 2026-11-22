@@ -1,18 +1,11 @@
 {
   "budgetSeconds": 30,
   "overBudget": {
-    "session-entry.spec.ts::off-screen history halves long tasks during a 200-token stream": "TAL-2405: 56.0 s on main",
-    "demo-tour.spec.ts::every Settings section and Tools tab shows its heading without horizontal overflow": "TAL-2405: 37.1 s on main",
-    "feedback-media.spec.ts::video is re-encoded smaller, without audio, at most 1280 px wide and within maxVideoBytes": "TAL-2405: 30.6 s on main",
-    "tests.test_gateway_sessions::test_real_native_owner_on_its_own_daemon[profiles]": "TAL-2405: 23.6 s on CI run 44288546624 (TAL-2526: two real owner boots plus secondary isolation)",
-    "SessionListHostedTests::testNavigationSectionSwitchesImmediatelyHideAndRestoreSidebarRows": "TAL-2405: 26.1 s on main",
-    "demo-tour.spec.ts::every Settings section and Tools tab shows its heading in the light theme": "TAL-2405: 25.9 s on main",
-    "TranscriptHostedTests::testContinuousHistoryLoadsAllTwoThousandRowsAndPreservesPosition": "TAL-2405: 25.8 s on main",
-    "ScreenGalleryHostedTests::testInsights": "TAL-2405: 25.6 s on main",
-    "SettingsPlacementHostedTests::testSettingsSearchButtonSitsInTheBottomBarOnPhoneAndTopTrailingOnPad": "TAL-2405: 23.8 s on main",
-    "tests.test_gateway_sessions::test_real_native_owner_on_its_own_daemon[recovery]": "TAL-2405: 23.5 s on CI run 44288546624 (TAL-2526: three real owner boots plus admission recovery)",
-    "tests.test_gateway_sessions::test_real_owner_diagnostic_execution_modes[safe-sibling]": "TAL-2405: 27.0 s on CI run 44288546624 (TAL-2526: two owners the Agent boots one after the other)",
-    "tests.test_gateway_sessions::test_real_owner_diagnostic_execution_modes[controls]": "TAL-2405: 20.1 s on CI run 44288546624 (TAL-2526: real owner boot plus two audited turns)",
-    "tests.test_plugin_set_enabled::test_the_agent_turns_a_synthetic_plugin_on": "TAL-2405: 33.5 s on CI run 44601795520, 23.8 s on 44573609719 (TAL-2584: one real Agent admission rebuilds the profile's whole dependency environment)"
+    "session-entry.spec.ts::off-screen history halves long tasks during a 200-token stream": "TAL-2405: 56.0 s on main; now the 50-token stream, remove after two main runs under 20 s",
+    "demo-tour.spec.ts::every Settings section and Tools tab shows its heading without horizontal overflow": "TAL-2405: 37.1 s on main; now five groups of at most six pages, remove after two main runs under 20 s",
+    "feedback-media.spec.ts::video is re-encoded smaller, without audio, at most 1280 px wide and within maxVideoBytes": "TAL-2405: 30.6 s on main; now a 1 s clip, remove after two main runs under 20 s",
+    "SessionListHostedTests::testNavigationSectionSwitchesImmediatelyHideAndRestoreSidebarRows": "TAL-2405: 26.1 s on main; now one test per section, remove after two daily full runs under 20 s",
+    "TranscriptHostedTests::testContinuousHistoryLoadsAllTwoThousandRowsAndPreservesPosition": "TAL-2405: 28.1 s on main; now three 650-row pages, remove after two daily full runs under 20 s",
+    "SettingsPlacementHostedTests::testSettingsSearchButtonSitsInTheBottomBarOnPhoneAndTopTrailingOnPad": "TAL-2405: 24.8 s on main; now one test per size, remove after two daily full runs under 20 s"
   }
 }

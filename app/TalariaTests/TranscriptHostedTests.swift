@@ -385,10 +385,11 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertEqual(requests, 2, "One appearance must not chain pages")
     }
 
-    /// Pages of 400 rows reach the same 2000: one page's preservation does not depend on its length, and each prepend
-    /// waits out the one-second measurement window on a transcript that grows with every page (TAL-1891).
+    /// Pages of 650 rows reach the same 2000: one page's preservation does not depend on its length, and each prepend
+    /// waits out the one-second measurement window on a transcript that grows with every page (TAL-1891). Three
+    /// prepends, not five of 400, keep it inside the per-test run-time budget (TAL-2405).
     func testContinuousHistoryLoadsAllTwoThousandRowsAndPreservesPosition() async throws {
-        let pageSize = 400
+        let pageSize = 650
         var requested: [Int] = []
         var proxy: ChatTranscriptScrollProxy?
         var finishRequest: (() -> Void)?

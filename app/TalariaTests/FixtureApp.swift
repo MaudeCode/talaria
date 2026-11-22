@@ -225,6 +225,20 @@ final class HostedTestBundle: NSObject, XCTestObservation {
                         })
                     }
                 }
+                // Settings, its iPad layout and its search field drew for the first time inside whichever Settings test came
+                // first: 16 to 38 s per size on a runner against about 3 s locally or after another Settings test (TAL-2405).
+                for size in [HostedSize.phone, HostedSize.padLandscape] {
+                    guard let fixture = try? FixtureApp(for: warmer),
+                          let window = try? warmer.hostWindow(fixture.sessionList(), size: size) else { continue }
+                    windows.append(window)
+                    try? await warmer.openSidebar(in: window)
+                    _ = await warmer.awaitCondition(timeout: 60) { warmer.settingsAvatar(in: window) != nil }
+                    guard let avatar = warmer.settingsAvatar(in: window), HostedAccessibility.activate(avatar) else { continue }
+                    _ = await warmer.awaitCondition(timeout: 60) { warmer.settingsSearchButton(in: window) != nil }
+                    guard let search = warmer.settingsSearchButton(in: window), HostedAccessibility.activate(search) else { continue }
+                    _ = await warmer.awaitCondition(timeout: 60) { window.firstView(ofType: UITextField.self)?.isFirstResponder == true }
+                    window.firstView(ofType: UITextField.self)?.resignFirstResponder()
+                }
                 finished = true
             }
             let deadline = Date(timeIntervalSinceNow: 180)

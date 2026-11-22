@@ -476,33 +476,54 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertTrue(hiddenAgain, "Turning the preference off must remove the shortcut")
     }
 
-    func testNavigationSectionSwitchesImmediatelyHideAndRestoreSidebarRows() async throws {
+    // One test per section over `assertNavigationSwitchHidesAndRestores(_:)` (TAL-2405): the five together ran over 20 s.
+    func testTasksSwitchImmediatelyHidesAndRestoresItsSidebarRow() async throws {
+        try await assertNavigationSwitchHidesAndRestores("tasks")
+    }
+
+    func testKanbanSwitchImmediatelyHidesAndRestoresItsSidebarRow() async throws {
+        try await assertNavigationSwitchHidesAndRestores("kanban")
+    }
+
+    func testSkillsSwitchImmediatelyHidesAndRestoresItsSidebarRow() async throws {
+        try await assertNavigationSwitchHidesAndRestores("skills")
+    }
+
+    func testMemorySwitchImmediatelyHidesAndRestoresItsSidebarRow() async throws {
+        try await assertNavigationSwitchHidesAndRestores("memory")
+    }
+
+    func testInsightsSwitchImmediatelyHidesAndRestoresItsSidebarRow() async throws {
+        try await assertNavigationSwitchHidesAndRestores("insights")
+    }
+
+    /// Turns the section's Settings › Navigation switch off, then on, checking its sidebar row after each, with every
+    /// optional section visible beside it.
+    private func assertNavigationSwitchHidesAndRestores(_ key: String) async throws {
         let keys = ["tasks", "kanban", "skills", "memory", "insights"]
         let fixture = try FixtureApp(for: self)
         for key in keys { UserDefaults.standard.set(true, forKey: "sectionVisibility." + key) }
         defer { for key in keys { UserDefaults.standard.removeObject(forKey: "sectionVisibility." + key) } }
         let window = try hostWindow(fixture.sessionList())
         try await openSidebar(in: window)
-        for key in keys {
-            for enabled in [false, true] {
-                HostedAccessibility.activate(try await requireElement(in: window, where: isSettingsAvatar))
-                HostedAccessibility.activate(try await requireElement(in: window) {
-                    HostedAccessibility.identifier(of: $0) == "settings-category-navigation"
-                })
-                HostedAccessibility.activate(try await requireElement(in: window) {
-                    HostedAccessibility.identifier(of: $0) == "settings-navigation-section-" + key
-                })
-                XCTAssertEqual(UserDefaults.standard.bool(forKey: "sectionVisibility." + key), enabled)
-                HostedAccessibility.activate(try await requireElement(in: window, label: "Close"))
-                let label = key.prefix(1).uppercased() + key.dropFirst()
-                if enabled {
-                    _ = try await requireElement(in: window, label: label)
-                } else {
-                    let hidden = await awaitNoElement(in: window) { $0.accessibilityLabel == label }
-                    XCTAssertTrue(hidden, "\(label) must disappear as soon as its switch is off")
-                }
-                attachHostedScreenshot(window, name: "sidebar-\(key)-\(enabled ? "visible" : "hidden")")
+        for enabled in [false, true] {
+            HostedAccessibility.activate(try await requireElement(in: window, where: isSettingsAvatar))
+            HostedAccessibility.activate(try await requireElement(in: window) {
+                HostedAccessibility.identifier(of: $0) == "settings-category-navigation"
+            })
+            HostedAccessibility.activate(try await requireElement(in: window) {
+                HostedAccessibility.identifier(of: $0) == "settings-navigation-section-" + key
+            })
+            XCTAssertEqual(UserDefaults.standard.bool(forKey: "sectionVisibility." + key), enabled)
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Close"))
+            let label = key.prefix(1).uppercased() + key.dropFirst()
+            if enabled {
+                _ = try await requireElement(in: window, label: label)
+            } else {
+                let hidden = await awaitNoElement(in: window) { $0.accessibilityLabel == label }
+                XCTAssertTrue(hidden, "\(label) must disappear as soon as its switch is off")
             }
+            attachHostedScreenshot(window, name: "sidebar-\(key)-\(enabled ? "visible" : "hidden")")
         }
     }
 
