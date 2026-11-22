@@ -13044,6 +13044,40 @@
           "rejected"
         ]
       },
+      "completion": {
+        "description": "`complete_path`: the owner's listing for `word` in the session's frozen workspace, as it answered.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "display": {
+                  "type": "string"
+                },
+                "meta": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text",
+                "display",
+                "meta"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
       "handoff": {
         "description": "`handoff_state`, `handoff_request`, `handoff_fail`: the owner's verdict and its handoff record.",
         "type": "object",
@@ -14845,6 +14879,40 @@
           "queued",
           "rejected"
         ]
+      },
+      "completion": {
+        "description": "`complete_path`: the owner's listing for `word` in the session's frozen workspace, as it answered.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "display": {
+                  "type": "string"
+                },
+                "meta": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text",
+                "display",
+                "meta"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
       },
       "handoff": {
         "description": "`handoff_state`, `handoff_request`, `handoff_fail`: the owner's verdict and its handoff record.",

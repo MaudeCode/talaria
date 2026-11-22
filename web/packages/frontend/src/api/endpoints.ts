@@ -42,6 +42,7 @@ const flag = (v: boolean | undefined) => (v ? '1' : undefined)
 const num = (v: number | undefined) => (v === undefined ? undefined : String(v))
 
 export const ownerAction = (input: OwnerActionRequest) => orpc().chat.ownerAction(input)
+export const completePaths = (session_id: string, before: string, signal?: AbortSignal) => orpc().chat.pathCompletions({ session_id, before }, signal ? { signal } : {})
 /** TAL-2641: read, request or cancel the chat's native handoff. */
 export const nativeHandoff = (input: SessionHandoffRequest) => orpc().session.nativeHandoff(input)
 

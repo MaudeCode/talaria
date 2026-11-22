@@ -34,6 +34,13 @@ export function useCommandDecision(text: string, sessionId: string | null, enabl
   return { shownClient: draft ? shown ?? null : null, decide: (value) => qc.query(decisionQuery(value, sessionId)) }
 }
 
-export interface CommandSuggestion { name: string; desc: string; args?: string | undefined; category?: string | undefined }
+/**
+ * One palette row. A slash command, or (TAL-1342) one of the server's path completions: `path.insert` replaces the draft
+ * from `path.from` to the caret, both as the server answered them.
+ */
+export interface CommandSuggestion {
+  name: string; desc: string; args?: string | undefined; category?: string | undefined
+  path?: { kind: 'file' | 'folder' | 'reference'; insert: string; from: number } | undefined
+}
 
 export const toSuggestion = (c: Command): CommandSuggestion => ({ name: c.name, desc: c.description ?? '', args: c.args_hint, category: c.category })

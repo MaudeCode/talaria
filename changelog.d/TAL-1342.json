@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Complete file and folder paths from a gateway chat's workspace while typing in the composer.",
+      "highlight": false,
+      "components": ["web"],
+      "announcement": {
+        "title": "Path completion in gateway chats",
+        "description": "Type a path or @file: in a gateway chat and pick the file or folder from its workspace.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

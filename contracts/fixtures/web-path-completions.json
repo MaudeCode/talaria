@@ -1,0 +1,21 @@
+{
+  "before": "📁 voilà @file:no",
+  "owner": {
+    "items": [
+      { "text": "@file:notes été.md", "display": "notes été.md", "meta": "" },
+      { "text": "@folder:docs/", "display": "docs/", "meta": "dir" },
+      { "text": "@file:../secret.txt", "display": "secret.txt", "meta": "" },
+      { "text": "@diff", "display": "@diff", "meta": "git diff" }
+    ]
+  },
+  "response": {
+    "available": true,
+    "reason": null,
+    "replace_from": 9,
+    "items": [
+      { "label": "notes été.md", "detail": "", "kind": "file", "insert": "@file:`notes été.md`" },
+      { "label": "docs/", "detail": "", "kind": "folder", "insert": "@folder:docs/" },
+      { "label": "@diff", "detail": "git diff", "kind": "reference", "insert": "@diff" }
+    ]
+  }
+}

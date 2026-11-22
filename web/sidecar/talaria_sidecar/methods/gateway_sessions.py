@@ -22,7 +22,7 @@ _ACTIONS = {"snapshot", "watch", "transcript", "context_detail", "submit", "rece
             "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec", "react",
             "connection_status", "connection_wake", "connection_respond", "connection_retry",
             "work_list", "work_tail", "work_transcript", "work_stop", "work_steer", "launch_background", "launch_btw",
-            "command_dispatch", "command_catalog", "handoff_state", "handoff_request", "handoff_fail"}
+            "command_dispatch", "command_catalog", "handoff_state", "handoff_request", "handoff_fail", "complete_path"}
 _SIDE_EVENTS = {"background.complete", "btw.complete"}
 # TAL-1338: a review's summary (a ``/refine`` or a turn's own review) belongs to the session, not to a turn.
 _REVIEW_EVENT = "review.summary"
@@ -54,6 +54,8 @@ _TRANSCRIPT = "session-transcript-v1"
 # A child's transcript as Background Work shows it: its newest rows, one page.
 _WORK_TRANSCRIPT_ROWS = 200
 _CONTROL_REFUSALS = {"owner_controls_unverified"}
+# TAL-1342: the owner lists at most 30 paths plus its directive and profile hints; anything past this is not its listing.
+_COMPLETION_MAX_ITEMS, _COMPLETION_MAX_TEXT = 100, 4096
 # The owner held state.db past the read budget while committing; the caller may retry.
 _STATE_BUSY, _STATE_BUSY_BUDGET = "owner_state_busy", 5.0
 # A read refused while the owner commits (its transcript kept changing under the read, or state.db stayed locked).
@@ -498,6 +500,25 @@ async def _work_action(client, params: dict, described: dict) -> dict:
         return {**result, "work_outcome": "not_found"}
 
 
+async def _complete_path(client, params: dict) -> dict:
+    """TAL-1342: the owner's ``complete.path`` for one word, rooted in the session's frozen workspace. Only the session and
+    the word go out: the owner ignores a client cwd, and none is sent. No resume: a cold session reads as not found."""
+    from hermes_cli.gateway_client import GatewayRPCError
+    try:
+        value = await client.rpc("complete.path", session_id=params["session_id"], word=params["word"])
+    except GatewayRPCError as exc:
+        if str(exc) in _WORK_GONE:
+            return _refused("refused", "not_found")
+        raise
+    items = value.get("items") if isinstance(value, dict) else None
+    if (not isinstance(items, list) or len(items) > _COMPLETION_MAX_ITEMS
+            or not all(isinstance(item, dict) and all(isinstance(item.get(key), str) and len(item[key]) <= _COMPLETION_MAX_TEXT
+                                                       for key in ("text", "display", "meta")) for item in items)):
+        return _refused("refused", "owner_completion_invalid")
+    return {"state": "attached", "reason": None, "snapshot": None, "receipt": None,
+            "completion": {"items": [{key: item[key] for key in ("text", "display", "meta")} for item in items]}}
+
+
 def _handoff_destinations() -> list[dict]:
     """TAL-2641: the home channels the bound profile's owner would hand a session to, by the Agent's own rule
     (``resolve_handoff_home``), so the user sees where it goes before asking. Only the platform and the channel's display
@@ -626,6 +647,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 return await _connection_action(client, params, described)
             if params["action"] in _WORK_ACTIONS:
                 return await _work_action(client, params, described)
+            if params["action"] == "complete_path":
+                return await _complete_path(client, params)
             if params["action"] == "checkpoint_diff":
                 # The owner resolves the physical target and frozen policy. Never resume or read host files.
                 value = await asyncio.wait_for(client.rpc("rollback.session_diff", session_id=sid, _timeout=25), timeout=30)
@@ -1002,6 +1025,9 @@ def session(ctx, params: dict) -> dict:
         raise InvalidParams("images go with a submit, its owner identity and at most ten staged image kinds")
     if action in _CONNECTION_ACTIONS:
         _validate_connection(action, params)
+    if action == "complete_path" and (set(params) - {"profile_home", "session_id", "action", "word"}
+                                      or not isinstance(params.get("word"), str) or not 0 < len(params["word"]) <= 512):
+        raise InvalidParams("complete_path takes one word and no root of its own")
     if action in _HANDOFF_ACTIONS and (set(params) - {"profile_home", "session_id", "action", "platform"}
             or (action == "handoff_request") != ("platform" in params)
             or action == "handoff_request" and not (isinstance(params["platform"], str) and re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", params["platform"]))):

@@ -95,7 +95,7 @@ def shared_owner(tmp_path_factory):
 
 @requires_agent
 @pytest.mark.parametrize("mode", ["shared", "reactions", "reaction-watch", "images", "batch", "approval", "approval-tell", "clarify", "detail",
-                                  "queued-controls", "model", "voice-stop", "connections", "work", "handoff", "transcript", "bridge", "commands"])
+                                  "queued-controls", "model", "voice-stop", "connections", "work", "complete", "handoff", "transcript", "bridge", "commands"])
 def test_real_native_owner_shared_admission_and_detach(request, shared_owner, mode):
     shared_owner(request, mode)
 
@@ -230,7 +230,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     from talaria_sidecar.methods import gateway_sessions as adapter
 
     owner = SimpleNamespace(receipt=None, replay=[], events=[], frames=[], info={}, payload=None, calls=[], config_failure=None, handoff={},
-                            export=None, export_failure=None, transcript=None, checkpoint_diff=None, checkpoint_failure=None, checkpoints=[], shell=None, shell_failure=None,
+                            export=None, export_failure=None, transcript=None, completion=None, checkpoint_diff=None, checkpoint_failure=None, checkpoints=[], shell=None, shell_failure=None,
                             described={"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
                                        "capabilities": ["durable-admission-v1", "event-replay-v1"]})
     async def rpc(method, **params):
@@ -298,6 +298,10 @@ def native_owner_stub(tmp_path, monkeypatch):
             if isinstance(owner.transcript, Exception):
                 raise owner.transcript
             return owner.transcript
+        if method == "complete.path":
+            if isinstance(owner.completion, Exception):
+                raise owner.completion
+            return owner.completion
         if method in {"command.dispatch", "commands.catalog"}:
             reply = owner.command if method == "command.dispatch" else owner.catalog
             if isinstance(reply, BaseException):
@@ -1719,6 +1723,41 @@ def test_an_unusable_bridge_refuses_without_local_fallback(owner_transports, bri
                                       "request_id": "durable", "text": "hello"})
     assert result == {"state": "unavailable", "reason": reason, "snapshot": None, "receipt": None}
     assert not any(kind.startswith("local") or kind == "bridge-attach" for kind, *_ in t.used), t.used
+
+
+def test_complete_path_asks_the_owner_for_one_word_without_a_root_or_a_resume(native_owner_stub):
+    """TAL-1342: the owner roots the listing in the session's frozen workspace; Web sends only the session and the word."""
+    item = {"text": "@file:my notes é.md", "display": "my notes é.md", "meta": "", "kind": "file"}
+    native_owner_stub.completion = {"items": [item]}
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "complete_path", "word": "@file:my"})
+    assert result == {"state": "attached", "reason": None, "snapshot": None, "receipt": None,
+                      "completion": {"items": [{"text": "@file:my notes é.md", "display": "my notes é.md", "meta": ""}]}}
+    assert native_owner_stub.calls == [("runtime.describe", {}), ("complete.path", {"session_id": "native", "word": "@file:my"})]
+
+
+@pytest.mark.parametrize("reply,reason", [
+    (RuntimeError("not_found"), "not_found"),
+    ({"items": [{"text": "a", "display": "a"}]}, "owner_completion_invalid"),
+    ({"items": [{"text": "a", "display": "a", "meta": ""}] * 101}, "owner_completion_invalid"),
+])
+def test_complete_path_refuses_a_cold_session_and_an_unbounded_or_malformed_listing(native_owner_stub, reply, reason):
+    native_owner_stub.completion = reply
+    assert native_owner_stub.run(None, {"session_id": "native", "action": "complete_path", "word": "src/"}) == {
+        "state": "refused", "reason": reason, "snapshot": None, "receipt": None}
+
+
+@pytest.mark.parametrize("params", [
+    {"word": "src/", "cwd": "/elsewhere"},
+    {"word": "src/", "root": "/elsewhere"},
+    {"word": ""},
+    {"word": "x" * 513},
+    {},
+])
+def test_complete_path_takes_no_root_and_one_bounded_word(tmp_path, native_owner_stub, params):
+    from talaria_sidecar.errors import InvalidParams
+    with pytest.raises(InvalidParams):
+        native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": "complete_path", **params})
+    assert native_owner_stub.calls == []
 
 
 class OwnerRefusal(RuntimeError):

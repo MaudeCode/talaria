@@ -97314,6 +97314,129 @@
         }
       }
     },
+    "/api/chat/path-completions": {
+      "post": {
+        "operationId": "chat.pathCompletions",
+        "summary": "Complete the path or reference before the caret from a native owner chat's frozen workspace (TAL-1342).",
+        "tags": [
+          "chat"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "before": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "The draft up to the caret; at most its last 1024 UTF-16 units."
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "before"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean",
+                      "description": "False when this chat has no native owner to ask, or its owner could not answer."
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "outside_workspace",
+                            "not_owner_chat",
+                            "owner_unavailable",
+                            "workspace_not_allowed"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "`workspace_not_allowed`: the caller may not browse the workspace the owner froze for this chat."
+                    },
+                    "replace_from": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Where in `before` the completed word starts. Null: nothing to complete."
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 30,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "file",
+                              "folder",
+                              "reference"
+                            ],
+                            "type": "string"
+                          },
+                          "insert": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Replaces `before` from `replace_from`; a reference value that needs quoting is quoted."
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "detail",
+                          "kind",
+                          "insert"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "reason",
+                    "replace_from",
+                    "items"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/chat": {
       "post": {
         "operationId": "chat.sync",

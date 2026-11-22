@@ -1292,6 +1292,19 @@ home, session and owner authority, stores nothing for them, and publishes `can_s
 observation announces `subagent.start`, `subagent.complete` and `background.complete`
 so clients reread; nothing opens an observation for Background Work.
 
+### Native owner path completion
+
+RPC v106 adds the closed `gateway.session` action `complete_path` (TAL-1342). It takes
+one `word` (at most 512 characters) and nothing else: no `cwd` or root travels, and an
+extra field is `invalid_params`. The adapter sends the owner's `complete.path` with the
+session id and the word, without resuming the session; the owner lists the session's
+frozen workspace and answers nothing for a sandbox, SSH or other remote backend. A cold
+session is refused `not_found`; more than 100 items or an item without string `text`,
+`display` and `meta` is refused `owner_completion_invalid`. The HTTP server
+(`POST /api/chat/path-completions`) finds the word before the caret, refuses an
+absolute, home or parent word before asking, drops any candidate outside the
+workspace, and ships at most 30 candidates with their label, kind and insertion text.
+
 ### Context inspection
 
 `chat.context_detail` reads a matching resident Agent in the requested profile,
