@@ -86,6 +86,10 @@ export const saveSelfHostedProvider = (body: { provider: string; base_url: strin
 export const refreshModels = (provider: string) => orpc().models.refresh({ provider })
 /** TAL-2151: `provider` adds the composer chip's `composer` quota for that provider. */
 export const fetchProviderQuotas = (refresh = false, provider?: string) => orpc().providers.quotas({ ...(refresh ? { refresh: '1' } : {}), ...(provider ? { provider } : {}) }, { signal: timeout(45_000) })
+/** TAL-2681: one quota source's banked usage-limit resets; a read that never redeems. */
+export const fetchResetCredits = (source: string) => orpc().providers.resetCredits({ source }, { signal: timeout(45_000) })
+/** TAL-2681: spend exactly `credit_id`; `request_id` is one attempt's id, reused only to retry that attempt. */
+export const redeemResetCredit = (body: { source: string; credit_id: string; request_id: string }) => orpc().providers.redeemResetCredit(body, { signal: timeout(90_000) })
 export const fetchOpenRouterCostHistory = () => orpc().providers.costHistory({ provider: 'openrouter' }, { signal: timeout(45_000) })
 export const fetchPersonalities = () => orpc().personalities.list()
 /** The server reads `none`, `default`, or `clear` (when no personality has that name) as clearing it. */

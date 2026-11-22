@@ -216,3 +216,7 @@ UNEXERCISED.update({"aux.delegation", "aux.delegation_backend", "aux.delegation_
 # TAL-2655: the static fallback check's verdicts, pool and plugin invariants and unavailable capability are owned by test_fallback_check.py;
 # its hand-written fixture (a profile with no chain) lets the replay sidecar and FakeSidecar answer Settings › Models.
 UNEXERCISED.add("providers.fallback_check")
+
+# TAL-2681: banked Codex resets need a signed-in ChatGPT account and spend a real grant; test_usage_reset_credits.py covers both against a
+# stand-in Codex backend, and their hand-written fixtures (no Codex account) let the replay sidecar and FakeSidecar answer Insights.
+UNEXERCISED.update({"usage.reset_credits", "usage.redeem_reset_credit"})

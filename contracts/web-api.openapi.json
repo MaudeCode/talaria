@@ -131411,6 +131411,10 @@
                               }
                             ],
                             "description": "TAL-1533: ISO-8601 UTC; 15 minutes after `fetched_at`, else after `computed_at`. A copy shown after it is stale."
+                          },
+                          "reset_credits": {
+                            "type": "boolean",
+                            "description": "TAL-2681: the account can hold banked usage-limit resets; `/api/provider/quotas/reset-credits?source=` lists them."
                           }
                         },
                         "required": [
@@ -131680,6 +131684,788 @@
                     "sources"
                   ],
                   "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/provider/quotas/reset-credits": {
+      "get": {
+        "operationId": "providers.resetCredits",
+        "summary": "TAL-2681: the banked usage-limit resets of one quota source whose row has `reset_credits`. A read; it never redeems.",
+        "tags": [
+          "settings"
+        ],
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "source_id": {
+                      "type": "string"
+                    },
+                    "computed_at": {
+                      "type": "string",
+                      "description": "ISO-8601 UTC reference time of `expired`."
+                    },
+                    "status": {
+                      "enum": [
+                        "available",
+                        "unsupported",
+                        "unavailable"
+                      ],
+                      "type": "string",
+                      "description": "`unsupported`: the account cannot hold resets (no ChatGPT sign-in, or not a Codex account); `unavailable`: the provider did not answer."
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The reason for a status other than `available`, as shown."
+                    },
+                    "available_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "The provider's count of grants to spend, else the `credits` rows."
+                    },
+                    "credits": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "The provider's opaque grant id; a redemption spends exactly this grant."
+                          },
+                          "state": {
+                            "enum": [
+                              "available",
+                              "redeeming",
+                              "redeemed",
+                              "expired",
+                              "unknown"
+                            ],
+                            "type": "string",
+                            "description": "`expired`: available but past `expires_at`; `unknown`: a provider status the server does not know."
+                          },
+                          "redeemable": {
+                            "type": "boolean",
+                            "description": "The grant can be spent now: the row offers Use reset."
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The provider's name for the grant, such as \"Full reset (Weekly + 5 hr)\"."
+                          },
+                          "description": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "covers": {
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "enum": [
+                                    "session",
+                                    "weekly"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The quota windows the grant restores, from the provider's wording; null when the provider does not say."
+                          },
+                          "granted_at": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "ISO-8601 UTC."
+                          },
+                          "expires_at": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "ISO-8601 UTC; null when it never expires."
+                          },
+                          "redeemed_at": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "ISO-8601 UTC."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "state",
+                          "redeemable",
+                          "title",
+                          "description",
+                          "covers",
+                          "granted_at",
+                          "expires_at",
+                          "redeemed_at"
+                        ]
+                      },
+                      "description": "Grants to spend, soonest expiry first; two identical grants stay two rows."
+                    },
+                    "history": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "The provider's opaque grant id; a redemption spends exactly this grant."
+                          },
+                          "state": {
+                            "enum": [
+                              "available",
+                              "redeeming",
+                              "redeemed",
+                              "expired",
+                              "unknown"
+                            ],
+                            "type": "string",
+                            "description": "`expired`: available but past `expires_at`; `unknown`: a provider status the server does not know."
+                          },
+                          "redeemable": {
+                            "type": "boolean",
+                            "description": "The grant can be spent now: the row offers Use reset."
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The provider's name for the grant, such as \"Full reset (Weekly + 5 hr)\"."
+                          },
+                          "description": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "covers": {
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "enum": [
+                                    "session",
+                                    "weekly"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The quota windows the grant restores, from the provider's wording; null when the provider does not say."
+                          },
+                          "granted_at": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "ISO-8601 UTC."
+                          },
+                          "expires_at": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "ISO-8601 UTC; null when it never expires."
+                          },
+                          "redeemed_at": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "ISO-8601 UTC."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "state",
+                          "redeemable",
+                          "title",
+                          "description",
+                          "covers",
+                          "granted_at",
+                          "expires_at",
+                          "redeemed_at"
+                        ]
+                      },
+                      "description": "Every other grant (redeeming, redeemed, expired, unknown), most recent first."
+                    }
+                  },
+                  "required": [
+                    "source_id",
+                    "computed_at",
+                    "status",
+                    "message",
+                    "available_count",
+                    "credits",
+                    "history"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/provider/quotas/reset-credits/redeem": {
+      "post": {
+        "operationId": "providers.redeemResetCredit",
+        "summary": "TAL-2681: spend exactly `credit_id` of the source's account, then reread its usage and grants. Reuse `request_id` to retry an attempt whose outcome was lost; a new attempt takes a new one. Unknown source: 404.",
+        "tags": [
+          "settings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "credit_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "request_id": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "source",
+                  "credit_id",
+                  "request_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outcome": {
+                      "enum": [
+                        "reset",
+                        "nothing_to_reset",
+                        "no_credit",
+                        "already_redeemed",
+                        "not_found",
+                        "not_available",
+                        "refused",
+                        "unknown",
+                        "unavailable",
+                        "unsupported",
+                        "in_progress"
+                      ],
+                      "type": "string",
+                      "description": "`reset`: spent and the covered windows restored. `nothing_to_reset`: no window could be restored, nothing spent. `already_redeemed`: this attempt was processed before. `not_found`: the grant is not on this account. `not_available`: it is used or expired. `refused`: the provider declined. `unknown`: the answer was lost and the reread does not show the grant spent; retry with the same `request_id`. `in_progress`: another redemption for this account is running."
+                    },
+                    "windows_reset": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The provider's count of restored windows, when it gives one."
+                    },
+                    "credit": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "The provider's opaque grant id; a redemption spends exactly this grant."
+                            },
+                            "state": {
+                              "enum": [
+                                "available",
+                                "redeeming",
+                                "redeemed",
+                                "expired",
+                                "unknown"
+                              ],
+                              "type": "string",
+                              "description": "`expired`: available but past `expires_at`; `unknown`: a provider status the server does not know."
+                            },
+                            "redeemable": {
+                              "type": "boolean",
+                              "description": "The grant can be spent now: the row offers Use reset."
+                            },
+                            "title": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The provider's name for the grant, such as \"Full reset (Weekly + 5 hr)\"."
+                            },
+                            "description": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "covers": {
+                              "anyOf": [
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "enum": [
+                                      "session",
+                                      "weekly"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The quota windows the grant restores, from the provider's wording; null when the provider does not say."
+                            },
+                            "granted_at": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "ISO-8601 UTC."
+                            },
+                            "expires_at": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "ISO-8601 UTC; null when it never expires."
+                            },
+                            "redeemed_at": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "ISO-8601 UTC."
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "redeemable",
+                            "title",
+                            "description",
+                            "covers",
+                            "granted_at",
+                            "expires_at",
+                            "redeemed_at"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The chosen grant as the reread shows it; null when the reread failed or no longer lists it."
+                    },
+                    "reset_credits": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "source_id": {
+                              "type": "string"
+                            },
+                            "computed_at": {
+                              "type": "string",
+                              "description": "ISO-8601 UTC reference time of `expired`."
+                            },
+                            "status": {
+                              "enum": [
+                                "available",
+                                "unsupported",
+                                "unavailable"
+                              ],
+                              "type": "string",
+                              "description": "`unsupported`: the account cannot hold resets (no ChatGPT sign-in, or not a Codex account); `unavailable`: the provider did not answer."
+                            },
+                            "message": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The reason for a status other than `available`, as shown."
+                            },
+                            "available_count": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "The provider's count of grants to spend, else the `credits` rows."
+                            },
+                            "credits": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "description": "The provider's opaque grant id; a redemption spends exactly this grant."
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "available",
+                                      "redeeming",
+                                      "redeemed",
+                                      "expired",
+                                      "unknown"
+                                    ],
+                                    "type": "string",
+                                    "description": "`expired`: available but past `expires_at`; `unknown`: a provider status the server does not know."
+                                  },
+                                  "redeemable": {
+                                    "type": "boolean",
+                                    "description": "The grant can be spent now: the row offers Use reset."
+                                  },
+                                  "title": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The provider's name for the grant, such as \"Full reset (Weekly + 5 hr)\"."
+                                  },
+                                  "description": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "covers": {
+                                    "anyOf": [
+                                      {
+                                        "type": "array",
+                                        "items": {
+                                          "enum": [
+                                            "session",
+                                            "weekly"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The quota windows the grant restores, from the provider's wording; null when the provider does not say."
+                                  },
+                                  "granted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "ISO-8601 UTC."
+                                  },
+                                  "expires_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "ISO-8601 UTC; null when it never expires."
+                                  },
+                                  "redeemed_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "ISO-8601 UTC."
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "state",
+                                  "redeemable",
+                                  "title",
+                                  "description",
+                                  "covers",
+                                  "granted_at",
+                                  "expires_at",
+                                  "redeemed_at"
+                                ]
+                              },
+                              "description": "Grants to spend, soonest expiry first; two identical grants stay two rows."
+                            },
+                            "history": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "description": "The provider's opaque grant id; a redemption spends exactly this grant."
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "available",
+                                      "redeeming",
+                                      "redeemed",
+                                      "expired",
+                                      "unknown"
+                                    ],
+                                    "type": "string",
+                                    "description": "`expired`: available but past `expires_at`; `unknown`: a provider status the server does not know."
+                                  },
+                                  "redeemable": {
+                                    "type": "boolean",
+                                    "description": "The grant can be spent now: the row offers Use reset."
+                                  },
+                                  "title": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The provider's name for the grant, such as \"Full reset (Weekly + 5 hr)\"."
+                                  },
+                                  "description": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "covers": {
+                                    "anyOf": [
+                                      {
+                                        "type": "array",
+                                        "items": {
+                                          "enum": [
+                                            "session",
+                                            "weekly"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The quota windows the grant restores, from the provider's wording; null when the provider does not say."
+                                  },
+                                  "granted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "ISO-8601 UTC."
+                                  },
+                                  "expires_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "ISO-8601 UTC; null when it never expires."
+                                  },
+                                  "redeemed_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "ISO-8601 UTC."
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "state",
+                                  "redeemable",
+                                  "title",
+                                  "description",
+                                  "covers",
+                                  "granted_at",
+                                  "expires_at",
+                                  "redeemed_at"
+                                ]
+                              },
+                              "description": "Every other grant (redeeming, redeemed, expired, unknown), most recent first."
+                            }
+                          },
+                          "required": [
+                            "source_id",
+                            "computed_at",
+                            "status",
+                            "message",
+                            "available_count",
+                            "credits",
+                            "history"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The reread list; null when the provider did not answer it."
+                    }
+                  },
+                  "required": [
+                    "outcome",
+                    "windows_reset",
+                    "credit",
+                    "reset_credits"
+                  ]
                 }
               }
             }

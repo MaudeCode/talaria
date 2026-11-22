@@ -1446,7 +1446,38 @@ export const QuotaSourceSchema = z.looseObject({
   urgency: QuotaUrgencySchema.optional().describe('TAL-411: `remaining` of the first window, `pace` of the pace window; alerts and the source colour follow it.'),
   is_stale: z.boolean().optional().describe('TAL-1533: the server shows last-confirmed data for this source (status `stale`).'),
   stale_since: NullableString.optional().describe('TAL-1533: ISO-8601 UTC; 15 minutes after `fetched_at`, else after `computed_at`. A copy shown after it is stale.'),
+  reset_credits: z.boolean().optional().describe('TAL-2681: the account can hold banked usage-limit resets; `/api/provider/quotas/reset-credits?source=` lists them.'),
 })
+/** TAL-2681: one banked usage-limit reset grant of a Codex account, as the server classifies the provider's row. */
+export const ResetCreditSchema = z.object({
+  id: z.string().describe("The provider's opaque grant id; a redemption spends exactly this grant."),
+  state: z.enum(['available', 'redeeming', 'redeemed', 'expired', 'unknown']).describe('`expired`: available but past `expires_at`; `unknown`: a provider status the server does not know.'),
+  redeemable: z.boolean().describe('The grant can be spent now: the row offers Use reset.'),
+  title: NullableString.describe("The provider's name for the grant, such as \"Full reset (Weekly + 5 hr)\"."),
+  description: NullableString,
+  covers: z.array(z.enum(['session', 'weekly'])).nullable().describe("The quota windows the grant restores, from the provider's wording; null when the provider does not say."),
+  granted_at: NullableString.describe('ISO-8601 UTC.'), expires_at: NullableString.describe('ISO-8601 UTC; null when it never expires.'), redeemed_at: NullableString.describe('ISO-8601 UTC.'),
+})
+export type ResetCredit = z.infer<typeof ResetCreditSchema>
+/** TAL-2681: a quota source's banked resets. Opening or rereading the list never redeems one. */
+export const ResetCreditsSchema = z.object({
+  source_id: z.string(), computed_at: z.string().describe('ISO-8601 UTC reference time of `expired`.'),
+  status: z.enum(['available', 'unsupported', 'unavailable']).describe('`unsupported`: the account cannot hold resets (no ChatGPT sign-in, or not a Codex account); `unavailable`: the provider did not answer.'),
+  message: NullableString.describe('The reason for a status other than `available`, as shown.'),
+  available_count: z.number().int().describe("The provider's count of grants to spend, else the `credits` rows."),
+  credits: z.array(ResetCreditSchema).describe('Grants to spend, soonest expiry first; two identical grants stay two rows.'),
+  history: z.array(ResetCreditSchema).describe('Every other grant (redeeming, redeemed, expired, unknown), most recent first.'),
+})
+export type ResetCredits = z.infer<typeof ResetCreditsSchema>
+/** TAL-2681: the result of spending one grant. Usage and `reset_credits` are reread from the provider afterwards. */
+export const ResetCreditRedemptionSchema = z.object({
+  outcome: z.enum(['reset', 'nothing_to_reset', 'no_credit', 'already_redeemed', 'not_found', 'not_available', 'refused', 'unknown', 'unavailable', 'unsupported', 'in_progress'])
+    .describe('`reset`: spent and the covered windows restored. `nothing_to_reset`: no window could be restored, nothing spent. `already_redeemed`: this attempt was processed before. `not_found`: the grant is not on this account. `not_available`: it is used or expired. `refused`: the provider declined. `unknown`: the answer was lost and the reread does not show the grant spent; retry with the same `request_id`. `in_progress`: another redemption for this account is running.'),
+  windows_reset: z.number().int().nullable().describe("The provider's count of restored windows, when it gives one."),
+  credit: ResetCreditSchema.nullable().describe('The chosen grant as the reread shows it; null when the reread failed or no longer lists it.'),
+  reset_credits: ResetCreditsSchema.nullable().describe('The reread list; null when the provider did not answer it.'),
+})
+export type ResetCreditRedemption = z.infer<typeof ResetCreditRedemptionSchema>
 /** An account-usage provider's normalised snapshot on `/api/provider/quota` (the same windows and indexes as a quotas source). */
 export const QuotaAccountLimitsSchema = z.looseObject({
   plan_usage: PlanUsageSchema.nullable().optional(), plan_stale: z.boolean().optional(),

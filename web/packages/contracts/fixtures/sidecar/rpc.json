@@ -167,6 +167,8 @@
           "usage.limits",
           "usage.pool",
           "usage.pool_providers",
+          "usage.redeem_reset_credit",
+          "usage.reset_credits",
           "worktree.create",
           "worktree.retain",
           "write_approval.approve",
