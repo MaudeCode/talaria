@@ -173,6 +173,25 @@ describe('Composer', () => {
     expect(attach()).not.toBeNull()
   })
 
+  it('offers Take photo on a touch device, uploads each same-name camera shot, and closes the menu for another chat until reopened (TAL-1124)', async () => {
+    window.matchMedia = vi.fn((query: string) => ({ matches: query === '(pointer: coarse)', addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
+    vi.mocked(api.uploadFile).mockImplementation((_id, file) => Promise.resolve({ filename: file.name, path: `/synthetic/${String(file.size)}`, size: file.size, mime: file.type }))
+    const view = renderComposer(writable)
+    const attach = screen.getByRole('button', { name: 'Attach files' })
+    await userEvent.click(attach)
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Take photo' }))
+    // Every camera shot is named image.jpg; each one is its own attachment.
+    const shots = [new File(['a'], 'image.jpg', { type: 'image/jpeg', lastModified: 1 }), new File(['bb'], 'image.jpg', { type: 'image/jpeg', lastModified: 2 })]
+    for (const shot of shots) fireEvent.change(document.querySelector<HTMLInputElement>('#cameraInput')!, { target: { files: [shot] } })
+    await waitFor(() => { expect(vi.mocked(api.uploadFile).mock.calls).toEqual(shots.map((shot) => ['s1', shot])) })
+    await userEvent.click(attach)
+    await screen.findByRole('menu')
+    view.rerenderSession({ ...writable, session_id: 's2' })
+    await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull() })
+    await userEvent.click(attach)
+    expect(await screen.findByRole('menuitem', { name: 'Choose files' })).toBeInTheDocument()
+  })
+
   // TAL-2613: hiding the YOLO control drops only its Turn off action; active YOLO always warns, since approvals are skipped.
   it.each([
     [true, false, true, true],

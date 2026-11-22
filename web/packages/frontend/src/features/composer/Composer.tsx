@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
-import { Mic, Paperclip, Square, ArrowUp, ListPlus, Layers, CornerUpRight, SkipForward } from 'lucide-react'
+import { Mic, Square, ArrowUp, ListPlus, Layers, CornerUpRight, SkipForward } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import type { CommandDecision, Session, Settings } from '../../contracts'
@@ -13,6 +13,7 @@ import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { appUrl } from '../../lib/appRoot'
 import { AttachmentTray, pastedText, type PendingFile } from './Attachments'
+import { AttachControl } from './AttachControl'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { useCommandDecision, type CommandSuggestion } from './commands'
 import { ContextRing, QuotaChip, type ContextFigures } from './chips'
@@ -954,10 +955,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
           <div className="composer-right flex gap-1.5 items-center shrink-0 max-[641px]:flex-none max-[641px]:w-auto max-[641px]:justify-end max-[641px]:min-w-0">
             <div className="composer-tools flex items-center gap-0.5">
               {attachmentsSupported && !hide('hide_composer_attach') && (
-                <>
-                  <input type="file" id="fileInput" multiple className="file-input-visually-hidden" onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }} accept="image/*,text/*,application/pdf,application/json,.csv,.md" />
-                  <button type="button" className="icon-btn has-tooltip" id="btnAttach" data-tooltip={m.composer_control_attach()} aria-label={m.composer_control_attach()} onClick={() => document.getElementById('fileInput')?.click()}><Paperclip size={16} aria-hidden="true" /></button>
-                </>
+                <AttachControl owner={`${trayId}\n${bootstrap.profile?.name ?? ''}\n${clarify ? `${clarify.pending.clarify_id ?? ''}:${String(clarify.index)}` : ''}`} onFiles={addFiles} fallbackFocus={textarea} />
               )}
               {!hide('hide_composer_mic') && (liveOffered || dictationSupported()) && <button type="button" className={cn('icon-btn mic-btn has-tooltip', dictating && 'active')} id="btnMic" data-tooltip={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-label={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-pressed={dictating} onClick={toggleDictation}><Mic size={16} aria-hidden="true" /></button>}
             </div>

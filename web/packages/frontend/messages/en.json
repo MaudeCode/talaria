@@ -258,6 +258,8 @@
 	"command_label": "Command",
 	"command_output_label": "Command output",
 	"command_running": "Running...",
+	"composer_attach_camera": "Take photo",
+	"composer_attach_files": "Choose files",
 	"composer_clarify": "Send answer",
 	"composer_clarify_next": "Next question",
 	"composer_compression_will_queue": "Type a message — it will queue and send after compression",
