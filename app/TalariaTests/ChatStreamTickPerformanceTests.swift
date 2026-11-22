@@ -139,8 +139,7 @@ private struct ChatStreamTickHarness {
         // which left the stream ticks scrolling an unfollowed transcript on a slow host. Raise the keyboard first and send
         // from the composer, as a reader does: the send re-arms follow once the re-measure has settled (TAL-2002).
         _ = try await Self.focusComposer(in: window, test: test)
-        let keyboardSettled = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
-        XCTAssertNotNil(keyboardSettled, "The chat must settle under the keyboard before measuring")
+        await test.awaitQuietWork(of: recorder, phase: "Keyboard settle before measuring")
         // Opening the chat renders settled rows, so a zero count while measuring means none re-rendered.
         XCTAssertGreaterThan(recorder.counts["settledRow", default: 0], 0, "The settled-row counter saw no rows")
 
@@ -161,8 +160,7 @@ private struct ChatStreamTickHarness {
         stream.emit(.token(Self.token(0)))
         let opened = await test.awaitCondition { viewModel.messages.last?.content == Self.token(0) }
         XCTAssertTrue(opened, "The streaming reply never reached the transcript")
-        let quiet = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
-        XCTAssertNotNil(quiet, "The chat must stop re-evaluating after the send before measuring")
+        await test.awaitQuietWork(of: recorder, phase: "Post-send settle before streaming")
     }
 
     /// The measured window: `ticks` stream tokens into the open reply, each rendered before the next.
@@ -199,8 +197,7 @@ private struct ChatStreamTickHarness {
         // mounted composer, rather than retaining a dismantled UITextView whose delegate no longer publishes draft edits.
         let composer = try await Self.focusComposer(in: window, test: test)
         XCTAssertEqual(composer.text, "", "Each run types into an empty draft")
-        let quiet = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
-        XCTAssertNotNil(quiet, "The chat must stop re-evaluating before typing")
+        await test.awaitQuietWork(of: recorder, phase: "Settle before typing")
         recorder.reset()
         let start = DispatchTime.now().uptimeNanoseconds
         for keystroke in 0..<keystrokes {
@@ -217,17 +214,30 @@ private struct ChatStreamTickHarness {
         return ChatWorkSample(work: work, seconds: seconds, detail: nil)
     }
 
+    /// Focuses the mounted composer and waits for the software keyboard it raises to finish opening. On a loaded runner
+    /// the keyboard opened seconds after focus, inside the settle wait that follows, and each keyboard frame change
+    /// re-measures the long transcript's visible rows (TAL-2273). An editor that already has focus keeps its keyboard up,
+    /// and a hardware keyboard may focus the editor without presenting a software one.
     private static func focusComposer(in window: UIWindow, test: XCTestCase) async throws -> UITextView {
         test.settle(window: window)
-        var activatedShell = false
-        let found = await test.composerTextView(in: window) {
-            guard !activatedShell, let shell = HostedAccessibility.element(in: window, label: "Message") else { return }
-            activatedShell = HostedAccessibility.activate(shell)
+        if let focused = window.firstView(ofType: UITextView.self, where: { $0.isEditable && $0.isFirstResponder }) {
+            return focused
+        }
+        let opening = XCTNSNotificationExpectation(name: UIResponder.keyboardWillShowNotification)
+        var found: UITextView?
+        let shown = await test.awaitKeyboard(UIResponder.keyboardDidShowNotification) {
+            var activatedShell = false
+            found = await test.composerTextView(in: window) {
+                guard !activatedShell, let shell = HostedAccessibility.element(in: window, label: "Message") else { return }
+                activatedShell = HostedAccessibility.activate(shell)
+            }
+            found?.becomeFirstResponder()
         }
         let composer = try XCTUnwrap(found, "The chat has no composer text view")
         XCTAssertTrue(composer.window === window && composer.delegate != nil,
                       "The benchmark must focus a mounted composer")
-        composer.becomeFirstResponder()
+        let softwareKeyboardStarted = await XCTWaiter().fulfillment(of: [opening], timeout: 0) == .completed
+        XCTAssertTrue(shown || !softwareKeyboardStarted, "The keyboard must finish opening before the chat settles under it")
         return composer
     }
 

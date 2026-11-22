@@ -408,6 +408,30 @@ extension XCTestCase {
         return settled ? value : nil
     }
 
+    /// Waits until `recorder` has counted no chat work for 500 ms. Otherwise it fails naming `phase` and the work each
+    /// of the last changes added, so a timeout says which view kept re-evaluating, and when (TAL-2273).
+    @MainActor
+    func awaitQuietWork(of recorder: ChatBodyEvaluationRecorder, phase: String,
+                        file: StaticString = #filePath, line: UInt = #line) async {
+        let clock = ContinuousClock()
+        let start = clock.now
+        var changes: [(at: Duration, counts: [String: Int])] = [(.zero, recorder.counts)]
+        let quiet = await awaitQuiet { () -> [String: Int] in
+            let counts = recorder.counts
+            if counts != changes.last?.counts { changes = Array((changes + [(clock.now - start, counts)]).suffix(6)) }
+            return counts
+        }
+        guard quiet == nil else { return }
+        let report = zip(changes, changes.dropFirst()).map { before, after in
+            let added = after.counts.compactMap { key, count in
+                let delta = count - before.counts[key, default: 0]
+                return delta == 0 ? nil : "\(key)+\(delta)"
+            }.sorted().joined(separator: " ")
+            return "\(Int(after.at / .milliseconds(1))) ms: \(added)"
+        }.joined(separator: "; ")
+        XCTFail("\(phase): the chat kept re-evaluating through the wait. Last changes: \(report)", file: file, line: line)
+    }
+
     /// Reads either composer presentation; a missing composer is not an empty draft.
     @MainActor
     func composerDraftText(in window: UIWindow) -> String? {
