@@ -26,6 +26,10 @@ test('the existing context inspector renders allocation and safe file metadata o
   await expect(inspector).toContainText('AGENTS.md')
   await expect(inspector).toContainText('4,000 characters · ~1,000 tokens')
   await expect(inspector).toContainText('Last turn output: 12')
+  // TAL-2647: the fixture's mixed-tier window, as the server classified it.
+  await expect(inspector).toContainText('Prompt cache')
+  await expect(inspector).toContainText('May still be warm until')
+  await expect(inspector).toContainText('Declared by the request · 5m')
   await expect(inspector.getByRole('button', { name: 'Compress now' })).toBeVisible()
   await expect.poll(() => reads).toBe(1)
   // TAL-1908: both window lines carry the label on one line, down to the phone width.

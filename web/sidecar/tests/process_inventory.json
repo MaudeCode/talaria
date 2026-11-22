@@ -1081,6 +1081,11 @@
         ""
       ]
     },
+    "tests/test_context_detail.py::test_context_detail_projects_the_agents_prompt_cache_window": {
+      "layer": "compatibility",
+      "reason": "TAL-2647: the Agent's own prompt_cache_clock folds synthetic responses at frozen send times into proven, declared, assumed, mixed-tier, implicit, route-changed, compacted and storage-failed windows, and the sidecar projection classifies each with the Agent's cache_certainly_warm/cold at a frozen read time on the Agent interpreter; a real sidecar then reads a stored session's saved clock through the installed store's generation. Fakes cannot prove the native rules or the store's generation read. Disposable state.db, no network or providers.",
+      "cases": [""]
+    },
     "tests/test_cron_atomicity.py::test_store_transaction_publishes_one_complete_job_state": {
       "layer": "compatibility",
       "reason": "Supported-Agent store-lock exclusion: real cron.create and cron.resume are held at event barriers while real list/get/run readers and an external Agent update_job writer race them on the installed release's reentrant jobs lock, and a real cron.update admitted before an external Agent writer changes the endpoint must refuse under that lock rather than store an unchecked provider/base_url pair (TAL-2297). Fakes cannot prove that lock's exclusion or reentrancy. Disposable homes; the run lookup is captured and never executes a job.",

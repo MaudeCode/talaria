@@ -39,7 +39,8 @@
     ],
     "truncated": false,
     "current_turn_output_tokens": null,
-    "last_turn_output_tokens": null
+    "last_turn_output_tokens": null,
+    "prompt_cache": null
   },
   "prebuild": {
     "available": false,
@@ -52,6 +53,527 @@
     "estimated_total": null,
     "categories": [],
     "files": [],
+    "truncated": false,
+    "current_turn_output_tokens": null,
+    "last_turn_output_tokens": null,
+    "prompt_cache": null
+  },
+  "cache_proven_warm": {
+    "available": true,
+    "reason": null,
+    "used_tokens": 3790,
+    "window_tokens": 256000,
+    "window_source": null,
+    "source": "local_estimate",
+    "estimated": true,
+    "estimated_total": 3500,
+    "categories": [
+      {
+        "id": "system_prompt",
+        "tokens": 2000,
+        "percent": 0.78125,
+        "estimated": true
+      },
+      {
+        "id": "rules",
+        "tokens": 1000,
+        "percent": 0.390625,
+        "estimated": true
+      },
+      {
+        "id": "conversation",
+        "tokens": 500,
+        "percent": 0.1953125,
+        "estimated": true
+      }
+    ],
+    "files": [
+      {
+        "label": "AGENTS.md",
+        "characters": 4000,
+        "tokens": 1000,
+        "status": "loaded",
+        "loaded": true
+      }
+    ],
+    "truncated": false,
+    "current_turn_output_tokens": null,
+    "last_turn_output_tokens": null,
+    "prompt_cache": {
+      "state": "warm",
+      "confidence": "proven",
+      "reason": null,
+      "tier": "1h",
+      "guaranteed_until": 1763820000,
+      "estimated_until": 1763820000,
+      "coverage": [
+        {
+          "tier": "1h",
+          "until": 1763820000
+        }
+      ]
+    }
+  },
+  "cache_declared_mixed_maybe_warm": {
+    "available": true,
+    "reason": null,
+    "used_tokens": 3790,
+    "window_tokens": 256000,
+    "window_source": null,
+    "source": "local_estimate",
+    "estimated": true,
+    "estimated_total": 3500,
+    "categories": [
+      {
+        "id": "system_prompt",
+        "tokens": 2000,
+        "percent": 0.78125,
+        "estimated": true
+      },
+      {
+        "id": "rules",
+        "tokens": 1000,
+        "percent": 0.390625,
+        "estimated": true
+      },
+      {
+        "id": "conversation",
+        "tokens": 500,
+        "percent": 0.1953125,
+        "estimated": true
+      }
+    ],
+    "files": [
+      {
+        "label": "AGENTS.md",
+        "characters": 4000,
+        "tokens": 1000,
+        "status": "loaded",
+        "loaded": true
+      }
+    ],
+    "truncated": false,
+    "current_turn_output_tokens": null,
+    "last_turn_output_tokens": null,
+    "prompt_cache": {
+      "state": "maybe_warm",
+      "confidence": "declared",
+      "reason": null,
+      "tier": "5m",
+      "guaranteed_until": 1763816700,
+      "estimated_until": 1763820000,
+      "coverage": [
+        {
+          "tier": "5m",
+          "until": 1763816700
+        },
+        {
+          "tier": "1h",
+          "until": 1763820000
+        }
+      ]
+    }
+  },
+  "cache_assumed_expired": {
+    "available": true,
+    "reason": null,
+    "used_tokens": 3790,
+    "window_tokens": 256000,
+    "window_source": null,
+    "source": "local_estimate",
+    "estimated": true,
+    "estimated_total": 3500,
+    "categories": [
+      {
+        "id": "system_prompt",
+        "tokens": 2000,
+        "percent": 0.78125,
+        "estimated": true
+      },
+      {
+        "id": "rules",
+        "tokens": 1000,
+        "percent": 0.390625,
+        "estimated": true
+      },
+      {
+        "id": "conversation",
+        "tokens": 500,
+        "percent": 0.1953125,
+        "estimated": true
+      }
+    ],
+    "files": [
+      {
+        "label": "AGENTS.md",
+        "characters": 4000,
+        "tokens": 1000,
+        "status": "loaded",
+        "loaded": true
+      }
+    ],
+    "truncated": false,
+    "current_turn_output_tokens": null,
+    "last_turn_output_tokens": null,
+    "prompt_cache": {
+      "state": "expired",
+      "confidence": "assumed",
+      "reason": null,
+      "tier": "1h",
+      "guaranteed_until": null,
+      "estimated_until": 1763820000,
+      "coverage": []
+    }
+  },
+  "cache_declared_local_warm": {
+    "available": true,
+    "reason": null,
+    "used_tokens": 3790,
+    "window_tokens": 256000,
+    "window_source": null,
+    "source": "local_estimate",
+    "estimated": true,
+    "estimated_total": 3500,
+    "categories": [
+      {
+        "id": "system_prompt",
+        "tokens": 2000,
+        "percent": 0.78125,
+        "estimated": true
+      },
+      {
+        "id": "rules",
+        "tokens": 1000,
+        "percent": 0.390625,
+        "estimated": true
+      },
+      {
+        "id": "conversation",
+        "tokens": 500,
+        "percent": 0.1953125,
+        "estimated": true
+      }
+    ],
+    "files": [
+      {
+        "label": "AGENTS.md",
+        "characters": 4000,
+        "tokens": 1000,
+        "status": "loaded",
+        "loaded": true
+      }
+    ],
+    "truncated": false,
+    "current_turn_output_tokens": null,
+    "last_turn_output_tokens": null,
+    "prompt_cache": {
+      "state": "warm",
+      "confidence": "declared",
+      "reason": null,
+      "tier": "30m",
+      "guaranteed_until": 1763818200,
+      "estimated_until": null,
+      "coverage": [
+        {
+          "tier": "30m",
+          "until": 1763818200
+        }
+      ]
+    }
+  },
+  "cache_unknown_compacted": {
+    "available": true,
+    "reason": null,
+    "used_tokens": 3790,
+    "window_tokens": 256000,
+    "window_source": null,
+    "source": "local_estimate",
+    "estimated": true,
+    "estimated_total": 3500,
+    "categories": [
+      {
+        "id": "system_prompt",
+        "tokens": 2000,
+        "percent": 0.78125,
+        "estimated": true
+      },
+      {
+        "id": "rules",
+        "tokens": 1000,
+        "percent": 0.390625,
+        "estimated": true
+      },
+      {
+        "id": "conversation",
+        "tokens": 500,
+        "percent": 0.1953125,
+        "estimated": true
+      }
+    ],
+    "files": [
+      {
+        "label": "AGENTS.md",
+        "characters": 4000,
+        "tokens": 1000,
+        "status": "loaded",
+        "loaded": true
+      }
+    ],
+    "truncated": false,
+    "current_turn_output_tokens": null,
+    "last_turn_output_tokens": null,
+    "prompt_cache": {
+      "state": "unknown",
+      "confidence": "unknown",
+      "tier": null,
+      "guaranteed_until": null,
+      "estimated_until": null,
+      "coverage": [],
+      "reason": "compacted"
+    }
+  },
+  "cache_unknown_route_changed": {
+    "available": true,
+    "reason": null,
+    "used_tokens": 3790,
+    "window_tokens": 256000,
+    "window_source": null,
+    "source": "local_estimate",
+    "estimated": true,
+    "estimated_total": 3500,
+    "categories": [
+      {
+        "id": "system_prompt",
+        "tokens": 2000,
+        "percent": 0.78125,
+        "estimated": true
+      },
+      {
+        "id": "rules",
+        "tokens": 1000,
+        "percent": 0.390625,
+        "estimated": true
+      },
+      {
+        "id": "conversation",
+        "tokens": 500,
+        "percent": 0.1953125,
+        "estimated": true
+      }
+    ],
+    "files": [
+      {
+        "label": "AGENTS.md",
+        "characters": 4000,
+        "tokens": 1000,
+        "status": "loaded",
+        "loaded": true
+      }
+    ],
+    "truncated": false,
+    "current_turn_output_tokens": null,
+    "last_turn_output_tokens": null,
+    "prompt_cache": {
+      "state": "unknown",
+      "confidence": "unknown",
+      "tier": null,
+      "guaranteed_until": null,
+      "estimated_until": null,
+      "coverage": [],
+      "reason": "route_changed"
+    }
+  },
+  "cache_unknown_storage": {
+    "available": true,
+    "reason": null,
+    "used_tokens": 3790,
+    "window_tokens": 256000,
+    "window_source": null,
+    "source": "local_estimate",
+    "estimated": true,
+    "estimated_total": 3500,
+    "categories": [
+      {
+        "id": "system_prompt",
+        "tokens": 2000,
+        "percent": 0.78125,
+        "estimated": true
+      },
+      {
+        "id": "rules",
+        "tokens": 1000,
+        "percent": 0.390625,
+        "estimated": true
+      },
+      {
+        "id": "conversation",
+        "tokens": 500,
+        "percent": 0.1953125,
+        "estimated": true
+      }
+    ],
+    "files": [
+      {
+        "label": "AGENTS.md",
+        "characters": 4000,
+        "tokens": 1000,
+        "status": "loaded",
+        "loaded": true
+      }
+    ],
+    "truncated": false,
+    "current_turn_output_tokens": null,
+    "last_turn_output_tokens": null,
+    "prompt_cache": {
+      "state": "unknown",
+      "confidence": "unknown",
+      "tier": null,
+      "guaranteed_until": null,
+      "estimated_until": null,
+      "coverage": [],
+      "reason": "storage_unavailable"
+    }
+  },
+  "cache_unknown_no_published_window": {
+    "available": true,
+    "reason": null,
+    "used_tokens": 3790,
+    "window_tokens": 256000,
+    "window_source": null,
+    "source": "local_estimate",
+    "estimated": true,
+    "estimated_total": 3500,
+    "categories": [
+      {
+        "id": "system_prompt",
+        "tokens": 2000,
+        "percent": 0.78125,
+        "estimated": true
+      },
+      {
+        "id": "rules",
+        "tokens": 1000,
+        "percent": 0.390625,
+        "estimated": true
+      },
+      {
+        "id": "conversation",
+        "tokens": 500,
+        "percent": 0.1953125,
+        "estimated": true
+      }
+    ],
+    "files": [
+      {
+        "label": "AGENTS.md",
+        "characters": 4000,
+        "tokens": 1000,
+        "status": "loaded",
+        "loaded": true
+      }
+    ],
+    "truncated": false,
+    "current_turn_output_tokens": null,
+    "last_turn_output_tokens": null,
+    "prompt_cache": {
+      "state": "unknown",
+      "confidence": "unknown",
+      "tier": null,
+      "guaranteed_until": null,
+      "estimated_until": null,
+      "coverage": [],
+      "reason": "no_published_window"
+    }
+  },
+  "cache_unknown_invalid": {
+    "available": true,
+    "reason": null,
+    "used_tokens": 3790,
+    "window_tokens": 256000,
+    "window_source": null,
+    "source": "local_estimate",
+    "estimated": true,
+    "estimated_total": 3500,
+    "categories": [
+      {
+        "id": "system_prompt",
+        "tokens": 2000,
+        "percent": 0.78125,
+        "estimated": true
+      },
+      {
+        "id": "rules",
+        "tokens": 1000,
+        "percent": 0.390625,
+        "estimated": true
+      },
+      {
+        "id": "conversation",
+        "tokens": 500,
+        "percent": 0.1953125,
+        "estimated": true
+      }
+    ],
+    "files": [
+      {
+        "label": "AGENTS.md",
+        "characters": 4000,
+        "tokens": 1000,
+        "status": "loaded",
+        "loaded": true
+      }
+    ],
+    "truncated": false,
+    "current_turn_output_tokens": null,
+    "last_turn_output_tokens": null,
+    "prompt_cache": {
+      "state": "unknown",
+      "confidence": "unknown",
+      "tier": null,
+      "guaranteed_until": null,
+      "estimated_until": null,
+      "coverage": [],
+      "reason": "invalid"
+    }
+  },
+  "older_server": {
+    "available": true,
+    "reason": null,
+    "used_tokens": 3790,
+    "window_tokens": 256000,
+    "window_source": null,
+    "source": "local_estimate",
+    "estimated": true,
+    "estimated_total": 3500,
+    "categories": [
+      {
+        "id": "system_prompt",
+        "tokens": 2000,
+        "percent": 0.78125,
+        "estimated": true
+      },
+      {
+        "id": "rules",
+        "tokens": 1000,
+        "percent": 0.390625,
+        "estimated": true
+      },
+      {
+        "id": "conversation",
+        "tokens": 500,
+        "percent": 0.1953125,
+        "estimated": true
+      }
+    ],
+    "files": [
+      {
+        "label": "AGENTS.md",
+        "characters": 4000,
+        "tokens": 1000,
+        "status": "loaded",
+        "loaded": true
+      }
+    ],
     "truncated": false,
     "current_turn_output_tokens": null,
     "last_turn_output_tokens": null

@@ -1725,6 +1725,23 @@ def _execution_session_id(db, session_id: str) -> str:
 _STORED_CONTEXT_READS = threading.BoundedSemaphore(4)
 
 
+def _stored_prompt_cache(db, tip: str, row: dict):
+    """TAL-2647: the row's saved prompt-cache window, checked by the Agent against the session's durable context generation
+    and persisted route, as its own agentless read does. None before Agent v0.23.2; a failed check is unknown, never warm."""
+    try:
+        from agent.prompt_cache_clock import current_generation, stored_cache_window
+    except ImportError:
+        return None
+    try:
+        config = row.get("model_config")
+        config = json.loads(config) if isinstance(config, str) and config.strip() else config
+        config = config if isinstance(config, dict) else {}
+        return stored_cache_window(row.get("prompt_cache_clock"), session_id=tip, generation=current_generation(agent_store.usage_store(db), tip),
+                                   saved_route=(config.get("provider"), config.get("base_url"), row.get("model")))
+    except Exception:  # noqa: BLE001 - a window nobody can check is unknown
+        return {"confidence": "unknown", "reason": "storage_unavailable"}
+
+
 def _stored_context_detail(home: Path, session_id: str) -> dict:
     """TAL-1823: a chat with no resident Agent (idle eviction, restart) measures its row's frozen prompt and tools[] pin,
     as the Agent's own agentless read does. Builds no Agent and opens the store read-only, since a writer would migrate it.
@@ -1746,12 +1763,13 @@ def _stored_context_detail(home: Path, session_id: str) -> dict:
                 if not prompt:
                     return unavailable("not_built")
                 history = [m for m in agent_store.conversation(db, tip) if m.get("role") != "session_meta"]
+                cache = _stored_prompt_cache(db, tip, row)
             try:
                 pin = json.loads(row.get("tool_names") or "null")
             except (TypeError, ValueError):
                 pin = None  # a pin hash whose row was swept resolves to itself
             payload = stored_context_breakdown(prompt, pinned_tool_defs(pin), history)
-        return project(payload)
+        return project({**payload, "prompt_cache": cache})
     except Exception:  # noqa: BLE001 - never expose Agent diagnostics, prompt contents or paths
         return unavailable()
 

@@ -18,4 +18,12 @@ describe('safe context detail contract', () => {
       expect(ContextDetailSchema.safeParse({ ...unavailableContextDetail(), ...override }).success).toBe(false)
     }
   })
+  it('keeps an unknown prompt-cache window free of ends and a known one free of unknown causes (TAL-2647)', () => {
+    const warm = { state: 'warm', confidence: 'proven', reason: null, tier: '1h', guaranteed_until: 1763820000, estimated_until: 1763820000, coverage: [{ tier: '1h', until: 1763820000 }] }
+    const unknown = { state: 'unknown', confidence: 'unknown', reason: 'compacted', tier: null, guaranteed_until: null, estimated_until: null, coverage: [] }
+    for (const prompt_cache of [
+      { ...unknown, estimated_until: 1763820000 }, { ...unknown, coverage: warm.coverage }, { ...unknown, reason: 'secret /private/path' }, { ...unknown, confidence: 'proven' },
+      { ...warm, reason: 'compacted' }, { ...warm, confidence: 'unknown' }, { ...warm, coverage: Array(5).fill(warm.coverage[0]) }, { ...warm, tier: '7d' }, { ...warm, guaranteed_until: Infinity },
+    ]) expect(ContextDetailSchema.safeParse({ ...unavailableContextDetail(), prompt_cache }).success, JSON.stringify(prompt_cache)).toBe(false)
+  })
 })
