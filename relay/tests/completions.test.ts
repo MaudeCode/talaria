@@ -15,7 +15,7 @@ it("atomically caps cumulative publisher states while allowing updates and revoc
   const { backend } = await fixture();
   const now = Date.now();
   const request = (nonce: string) => ({ publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key", nonce, nonceExpiresAt: now + 60_000, receivedAt: now });
-  const content = (sessionId: string) => ({ sessionId, streamId: sessionId, title: "Original", phase: "running" as const, activityPhase: "running" as const, updatedAt: now, deepLink: `/sessions/${sessionId}` });
+  const content = (sessionId: string) => ({ sessionId, streamId: sessionId, title: "Original", phase: "running" as const, activityPhase: "running" as const, startedAt: now, updatedAt: now, deepLink: `/sessions/${sessionId}` });
   const state = (sessionId: string, revision = 1) => ({ ...content(sessionId), eventId: `${sessionId}-${revision}`, revision });
   await backend.mutation(internal.publishers.acceptSnapshot, { ...request("first"), snapshotId: "first", states: Array.from({ length: 500 }, (_, index) => state(`session-${index}`)) });
   await expect(backend.mutation(internal.publishers.acceptSnapshot, {
@@ -139,7 +139,7 @@ async function fixture() {
     await backend.mutation(internal.publishers.acceptSnapshot, {
       publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key",
       nonce: `nonce-${revision}`, nonceExpiresAt: Date.now() + 60_000, receivedAt: Date.now(), snapshotId: `snapshot-${revision}`,
-      states: [{ sessionId, streamId, eventId: `event-${revision}`, revision, title: "Synthetic task", phase, ...(activityPhase ? { activityPhase } : {}), updatedAt: Date.now(), deepLink: `/sessions/${sessionId}` }],
+      states: [{ sessionId, streamId, eventId: `event-${revision}`, revision, title: "Synthetic task", phase, ...(activityPhase ? { activityPhase } : {}), startedAt: now, updatedAt: Date.now(), deepLink: `/sessions/${sessionId}` }],
     });
   };
   const list = () => backend.query(internal.completions.list, { userId: "user", deviceId: "device", paginationOpts: { numItems: 100, cursor: null } });
@@ -239,7 +239,7 @@ it("sends native per-session Done as an update and does not repush unchanged ter
 it.each(["state", "snapshot"] as const)("backfills legacy terminal rows on duplicate %s publication", async (kind) => {
   const { backend, list, now } = await fixture();
   const state = { sessionId: "legacy-session", streamId: "legacy-run", eventId: "legacy-event", revision: 7,
-    title: "Legacy completion", phase: "completed" as const, updatedAt: now, deepLink: "/sessions/legacy-session" };
+    title: "Legacy completion", phase: "completed" as const, startedAt: now, updatedAt: now, deepLink: "/sessions/legacy-session" };
   await backend.run(async (ctx) => {
     await ctx.db.insert("sessionStates", { ...state, version: 2, userId: "user", profileId: "profile", deleted: false,
       publisherId: "https://hermes.example", publisherLabel: "Test", expiresAt: now + 900_000, terminalExpiresAt: now + 900_000, receivedAt: now });
@@ -383,7 +383,7 @@ it("acknowledges a session's completions when its signed publisher reports it vi
   await backend.mutation(internal.publishers.acceptSnapshot, {
     publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key",
     nonce: "skewed", nonceExpiresAt: Date.now() + 60_000, receivedAt: Date.now(), snapshotId: "skewed",
-    states: [{ sessionId: "skewed-session", streamId: "run-skewed", eventId: "skewed", revision: 99, title: "Skewed", phase: "completed", updatedAt: ahead, deepLink: "/sessions/skewed-session" }],
+    states: [{ sessionId: "skewed-session", streamId: "run-skewed", eventId: "skewed", revision: 99, title: "Skewed", phase: "completed", startedAt: ahead, updatedAt: ahead, deepLink: "/sessions/skewed-session" }],
   });
   expect(await (await viewed(ahead + 1, "skewed-view", { sessionId: "skewed-session" })).json()).toEqual({ status: "accepted", acknowledged: 1 });
 

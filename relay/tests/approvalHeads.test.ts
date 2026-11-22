@@ -58,7 +58,7 @@ async function seed() {
       snapshotId: `snapshot-${String(revision)}`,
       states: [{
         sessionId: "session-1", streamId: "stream-1", eventId: `snapshot:${String(revision)}:session-1`, revision,
-        title: "Private session title", phase, updatedAt: now + revision, deepLink: "/sessions/session-1",
+        title: "Private session title", phase, startedAt: now, updatedAt: now + revision, deepLink: "/sessions/session-1",
         ...(options.alertEligible === undefined ? {} : { alertEligible: options.alertEligible }),
         ...(head === undefined ? {} : { approvalHeadId: head }),
         ...(options.decision === undefined ? {} : { decisionReviewId: options.decision, decisionReviewTitle: "Release choices" }),

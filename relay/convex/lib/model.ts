@@ -86,7 +86,7 @@ export interface PublishedSessionState {
   title: string;
   phase: SessionPhase;
   activityPhase?: SessionPhase;
-  startedAt?: number;
+  startedAt: number;
   updatedAt: number;
   toolCount?: number;
   activityAt?: number;

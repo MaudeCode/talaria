@@ -266,7 +266,7 @@ it("names the approval a waiting row shows in the aggregate and native per-sessi
   const content = makeAggregate([waiting], 100)!;
   expect(content.rows[0]).toMatchObject({ phase: "waiting_for_approval", approvalHeadId: "head-1" });
   const request = makeLiveActivityUpdate({ token: "synthetic", bundleId: "dev.kil.talaria", environment: "sandbox", aggregate: content, nowEpochSeconds: 1 });
-  expect(nativeSessionRequest(request, 0).payload.aps).toMatchObject({ "content-state": { status: "waitingForApproval", approvalHeadID: "head-1" } });
+  expect(nativeSessionRequest(request).payload.aps).toMatchObject({ "content-state": { status: "waitingForApproval", approvalHeadID: "head-1" } });
   // Relay keeps a run's head across its other phases; only a waiting row names it.
   expect(makeAggregate([{ ...waiting, phase: "running" }], 100)!.rows[0]).not.toHaveProperty("approvalHeadId");
 });
@@ -279,7 +279,7 @@ it("keeps all-running and native per-session payloads non-final after the foregr
     expect(content.isFinal).toBe(false);
     const request = makeLiveActivityUpdate({ token: "synthetic", bundleId: "dev.kil.talaria", environment: "sandbox", aggregate: content, nowEpochSeconds: 1 });
     expect(request.payload.aps).toMatchObject({ event: "update", "content-state": { isFinal: false } });
-    expect(nativeSessionRequest(request, 0).payload.aps).toMatchObject({ event: "update", "content-state": { isFinal: false, isStale: phase === "stale", currentActivity: phase === "running" ? "Working" : "Waiting" } });
+    expect(nativeSessionRequest(request).payload.aps).toMatchObject({ event: "update", "content-state": { isFinal: false, isStale: phase === "stale", currentActivity: phase === "running" ? "Working" : "Waiting" } });
   }
 });
 
@@ -311,7 +311,7 @@ const largestTool = {
 it("maps the current call into the native content state, and leaves an older publisher's row without one", () => {
   const request = (state: SessionState) => nativeSessionRequest(makeLiveActivityUpdate({
     token: "synthetic", bundleId: "dev.kil.talaria", environment: "sandbox", aggregate: makeAggregate([state], 100)!, nowEpochSeconds: 1,
-  }), 0).payload.aps as { "content-state": Record<string, unknown> };
+  })).payload.aps as { "content-state": Record<string, unknown> };
   const running = { ...attentionState, phase: "running" as const, currentTool: { kind: "shell", target: "npm test", done: false } };
   expect(request(running)["content-state"].currentTool).toEqual({ kind: "shell", target: "npm test", done: false });
   expect(request({ ...attentionState, phase: "running" })["content-state"]).not.toHaveProperty("currentTool");

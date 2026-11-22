@@ -99,7 +99,7 @@ export const sessionStateContentValidator = v.object({
   title: v.string(),
   phase: sessionPhaseValidator,
   activityPhase: v.optional(sessionPhaseValidator),
-  startedAt: v.optional(v.number()),
+  startedAt: v.number(),
   updatedAt: v.number(),
   toolCount: v.optional(v.number()),
   activityAt: v.optional(v.number()),
