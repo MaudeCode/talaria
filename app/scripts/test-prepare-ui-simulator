@@ -61,6 +61,10 @@ if os.environ.get('PREPARE_TEST_MODE') in ('notification-restart', 'notification
         while True:
             time.sleep(1)
     sys.exit(0)
+if os.environ.get('PREPARE_TEST_MODE') == 'no-files' and args[1] in ('appinfo', 'launch'):
+    # The iPhone Duo's iOS 27.1 image ships no Files app (TAL-1456).
+    print('No application record found for that bundle identifier', file=sys.stderr)
+    sys.exit(3 if args[1] == 'appinfo' else 4)
 if 'stream' in args:
     (state / 'stream.pid').write_text(str(os.getpid()))
     print('Filtering: collectionDidFinishGathering', flush=True)
@@ -184,6 +188,16 @@ class PreparationTests(unittest.TestCase):
                     self.assert_cleanup()
                 finally:
                     self.stop_process(self.document_process, 'stream.pid', 'launch.pid', 'terminate.pid')
+
+    def test_a_simulator_without_the_files_app_has_nothing_to_warm(self):
+        # The Duo's image has no Files app, so launching it failed both preparation attempts (TAL-1456).
+        code, output, _ = self.run_documents('no-files')
+        self.assertEqual(code, 0, output)
+        self.assertIn('has no Files app', output)
+        calls = (self.root / 'calls').read_text().splitlines()
+        self.assertIn('simctl appinfo synthetic-simulator com.apple.DocumentsApp', calls)
+        self.assertFalse(any(' launch ' in f' {call} ' or 'log stream' in call for call in calls), calls)
+        self.assertEqual(list(self.scratch.iterdir()), [], 'The lookup output leaked')
 
     def run_notification_readiness(self, mode, timeout):
         self.env['PREPARE_TEST_MODE'] = mode

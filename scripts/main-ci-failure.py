@@ -537,6 +537,9 @@ REPRODUCE = [
     (r"App / App (?:selected )?hosted tests (\d+)", "hosted", "app/scripts/test-ios", "app-test-results-{0}"),
     # The repeat jobs run a diff's added or changed test methods again (app-tests.yml); they have no shard number.
     (r"App / App repeated tests()", "hosted", "app/scripts/test-ios", None),
+    # The native Duo shard runs its tests on an iPhone Duo; on any other simulator they skip (TAL-1456).
+    (r"App / App native Duo tests()", "hosted",
+     "IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo app/scripts/test-ios", None),
     (r"App / App (?:build and selected package tests|selected package tests|repeated package tests|package tests)",
      "package",
      "app/scripts/test-package", None),
@@ -618,7 +621,7 @@ def entry(job, attempt, notes, tests, artifacts):
         return None
     elif test:
         kind = "failing test"
-        command = (f"app/scripts/test-ios --repeat 3 {test}" if lane in TARGETS
+        command = (f"{command if lane == 'hosted' else 'app/scripts/test-ios'} --repeat 3 {test}" if lane in TARGETS
                    else f"scripts/check-web-browser {shlex.quote(test)}")
     elif (not step and completed) or (step and INFRA_STEP.match(step)) or any(
             INFRA_NOTE.search(f"{note.get('title')} {note.get('message')}") for note in notes):

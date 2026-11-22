@@ -595,6 +595,54 @@ def collapse(identifiers):
     return sorted(identifier for identifier in identifiers if identifier.count("/") == 1 or identifier.rsplit("/", 1)[0] not in classes)
 
 
+# --------------------------------------------------------------------------------------------------------- Native Duo
+
+# The hosted tests only a native iPhone Duo runs (TAL-1456): CI's iPhone 17 has no vertical bar and runs an older runtime,
+# so they skip there. A test is one when it reads the vertical bar, or a line that skips it checks for the Duo's iOS 27.1
+# runtime or later; a helper holding either line reaches every test that calls it.
+DUO_RUNTIME = (27, 1)
+DUO_NAMES = {"verticalBarEdge"}
+DUO_GUARD = re.compile(r"#available\(iOS (\d+)\.(\d+)\b[^)]*\).*\bXCTSkip")
+# Tests that fail on the native Duo for a tracked reason: the Duo shard leaves them out, with the ticket that owns them,
+# rather than skip or loosen them. That ticket's fix removes its entries.
+DUO_KNOWN_FAILURES = {
+    f"{HOSTED}/ToolbarPriorityHostedTests/testChatMoreFoldsBeforeTheBellOnDuoInnerLandscape": "TAL-2563",
+    f"{HOSTED}/ToolbarPriorityHostedTests/testChatsPrioritiesReachTheNativeToolbar": "TAL-2563",
+    f"{HOSTED}/ToolbarPriorityHostedTests/testSidebarActionsJoinTheDetailColumnBesideTheVerticalBar": "TAL-2563",
+}
+
+
+def native_duo(universe):
+    """Identifiers of every test in a hosted universe that needs a native iPhone Duo."""
+    saved = universe.trail, universe.written
+    found = set(universe.reached(DUO_NAMES))
+    for path, decls in universe.files.items():
+        numbers = {number for number, line in enumerate(universe.lines[path], start=1)
+                   if (guard := DUO_GUARD.search(line)) and (int(guard[1]), int(guard[2])) >= DUO_RUNTIME}
+        if numbers:
+            found |= universe.changed(decls, universe.lines[path], numbers)
+    universe.trail, universe.written = saved
+    return found
+
+
+def duo_selection(universe, identifiers):
+    """(planned, left out) for the Duo shard: the native Duo tests within a hosted lane's identifiers, and the known
+    failures among them with their tickets. A known failure the universe no longer has is stale."""
+    for known, ticket in DUO_KNOWN_FAILURES.items():
+        _, cls, method = known.split("/")
+        if method not in universe.all_methods(cls):
+            raise Uncertain(f"known Duo failure {known} ({ticket}) is not in the tested tree; remove it")
+    native, chosen = native_duo(universe), set()
+    for selected in identifiers:
+        for test in native:
+            if test == selected or test.startswith(f"{selected}/"):
+                chosen.add(test)
+            elif selected.startswith(f"{test}/"):
+                chosen.add(selected)
+    covered = {known for known in DUO_KNOWN_FAILURES if any(known == test or known.startswith(f"{test}/") for test in chosen)}
+    return collapse(chosen - covered), {known: DUO_KNOWN_FAILURES[known] for known in sorted(covered)}
+
+
 def widened(path):
     """The targets an unbounded change can reach."""
     if path.startswith(("app/Talaria/", "app/TalariaLiveActivityWidget/", "app/TalariaShareExtension/",

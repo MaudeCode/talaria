@@ -206,6 +206,39 @@ proof, run `scripts/test-ios` and `scripts/test-package`; for a branch on CI,
 `gh workflow run ci.yml --ref <branch>` runs every suite in full. Main pushes and
 releases always run both targets in full.
 
+### Native iPhone Duo tests in CI
+
+CI's iPhone 17 runs an older runtime and has no vertical bar, so hosted tests
+that read the vertical bar (`verticalBarEdge`), or skip below the Duo's iOS 27.1
+runtime through a `#available(iOS 27.1, *)` guard, skip there (TAL-1456). When a
+hosted lane selects any of them, `ci/hosted-test-shard` plans one more shard,
+**App native Duo tests**: only those tests, on an iPhone Duo at the newest
+runtime the SDK runs that supports it (`setup-xcode`'s `IOS_SIMULATOR_DUO_OS`).
+`scripts/select-ios-simulator` finds or creates the Duo, which starts closed under
+`xcodebuild test`. A full hosted run, as on the daily full run, a labelled pull
+request or a release, runs every native Duo test there; an explicit lane runs the
+native Duo tests among its identifiers; a lane with none, a repeat-only run and
+a diagnostic's repeated attempts add no Duo shard. `--dry-run` shows the shard.
+
+- The shard takes a macOS slot beside the build, as the repeat shard does, so a
+  full lane plans at most three iPhone 17 shards.
+- `DUO_KNOWN_FAILURES` in `scripts/app_test_plan.py` names each test that fails
+  on the native Duo with the ticket that owns it. The shard leaves those out
+  with `-skip-testing` and its summary lists them; nothing skips or loosens them
+  in the test. The owning fix deletes its entries, and a stale entry fails the
+  plan.
+- Its summary names the device, runtime and each case's outcome on the Duo,
+  apart from the iPhone 17 shards' skips, and the gate checks that every planned
+  identifier ran there exactly once, apart from the lane's own proof.
+- A runner image with no compatible Duo skips the shard: its summary and the
+  gate say why, and CI Gate passes. A Duo shard that ran and failed fails the
+  App suite and CI Gate.
+- It shares the shard test step's limits: one minute per test, the runner-connect
+  stall check, and the step's 30 minutes, which sits above the slowest measured
+  four-shard full-run shard (13 minutes). The full native Duo selection took
+  195 s of testing on a local iPhone Duo at iOS 27.1: 36 cases, 30 passed,
+  3 skipped, and only the 3 known TAL-2563 failures failed.
+
 ### Repeat one test
 
 To investigate a flaky test, repeat it alone with the identifier a failure

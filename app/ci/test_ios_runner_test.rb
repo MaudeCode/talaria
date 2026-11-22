@@ -40,7 +40,7 @@ class TestIOSRunnerTest < Minitest::Test
     # One status per shard, so a passing shard never replaces another shard's failure (TAL-1550). A selected run's and
     # a diagnostic's statuses have names of their own, so neither replaces a full run's (TAL-2390), and so do the
     # repeats' (TAL-2402).
-    assert_equal("${{ inputs.diagnostic && format('App test diagnostics {0}', github.run_id) || matrix.repeat && 'App repeated test failures' || format('{0} {1}', " \
+    assert_equal("${{ inputs.diagnostic && format('App test diagnostics {0}', github.run_id) || matrix.repeat && 'App repeated test failures' || matrix.duo && 'App native Duo test failures' || format('{0} {1}', " \
                  "inputs.hosted_lane == 'explicit' && 'App selected hosted test failures' || 'App hosted test failures', matrix.shard) }}",
                  shard["env"]["FAILURE_STATUS"])
     assert_equal("${{ github.token }}", test["env"]["GH_TOKEN"])
@@ -71,16 +71,19 @@ class TestIOSRunnerTest < Minitest::Test
   def test_pr_ci_uses_a_unique_simulator_destination
     workflow = workflow_text("app-tests.yml")
 
-    # CI boots the image's iPhone 17 with the pinned simulator action and builds for it by name; the local
-    # pool, leases and XCTest admission only run in App tooling's own tests.
+    # CI boots the image's iPhone 17 with the pinned simulator action and builds for it by name; the native Duo shard
+    # boots the Duo the pool's lease-free selection script finds or creates (TAL-1456). The local pool, leases and
+    # XCTest admission only run in App tooling's own tests.
     jobs = workflow_jobs("app-tests.yml")
     boot = jobs.fetch("app-test")["steps"].find { |step| step["name"] == "Boot the simulator" }
     assert_match(%r{\Afutureware-tech/simulator-action@[0-9a-f]{40}\z}, boot["uses"])
-    assert_equal(["iPhone 17", "iOS", "~${{ env.IOS_SIMULATOR_OS }}", false, true, 600],
+    assert_equal(["${{ !matrix.duo && 'iPhone 17' || '' }}", "${{ !matrix.duo && 'iOS' || '' }}",
+                  "${{ !matrix.duo && format('~{0}', env.IOS_SIMULATOR_OS) || '' }}", false, true, 600],
                  boot["with"].values_at("model", "os", "os_version", "erase_before_boot", "wait_for_boot", "boot_timeout_seconds"))
     assert_includes(workflow, "SIMULATOR_ID: ${{ steps.sim.outputs.udid }}")
     assert_includes(workflow, "BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.IOS_SIMULATOR_OS }}")
-    %w[scripts/select-ios-simulator scripts/test-ios(?![-\w]) scripts/setup-ios-test-pool scripts/ios-simulator-pool(?![-\w])].each do |local|
+    assert_equal(["Select the iPhone Duo"], jobs.fetch("app-test")["steps"].select { |step| step["run"].to_s.include?("scripts/select-ios-simulator") }.map { |step| step["name"] })
+    %w[scripts/test-ios(?![-\w]) scripts/setup-ios-test-pool scripts/ios-simulator-pool(?![-\w])].each do |local|
       refute_match(Regexp.new(local), workflow)
     end
     assert_equal(1, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
@@ -340,9 +343,21 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal({ "fail-fast" => false, "max-parallel" => "${{ inputs.shards_at_once }}",
                    "matrix" => { "include" => "${{ fromJSON(needs.build-started.outputs.shards) }}" } }, shard["strategy"])
     assert_equal({ "type" => "number", "default" => 4 }, app_tests[true]["workflow_call"]["inputs"]["shards_at_once"])
-    # The repeat shard runs a pull request's added and changed tests under its own name (TAL-2402).
-    assert_equal("${{ matrix.repeat && 'App repeated tests' || format('{0} {1}', inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests', matrix.shard) }}",
+    # The repeat shard runs a pull request's added and changed tests under its own name (TAL-2402), and so does the
+    # native Duo shard (TAL-1456).
+    assert_equal("${{ matrix.repeat && 'App repeated tests' || matrix.duo && 'App native Duo tests' || format('{0} {1}', inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests', matrix.shard) }}",
                  shard["name"])
+    # The native Duo shard boots the Duo the pool's selection script finds or creates; without a compatible runtime it
+    # records its skip reason as its receipt and runs no simulator step (TAL-1456).
+    steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
+    select_duo = steps.fetch("Select the iPhone Duo")
+    assert_equal("matrix.duo", select_duo["if"])
+    assert_includes(select_duo["run"], 'echo "${reason}" > "hosted-cases/shard-${SHARD}.skipped"')
+    assert_includes(select_duo["run"], "scripts/select-ios-simulator")
+    assert_equal("${{ steps.duo.outputs.udid }}", steps.fetch("Boot the simulator")["with"]["udid"])
+    ["Boot the simulator", "Prepare the simulator", "Wait for the build", "Download the test build", "Test without building",
+     "Hold each test inside the run-time budget"].each { |name| assert_equal("env.DUO_SKIPPED != '1'", steps.fetch(name)["if"], name) }
+    assert_includes(steps.fetch("Test without building")["run"], 'ci/hosted-test-shard native "${RUNNER_TEMP}/shard.json"')
     shard["steps"].select { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }.each do |upload|
       assert_match(/-\$\{\{ matrix\.shard \}\}\z/, upload["with"]["name"], "shards overwrite each other's #{upload["name"]}")
     end

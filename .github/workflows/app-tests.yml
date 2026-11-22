@@ -27,6 +27,9 @@
 #       "App build and selected package tests"; an explicit hosted lane runs only its identifiers. ci.yml passes
 #       package_tests false for an empty package lane. Manual runs, including main's scheduled full run, and releases
 #       pass no plan, so they run both targets in full.
+#       A hosted lane that selects tests only a native iPhone Duo runs also gets the "App native Duo tests" shard
+#       (TAL-1456, ci/hosted-test-shard): those tests on an iPhone Duo at setup-xcode's IOS_SIMULATOR_DUO_OS, beside the
+#       lane's iPhone 17 shards. A runner image without a compatible Duo skips it with its reason in the summary.
 #       Each lane's `repeat` lists the test methods the diff added or changed (TAL-2402). Hosted ones run in one more
 #       shard, "App repeated tests"; TalariaKit ones in their own job from the start, "App repeated package tests". Both
 #       repeat until the first failure or their fixed time budget (ci/hosted-test-shard). hosted_lane empty with a plan
@@ -334,7 +337,7 @@ jobs:
     # its shard of the hosted unit tests (TalariaTests). "App build started" planned the shards: one to four, balanced
     # from measured times (ci/hosted-test-shard). A full run's last shard also runs any class the planner missed.
     # The repeat shard (TAL-2402) carries its own name and status, never a lane's.
-    name: ${{ matrix.repeat && 'App repeated tests' || format('{0} {1}', inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests', matrix.shard) }}
+    name: ${{ matrix.repeat && 'App repeated tests' || matrix.duo && 'App native Duo tests' || format('{0} {1}', inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests', matrix.shard) }}
     needs: build-started
     if: inputs.mode == 'hosted'
     strategy:
@@ -356,7 +359,7 @@ jobs:
     env:
       # One commit status per shard: a passing shard's success must not replace another shard's failure. A selected
       # run's statuses are its own, so they never replace a full run's; a diagnostic posts none.
-      FAILURE_STATUS: ${{ inputs.diagnostic && format('App test diagnostics {0}', github.run_id) || matrix.repeat && 'App repeated test failures' || format('{0} {1}', inputs.hosted_lane == 'explicit' && 'App selected hosted test failures' || 'App hosted test failures', matrix.shard) }}
+      FAILURE_STATUS: ${{ inputs.diagnostic && format('App test diagnostics {0}', github.run_id) || matrix.repeat && 'App repeated test failures' || matrix.duo && 'App native Duo test failures' || format('{0} {1}', inputs.hosted_lane == 'explicit' && 'App selected hosted test failures' || 'App hosted test failures', matrix.shard) }}
       SHARD: ${{ matrix.shard }}
       SHARD_PLAN: ${{ toJSON(matrix) }}
       RESULT_BUNDLE_PATH: TestResults.xcresult
@@ -378,16 +381,39 @@ jobs:
 
       - uses: ./.github/actions/setup-xcode
 
-      # The image's own iPhone 17 on the newest runtime the SDK runs (setup-xcode's IOS_SIMULATOR_OS), booted to
-      # completion before the wait and the download so nothing competes with its first boot; App build runs meanwhile
-      # on another runner.
+      # The native Duo shard's iPhone Duo (TAL-1456): the image's own or one created on setup-xcode's
+      # IOS_SIMULATOR_DUO_OS, through the pool's selection script. Without that runtime the shard skips: it records the
+      # reason as its receipt, which the gate reports, and its remaining steps stay off.
+      - name: Select the iPhone Duo
+        id: duo
+        if: matrix.duo
+        run: |
+          set -euo pipefail
+          if [[ -z "${IOS_SIMULATOR_DUO_OS}" ]]; then
+            reason="this runner image has no simulator runtime the iOS SDK runs that supports the iPhone Duo"
+            mkdir -p hosted-cases
+            echo "${reason}" > "hosted-cases/shard-${SHARD}.skipped"
+            echo "::notice title=Native Duo tests skipped::Skipped: ${reason}."
+            echo "### Native iPhone Duo shard ${SHARD}: skipped, ${reason}" >> "${GITHUB_STEP_SUMMARY}"
+            echo "DUO_SKIPPED=1" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          selection=$(IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo \
+            IOS_SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-${IOS_SIMULATOR_DUO_OS//./-}" scripts/select-ios-simulator)
+          echo "udid=${selection%%$'\t'*}" >> "${GITHUB_OUTPUT}"
+
+      # The image's own iPhone 17 on the newest runtime the SDK runs (setup-xcode's IOS_SIMULATOR_OS), or the native Duo
+      # shard's iPhone Duo, booted to completion before the wait and the download so nothing competes with its first
+      # boot; App build runs meanwhile on another runner.
       - name: Boot the simulator
         id: sim
+        if: env.DUO_SKIPPED != '1'
         uses: futureware-tech/simulator-action@c768f52966d5f70335ec77881f9806b24a52f80e # v6
         with:
-          model: iPhone 17
-          os: iOS
-          os_version: ~${{ env.IOS_SIMULATOR_OS }}
+          model: ${{ !matrix.duo && 'iPhone 17' || '' }}
+          os: ${{ !matrix.duo && 'iOS' || '' }}
+          os_version: ${{ !matrix.duo && format('~{0}', env.IOS_SIMULATOR_OS) || '' }}
+          udid: ${{ steps.duo.outputs.udid }}
           erase_before_boot: false
           wait_for_boot: true
           boot_timeout_seconds: 600
@@ -399,6 +425,7 @@ jobs:
       # while the job waits for and downloads the build, and "Test without building" collects it (TAL-1599). Only the
       # shard whose tests wait on the notification server waits for it here (TAL-2352).
       - name: Prepare the simulator
+        if: env.DUO_SKIPPED != '1'
         run: |
           printf '%s' "${SHARD_PLAN}" > "${RUNNER_TEMP}/shard.json"
           options=$(ci/hosted-test-shard prepare-options "${RUNNER_TEMP}/shard.json")
@@ -408,10 +435,12 @@ jobs:
       # Returns once the background poll has seen the build's upload step succeed; fails once it sees the build fail
       # or get cancelled, or if the poll stopped without a result.
       - name: Wait for the build
+        if: env.DUO_SKIPPED != '1'
         run: ci/background wait build-wait
 
       # curl, not actions/download-artifact, which fetched this artifact at about 1 MB/s on hosted macOS.
       - name: Download the test build
+        if: env.DUO_SKIPPED != '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -453,6 +482,7 @@ jobs:
       # step's limit sits above the slowest measured shard: 10 to 13 minutes at four shards (main run 44328773116), 18
       # to 19.5 minutes at a release's two (release run 44252691504).
       - name: Test without building
+        if: env.DUO_SKIPPED != '1'
         timeout-minutes: ${{ inputs.diagnostic && 45 || 30 }}
         env:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
@@ -547,6 +577,15 @@ jobs:
             fi
           elif [[ "$(jq -r '.repetitions // 1' "${RUNNER_TEMP}/shard.json")" != 1 ]]; then
             ci/hosted-test-shard attempts hosted-cases/results.json | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi
+          # The native Duo shard's destination proof: the device and runtime it ran on, and each case's outcome there,
+          # apart from the iPhone 17 shards' skips (TAL-1456).
+          if [[ "$(jq -r '.duo // false' "${RUNNER_TEMP}/shard.json")" == true ]]; then
+            xcrun simctl list devices --json | jq --arg udid "${SIMULATOR_ID}" \
+              'first(.devices | to_entries[] | .key as $runtime | .value[] | select(.udid == $udid) | . + {runtime: $runtime})' \
+              > "${RUNNER_TEMP}/device.json"
+            ci/hosted-test-shard native "${RUNNER_TEMP}/shard.json" hosted-cases/results.json "${RUNNER_TEMP}/device.json" |
+              tee -a "${GITHUB_STEP_SUMMARY}"
           fi
           rm hosted-cases/results.json
           # A passing run replaces an earlier run's failure status on this commit with success.
@@ -669,6 +708,7 @@ jobs:
 
       # test-results.json comes from the step above (TAL-2403).
       - name: Hold each test inside the run-time budget
+        if: env.DUO_SKIPPED != '1'
         timeout-minutes: 3
         run: python3 ../scripts/check-test-durations.py test-results.json
 

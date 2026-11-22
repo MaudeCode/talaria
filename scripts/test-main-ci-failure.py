@@ -265,10 +265,15 @@ class ReportTests(unittest.TestCase):
     def test_the_repeat_jobs_name_their_failing_test(self):
         package_log = FLAKY_LOG.replace("TalariaTests.DuoFoldHostedTests", "TalariaKitTests.APIClientTests")
         for name, log, test in (("App / App repeated tests", FLAKY_LOG, FLAKY),
+                                ("App / App native Duo tests", FLAKY_LOG, FLAKY),
                                 ("App / App repeated package tests", package_log,
                                  FLAKY.replace("TalariaTests/DuoFoldHostedTests", "TalariaKitTests/APIClientTests"))):
             decision = self.decide(jobs=flaky_shard(shard=name), logs={4: log})
             self.assertEqual(decision["work"][0]["test"], test, name)
+        # A native Duo test skips on any other simulator, so its reproduction asks for the Duo (TAL-1456).
+        decision = self.decide(jobs=flaky_shard(shard="App / App native Duo tests"), logs={4: FLAKY_LOG})
+        self.assertEqual(decision["work"][0]["command"], "IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo "
+                                                         f"app/scripts/test-ios --repeat 3 {FLAKY}")
 
     def test_every_failing_test_in_one_shard_is_its_own_failure(self):
         second = FLAKY_LOG.replace("testAnExpandedDisclosureStaysExpandedAcrossClosingAndOpening", "testRotatesTheFold")
