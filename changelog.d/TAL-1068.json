@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web can keep each chat as a plain append-only log you can read with standard text tools; set TALARIA_STORAGE=jsonl and move an install with talaria-web storage copy.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

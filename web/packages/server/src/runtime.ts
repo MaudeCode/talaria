@@ -56,6 +56,7 @@ import { str } from './util.js'
 import { cancelSessionStream, sendSessionMessage, startSessionChat } from './sessions/admission.js'
 import { peerAgentActivity, talariaActivity } from './sessions/talaria-activities.js'
 import { JsonStorage } from './sessions/storage/json.js'
+import { JsonlStorage } from './sessions/storage/jsonl.js'
 import { attachmentSessionName, createBlobStore, localAttachmentRoot } from './sessions/storage/blobs.js'
 import { SqliteStorage } from './sessions/storage/sqlite.js'
 import { PostgresStorage } from './sessions/storage/postgres.js'
@@ -1386,6 +1387,8 @@ export async function createStorage(config: import('./config.js').ServerConfig, 
     ? await PostgresStorage.open({ ...postgresOptions(config.env), sessionDir: config.sessionDir, env: config.env, stampingSince, log })
     : config.storage === 'sqlite'
       ? new SqliteStorage({ path: join(config.stateDir, 'talaria.db'), sessionDir: config.sessionDir, env: config.env, stampingSince })
-      : new JsonStorage({ directory: config.sessionDir, stateDir: config.stateDir, profileHome, env: config.env, now, stampingSince })
+      : config.storage === 'jsonl'
+        ? new JsonlStorage({ directory: join(config.stateDir, 'sessions-jsonl'), sessionDir: config.sessionDir, stateDir: config.stateDir, profileHome, env: config.env, now, stampingSince })
+        : new JsonStorage({ directory: config.sessionDir, stateDir: config.stateDir, profileHome, env: config.env, now, stampingSince })
   return storage
 }

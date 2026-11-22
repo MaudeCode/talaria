@@ -79,10 +79,15 @@ function readPrefixFromFd(fd: number, maxBytes: number, initialStage: number): s
  * were read from. Reads the descriptor incrementally and parses only those rows; a document the scan cannot follow (no
  * `messages` array, a non-object row, a truncated file) falls back to one full parse of the same descriptor.
  */
-export async function readJsonMessagePrefix(path: string, limit: number, chunkBytes = 64 * 1024): Promise<{ rows: unknown[]; signature: string }> {
+export function readJsonMessagePrefix(path: string, limit: number, chunkBytes = 64 * 1024): Promise<{ rows: unknown[]; signature: string }> {
+  return withSessionPrefixRead(() => readJsonMessagePrefixUngated(path, limit, chunkBytes))
+}
+
+/** Runs one session transcript scan inside the process-wide cap below, shared by every file-backed adapter. */
+export async function withSessionPrefixRead<T>(read: () => Promise<T>): Promise<T> {
   await acquirePrefixRead()
   try {
-    return await readJsonMessagePrefixUngated(path, limit, chunkBytes)
+    return await read()
   } finally {
     releasePrefixRead()
   }

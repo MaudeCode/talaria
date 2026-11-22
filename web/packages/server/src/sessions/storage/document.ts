@@ -1,9 +1,9 @@
 import { InvalidDocument, RevisionConflict, type DocumentBackend, type StoredDocument } from './backend.js'
 
-const documentOperations = new WeakMap<DocumentBackend, Map<string, Promise<void>>>()
+const documentOperations = new WeakMap<object, Map<string, Promise<void>>>()
 
-/** Run one operation at a time per document, so a read-then-write sequence never overlaps another in this process. */
-export function withDocumentQueue<T>(backend: DocumentBackend, namespace: string, key: string, operation: () => Promise<T>): Promise<T> {
+/** Run one operation at a time per document (or other keyed item of `backend`), so a read-then-write sequence never overlaps another in this process. */
+export function withDocumentQueue<T>(backend: object, namespace: string, key: string, operation: () => Promise<T>): Promise<T> {
   let operations = documentOperations.get(backend)
   if (!operations) { operations = new Map(); documentOperations.set(backend, operations) }
   const id = JSON.stringify([namespace, key])

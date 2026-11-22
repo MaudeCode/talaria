@@ -1,7 +1,7 @@
 /**
  * `talaria-web storage`, run while the server is stopped; a re-run copies only what is missing or different, and the
  * source is never modified:
- * - `copy --from <json|sqlite|postgres> --to <json|sqlite|postgres>` (TAL-1066, TAL-1067) moves every session, backup, tombstone, document and run
+ * - `copy --from <json|jsonl|sqlite|postgres> --to <json|jsonl|sqlite|postgres>` (TAL-1066, TAL-1067, TAL-1068) moves every session, backup, tombstone, document and run
  *   journal between storage backends, then verifies the copy.
  * - `copy-blobs --from <local|s3> --to <local|s3>` (TAL-1069) copies every chat attachment between blob stores,
  *   verifying each object by size and SHA-256.
@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { assertStorageKind, loadBlobConfig, loadConfig } from '../config.js'
+import { assertStorageKind, loadBlobConfig, loadConfig, STORAGE_KINDS } from '../config.js'
 import { createStorage } from '../runtime.js'
 import type { StorageBackend } from '../sessions/storage/backend.js'
 import { copyStorage, verifyStorage } from '../sessions/storage/copy.js'
@@ -21,7 +21,7 @@ import { loadStartupEnv } from './dotenv.js'
 
 export interface StorageCliContext { env: Record<string, string | undefined>; webRoot: string; home: string; log: (line: string) => void; warn: (line: string) => void }
 
-const COPY_USAGE = 'Usage: talaria-web storage copy --from <json|sqlite|postgres> --to <json|sqlite|postgres>'
+const COPY_USAGE = `Usage: talaria-web storage copy --from <${STORAGE_KINDS.join('|')}> --to <${STORAGE_KINDS.join('|')}>`
 const USAGE = 'Usage: talaria-web storage copy-blobs --from <local|s3> --to <local|s3>'
 const KINDS = new Set(['local', 's3'])
 

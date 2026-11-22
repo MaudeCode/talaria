@@ -46,9 +46,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        storage: [json, sqlite, postgres]
+        storage: [json, jsonl, sqlite, postgres]
         shard: [1/3, 2/3, 3/3, latency, checks]
         exclude:
+          - storage: jsonl
+            shard: checks
           - storage: sqlite
             shard: checks
           - storage: postgres
