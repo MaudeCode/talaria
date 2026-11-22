@@ -365,6 +365,10 @@ components. It never materializes a writable Talaria session or settles the owne
 The Agent owns admission, execution, recovery, and revision/generation-fenced mutations. Talaria's
 observational journals and stream scope include the complete profile home and session identity.
 Watches request reasoning from the owner so Show can resume it on an existing observation. The server applies the current profile display preference to reasoning and subagent-thinking frames, and maps subagent lifecycle and usage events into the existing chat frames. Unsupported display negotiation leaves older owners observable.
+A profile can opt in to reach its owner through a private Unix socket instead of local discovery, for a Web
+container outside the Gateway's network namespace (`talaria.gateway_session_socket`, `talaria_sidecar/gateway_bridge.py`).
+The transport is chosen once in `_discover` and travels on the endpoint to `_connect`; every check above applies
+unchanged ([agent-api-contract.md](docs/architecture/agent-api-contract.md)).
 
 The same profile-bound observation owns native todo state. Optional owner snapshots and
 `todo.updated` events feed `sessions/todo.ts`, the direct-chat normalizer, which ships

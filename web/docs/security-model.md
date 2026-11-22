@@ -403,6 +403,20 @@ plain-HTTP fallback (`config.ts` `loadConfig`; `server.ts` `startServer`).
   ships no sudo (`web/Dockerfile`, `web/docker_init.bash`).
 - First start installs the Agent's Python dependencies with TLS verification
   on, and stops if `uv` is missing (`web/docker_init.bash`).
+- The optional session bridge (`web/docker-compose.session-bridge.yml`,
+  `web/sidecar/talaria_sidecar/gateway_bridge.py`) gives the Web container
+  operator access to the Gateway chats of the profiles the helper lists, over a
+  Unix socket and no port. Both ends require Linux `SO_PEERCRED` with their own
+  UID and a canonical, non-symlink socket path, `0600` in a `0700` directory
+  owned by that UID (`check_peer`, `private_path`). Web sends a profile name
+  only; the helper maps it to its own home and refuses any it does not list
+  (`profile_home`). The helper mints the native ticket and never sends it, a
+  path or a diagnostic to Web (`_attest`, `handle`). Web refuses an owner whose
+  profile id does not match the name it derived from its own layout, or whose
+  instance does not hold the `state.db` it reads (`_mapped_profile`,
+  `_bound_store`), and never falls back to local discovery when the bridge is
+  configured (`methods/gateway_sessions.py` `_discover`). Rooms, which need a
+  subject-scoped ticket, are refused over it.
 
 ## 8. Updates and supply chain
 
@@ -513,6 +527,13 @@ origins but never requests them. Every exchange starts at the Web server
   (`workspace/media.ts` `mediaAccessFor`, `sessionMediaGrant`).
 - Tool approvals need only session visibility, not owner authority
   (`api/chat-router.ts` `approvalRespond`).
+- The Agent's control socket and the optional session bridge trust every
+  process of their UID. A command a chat runs in the Web container under that
+  UID (a local terminal tool) can reach any profile the helper lists, as it can
+  already read every profile's home, credentials and cron jobs in the shared
+  `hermes-home`, and reach `gateway.sock` in a single-container install. Keep
+  profiles that must stay apart on separate UIDs or deployments
+  (`web/sidecar/talaria_sidecar/gateway_bridge.py` `check_peer`).
 - Remote-image relay ids live in memory, so an old relay URL answers 404 after
   a restart (`http/remote-image.ts` `vouchRemoteImage`).
 - Apple sign-in budgets key on the client address, so users behind one NAT

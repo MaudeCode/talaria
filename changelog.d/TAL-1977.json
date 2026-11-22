@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "In a two- or three-container Docker setup, Talaria Web can continue chats the Gateway container owns through an optional private socket helper, set up with docker-compose.session-bridge.yml.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
