@@ -120012,6 +120012,69 @@
         }
       }
     },
+    "/api/render/diagram": {
+      "post": {
+        "operationId": "renderDiagram",
+        "summary": "Mermaid source drawn as a standalone SVG by Pele, with links and images left out; `error` carries the parse failure instead.",
+        "tags": [
+          "render"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "maxLength": 100000
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "svg": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "svg"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/btw": {
       "post": {
         "operationId": "btw",
