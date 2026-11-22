@@ -188,3 +188,84 @@ private enum TestPNG {
     }
     static let dataURL = "data:image/png;base64,\(data.base64EncodedString())"
 }
+
+/// TAL-772: a table wider than the chat fades only the edge that hides columns, as the composer strip does. The
+/// header rule runs the table's full width, so its ink at each visible edge shows whether that edge fades.
+@MainActor
+final class ChatMarkdownTableEdgeFadeTests: XCTestCase {
+    func testWideTableFadesTheEdgesThatHideColumns() throws {
+        let table = try hostTable(columns: 7)
+        XCTAssertGreaterThan(table.scroll.contentSize.width, table.scroll.bounds.width + 100, "The fixture overflows")
+
+        var rule = try headerRule(in: table)
+        XCTAssertGreaterThan(rule.leading, rule.middle * 0.7, "At rest the leading edge shows its column")
+        XCTAssertLessThan(rule.trailing, rule.middle * 0.4, "At rest the trailing edge fades")
+        attachHostedScreenshot(table.window, name: "wide-table-at-rest")
+
+        table.scroll.setContentOffset(
+            CGPoint(x: (table.scroll.contentSize.width - table.scroll.bounds.width) / 2, y: 0), animated: false
+        )
+        rule = try headerRule(in: table)
+        XCTAssertLessThan(rule.leading, rule.middle * 0.4, "Mid-scroll the leading edge fades")
+        XCTAssertLessThan(rule.trailing, rule.middle * 0.4, "Mid-scroll the trailing edge fades")
+        attachHostedScreenshot(table.window, name: "wide-table-mid-scroll")
+    }
+
+    func testTableThatFitsHasNoFade() throws {
+        let table = try hostTable(columns: 2)
+        XCTAssertLessThanOrEqual(table.scroll.contentSize.width, table.scroll.bounds.width, "The fixture fits")
+
+        let rule = try headerRule(in: table)
+        XCTAssertGreaterThan(rule.leading, rule.middle * 0.7, "The leading edge shows its column")
+        XCTAssertGreaterThan(rule.trailing, rule.middle * 0.7, "The trailing edge shows its column")
+        attachHostedScreenshot(table.window, name: "narrow-table")
+    }
+
+    private struct HostedTable {
+        let window: UIWindow
+        let scroll: UIScrollView
+    }
+
+    private func hostTable(columns: Int) throws -> HostedTable {
+        let row = { (cell: String) in "| " + (1...columns).map { "\(cell) \($0)" }.joined(separator: " | ") + " |" }
+        let markdown = [row("Column"), "|" + String(repeating: " --- |", count: columns), row("Value"), row("Value")]
+            .joined(separator: "\n")
+        let window = try hostWindow(
+            MarkdownRenderer(content: markdown)
+                .padding(16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top),
+            size: HostedSize.phone,
+            traits: { $0.userInterfaceStyle = .light }
+        )
+        let scroll = try XCTUnwrap(window.firstView(ofType: UIScrollView.self) { $0.bounds.width > 200 })
+        return HostedTable(window: window, scroll: scroll)
+    }
+
+    /// The header rule's ink, its largest channel difference from the background, one point inside each visible edge
+    /// of the table and at its middle.
+    private func headerRule(in table: HostedTable) throws -> (leading: Double, middle: Double, trailing: Double) {
+        let scale: CGFloat = 2
+        let image = try XCTUnwrap(committedWindowImage(table.window, scale: scale))
+        let data = try XCTUnwrap(image.dataProvider?.data)
+        let bytes = try XCTUnwrap(CFDataGetBytePtr(data))
+        let pixel = { (point: CGPoint) -> [Int] in
+            let offset = Int(point.y * scale) * image.bytesPerRow + Int(point.x * scale) * (image.bitsPerPixel / 8)
+            return (0..<3).map { Int(bytes[offset + $0]) }
+        }
+        let background = pixel(CGPoint(x: 2, y: 2))
+        let ink = { (point: CGPoint) in Double(zip(pixel(point), background).map { abs($0 - $1) }.max() ?? 0) }
+
+        let frame = table.scroll.convert(table.scroll.bounds, to: table.window)
+        let visibleWidth = min(table.scroll.contentSize.width - table.scroll.contentOffset.x, frame.width)
+        let leading = frame.minX + 1, trailing = frame.minX + visibleWidth - 1, middle = frame.minX + visibleWidth / 2
+        // Text leaves gaps between words and columns; only a rule inks every sample across the middle half.
+        let samples = stride(from: frame.minX + visibleWidth / 4, through: frame.minX + visibleWidth * 3 / 4, by: 2)
+        let ruleY = try XCTUnwrap(
+            stride(from: frame.minY, to: frame.maxY, by: 1 / scale).first { y in
+                samples.allSatisfy { ink(CGPoint(x: $0, y: y)) > 8 }
+            },
+            "The header rule is drawn"
+        )
+        return (ink(CGPoint(x: leading, y: ruleY)), ink(CGPoint(x: middle, y: ruleY)), ink(CGPoint(x: trailing, y: ruleY)))
+    }
+}

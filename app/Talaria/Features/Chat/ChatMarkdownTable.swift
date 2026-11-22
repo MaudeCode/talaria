@@ -3,7 +3,8 @@ import SwiftUI
 import UIKit
 
 /// A chat table is a reading table, like Web's (TAL-2319, TAL-2320): a rule under the header and each row but
-/// the last, the header's stronger, no cell grid, no fills. A wide table scrolls inside the reading column.
+/// the last, the header's stronger, no cell grid, no fills. A wide table scrolls inside the reading column and fades
+/// the edge that hides columns (TAL-772).
 struct ChatMarkdownTable: View {
     static let cellMinWidth: CGFloat = 96
     static let cellMaxWidth: CGFloat = 260
@@ -15,6 +16,7 @@ struct ChatMarkdownTable: View {
             Self.readingTable(label)
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .horizontalOverflowEdgeFades()
     }
 
     /// The table without its scroll view, which `ImageRenderer` would draw empty in visual references.
