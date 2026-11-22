@@ -5,6 +5,7 @@ import { Archive, ArchiveRestore, CheckCheck, Trash2, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import type { SessionRow } from '../../contracts'
+import { SESSIONS_BULK_MAX } from '@maudecode/talaria-web-contracts'
 import { IconButton } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { showErrorToast } from '../toast/errorToast'
@@ -35,6 +36,8 @@ export function SessionSelectionBar({ rows, selectable, onSelected, showArchived
     resource: ({ ids }: { action: BulkAction; ids: string[] }) => ids.map((id) => `session:${id}`),
     effect: ({ action }) => action === 'delete' ? { remove: true } : { fields: { archived: action === 'archive' } },
     mutationFn: ({ action, ids }) => api.bulkSessions(action, ids),
+    // A 4xx for one id is that id's definite refusal: it comes back at once; any other failure waits for the next read.
+    refused: ({ results }) => results.flatMap((r) => (!r.ok && r.status !== undefined && r.status >= 400 && r.status < 500 && r.status !== 408 ? [`session:${r.session_id}`] : [])),
     onSuccess: ({ results }, { action }) => {
       if (action === 'delete') forgetDeletedSessions(qc, results.flatMap((r) => (r.ok ? [r.session_id] : [])))
       const failed = results.filter((r) => !r.ok)
@@ -44,7 +47,8 @@ export function SessionSelectionBar({ rows, selectable, onSelected, showArchived
     },
     onError: (e) => showErrorToast(e),
   })
-  const ids = (allowed: (row: SessionRow) => boolean) => rows.filter(allowed).map((r) => r.session_id)
+  // The panel caps selection at the route's limit; a larger one (rows hidden by a filter, then shown again) acts on nothing.
+  const ids = (allowed: (row: SessionRow) => boolean) => (rows.length > SESSIONS_BULK_MAX ? [] : rows.filter(allowed).map((r) => r.session_id))
   const archiveIds = ids((r) => r.can_archive && !r.archived)
   const unarchiveIds = ids((r) => r.can_archive && !!r.archived)
   const deleteIds = ids((r) => r.can_delete)

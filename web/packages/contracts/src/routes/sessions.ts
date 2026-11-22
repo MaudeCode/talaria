@@ -57,10 +57,12 @@ export const SessionDetailQuerySchema = z.object({ session_id: z.string(), messa
 
 
 
+/** TAL-627: the most sessions one bulk call takes; TAL-606's select mode selects at most this many. */
+export const SESSIONS_BULK_MAX = 200
 /** TAL-627: one bulk action over many sessions; ids are unique and the server answers each in input order. */
 export const SessionsBulkRequestSchema = z.object({
   action: z.enum(['archive', 'unarchive', 'delete']),
-  session_ids: z.array(SessionIdSchema).min(1).max(200).refine((ids) => new Set(ids).size === ids.length, 'session_ids must be unique'),
+  session_ids: z.array(SessionIdSchema).min(1).max(SESSIONS_BULK_MAX).refine((ids) => new Set(ids).size === ids.length, 'session_ids must be unique'),
 })
 /**
  * Each id's outcome: `status`/`error`/`refused` are what the single-session route would have answered; one failure never

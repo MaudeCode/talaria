@@ -164,6 +164,31 @@ describe('optimistic resource ownership', () => {
     await waitFor(() => expect(result.current.intents).toEqual({}))
   })
 
+  it('rolls back the resources a confirmed multi-resource write reports refused, before any read answers (TAL-606)', async () => {
+    const { wrapper } = harness()
+    const reread = deferred<string>()
+    const read = vi.fn().mockResolvedValueOnce('baseline').mockImplementation(() => reread.promise)
+    const { result } = renderHook(() => ({
+      list: useQuery({ queryKey: keys.sessions.list({}), queryFn: read }),
+      intents: useResourceEffects(),
+      write: useResourceMutation({
+        resource: (ids: string[]) => ids.map((id) => `session:${id}`),
+        effect: () => ({ remove: true }),
+        mutationFn: () => Promise.resolve({ results: [{ id: 'a', ok: true }, { id: 'b', ok: false }] }),
+        refused: (r) => r.results.flatMap((x) => (x.ok ? [] : [`session:${x.id}`])),
+      }),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.list.data).toBe('baseline'))
+    let done!: Promise<unknown>
+    act(() => { done = result.current.write.mutateAsync(['a', 'b']) })
+    // The refused resource comes back while the reconciliation read is still held; the confirmed one stays shown.
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(result.current.intents['session:b']).toBeUndefined())
+    expect(result.current.intents['session:a']?.remove).toBe(true)
+    await act(async () => { reread.resolve('fresh'); await done })
+    await waitFor(() => expect(result.current.intents).toEqual({}))
+  })
+
   it('queues a repeated write behind its predecessor and shows only the newest value; an exclusive write refuses', async () => {
     const { wrapper } = harness()
     const first = deferred<{ ok: boolean }>()

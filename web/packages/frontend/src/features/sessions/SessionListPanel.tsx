@@ -14,7 +14,7 @@ import { SectionHeader } from '../../ui/List'
 import { Dialog } from '../../ui/Dialog'
 import { useProjectsQuery } from '../../app/queries'
 import { useSettingsQuery } from '../../app/settings'
-import { OUTSIDE_SOURCE_SETTING_KEYS } from '@maudecode/talaria-web-contracts'
+import { OUTSIDE_SOURCE_SETTING_KEYS, SESSIONS_BULK_MAX } from '@maudecode/talaria-web-contracts'
 import { SessionActions, SessionContextMenu, SessionMenuItems } from './SessionContextMenu'
 import { SessionSelectionBar } from './SessionSelectionBar'
 import { ContextMenu } from '../../ui/Menu'
@@ -344,9 +344,10 @@ export function SessionListPanel() {
   const withNested = (r: SessionRow) => [r, ...(children.get(r.session_id) ?? [])]
   const selectedRows = filtered.flatMap(withNested).filter((r) => canSelect(r) && selected.includes(r.session_id))
   // Select all covers the dated groups, never the collapsed Scheduled and Webhook groups (as in the App).
-  const selectAll = groups.filter((g) => !isDisclosure(g.id)).flatMap((g) => g.rows.flatMap(withNested)).filter(canSelect).map((r) => r.session_id)
+  // One bulk call takes at most SESSIONS_BULK_MAX ids, so Select all stops there and other rows wait until one is cleared.
+  const selectAll = groups.filter((g) => !isDisclosure(g.id)).flatMap((g) => g.rows.flatMap(withNested)).filter(canSelect).slice(0, SESSIONS_BULK_MAX).map((r) => r.session_id)
   const endSelect = () => { setSelecting(false); setSelected([]) }
-  const selection = selecting ? { ids: selected, onToggle: (id: string) => setSelected((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])) } : undefined
+  const selection = selecting ? { ids: selected, full: selectedRows.length >= SESSIONS_BULK_MAX, onToggle: (id: string) => setSelected((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])) } : undefined
   const onArchive = (id: string, archived: boolean) => mutateArchive({ id, archived })
   const navigate = useNavigate()
   // Legacy J/K: open the next or previous shown session in sidebar order, unless typing, modified, or inside a dialog or menu (TAL-613).
@@ -461,9 +462,14 @@ function SessionTreeItem({ row, nested, activeId, projectsById, previews, onArch
   onDragStart?: (event: DragEvent<HTMLAnchorElement>, row: SessionRow) => void
   onDragEnd?: () => void
   /** TAL-606: select mode's chosen ids; a row the server lets neither archive nor delete is not selectable. */
-  selection?: { ids: readonly string[]; onToggle: (id: string) => void } | undefined
+  selection?: { ids: readonly string[]; full: boolean; onToggle: (id: string) => void } | undefined
 }) {
-  const item = (r: SessionRow, isNested: boolean) => <SessionListItem key={r.session_id} row={r} nested={isNested} active={r.session_id === activeId} proj={r.project_id ? projectsById.get(r.project_id) : undefined} preview={previews.get(r.session_id)} timeLabel={relativeTime(r.sort_ts)} timeMotion={timeMotion ? { previous: relativeTime(timeMotion.previous.get(r.session_id)?.sort_ts ?? r.sort_ts), enabled: timeMotion.enabled } : undefined} onArchive={onArchive} {...(onDragStart ? { onDragStart, onDragEnd } : {})} {...(selection ? { selection: { selected: selection.ids.includes(r.session_id), disabled: !canSelect(r), onSelect: () => selection.onToggle(r.session_id) } } : {})} />
+  const pick = (r: SessionRow) => {
+    if (!selection) return {}
+    const selected = selection.ids.includes(r.session_id)
+    return { selection: { selected, disabled: !canSelect(r) || (!selected && selection.full), onSelect: () => selection.onToggle(r.session_id) } }
+  }
+  const item = (r: SessionRow, isNested: boolean) => <SessionListItem key={r.session_id} row={r} nested={isNested} active={r.session_id === activeId} proj={r.project_id ? projectsById.get(r.project_id) : undefined} preview={previews.get(r.session_id)} timeLabel={relativeTime(r.sort_ts)} timeMotion={timeMotion ? { previous: relativeTime(timeMotion.previous.get(r.session_id)?.sort_ts ?? r.sort_ts), enabled: timeMotion.enabled } : undefined} onArchive={onArchive} {...(onDragStart ? { onDragStart, onDragEnd } : {})} {...pick(r)} />
   return <Fragment>{item(row, false)}{nested?.map((child) => item(child, true))}</Fragment>
 }
 

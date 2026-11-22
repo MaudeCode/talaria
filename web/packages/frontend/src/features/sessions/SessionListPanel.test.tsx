@@ -9,7 +9,7 @@ import { SessionsListSchema, type SessionRow } from '../../contracts'
 import { ApiError } from '../../contracts/common'
 
 const settings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }))
-vi.mock('../../api/endpoints', () => ({ fetchSettings: () => Promise.resolve({ sound_enabled: false, ...settings.value }), fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchSettings: () => Promise.resolve({ sound_enabled: false, ...settings.value }), fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), bulkSessions: vi.fn(), createProject: vi.fn() }))
 const sessionEvents = vi.hoisted(() => ({ emit: vi.fn<(event: { event: string; data: { session_id?: string; reason?: string } }) => void>() }))
 vi.mock('../../api/sse', () => ({ SSE_OPEN: 1, openSessionListStream: ({ onEvent }: { onEvent: typeof sessionEvents.emit }) => { sessionEvents.emit.mockImplementation(onEvent); return { close: () => undefined, readyState: () => 1 } } }))
 const newChat = vi.hoisted(() => vi.fn())
@@ -822,5 +822,22 @@ describe('Chats filter menu (TAL-1869)', () => {
     expect(screen.getByRole('button', { name: 'Chat filters, filtered' })).toBeInTheDocument()
     // A checkbox row keeps the menu open.
     expect(box).toHaveAttribute('aria-checked', 'true')
+  })
+})
+
+describe('select mode (TAL-606)', () => {
+  it('selects at most one bulk call of rows: Select all stops at the limit and the next row cannot be checked', async () => {
+    const many = Array.from({ length: 201 }, (_, i) => row(`s${i}`, `Chat ${i}`))
+    answer(() => many, { webui_session_count: many.length, cli_session_count: 0 })
+    vi.mocked(api.bulkSessions).mockReset().mockImplementation((_action, ids) => Promise.resolve({ results: ids.map((session_id) => ({ session_id, ok: true })) }))
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Chat 200')
+    await userEvent.click(within(await openFilters()).getByRole('menuitem', { name: 'Select' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Select all' }))
+    expect(screen.getByText('200 selected')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /Chat 200/ })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Archive' }))
+    expect(api.bulkSessions).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(api.bulkSessions).mock.calls[0]?.[1]).toEqual(many.slice(0, 200).map((r) => r.session_id))
   })
 })

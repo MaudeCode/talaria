@@ -158,6 +158,8 @@ interface ResourceMutationOptions<V, R, T> {
   queryKey?: QueryKey
   readKeys?: (variables: V) => ResourceRead[]
   mutationFn: (variables: V) => Promise<R>
+  /** A multi-resource write's result may refuse some resources outright; those roll back at once, the rest reconcile. */
+  refused?: (result: R, variables: V) => readonly string[]
   onSuccess?: (result: R, variables: V) => void
   onError?: (error: unknown) => void
 }
@@ -202,8 +204,8 @@ async function runResourceMutation<V, R, T>(qc: QueryClient, options: ResourceMu
   // A later write may replace this one on some of its resources; this write still owns the rest.
   const owned = () => getStreamContext() === context ? ids.filter((id) => effects()[id] === mine[id]) : []
   const current = () => owned().length > 0
-  const clear = () => {
-    const mine = owned()
+  const clear = (only?: ReadonlySet<string>) => {
+    const mine = owned().filter((id) => !only || only.has(id))
     if (!mine.length) return
     qc.setQueryData(effectKey, (old: Record<string, OwnedEffect> = empty) => {
       return Object.fromEntries(Object.entries(old).filter(([key]) => !mine.includes(key)))
@@ -222,6 +224,12 @@ async function runResourceMutation<V, R, T>(qc: QueryClient, options: ResourceMu
       if ('ok' in result && result.ok === false) throw new Error(m.error_generic())
     }
     outcome = 'confirmed'
+    const refused = new Set(options.refused?.(result, variables))
+    if (refused.size) {
+      clear(refused)
+      // Every resource refused: the same rollback and background refresh as a refusal of the whole write.
+      if (!current()) outcome = 'refused'
+    }
     options.onSuccess?.(result, variables)
     return result
   } catch (error) {
