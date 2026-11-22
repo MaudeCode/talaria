@@ -41,7 +41,7 @@ export function completionNotification(sessionId: string, session: { title?: unk
   return { title, body: body || ALERT_BODY.completion, url: `/session/${encodeURIComponent(sessionId)}`, tag: sessionId }
 }
 
-export const DEFAULT_ALERT_PREFERENCES: AlertPreferences = { notify_on_approval: true, notify_on_input: true, notify_on_completion: true, notify_on_failure: true }
+export const DEFAULT_ALERT_PREFERENCES: AlertPreferences = { notify_on_approval: true, notify_on_input: true, notify_on_completion: true, notify_on_failure: true, notify_on_update_available: false }
 
 const KIND_BY_PHASE: Record<string, { kind: AlertKind; pref: keyof AlertPreferences } | undefined> = {
   waiting_for_approval: { kind: 'approval', pref: 'notify_on_approval' },
@@ -69,4 +69,12 @@ export function alertForTransition(previous: string | null, next: { phase: strin
  */
 export function agentNotifyAlerts<T extends { id: string }>(previousIds: readonly string[] | null | undefined, next: readonly T[] | undefined): T[] {
   return (next ?? []).filter((notice) => !previousIds?.includes(notice.id))
+}
+
+/**
+ * TAL-2665: a server notice (an update is available) alerts only a server owner's subscription that opted in. The relay
+ * applies the same rule to devices (`serverNoticeAllowed` in relay/convex/lib/aggregate.ts).
+ */
+export function serverNoticeAllowed(preferences: Partial<AlertPreferences>, owner: boolean): boolean {
+  return owner && preferences.notify_on_update_available === true
 }

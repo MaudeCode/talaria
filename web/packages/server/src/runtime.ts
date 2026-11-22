@@ -599,13 +599,16 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     agentSessionOwner: (sid, profile) => sessions.foreignOwnerOf(sid, profile),
     documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), redactEnabled: sessions.deps.redactEnabled,
   })
+  const liveLogin = (login: string | null) => login ? auth.liveSessions().find((session) => loginHash(session.token) === login) : undefined
   const webPush = new WebPushChannel({ documents: storage.documents, activity, lookup: () => deps.dnsLookup, fetch: () => deps.pinnedFetch, liveLogins: () => liveLoginHashes(auth, { sessionBindingIsCurrent: (info) => oidc?.sessionBindingIsCurrent(info) ?? Promise.resolve(false) }),
     // TAL-48: a subscription acts with its login's person authority; a login that is gone has none.
     personAccessFor: async (login) => {
       if (!(await personIsolationActive(env, auth))) return undefined
-      const info = login ? auth.liveSessions().find((session) => loginHash(session.token) === login) : undefined
+      const info = liveLogin(login)
       return info ? { personId: personIdentity(info)?.id ?? null, serverOwner: await sessionCanManageServer({ deps }, info) } : { personId: null, serverOwner: false }
     },
+    // TAL-2665: whether a subscription's login may manage the server, as Settings › System requires; without sign-in, every browser.
+    serverOwner: (login) => sessionCanManageServer({ deps }, liveLogin(login) ?? null),
     profileExists: (profile) => { try { return statSync(profileHome(profile)).isDirectory() } catch { return false } },
     session: (sid) => store.get(sid), redactEnabled: sessions.deps.redactEnabled, env, now, log })
   const notifications = new NotificationHub(activity, [relay, webPush], events)
@@ -1314,7 +1317,11 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     summarizeAutomatically: () => settings.peekValue('check_for_updates') !== false && settings.peekValue('summarize_updates_automatically') !== false,
     autoApply: () => settings.peekValue('check_for_updates') !== false && settings.peekValue('auto_apply_updates') === true,
     checkEnabled: () => !truthy(env.TALARIA_WEB_TEST_NETWORK_BLOCK) && settings.peekValue('check_for_updates') !== false,
-    availableNotification: (target, view) => updateNotifications.updateAvailable(target, view),
+    // TAL-2665: a new available version also pushes once to each server owner's opted-in subscriptions and devices.
+    availableNotification: async (target, view) => {
+      const notice = await updateNotifications.updateAvailable(target, view)
+      if (notice) void notifications.serverNotice(notice)
+    },
     autoNotification: {
       begin: async () => (await updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'webui')).id,
       transition: async (id, phase, expectedIdentity, verifiedIdentity, detail) => { (await updateNotifications.transition(id, phase, expectedIdentity, verifiedIdentity, detail)) },

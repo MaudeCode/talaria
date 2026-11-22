@@ -147,6 +147,8 @@ export interface NotificationPreferences {
   notifyOnFailure: boolean;
   // TAL-873: completion alerts for background turns; absent means off.
   notifyOnBackground?: boolean;
+  // TAL-2665: an owner's alert that a Talaria Web or Hermes Agent update is available; absent means off.
+  notifyOnUpdateAvailable?: boolean;
 }
 
 export interface ActivityAlert {

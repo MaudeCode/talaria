@@ -13,11 +13,13 @@ import { vettedAddresses, type DnsLookup, type PinnedFetch } from '../../http/pi
 import type { DocumentBackend } from '../storage/backend.js'
 import { readDocument, updateDocument } from '../storage/document.js'
 import type { ActivityState, ActivityStates, AgentNotice } from './activity.js'
-import { agentNotifyAlerts, ALERT_BODY, alertBody, alertForTransition, completionNotification, DEFAULT_ALERT_PREFERENCES, type AlertKind, type AlertPreferences } from './alerts.js'
-import type { NotificationChannel } from './channel.js'
+import { agentNotifyAlerts, ALERT_BODY, alertBody, alertForTransition, completionNotification, DEFAULT_ALERT_PREFERENCES, serverNoticeAllowed, type AlertKind, type AlertPreferences } from './alerts.js'
+import type { NotificationChannel, ServerNotice } from './channel.js'
 import { personMaySee, type PersonAccess } from '../../auth/person.js'
 
 const MAX_SUBSCRIPTIONS = 64
+/** TAL-2665: server notice ids each subscription remembers, so a repeated notice never alerts it twice. */
+const MAX_SERVER_NOTICES = 16
 const MAX_TRIES = 3
 const REQUEST_TIMEOUT_MS = 10_000
 const LOCAL_SUBJECT = 'mailto:talaria-web@localhost'
@@ -29,6 +31,7 @@ export class WebPushRequestError extends Error {
 const SubscriptionSchema = z.object({
   endpoint: z.string(), keys: z.object({ p256dh: z.string(), auth: z.string() }), profile: z.string(),
   login: z.string().nullable(), origin: z.string(), preferences: WebPushPreferencesSchema, created_at: z.number(),
+  server_notices: z.array(z.string()).optional(),
 })
 type Subscription = z.infer<typeof SubscriptionSchema>
 const SubscriptionsSchema = z.object({ version: z.literal(1), subscriptions: z.array(SubscriptionSchema) })
@@ -48,6 +51,8 @@ export interface WebPushDeps {
    * while it is off), so a subscriber is alerted only about sessions that login may open.
    */
   personAccessFor?: (login: string | null) => Promise<PersonAccess | undefined>
+  /** TAL-2665: whether a subscription's login may manage the server; only those receive server notices. */
+  serverOwner?: (login: string | null) => Promise<boolean>
   /** TAL-2157: the session a completion alert quotes the final answer of, and whether session payloads are redacted. */
   session?: (sid: string) => Promise<{ title?: unknown; messages?: unknown }>
   redactEnabled?: () => boolean
@@ -196,6 +201,33 @@ export class WebPushChannel implements NotificationChannel {
     return false
   }
 
+  /**
+   * TAL-2665: one push per opted-in server owner subscription, whatever its profile. The notice id is recorded on the
+   * subscription before sending, so a repeat, a concurrent call or a restart never alerts it again.
+   */
+  async serverNotice(notice: ServerNotice): Promise<void> {
+    if (this.stopped) return
+    try {
+      const live = await this.deps.liveLogins()
+      // The owner verdict belongs to the exact subscription read, so one a different login replaced meanwhile gets none.
+      const identity = (sub: Subscription): string => JSON.stringify([sub.endpoint, sub.login, sub.profile])
+      const owners = new Set<string>()
+      for (const sub of await this.subscriptions()) {
+        if ((sub.login === null || live.has(sub.login)) && this.deps.profileExists(sub.profile) && serverNoticeAllowed(sub.preferences, await this.deps.serverOwner?.(sub.login) ?? false)) owners.add(identity(sub))
+      }
+      if (!owners.size) return
+      const recipients = await this.mutate((subs) => subs.filter((sub) => {
+        if (!owners.has(identity(sub)) || !serverNoticeAllowed(sub.preferences, true) || sub.server_notices?.includes(notice.id)) return false
+        sub.server_notices = [...(sub.server_notices ?? []), notice.id].slice(-MAX_SERVER_NOTICES)
+        return true
+      }).map((sub) => ({ ...sub })))
+      const payload = JSON.stringify({ title: notice.title, body: notice.body, tag: notice.id, url: notice.url })
+      for (const sub of recipients) this.track(this.send(sub, payload, false))
+    } catch (error) {
+      this.deps.log(`[web-push] server notice failed (${(error as Error).message})`)
+    }
+  }
+
   /** Logout ends the subscriptions that login created. */
   async forgetLogin(login: string): Promise<void> {
     await this.mutate((subs) => { for (let i = subs.length - 1; i >= 0; i--) if (subs[i]!.login === login) subs.splice(i, 1) })
@@ -278,7 +310,6 @@ export class WebPushChannel implements NotificationChannel {
   }
 
   private async deliver(sub: Subscription, row: ActivityState, alert: AlertKind | AgentNotice): Promise<void> {
-    const vapid = VapidSchema.parse((await this.deps.documents.get('web-push', 'vapid'))?.value)
     const session = `/session/${encodeURIComponent(row.sessionId)}`
     // The Relay deep link is the app's route; the browser opens the Web chat, resolved against the worker's mount scope.
     // TAL-1966: a decision review alert opens the review and keeps its own tag, so the run's later alert never replaces it.
@@ -290,7 +321,11 @@ export class WebPushChannel implements NotificationChannel {
         : alert === 'completion'
           ? completionNotification(row.sessionId, await this.deps.session?.(row.sessionId).catch(() => null) ?? { title: row.title }, this.deps.redactEnabled?.() ?? true)
           : { title: row.title, body: alertBody(alert, row.currentTool), tag: row.sessionId, url: session })
-    const urgent = typeof alert === 'object' ? alert.level === 'attention' : alert === 'approval' || alert === 'input'
+    await this.send(sub, payload, typeof alert === 'object' ? alert.level === 'attention' : alert === 'approval' || alert === 'input')
+  }
+
+  private async send(sub: Subscription, payload: string, urgent: boolean): Promise<void> {
+    const vapid = VapidSchema.parse((await this.deps.documents.get('web-push', 'vapid'))?.value)
     const details = webpush.generateRequestDetails({ endpoint: sub.endpoint, keys: sub.keys }, payload, {
       vapidDetails: { subject: this.subject(sub), publicKey: vapid.publicKey, privateKey: vapid.privateKey },
       TTL: 3600, urgency: urgent ? 'high' : 'normal', contentEncoding: 'aes128gcm',

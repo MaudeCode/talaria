@@ -160,6 +160,50 @@ it("answers an accepted session-started event with the silent push the App refre
   }))).toEqual([expected]);
 });
 
+// TAL-2665: the Web publisher's update-available notice (publisher-server-notice.json) reaches the owner's opted-in phone
+// as the alert the App opens Settings › System from (relay-server-notice-push.json).
+it("accepts only the bounded server-notice fields and answers with the shared update-available alert", async () => {
+  const { backend, signedPut } = await relayWithPublisher();
+  const body = fixture("publisher-server-notice");
+  const notice = JSON.parse(body) as Record<string, unknown>;
+  const path = publisherPath("prf_default", `notices/${encodeURIComponent(String(notice.noticeId))}`);
+  for (const invalid of [
+    { ...notice, sessionId: "contract-session" },
+    { ...notice, version: 2 },
+    { ...notice, kind: "other" },
+    { ...notice, noticeId: "another-notice" },
+    { ...notice, title: "t".repeat(81) },
+    { ...notice, deepLink: "https://elsewhere.example/settings" },
+  ]) {
+    expect((await signedPut(path, JSON.stringify(invalid))).status).toBe(400);
+  }
+  expect((await signedPut(path, JSON.stringify({ ...notice, profileId: "prf_other" }))).status).toBe(403);
+
+  const register = (preferences: Record<string, unknown>) => backend.fetch("/v1/devices/contract-device", {
+    method: "PUT",
+    headers: { authorization: "Bearer contract-session-token", "content-type": "application/json" },
+    body: JSON.stringify({
+      label: "Synthetic phone", bundleId: "dev.kil.talaria", apsEnvironment: "sandbox", pushToken: "a".repeat(64),
+      preferences: { ...defaultNotificationPreferences, notificationsEnabled: true, ...preferences },
+    }),
+  });
+  expect((await register({ notifyOnUpdateAvailable: "yes" })).status).toBe(400);
+  // Off by default: an App that never sends the switch receives nothing.
+  expect((await register({})).status).toBe(200);
+  expect((await signedPut(path, body)).status).toBe(200);
+  await runScheduledRecomputes(backend);
+  expect(await backend.run((ctx) => ctx.db.query("deliveryJobs").collect())).toEqual([]);
+
+  expect((await register({ notifyOnUpdateAvailable: true })).status).toBe(200);
+  expect((await signedPut(path, body)).status).toBe(200);
+  await runScheduledRecomputes(backend);
+  const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+  const expected = JSON.parse(fixture("relay-server-notice-push")) as { apnsPushType: string; apnsPriority: string; payload: unknown };
+  expect(jobs.map((job) => ({
+    apnsPushType: job.request.pushType, apnsPriority: job.request.priority, payload: JSON.parse(job.request.payloadJson) as unknown,
+  }))).toEqual([expected]);
+});
+
 // TAL-868, TAL-874: the run's start times the activity; its tool count and last activity replace the lock screen's
 // empty excerpt, which Relay never has.
 describe("relay-pushed Live Activity run fields", () => {

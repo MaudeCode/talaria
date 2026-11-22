@@ -480,6 +480,30 @@ export const acceptSessionStarted = internalMutation({
   },
 });
 
+// TAL-2665: a server-level notice (an update is available), delivered to the owner's opted-in devices.
+export const acceptServerNotice = internalMutation({
+  args: { ...publisherRequestArgs, noticeId: v.string(), title: v.string(), body: v.string(), deepLink: v.string() },
+  returns: acceptResultValidator,
+  handler: async (ctx, args) => {
+    const authorization = await authorizePublisherMutation(ctx, args);
+    if (authorization === null) return { status: "unauthorized" as const };
+    if (authorization === "replay") return { status: "replay" as const };
+    const grants = await grantsForProfile(ctx, args.publisherOwnerUserId, args.publisherId, args.profileId);
+    if (grants.length === 0) return { status: "unauthorized" as const };
+    // Delivery runs in its own transaction, so a push it cannot queue never refuses the notice.
+    await ctx.scheduler.runAfter(0, internal.delivery.enqueueServerNotice, {
+      publisherOwnerUserId: args.publisherOwnerUserId,
+      publisherId: args.publisherId,
+      profileId: args.profileId,
+      noticeId: args.noticeId,
+      title: args.title,
+      body: args.body,
+      deepLink: args.deepLink,
+    });
+    return { status: "accepted" as const };
+  },
+});
+
 export const listCurrentStates = internalQuery({
   args: { userId: v.string(), now: v.number() },
   returns: v.array(storedSessionStateValidator),

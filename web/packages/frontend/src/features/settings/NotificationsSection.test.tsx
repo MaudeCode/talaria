@@ -9,8 +9,10 @@ import { showErrorToast } from '../toast/errorToast'
 
 vi.mock('../../api/endpoints', () => ({ fetchWebPushStatus: vi.fn(), subscribeWebPush: vi.fn(), updateWebPush: vi.fn(), unsubscribeWebPush: vi.fn() }))
 vi.mock('../toast/errorToast', () => ({ showErrorToast: vi.fn() }))
+let canManage = true
+vi.mock('../../app/bootstrap', () => ({ useBootstrap: () => ({ auth: { can_manage_server: canManage } }) }))
 
-const ALL = { notify_on_approval: true, notify_on_input: true, notify_on_completion: true, notify_on_failure: true }
+const ALL = { notify_on_approval: true, notify_on_input: true, notify_on_completion: true, notify_on_failure: true, notify_on_update_available: false }
 const KEY = 'BPublicKeyOnlyForTheTest'
 const ENDPOINT = 'https://push.example/send/browser-1'
 
@@ -21,6 +23,7 @@ const fakeSubscription = (endpoint: string): FakeSubscription => ({ endpoint, to
 
 beforeEach(() => {
   vi.resetAllMocks()
+  canManage = true
   current = null
   manager.getSubscription.mockImplementation(() => Promise.resolve(current))
   manager.subscribe.mockImplementation(() => { current = fakeSubscription(ENDPOINT); return Promise.resolve(current) })
@@ -120,4 +123,34 @@ it('keeps the latest choice when the browser is switched off while turning on', 
   await waitFor(() => { expect(current).toBeNull() })
   expect(main()).not.toBeChecked()
   expect(screen.queryByRole('switch', { name: 'Approval requests' })).toBeNull()
+})
+
+// TAL-2665: an owner opts in to update-available pushes beside the alert kinds; a login that cannot manage the server never sees it.
+it('turns the owner-only update alert on at once and rolls it back when the server refuses', async () => {
+  current = fakeSubscription(ENDPOINT)
+  vi.mocked(api.fetchWebPushStatus).mockResolvedValue({ public_key: KEY, subscription: { preferences: ALL } })
+  const refused = Promise.withResolvers<{ ok: true; preferences: typeof ALL }>()
+  vi.mocked(api.updateWebPush).mockReturnValueOnce(refused.promise).mockResolvedValueOnce({ ok: true, preferences: { ...ALL, notify_on_update_available: true } })
+  render(<WebPushSection />)
+  const updates = await screen.findByRole('switch', { name: 'Update available' })
+  expect(updates).not.toBeChecked()
+  await userEvent.click(updates)
+  expect(updates).toBeChecked()
+  expect(api.updateWebPush).toHaveBeenCalledWith(ENDPOINT, { ...ALL, notify_on_update_available: true })
+  refused.reject(new Error('Push subscription not found'))
+  await waitFor(() => { expect(screen.getByRole('switch', { name: 'Update available' })).not.toBeChecked() })
+  expect(showErrorToast).toHaveBeenCalled()
+
+  await userEvent.click(screen.getByRole('switch', { name: 'Update available' }))
+  await waitFor(() => { expect(api.updateWebPush).toHaveBeenCalledTimes(2) })
+  expect(screen.getByRole('switch', { name: 'Update available' })).toBeChecked()
+})
+
+it('leaves the update alert out for a login that cannot manage the server', async () => {
+  canManage = false
+  current = fakeSubscription(ENDPOINT)
+  vi.mocked(api.fetchWebPushStatus).mockResolvedValue({ public_key: KEY, subscription: { preferences: ALL } })
+  render(<WebPushSection />)
+  expect(await screen.findByRole('switch', { name: 'Failed runs' })).toBeChecked()
+  expect(screen.queryByRole('switch', { name: 'Update available' })).toBeNull()
 })

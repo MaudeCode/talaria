@@ -16,6 +16,7 @@ import {
   isAttentionTransition,
   makeAggregate,
   rowForState,
+  serverNoticeAllowed,
   shouldUpdateAggregate,
 } from "./lib/aggregate";
 import {
@@ -234,6 +235,7 @@ async function enqueueJob(
     sourceApprovalHeadId?: string;
     sourceDecisionReviewId?: string;
     sourceAgentNotifyId?: string;
+    sourceServerNoticeId?: string;
     sourcePublisherOwnerUserId?: string;
     sourceProfileId?: string;
     kind: Infer<typeof deliveryJobKindValidator>;
@@ -264,6 +266,7 @@ async function enqueueJob(
     sourceApprovalHeadId: input.sourceApprovalHeadId,
     sourceDecisionReviewId: input.sourceDecisionReviewId,
     sourceAgentNotifyId: input.sourceAgentNotifyId,
+    sourceServerNoticeId: input.sourceServerNoticeId,
     sourcePublisherOwnerUserId: input.sourcePublisherOwnerUserId,
     sourceProfileId: input.sourceProfileId,
     kind: input.kind,
@@ -359,6 +362,59 @@ export const enqueueSessionStarted = internalMutation({
           now,
         });
       }
+    }
+    return null;
+  },
+});
+
+// TAL-2665: one alert per server notice (an update is available) to each signed-in device of the publisher's owner that
+// opted in, once per notice and device whichever enrolled profile carried it. Other users the profile is shared with
+// receive nothing. Grouped apart from every chat's alerts.
+export const enqueueServerNotice = internalMutation({
+  args: {
+    publisherOwnerUserId: v.string(), publisherId: v.string(), profileId: v.string(),
+    noticeId: v.string(), title: v.string(), body: v.string(), deepLink: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const grants = await grantsForProfile(ctx, args.publisherOwnerUserId, args.publisherId, args.profileId);
+    if (!grants.some((grant) => grant.userId === args.publisherOwnerUserId)) return null;
+    const userId = args.publisherOwnerUserId;
+    const devices = await ctx.db
+      .query("devices")
+      .withIndex("by_user_id_and_updated_at", (query) => query.eq("userId", userId))
+      .order("desc")
+      .take(100);
+    for (const device of devices) {
+      if (!receivesNotifications(device, now) || !serverNoticeAllowed(device.preferences, true)) continue;
+      if ((await excludedPublisherIds(ctx, userId, device.deviceId)).has(args.publisherId)) continue;
+      const stateFingerprint = `notification:server:${JSON.stringify([args.publisherId, args.noticeId])}:${device.deviceId}`;
+      const existing = await ctx.db
+        .query("deliveryJobs")
+        .withIndex("by_user_id_and_device_id_and_state_fingerprint", (query) =>
+          query.eq("userId", userId).eq("deviceId", device.deviceId).eq("stateFingerprint", stateFingerprint),
+        )
+        .first();
+      if (existing) continue;
+      await enqueueJob(ctx, {
+        userId,
+        deviceId: device.deviceId,
+        kind: "notification",
+        sourcePublisherId: args.publisherId,
+        sourceServerNoticeId: args.noticeId,
+        request: makeNotification({
+          token: device.pushToken,
+          bundleId: device.bundleId,
+          environment: device.apsEnvironment,
+          alert: { title: args.title, body: args.body, interruptionLevel: "active", deepLink: args.deepLink },
+          row: { publisherId: args.publisherId, deepLink: args.deepLink },
+          threadId: await sha256(JSON.stringify(["server", args.publisherId])),
+          collapseId: await sha256(JSON.stringify(["server", args.publisherId, args.noticeId])),
+        }),
+        stateFingerprint,
+        now,
+      });
     }
     return null;
   },
@@ -911,6 +967,25 @@ export const claimJob = internalMutation({
                     (job.sourceApprovalHeadId === undefined
                       ? !job.stateFingerprint.includes(`:${state.eventId}:`)
                       : activityPhase(state) !== "waiting_for_approval" || state.approvalHeadId !== job.sourceApprovalHeadId))))))
+        ) {
+          await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
+          return { status: "stale" as const };
+        }
+      }
+      // TAL-2665: a server notice reaches the device only while it opts in and its user still owns the publisher.
+      if (job.sourcePublisherId && job.sourceServerNoticeId !== undefined) {
+        const grant = await ctx.db
+          .query("publisherGrants")
+          .withIndex("by_user_id_and_publisher_id", (query) =>
+            query.eq("userId", job.userId).eq("publisherId", job.sourcePublisherId!),
+          )
+          .unique();
+        const publisher = grant ? await publisherForGrant(ctx, grant) : null;
+        if (
+          !grant ||
+          excluded.has(job.sourcePublisherId) ||
+          !isPublisherStateVisible(publisher, job.createdAt) ||
+          !serverNoticeAllowed(device.preferences, grant.publisherOwnerUserId === job.userId)
         ) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           return { status: "stale" as const };

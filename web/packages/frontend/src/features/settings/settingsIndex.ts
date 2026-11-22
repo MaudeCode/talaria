@@ -98,6 +98,8 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...rows('notifications', m.settings_group_web_push, 'interface', [
     [key('web_push'), m.settings_label_web_push], [key('notify_on_approval'), m.settings_label_notify_approval, key('web_push')], [key('notify_on_input'), m.settings_label_notify_input, key('web_push')],
     [key('notify_on_completion'), m.settings_label_notify_completion, key('web_push')], [key('notify_on_failure'), m.settings_label_notify_failure, key('web_push')],
+    // TAL-2665: shown to a login that can manage the server.
+    [key('notify_on_update_available'), m.settings_label_notify_update_available, key('web_push')],
   ]),
   ...rows('speech', m.settings_group_read_aloud, 'interface', [[key('tts_enabled'), m.settings_label_tts], [key('tts_auto_read'), m.settings_label_tts_auto_read]]),
   ...rows('speech', m.settings_group_voice_device, 'device', [

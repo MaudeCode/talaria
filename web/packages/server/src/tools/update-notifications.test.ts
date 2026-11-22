@@ -97,6 +97,23 @@ describe('UpdateNotificationStore', () => {
     expect((await rows()).filter((row) => row.kind === 'update_available')).toEqual([])
   })
 
+  // TAL-2665: the push notice follows the inbox row: once per new row or version, never for a repeat or after a restart.
+  it('returns a push notice only when the available row is created or moves to a new version', async () => {
+    const root = temp()
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    const web = (version: string) => ({ state: 'release_ready', can_apply: true, target_version: version })
+    const notice = { kind: 'update_available', title: 'Talaria Web update available', url: '/settings/system' }
+    expect(await store.updateAvailable('webui', web('web-v2.0.0'))).toEqual({ ...notice, id: 'update_available:webui:web-v2.0.0', body: 'Talaria Web 2.0.0 is available.' })
+    expect(await store.updateAvailable('webui', web('web-v2.0.0'))).toBeNull()
+    expect(await store.updateAvailable('webui', { state: 'check_failed', can_apply: false })).toBeNull()
+    const restarted = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    expect(await restarted.updateAvailable('webui', web('web-v2.0.0'))).toBeNull()
+    expect(await restarted.updateAvailable('webui', web('web-v2.1.0'))).toEqual({ ...notice, id: 'update_available:webui:web-v2.1.0', body: 'Talaria Web 2.1.0 is available.' })
+    expect(await restarted.updateAvailable('agent', { state: 'commits_behind', can_apply: true, latest_sha: 'c'.repeat(40) }))
+      .toEqual({ kind: 'update_available', id: `update_available:agent:${'c'.repeat(40)}`, title: 'Hermes Agent update available', body: `Hermes Agent ${'c'.repeat(12)} is available.`, url: '/settings/system' })
+    expect(await restarted.updateAvailable('webui', null)).toBeNull()
+  })
+
   it('withdraws an available notice once its target update succeeds (TAL-2001)', async () => {
     const root = temp()
     const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))

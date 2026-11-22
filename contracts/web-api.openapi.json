@@ -83397,6 +83397,10 @@
                                 },
                                 "notify_on_failure": {
                                   "type": "boolean"
+                                },
+                                "notify_on_update_available": {
+                                  "type": "boolean",
+                                  "default": false
                                 }
                               },
                               "required": [
@@ -83477,6 +83481,10 @@
                       },
                       "notify_on_failure": {
                         "type": "boolean"
+                      },
+                      "notify_on_update_available": {
+                        "type": "boolean",
+                        "default": false
                       }
                     },
                     "required": [
@@ -83520,6 +83528,10 @@
                         },
                         "notify_on_failure": {
                           "type": "boolean"
+                        },
+                        "notify_on_update_available": {
+                          "type": "boolean",
+                          "default": false
                         }
                       },
                       "required": [
@@ -83571,6 +83583,10 @@
                       },
                       "notify_on_failure": {
                         "type": "boolean"
+                      },
+                      "notify_on_update_available": {
+                        "type": "boolean",
+                        "default": false
                       }
                     },
                     "required": [
@@ -83614,6 +83630,10 @@
                         },
                         "notify_on_failure": {
                           "type": "boolean"
+                        },
+                        "notify_on_update_available": {
+                          "type": "boolean",
+                          "default": false
                         }
                       },
                       "required": [
