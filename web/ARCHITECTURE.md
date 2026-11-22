@@ -185,8 +185,16 @@ in-flight response cannot erase newly queued deletions. Invalid outbox state fai
 it. The separate started ledger retains its announcement semantics. This additive file is ignored by
 older Stable versions and remains available when returning to a version that supports replay.
 
-Web runtime persistence is selected by `TALARIA_STORAGE`: `json` (the default), `sqlite` or `postgres`. Unknown values
-fail startup.
+Web runtime persistence is selected by `TALARIA_STORAGE`: `json` (the default), `jsonl`, `sqlite` or `postgres`.
+Unknown values fail startup.
+The JSONL adapter (`sessions/storage/jsonl.ts`) stores only sessions; its documents, run journals, session index and
+tombstones are the JSON adapter's. Each session is `<stateDir>/sessions-jsonl/<sid>/meta.json` (the document without
+messages, its count, committed byte length, integer revision and generation) and `gen-<n>/messages.jsonl` with
+`gen-<n>/messages.idx`, the 8-byte little-endian start offset of each line. The `meta.json` rename is the commit point:
+an append writes and fsyncs lines and offsets past the committed end, and a splice or replace writes the next
+generation whole, so a crash before the rename leaves the last commit authoritative and the next write truncates the
+uncommitted tail. A page read costs two index entries and its rows' bytes; search scans lines in order. A shrinking
+write keeps the old generation as `backup/`.
 The SQLite adapter (`sessions/storage/sqlite*.ts`) uses one `node:sqlite` connection to `<stateDir>/talaria.db` in WAL
 mode, with numbered schema migrations; a database from a newer schema refuses to open. Messages are rows keyed by
 `(session_id, idx)`, so range reads, appends and tail splices touch only their rows. An FTS5 trigram index over each

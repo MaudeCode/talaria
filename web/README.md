@@ -441,6 +441,11 @@ password never appears in logs or errors. `talaria-web storage copy --from json 
 the same way. One Talaria Web server per database: two servers sharing one would not lose writes, but could run
 conflicting turns.
 
+`TALARIA_STORAGE=jsonl` keeps each session as plain files under `sessions-jsonl/<session id>/` in the Web state
+directory: a `meta.json` and an append-only `messages.jsonl` (one message per line) with its offset index, so `cat`,
+`jq` and `grep` still read every chat. Drafts, settings and run journals stay in the JSON files. `talaria-web storage
+copy --from json --to jsonl` moves an install onto it.
+
 Chat attachments stay in `<state dir>/attachments` by default (`TALARIA_BLOB_STORAGE=local`). To keep them in an
 S3-compatible bucket (AWS S3, MinIO, a NAS S3 endpoint), set `TALARIA_BLOB_STORAGE=s3` with
 `TALARIA_BLOB_S3_BUCKET`, plus `TALARIA_BLOB_S3_ENDPOINT` for a non-AWS service, an optional

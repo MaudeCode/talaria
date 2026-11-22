@@ -9,6 +9,7 @@ import { dropTestSchema, startTestPostgres, testSchema, type TestPostgres } from
 import type { StorageBackend } from './backend.js'
 import { copyStorage, verifyStorage } from './copy.js'
 import { JsonStorage } from './json.js'
+import { JsonlStorage } from './jsonl.js'
 import { PostgresStorage } from './postgres.js'
 import { SqliteStorage } from './sqlite.js'
 
@@ -26,6 +27,7 @@ afterEach(async () => {
 function tempDir(): string { const dir = mkdtempSync(join(tmpdir(), 'talaria-storage-copy-')); dirs.push(dir); return dir }
 const env = { TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT: '0' }
 function jsonStore(stateDir: string): JsonStorage { const store = new JsonStorage({ directory: join(stateDir, 'sessions'), stateDir, env, now: () => Date.now() / 1000, stampingSince: () => 0 }); stores.push(store); return store }
+function jsonlStore(stateDir: string): JsonlStorage { const store = new JsonlStorage({ directory: join(stateDir, 'sessions-jsonl'), sessionDir: join(stateDir, 'sessions'), stateDir, env, now: () => Date.now() / 1000, stampingSince: () => 0 }); stores.push(store); return store }
 function sqliteStore(stateDir: string): SqliteStorage { const store = new SqliteStorage({ path: join(stateDir, 'talaria.db'), sessionDir: join(stateDir, 'sessions'), env, stampingSince: () => 0 }); stores.push(store); return store }
 async function postgresStore(schema = testSchema()): Promise<PostgresStorage> {
   if (!schemas.includes(schema)) schemas.push(schema)
@@ -156,6 +158,17 @@ it('refuses to approve a copy while the source holds a backup without its sessio
   const report = await copyStorage(json, sqlite)
   expect(report.failures).toEqual(['backup beta: its session is missing; restore it with session recovery or remove the backup before copying'])
   expect(await verifyStorage(json, sqlite)).toContain('backup beta: its session is missing; restore it with session recovery or remove the backup before copying')
+})
+
+it('copies a JSON store to JSONL, verifies it, and copies nothing on a re-run', async () => {
+  const json = jsonStore(tempDir())
+  await seed(json)
+  const jsonl = jsonlStore(tempDir())
+  const first = await copyStorage(json, jsonl)
+  expect(first.failures).toEqual([])
+  expect(await verifyStorage(json, jsonl)).toEqual([])
+  expect(await contents(jsonl)).toEqual(await contents(json))
+  expect(await copyStorage(json, jsonl)).toEqual({ copied: 0, unchanged: first.copied + first.unchanged, failures: [] })
 })
 
 it('copies a SQLite store back to JSON', async () => {

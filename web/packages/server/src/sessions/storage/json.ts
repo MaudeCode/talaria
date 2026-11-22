@@ -58,7 +58,7 @@ const SEARCH_TEXT_CACHE_MAX = 5000
 /** Clients search 5 leading messages; a deeper (or whole-transcript, depth 0) search is read but never kept resident. */
 const SEARCH_TEXT_CACHE_DEPTH_MAX = 20
 
-class JsonSessions implements SessionBackend {
+export class JsonSessions implements SessionBackend {
   closed = false
   private readonly pending = new Set<Promise<unknown>>()
   private parsedIndex: { revision: string; entries: SessionIndexEntry[] } | null = null
