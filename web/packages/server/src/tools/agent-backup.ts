@@ -57,6 +57,8 @@ const stamp = (ms: number): string => new Date(ms).toISOString().replace(/\.\d+Z
 
 export class AgentBackups {
   private job: Job | null = null
+  /** The last sidecar call; a cancelled one may still be stopping its child, which holds the Agent's backup lock. */
+  private previous: Promise<void> = Promise.resolve()
   private readonly now: () => number
 
   constructor(private readonly deps: AgentBackupDeps) {
@@ -87,7 +89,8 @@ export class AgentBackups {
     }
     this.job = job
     const started = view(job)
-    void this.run(job, rootHome, fileName)
+    // Shown as running at once, but its command starts only after the previous one has stopped.
+    this.previous = this.run(job, rootHome, fileName, this.previous)
     return started
   }
 
@@ -122,12 +125,14 @@ export class AgentBackups {
     if (this.job === job) this.job = null
   }
 
-  private async run(job: Job, rootHome: string, fileName: string): Promise<void> {
+  private async run(job: Job, rootHome: string, fileName: string, after: Promise<void>): Promise<void> {
     const finish = (fields: Partial<AgentBackupJob>) => { if (job.state === 'running') Object.assign(job, { phase: null, finished_at: this.now() / 1000, ...fields }) }
     const fail = (error: string) => {
       finish({ state: 'failed', error: this.deps.redact(error) })
       rmSync(job.dir, { recursive: true, force: true })
     }
+    await after
+    if (job.state !== 'running') return
     const sidecar = this.deps.sidecar()
     if (!sidecar) { fail('Hermes Agent sidecar is not running.'); return }
     try {

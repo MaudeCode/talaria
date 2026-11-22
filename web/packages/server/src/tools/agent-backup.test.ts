@@ -66,6 +66,24 @@ describe('AgentBackups (TAL-2661)', () => {
     expect(b.start(root).state).toBe('running')
   })
 
+  it('starts the next backup only after a cancelled one has stopped', async () => {
+    const { b, root, sidecar } = setup()
+    let stopped: () => void = () => undefined
+    sidecar.respond('backup.create', (_params, _emit, opts) => new Promise((resolve) => {
+      opts.signal?.addEventListener('abort', () => { stopped = () => { resolve({ status: 'cancelled' }) } })
+    }))
+    const calls = () => sidecar.calls.filter((c) => c.method === 'backup.create').length
+    const first = b.start(root)
+    await vi.waitFor(() => { expect(calls()).toBe(1) })
+    b.discard(first.id)
+    archives(sidecar)
+    expect(b.start(root).state).toBe('running')
+    await new Promise((r) => setImmediate(r))
+    expect(calls()).toBe(1)
+    stopped()
+    await vi.waitFor(() => { expect([calls(), b.current()?.state]).toEqual([2, 'ready']) })
+  })
+
   it('reports a failure without its secret and removes the failed run', async () => {
     const { b, dir, root, sidecar } = setup()
     const secret = 'sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
