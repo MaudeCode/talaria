@@ -80,11 +80,11 @@ public struct ContextWindowSnapshot: Decodable, Equatable, Sendable {
 }
 
 public enum ContextWindowFormatter {
-    public static func tokensLabel(from snapshot: ContextWindowSnapshot) -> String {
+    public static func tokensLabel(from snapshot: ContextWindowSnapshot, locale: Locale = .current) -> String {
         guard let used = snapshot.contextUsedTokens, let total = snapshot.contextWindowTokens else {
             return String(localized: "Unavailable")
         }
-        return "\(formatTokens(used)) / \(formatTokens(total))"
+        return "\(formatTokens(used, locale: locale)) / \(formatTokens(total, locale: locale))"
     }
 
     public static func inputTokensLabel(from snapshot: ContextWindowSnapshot) -> String {

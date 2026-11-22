@@ -71,13 +71,13 @@ final class ContextWindowIndicatorTests: XCTestCase {
     func testTokensLabelFormatsK() {
         let snapshot = makeSnapshot(used: 12_345, window: 128_000)
 
-        XCTAssertEqual(ContextWindowFormatter.tokensLabel(from: snapshot), "12.3K / 128.0K")
+        XCTAssertEqual(ContextWindowFormatter.tokensLabel(from: snapshot, locale: Locale(identifier: "en_US")), "12.3K / 128.0K")
     }
 
     func testTokensLabelFormatsM() {
         let snapshot = makeSnapshot(used: 1_500_000, window: 2_000_000)
 
-        XCTAssertEqual(ContextWindowFormatter.tokensLabel(from: snapshot), "1.5M / 2.0M")
+        XCTAssertEqual(ContextWindowFormatter.tokensLabel(from: snapshot, locale: Locale(identifier: "en_US")), "1.5M / 2.0M")
     }
 
     func testTokensLabelReturnsUnavailableWhenMissing() {
