@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, settle, test } from './fixtures'
+import { canvasImage, expect, settle, test } from './fixtures'
 
 // Service-worker requests bypass page routing; these fixtures own every response.
 test.use({ serviceWorkers: 'block' })
@@ -9,12 +9,8 @@ const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../
 
 test('browser and computer-use calls show their verbs, code, screenshots and rows, never JSON (TAL-2328)', async ({ page }, testInfo) => {
   const shot = (name: string) => page.screenshot({ path: testInfo.outputPath(`${name}-${testInfo.project.name}.png`), fullPage: true })
-  // The screenshots the calls saved: a rendered page stands in for each.
-  const source = await page.context().newPage()
-  await source.setViewportSize({ width: 640, height: 400 })
-  await source.setContent('<body style="margin:0;font:24px system-ui;background:#f4f4f5;color:#18181b"><header style="padding:16px 24px;background:#4338ca;color:#fff">Example — Pricing</header><main style="padding:24px"><h1 style="margin:0 0 12px">Pricing</h1><p>Starter $10/month</p><button style="font:inherit;padding:8px 20px">Buy</button></main></body>')
-  const png = await source.screenshot()
-  await source.close()
+  // The screenshots the calls saved: a drawn page (a header, a heading and a button) stands in for each.
+  const png = await canvasImage(page, { width: 640, height: 400, fills: [['#f4f4f5', 0, 0, 640, 400], ['#4338ca', 0, 0, 640, 60], ['#18181b', 24, 84, 200, 32], ['#d4d4d8', 24, 160, 120, 44]] })
   const media: string[] = []
   await page.route('**/api/media?**', (route) => { media.push(new URL(route.request().url()).searchParams.get('path') ?? ''); return route.fulfill({ body: png, contentType: 'image/png' }) })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'browser-session', title: 'Check the pricing page', messages: fixture.session.messages } } }))

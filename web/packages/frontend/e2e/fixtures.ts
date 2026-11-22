@@ -141,6 +141,26 @@ export async function settle(page: Page): Promise<void> {
 /** A 1×1 PNG for synthetic image attachments and uploads. */
 export const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
 
+/**
+ * An image the page encodes from a canvas of filled rectangles (`[color, x, y, width, height]`). It needs no compositor
+ * frame, so it never captures a page that has not painted yet: a fresh page's screenshot can fail with "Unable to
+ * capture screenshot" (TAL-2609).
+ */
+export async function canvasImage(page: Page, { width, height, fills, type = 'image/png', quality }: { width: number, height: number, fills: [string, number, number, number, number][], type?: string, quality?: number }): Promise<Buffer> {
+  return Buffer.from(await page.evaluate(async ({ width, height, fills, type, quality }) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')!
+    for (const [color, x, y, w, h] of fills) {
+      ctx.fillStyle = color
+      ctx.fillRect(x, y, w, h)
+    }
+    const blob = await new Promise<Blob>((resolve) => { canvas.toBlob((b) => { resolve(b!) }, type, quality) })
+    return Array.from(new Uint8Array(await blob.arrayBuffer()))
+  }, { width, height, fills, type, quality }))
+}
+
 /** A request held until the test releases it, so the page can be inspected while it is in flight. */
 export function hold() {
   let release!: () => void
