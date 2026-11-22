@@ -203,7 +203,7 @@ Some routes stay open but refuse owner-only fields inside the handler:
 - The server ships capability fields so clients hide what a non-owner cannot
   do: `can_manage_server` in auth status, read-only MCP and plugin rows
   (`tools/mcp.ts` `readOnlyRow`), and no `/terminal` command
-  (`tools/commands.ts` `OWNER_COMMANDS`). A non-owner's session detail carries
+  (`tools/commands.ts` `OWNER_COMMANDS`) or native quick command (TAL-1338). A non-owner's session detail carries
   an unavailable `screen` (`runtime.ts`, TAL-2380).
 
 **The agent's screen (TAL-2380).** The viewer WebSocket (`/api/screen/ws`) and
@@ -348,6 +348,7 @@ description and closes it. No route returns a script's contents.
 | Dispatch Kanban tasks manually | The owner | `auth/gate.ts` `OPERATOR_ONLY_PATHS` |
 | Create, edit, run or pause a cron job | Any login; scripts, `no_agent`, monitor scripts and room delivery need the owner | `tools/crons.ts` `CronService.requireOwnerFields`, `requireRoomDeliveryAuthority` |
 | Use the host terminal | The owner | `auth/gate.ts` `OPERATOR_ONLY_PREFIXES` |
+| Run a native owner's quick command (it runs on the owner's host outside the approval flow) | The owner; others see it listed as unavailable, and a non-owner's command runs nothing while the quick commands cannot be read | `tools/commands.ts` `QUICK_COMMAND_CATEGORY`; `sessions/gateway-sessions.ts` `command` |
 | Use Group Chat rooms (they run several profiles) | The owner | `auth/gate.ts` `isOperatorOnly` |
 
 When an MCP server's URL origin or stdio command changes, its stored headers,

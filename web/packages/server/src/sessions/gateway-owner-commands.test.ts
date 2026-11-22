@@ -82,6 +82,44 @@ describe('native owner commands (TAL-1338)', () => {
   })
 })
 
+describe('native quick commands for a login without server-owner authority (TAL-1338)', () => {
+  let s: TestServer
+  let db: DatabaseSync
+  let sidecar: FakeSidecar
+  let catalog: Partial<GatewaySessionResult>
+  let bound: Record<string, string>
+  beforeEach(async () => {
+    ({ s, db, sidecar } = await bootOwnerAttachment({ env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_GROUP_PROFILE_MAP: '{}' } }))
+    bound = { cookie: `${s.deps.auth.cookieName()}=${s.deps.auth.createSession({ authType: 'trusted', username: 'scoped-user', boundProfile: 'default' })}`, 'X-Remote-User': 'scoped-user', 'content-type': 'application/json' }
+    catalog = { quick_commands: [{ name: 'deploy_app', description: 'exec: ./deploy.sh' }] }
+    sidecar.respond('gateway.session', (params) => {
+      if (params.action === 'command_dispatch') return { ...attached(snapshot()), snapshot: null, command_result: { kind: 'output', output: 'owner output' } }
+      if (params.action === 'command_catalog') return { ...attached(snapshot()), snapshot: null, ...catalog }
+      return attached(snapshot())
+    })
+    sidecar.respond('commands.registry', () => ({ commands: [] }))
+  })
+  afterEach(async () => { db.close(); await s.close() })
+  const dispatched = () => sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as GatewaySessionParams).action === 'command_dispatch').map((c) => (c.params as GatewaySessionParams).name)
+  const exec = async (command: string) => (await s.get('/api/commands/exec', { method: 'POST', headers: bound, body: JSON.stringify({ command, session_id: sid }) })).status
+
+  it('lists the quick command for no client and runs nothing that spells it, while other commands still reach the owner', async () => {
+    const commands = (await (await s.get(`/api/commands?session_id=${sid}`, { headers: bound })).json() as { commands: { name: string }[] }).commands
+    expect(commands.find((c) => c.name === 'deploy_app')).toMatchObject({ clients: [], unsupported_message: 'Only the server owner can run quick commands.' })
+    expect(await (await s.get('/api/commands/classify', { method: 'POST', headers: bound, body: JSON.stringify({ text: '/deploy_app', session_id: sid }) })).json())
+      .toEqual({ kind: 'unsupported', name: 'deploy_app', message: 'Only the server owner can run quick commands.' })
+    expect([await exec('/deploy_app'), await exec('/Deploy-App now')]).toEqual([403, 403])
+    expect(await exec('/refine')).toBe(200)
+    expect(dispatched()).toEqual(['refine'])
+  })
+
+  it('runs nothing while the owner cannot list its quick commands', async () => {
+    catalog = { state: 'unavailable', reason: 'owner_connection_lost', quick_commands: undefined }
+    expect(await exec('/refine')).toBe(503)
+    expect(dispatched()).toEqual([])
+  })
+})
+
 describe('native review summaries (TAL-1338)', () => {
   let s: TestServer
   let db: DatabaseSync

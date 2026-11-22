@@ -150,7 +150,7 @@ def _event(value: dict) -> dict:
     if value.get("type") == _REVIEW_EVENT:
         payload = value.get("payload")
         text = payload.get("text") if isinstance(payload, dict) else None
-        return {**value, "payload": {"text": text[:_COMMAND_OUTPUT_MAX] if isinstance(text, str) else ""}}
+        return {**value, "payload": {"text": _utf16(text, _COMMAND_OUTPUT_MAX) if isinstance(text, str) else ""}}
     if value.get("type") in _SIDE_EVENTS:
         payload = value.get("payload")
         if not isinstance(payload, dict):
@@ -224,6 +224,11 @@ def _wake_on_cancel(ctx, events: asyncio.Queue) -> None:
         add_waker(waker)
 
 
+def _utf16(text: str, limit: int) -> str:
+    """``text`` cut to ``limit`` UTF-16 code units, the unit the contract bounds; a split surrogate pair is dropped."""
+    return text if len(text) <= limit // 2 else text.encode("utf-16-le")[:limit * 2].decode("utf-16-le", "ignore")
+
+
 def _quick_commands(catalog) -> list[dict]:
     """The owner catalog's registered quick commands (its ``User commands`` rows), closed to a name and description."""
     categories = catalog.get("categories") if isinstance(catalog, dict) else None
@@ -234,7 +239,7 @@ def _quick_commands(catalog) -> list[dict]:
         for pair in category["pairs"]:
             if (isinstance(pair, list) and len(pair) == 2 and all(isinstance(v, str) for v in pair)
                     and pair[0].startswith("/") and _COMMAND_NAME.fullmatch(pair[0][1:])):
-                rows.append({"name": pair[0][1:], "description": pair[1][:200]})
+                rows.append({"name": pair[0][1:], "description": _utf16(pair[1], 200)})
     return rows[:200]
 
 
@@ -244,7 +249,7 @@ def _command_result(value) -> dict | None:
     if not isinstance(value, dict):
         return None
     if value.get("type") == "exec" and isinstance(value.get("output"), str):
-        return {"kind": "output", "output": value["output"][:_COMMAND_OUTPUT_MAX]}
+        return {"kind": "output", "output": _utf16(value["output"], _COMMAND_OUTPUT_MAX)}
     if value.get("type") in {"send", "skill"}:
         return {"kind": "prompt"}
     return None

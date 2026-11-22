@@ -11,6 +11,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { ConnectorOperationSnapshotSchema, OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ConnectorOperationSnapshot, type ConnectorOperationView, type OwnerReasoning, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange, type OwnerWork } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts/sidecar'
+import { QUICK_COMMAND_CATEGORY, QUICK_COMMAND_OWNER_MESSAGE } from '../tools/commands.js'
 import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
 import { taskView, taskTitle, isTerminal, startsBackgroundWork, type BackgroundTaskStore, type Receipt } from './background-tasks.js'
@@ -570,11 +571,19 @@ export class GatewaySessions {
    * under its policy and workspace; null when no native owner holds `sid`. Talaria never builds an Agent or runs the command
    * itself for an owner chat, and an outcome it cannot confirm is reported, never dispatched again.
    */
-  async command(sid: string, name: string, arg: string): Promise<string | null> {
+  async command(sid: string, name: string, arg: string, { serverOwner }: { serverOwner: boolean }): Promise<string | null> {
     // Unknown ownership is not an owner: the local path's own gate then refuses the chat.
     const target = await this.target(sid, this.deps.activeProfile())
     if (!target) return null
     if (arg.length > OWNER_COMMAND_ARG_MAX) throw new HttpFailure(400, 'The command is too long.')
+    // A quick command runs outside the Agent's approval flow: only the server owner runs one, and a requester who is not
+    // the owner runs nothing while the owner's quick commands cannot be read. The owner resolves `_` and `-` alike.
+    if (!serverOwner) {
+      const quick = await this.quickRows(target)
+      if (!quick) throw new HttpFailure(503, 'The owning Agent\'s commands could not be checked. Try again.')
+      const spelling = (n: string) => n.toLowerCase().replace(/-/g, '_')
+      if (quick.some((c) => spelling(c.name) === spelling(name))) throw new HttpFailure(403, QUICK_COMMAND_OWNER_MESSAGE)
+    }
     const current = await this.call(target, { action: 'snapshot' })
     const snap = current.snapshot
     if (current.state !== 'attached' || snap?.session_id !== sid) throw new HttpFailure(409, 'The owning Agent cannot run commands now. Check its gateway.', { code: 'owner_command_unavailable' })
@@ -593,7 +602,11 @@ export class GatewaySessions {
    */
   async quickCommands(sid: string): Promise<SidecarResult<'commands.registry'>['commands'] | null> {
     const target = await this.target(sid, this.deps.activeProfile())
-    if (!target) return null
+    const quick = target && await this.quickRows(target)
+    return quick ? quick.map((c) => ({ name: c.name, description: c.description, category: QUICK_COMMAND_CATEGORY, aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: true, prompt: null })) : null
+  }
+
+  private async quickRows(target: Target): Promise<NonNullable<GatewaySessionResult['quick_commands']> | null> {
     const now = this.deps.now()
     let cached = this.quickLists.get(target.key)
     if (!cached || now - cached.at >= QUICK_COMMANDS_SECONDS) {
@@ -603,7 +616,7 @@ export class GatewaySessions {
       this.quickLists.set(target.key, cached)
       if (this.quickLists.size > 256) this.quickLists.delete(this.quickLists.keys().next().value!)
     }
-    return cached.commands.map((c) => ({ name: c.name, description: c.description, category: 'User commands', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: true, prompt: null }))
+    return cached.commands
   }
 
   async launchTasks(sid: string, profile?: string): Promise<BackgroundTask[]> {

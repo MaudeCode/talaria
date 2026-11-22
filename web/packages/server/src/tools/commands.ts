@@ -94,9 +94,18 @@ function buildCatalog(agent: readonly AgentCommand[]): { commands: Command[]; ge
 /** TAL-2201: client commands that open an owner-only surface; no client runs them for a session without owner authority. */
 const OWNER_COMMANDS = new Set(['terminal'])
 const OWNER_ONLY_MESSAGE = 'Only the server owner can open the terminal.'
+/**
+ * TAL-1338: the category of a native owner's registered quick commands. A quick command runs a shell or another command on the
+ * owner's host outside the Agent's approval flow, so only the server owner runs one.
+ */
+export const QUICK_COMMAND_CATEGORY = 'User commands'
+export const QUICK_COMMAND_OWNER_MESSAGE = 'Only the server owner can run quick commands.'
 
 export const commandCatalog = (agent: readonly AgentCommand[], owner = true): Command[] => buildCatalog(agent).commands
-  .map((command) => owner || !OWNER_COMMANDS.has(command.name) ? command : { ...command, clients: [], unsupported_message: OWNER_ONLY_MESSAGE })
+  .map((command) => owner ? command
+    : OWNER_COMMANDS.has(command.name) ? { ...command, clients: [], unsupported_message: OWNER_ONLY_MESSAGE }
+    : command.handler === 'agent' && command.category === QUICK_COMMAND_CATEGORY ? { ...command, clients: [], unsupported_message: QUICK_COMMAND_OWNER_MESSAGE }
+    : command)
 
 /** The most rows a prefix query returns (TAL-2314), applied after ranking so a late exact name is kept. */
 const SUGGESTION_LIMIT = 40

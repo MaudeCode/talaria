@@ -455,9 +455,11 @@ def test_native_command_turn_directive_is_never_forwarded(native_owner_stub, rep
     assert not any(method == "prompt.submit" for method, _ in native_owner_stub.calls)
 
 
-def test_native_command_output_is_bounded(native_owner_stub):
-    native_owner_stub.command = {"type": "exec", "output": "x" * 70000}
-    assert native_owner_stub.run(None, DISPATCH)["command_result"]["output"] == "x" * 64000
+@pytest.mark.parametrize("text,bounded", [("x" * 70000, "x" * 64000), ("😀" * 40000, "😀" * 32000), ("x" + "😀" * 40000, "x" + "😀" * 31999)])
+def test_native_command_output_is_bounded_in_utf16_units(native_owner_stub, text, bounded):
+    """The contract bounds JavaScript string length: an emoji is two units, and a split pair is dropped."""
+    native_owner_stub.command = {"type": "exec", "output": text}
+    assert native_owner_stub.run(None, DISPATCH)["command_result"]["output"] == bounded
 
 
 @pytest.mark.parametrize("change", [{"name": "deploy now"}, {"name": "/deploy"}, {"name": ""}, {"name": "déploy"}, {"arg": None}, {"arg": "x" * 8193},
@@ -475,10 +477,10 @@ def test_native_command_catalog_lists_only_owner_quick_commands(native_owner_stu
     owner = native_owner_stub
     owner.catalog = {"categories": [
         {"name": "Session", "pairs": [["/new", "Start a new session"]]},
-        {"name": "User commands", "pairs": [["/deploy", "exec: ./deploy.sh"], ["/bad name", "x"], ["/notes", "n" * 300], "junk"]},
+        {"name": "User commands", "pairs": [["/deploy", "exec: ./deploy.sh"], ["/bad name", "x"], ["/notes", "😀" * 150], "junk"]},
     ], "skills": {"/private": {}}}
     result = owner.run(None, {"session_id": "native", "action": "command_catalog"})
-    assert result["quick_commands"] == [{"name": "deploy", "description": "exec: ./deploy.sh"}, {"name": "notes", "description": "n" * 200}]
+    assert result["quick_commands"] == [{"name": "deploy", "description": "exec: ./deploy.sh"}, {"name": "notes", "description": "😀" * 100}]
     assert ("commands.catalog", {"session_id": "native", "_timeout": 25}) in owner.calls
     assert not any(method == "command.dispatch" for method, _ in owner.calls)
 

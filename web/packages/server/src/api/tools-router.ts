@@ -689,7 +689,7 @@ export const toolsRouter = os.router({
         const release = claimCommandSlots(ctx)
         if (!release) throw new HttpError(429, 'Too many running commands; wait for one to finish.')
         let native: string | null
-        try { native = await owner.command(sessionId, name, args.trim()) } finally { release() }
+        try { native = await owner.command(sessionId, name, args.trim(), { serverOwner: await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx)) }) } finally { release() }
         if (native !== null) return settled(native)
       }
       if (sessionId) (await ctx.deps.sessions.assertWritable(sessionId))

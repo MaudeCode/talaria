@@ -12088,6 +12088,66 @@
           "status"
         ],
         "additionalProperties": false
+      },
+      "command_result": {
+        "description": "`command_dispatch`: what the owner did with the command.",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "output"
+              },
+              "output": {
+                "type": "string",
+                "maxLength": 64000
+              }
+            },
+            "required": [
+              "kind",
+              "output"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "prompt"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "quick_commands": {
+        "description": "`command_catalog`: the session profile's registered quick commands.",
+        "maxItems": 200,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][\\w-]*$"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "name",
+            "description"
+          ],
+          "additionalProperties": false
+        }
       }
     },
     "required": [
@@ -13503,6 +13563,66 @@
           "status"
         ],
         "additionalProperties": false
+      },
+      "command_result": {
+        "description": "`command_dispatch`: what the owner did with the command.",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "output"
+              },
+              "output": {
+                "type": "string",
+                "maxLength": 64000
+              }
+            },
+            "required": [
+              "kind",
+              "output"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "prompt"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "quick_commands": {
+        "description": "`command_catalog`: the session profile's registered quick commands.",
+        "maxItems": 200,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][\\w-]*$"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "name",
+            "description"
+          ],
+          "additionalProperties": false
+        }
       }
     },
     "required": [
