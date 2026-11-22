@@ -33,6 +33,7 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchAgentHealth: () => Promise.resolve({ alive: true }),
   fetchTranscribeCapability: () => Promise.resolve({ streaming: false }),
   fetchBackgroundTasks: () => Promise.resolve({ tasks: [] }),
+  fetchBotDeliveries: () => Promise.resolve({ state: 'not_bot_chat', reason: null, deliveries: [] }),
   fetchCommands: () => Promise.resolve({ commands: [] }),
   classifyCommand: vi.fn(() => Promise.resolve({ kind: 'text' })),
   fetchModels: () => Promise.resolve({ models: [], groups: [] }),
