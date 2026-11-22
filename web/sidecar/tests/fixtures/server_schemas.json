@@ -1507,6 +1507,16 @@
                 "null"
               ]
             },
+            "match_message_idx": {
+              "description": "TAL-1922: on a content hit, the matched message's absolute index (the `_messages_offset` space of `GET /api/session`); omitted on title and metadata hits and when the transcript does not show that message on its own.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "match_message_key": {
+              "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is.",
+              "type": "string"
+            },
             "workspace_name": {
               "type": [
                 "string",
