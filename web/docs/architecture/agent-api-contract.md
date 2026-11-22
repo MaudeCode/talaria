@@ -701,6 +701,9 @@ and `POST /api/skills/lock` answers 409 without writing.
 Talaria generates session titles on the server and syncs them through `state_db.sync_title`.
 A rename or explicit regenerate lands with `user` provenance, a model title with `llm`, and a
 local fallback summary with `derived`, so a later model title still replaces the summary.
+The Agent refuses an automatic title over one of equal rank, so an adaptive refresh
+(`auto_title_refresh_every`) sends `replace_automatic`: the sidecar replaces an untitled,
+`derived` or `llm` title and keeps it at `llm`, and leaves a `user` title alone.
 A turn's `state_db.sync_usage` carries the title only for a manually named session, because the
 sidecar writes a usage title as `user`; an automatic title reaches state.db only at its own rank.
 After the title work, each turn also syncs an automatic title as `derived`. The Agent lets an

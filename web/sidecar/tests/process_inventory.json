@@ -2460,6 +2460,13 @@
         ""
       ]
     },
+    "tests/test_state_db_title.py::test_a_title_refresh_replaces_an_automatic_title_and_never_a_user_name": {
+      "layer": "compatibility",
+      "reason": "The installed Agent store must let a state_db.sync_title refresh with replace_automatic replace an llm or derived title at llm provenance, including its collision retry, and never a user title, on a real sidecar (TAL-2631).",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_agent_store_reads.py::test_a_replay_case_reads_its_recorded_conversation_and_prompt": {
       "layer": "compatibility",
       "reason": "The installed Agent's store must serve a skill replay case's recorded transcript and session prompt to the sidecar reader in the Agent interpreter; on v0.23.3 that is the storage interface, which a fake cannot establish (TAL-2591).",

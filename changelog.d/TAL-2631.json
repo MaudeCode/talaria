@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With Sync to Insights on, a refreshed chat title now replaces the earlier generated title in Insights and the Agent.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

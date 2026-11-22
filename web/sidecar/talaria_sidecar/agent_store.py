@@ -122,10 +122,25 @@ def set_message_count(db, session_id: str, count: int) -> None:
     db._execute_write(lambda conn: conn.execute("UPDATE sessions SET message_count = ? WHERE id = ?", (count, session_id)))
 
 
-def set_title(db, session_id: str, title: str, *, manual: bool, derived: bool = False) -> None:
+def set_title(db, session_id: str, title: str, *, manual: bool, derived: bool = False, replace_automatic: bool = False) -> None:
     """A manual title lands with ``user`` provenance. An automatic one is ``llm``, or ``derived`` for a local summary,
-    which ranks below ``llm`` so a later model title replaces it; neither replaces a user's. A title another session
+    which ranks below ``llm`` so a later model title replaces it; neither replaces a user's. ``replace_automatic`` (an
+    adaptive refresh, TAL-2631) replaces an untitled, ``derived`` or ``llm`` row at ``llm`` provenance, which the store's
+    automatic write refuses at equal rank, and leaves a user's (or a pre-provenance) title. A title another session
     holds raises ``ValueError``."""
+    if replace_automatic:
+        if native():
+            from persistence.conversation.sessions import TitleSource
+
+            sessions = db.sessions
+            if sessions.get_title(session_id) is None or sessions.get_title_source(session_id) in (TitleSource.DERIVED, TitleSource.LLM):
+                sessions.set_title(session_id, title)
+                sessions.set_title_source(session_id, TitleSource.LLM)
+            return
+        if db.get_session_title(session_id) is None or db.get_session_title_source(session_id) in ("derived", "llm"):
+            db.set_session_title(session_id, title)
+            db.set_session_title_source(session_id, "llm")
+        return
     if native():
         from persistence.conversation.sessions import TitleSource
 
