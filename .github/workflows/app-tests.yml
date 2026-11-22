@@ -411,17 +411,22 @@ jobs:
             xcrun simctl runtime list -j | jq -r '.[] | select(.platformIdentifier != "com.apple.platform.iphonesimulator")
               | "\(.identifier) \(.runtimeIdentifier) \(.state)"'
           }
-          runtimes=$(others)
-          while read -r runtime _; do
-            [[ -n "${runtime}" ]] || continue
-            # A refusal shows in the check below, after every runtime had its try.
-            xcrun simctl runtime delete "${runtime}" < /dev/null || sudo -n xcrun simctl runtime delete "${runtime}" < /dev/null || true
-          done <<< "${runtimes}"
-          # simctl returns before the deletion finishes: every deleted runtime was still listed right after it, with no
-          # error (run 45059253953). Wait up to two minutes for the list to drop them.
-          for _ in $(seq 60); do
+          # simctl returns before the deletion finishes, and the system mounted a fresh copy of the tvOS and watchOS 27.0
+          # runtimes under a new identifier after the first deletion (runs 45059253953, 45060232951). So the list is
+          # read again, 2 s apart and at most 90 times, until it holds no other platform's runtime, and each identifier
+          # is deleted once. The log records every change of the list. A refusal shows in the check below.
+          deleted=" "
+          listed=""
+          for _ in $(seq "${TALARIA_RUNTIME_READS:-90}"); do
             remaining=$(others)
+            [[ "${remaining}" == "${listed}" ]] || echo "Non-iOS runtimes at ${SECONDS}s: ${remaining:-none}" | paste -sd ';' -
+            listed=${remaining}
             [[ -n "${remaining}" ]] || break
+            while read -r runtime _; do
+              [[ "${deleted}" != *" ${runtime} "* ]] || continue
+              deleted+="${runtime} "
+              xcrun simctl runtime delete "${runtime}" < /dev/null || sudo -n xcrun simctl runtime delete "${runtime}" < /dev/null || true
+            done <<< "${remaining}"
             sleep 2
           done
           { echo "### Simulator runtimes"; echo '```'; xcrun simctl runtime list -v; echo '```'; } >> "${GITHUB_STEP_SUMMARY}"

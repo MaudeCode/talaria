@@ -253,8 +253,9 @@ class TestIOSRunnerTest < Minitest::Test
       inventory, summary = File.join(root, "runtimes.json"), File.join(root, "summary.md")
       File.write(File.join(root, "sudo"), %(#!/bin/sh\n[ "$1" = -n ] && shift\nSUDO=1 exec "$@"\n))
       File.write(File.join(root, "sleep"), "#!/bin/sh\n")
-      # Like simctl, a deletion returns at once and the runtime stays listed, "Deleting", until a later listing; a runtime
-      # listed in $REFUSE is deleted only as root.
+      # Like simctl, a deletion returns at once and the runtime stays listed, "Deleting", until a later listing, and the
+      # first deletion of TV brings a fresh copy, TV-COPY, under a new identifier. A runtime listed in $REFUSE is
+      # deleted only as root.
       File.write(File.join(root, "xcrun"), <<~'SH')
         #!/bin/sh
         case "$*" in
@@ -264,7 +265,9 @@ class TestIOSRunnerTest < Minitest::Test
           'simctl runtime list -v') jq -r 'keys[]' "$INVENTORY" ;;
           "simctl runtime delete $4")
             case " $REFUSE " in *" $4 "*) [ "$SUDO" = 1 ] || { echo "refused $4" >&2; exit 1; } ;; esac
-            jq --arg id "$4" '.[$id].state = "Deleting"' "$INVENTORY" > "$INVENTORY.next" && mv "$INVENTORY.next" "$INVENTORY" ;;
+            jq --arg id "$4" '.[$id].state = "Deleting"
+              | if $id == "TV" then .["TV-COPY"] = (.TV + {identifier: "TV-COPY", state: "Ready"}) else . end' \
+              "$INVENTORY" > "$INVENTORY.next" && mv "$INVENTORY.next" "$INVENTORY" ;;
           *) echo "Unexpected xcrun arguments: $*" >&2; exit 1 ;;
         esac
       SH
@@ -276,7 +279,7 @@ class TestIOSRunnerTest < Minitest::Test
                                              runtime.call("XR", "xrsimulator")].reduce(:merge)))
         File.write(summary, "")
         Open3.capture3({ "PATH" => "#{root}:#{ENV.fetch('PATH')}", "INVENTORY" => inventory, "REFUSE" => refuse,
-                         "GITHUB_STEP_SUMMARY" => summary }, "bash", "-c", script)
+                         "GITHUB_STEP_SUMMARY" => summary, "TALARIA_RUNTIME_READS" => "5" }, "bash", "-c", script)
       end
       output, errors, status = run.call("TV XR")
       assert(status.success?, "#{output}\n#{errors}")
