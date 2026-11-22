@@ -370,8 +370,9 @@ function readWorkbook(parts: Map<string, Buffer>): Workbook {
   const sheets = listedParts(named(first(workbook, 'sheets') ?? {}, 'sheet'), targets).map(({ entry, part }) => ({ name: attr(entry, 'name') ?? '', part }))
   const date1904 = ['1', 'true'].includes(attr(first(workbook, 'workbookPr') ?? {}, 'date1904') ?? '')
   const sst = parts.has('xl/sharedStrings.xml') ? rootOf(parseXml('xlsx', parts.get('xl/sharedStrings.xml'))) : undefined
-  // Rich-text runs concatenate; phonetic guides (`rPh`) are not part of the value.
-  const shared = sst ? named(sst, 'si').map((si) => [...elements(si)].filter((n) => ['t', 'r'].includes(localName(tagOf(n)))).map((n) => (localName(tagOf(n)) === 't' ? textOf(n) : named(n, 't').map(textOf).join(''))).join('')) : []
+  // Rich-text runs concatenate; phonetic guides (`rPh`) are not part of the value. Each string is normalized once here,
+  // so a cell that references it rescans only what it shows, and that text is charged to the preview budget.
+  const shared = sst ? named(sst, 'si').map((si) => normalized([...elements(si)].filter((n) => ['t', 'r'].includes(localName(tagOf(n)))).map((n) => (localName(tagOf(n)) === 't' ? textOf(n) : named(n, 't').map(textOf).join(''))).join(''))) : []
   const styles = parts.has('xl/styles.xml') ? rootOf(parseXml('xlsx', parts.get('xl/styles.xml'))) : undefined
   // Each custom format is classified once, however many cell styles share it.
   const customDates = new Map(named(first(styles, 'numFmts') ?? {}, 'numFmt').map((fmt) => [Number(attr(fmt, 'numFmtId')), isDateFormat(attr(fmt, 'formatCode') ?? '')]))
