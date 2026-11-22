@@ -292,7 +292,8 @@ that `workspace/media.ts` `mediaAccessFor` derives from authority:
 - Office previews and `.docx` saves (`workspace/office.ts`) preflight every
   archive before parsing: at most 256 members, 8,000,000 bytes uncompressed,
   per-part caps, a compression ratio of at most 200, member names that stay
-  inside the archive, no ZIP64, and each member inflated no further than its
+  inside the archive, no ZIP64, no two entries sharing one member, compressed
+  input no larger than the archive, and each member inflated no further than its
   declared size. XML parts with a `<!DOCTYPE` are refused and only the
   predefined and numeric entities expand. Each listed sheet or slide part is
   parsed once, and all the Office files of one upload share a single

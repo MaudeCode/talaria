@@ -16,6 +16,20 @@ function patchCentral(zip: Buffer, field: number, value: number): Buffer {
   return out
 }
 
+/** The archive with its first central-directory entry listed twice (the copy renamed), both naming one local member. */
+function duplicateFirstEntry(zip: Buffer): Buffer {
+  const eocd = zip.length - 22
+  const cd = zip.readUInt32LE(eocd + 16)
+  const length = 46 + zip.readUInt16LE(cd + 28) + zip.readUInt16LE(cd + 30) + zip.readUInt16LE(cd + 32)
+  const copy = Buffer.from(zip.subarray(cd, cd + length))
+  copy.write('Z', 46)
+  const end = Buffer.from(zip.subarray(eocd))
+  end.writeUInt16LE(end.readUInt16LE(8) + 1, 8)
+  end.writeUInt16LE(end.readUInt16LE(10) + 1, 10)
+  end.writeUInt32LE(end.readUInt32LE(12) + length, 12)
+  return Buffer.concat([zip.subarray(0, eocd), copy, end])
+}
+
 const parts = async (bytes: Buffer): Promise<Map<string, Buffer>> => new Map(await Promise.all(readZip(bytes).map(async (e): Promise<[string, Buffer]> => [e.name, await e.read()])))
 /** Text that deflates about 2:1, so a size limit trips before the ratio limit. */
 const incompressible = (bytes: number) => Buffer.from(randomBytes(Math.ceil(bytes / 2)).toString('hex').slice(0, bytes))
@@ -31,6 +45,7 @@ describe('office preflight', () => {
       ['a ratio over 200', docxPackage(plainParagraphs('x'), [['zeros.bin', Buffer.alloc(300_000)]]), LIMIT],
       ['a ../ member name', docxPackage(plainParagraphs('x'), [['../evil.xml', Buffer.from('x')]]), LIMIT],
       ['an absolute member name', docxPackage(plainParagraphs('x'), [['/evil.xml', Buffer.from('x')]]), LIMIT],
+      ['two entries naming one local member', duplicateFirstEntry(valid), LIMIT],
       ['a member that claims size 0', patchCentral(valid, 24, 0), UNREADABLE],
       ['a CRC mismatch', patchCentral(valid, 16, 0xdeadbeef), UNREADABLE],
       ['a ZIP64 offset', (() => { const z = Buffer.from(valid); z.writeUInt32LE(0xffffffff, z.length - 22 + 16); return z })(), UNREADABLE],

@@ -8,7 +8,8 @@ import { crc32, inflateRaw, inflateRawSync } from 'node:zlib'
 
 const inflateRawAsync = promisify(inflateRaw)
 
-export interface ZipEntry { name: string; size: number; compressedSize: number; isDir: boolean; read: () => Promise<Buffer>; readSync: () => Buffer }
+/** `offset` is the member's local header position; two entries with one offset name the same bytes. */
+export interface ZipEntry { name: string; size: number; compressedSize: number; offset: number; isDir: boolean; read: () => Promise<Buffer>; readSync: () => Buffer }
 
 export class BadZipError extends Error {}
 
@@ -51,7 +52,7 @@ export function readZip(buf: Buffer): ZipEntry[] {
     // The declared size is the output cap: a crafted member cannot inflate past what the caller already budgeted.
     const inflateFailed = (error: unknown) => new BadZipError(`member ${name} inflates past its declared size: ${(error as Error).message}`)
     entries.push({
-      name, size, compressedSize: compressed, isDir: name.endsWith('/'),
+      name, size, compressedSize: compressed, offset: localOffset, isDir: name.endsWith('/'),
       read: async () => {
         const data = raw()
         if (method === 0) return checked(Buffer.from(data))

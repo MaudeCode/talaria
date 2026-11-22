@@ -78,9 +78,16 @@ function preflight(format: OfficeFormat, bytes: Buffer, budget?: OfficeBudget): 
   try { entries = readZip(bytes).filter((entry) => !entry.isDir) } catch { throw readError(format) }
   if (entries.length > MAX_OFFICE_ARCHIVE_MEMBERS) throw new OfficeError(LIMIT_MESSAGE)
   const parts = new Map<string, Buffer>()
+  // Each member's own bytes are inflated once: entries sharing a local header, or claiming more compressed input than
+  // the archive holds, would inflate the same stream again and again whatever output they declare.
+  const offsets = new Set<number>()
+  let compressed = 0
   let total = 0
   for (const entry of entries) {
     const name = memberName(entry.name)
+    compressed += entry.compressedSize
+    if (offsets.has(entry.offset) || compressed > bytes.length) throw new OfficeError(LIMIT_MESSAGE)
+    offsets.add(entry.offset)
     total += entry.size
     if (entry.size > memberLimit(format, name) || total > MAX_OFFICE_ARCHIVE_TOTAL_BYTES || entry.size > Math.max(entry.compressedSize, 1) * MAX_OFFICE_COMPRESSION_RATIO) throw new OfficeError(LIMIT_MESSAGE)
     if (budget && (budget.bytes -= entry.size) < 0) throw new OfficeError(LIMIT_MESSAGE)
