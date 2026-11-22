@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On the iPhone Duo's inner display, the chat stays fully on screen when the file the agent is working on opens beside it.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

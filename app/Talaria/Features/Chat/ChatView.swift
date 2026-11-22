@@ -115,7 +115,7 @@ struct ChatView: View {
     @State private var companionPageOpacity = 0.0
     @State private var companionPageFadesOut = false
     @Environment(\.holdsForegroundLayout) private var holdsForegroundLayout
-    @Environment(\.targetChatLayoutWidth) private var targetChatLayoutWidth
+    @Environment(\.targetChatLayoutWidth) private var splitTargetChatLayoutWidth
     @State private var lastActiveLayoutSize: CGSize = .zero
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
@@ -1149,6 +1149,17 @@ struct ChatView: View {
         companionPageFits && !viewModel.companionFocus.isHidden && !secondaryChatIsBeside
     }
 
+    /// Whether the arrangement shows a page or chat beside this one, a fading page included.
+    private var arrangementShowsSecondary: Bool {
+        secondaryChatIsBeside || companionPageIsBeside || companionPageFadesOut
+    }
+
+    /// The chat block's width: the split's target, or the pane's own while the arrangement narrows it (TAL-1538). A block
+    /// wider than its pane overflows the pane's leading edge and is clipped there.
+    private var targetChatLayoutWidth: CGFloat? {
+        arrangementShowsSecondary ? nil : splitTargetChatLayoutWidth
+    }
+
     /// One of two chats side by side: the leading chat with a secondary beside it, or that secondary.
     private var isSplitPane: Bool { makePrimary != nil || secondaryChatIsBeside }
 
@@ -1188,7 +1199,7 @@ struct ChatView: View {
     private func withCompanionPage(_ chat: some View) -> some View {
         if #available(iOS 27.1, *), splitFilesInspector?.offersCompanionPage == true {
             Group {
-                if secondaryChatIsBeside || companionPageIsBeside || companionPageFadesOut {
+                if arrangementShowsSecondary {
                     ArrangementView {
                         chat
                     } secondary: {
