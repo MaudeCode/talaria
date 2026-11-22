@@ -25,19 +25,38 @@ describe('per-job schedule policy (TAL-1820)', () => {
     expect(jobForApi(recurring)).toMatchObject({ timezone: null, catch_up: null, grace_minutes: null, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *' })
   })
 
+  it('projects a task wrap override only where the Agent reads it (TAL-2634)', () => {
+    const wrap = (job: Dict) => { const { wrap_response_supported, wrap_response } = jobForApi(job); return { wrap_response_supported, wrap_response } }
+    expect(wrap({ ...recurring, wrap_response_supported: true, wrap_response: false })).toEqual({ wrap_response_supported: true, wrap_response: false })
+    expect(wrap({ ...recurring, wrap_response_supported: true, wrap_response: null })).toEqual({ wrap_response_supported: true, wrap_response: null })
+    // An older Agent's record never carries a key it reads, so a stray one is no override.
+    expect(wrap({ ...recurring, wrap_response: true })).toEqual({ wrap_response_supported: false, wrap_response: null })
+  })
+
   it('forwards the fields on create and an explicit clear on update', async () => {
     const sidecar = new FakeSidecar()
     const home = '/homes/default'
     const calls: Dict[] = []
     const stored = { ...recurring, profile: null, toast_notifications: true, monitor: '', continuity: false } as never
-    sidecar.respond('cron.list', () => ({ jobs: [stored] }))
+    sidecar.respond('cron.list', () => ({ jobs: [stored], wrap_response_supported: true }))
     sidecar.respond('cron.create', (params) => { calls.push(params.job); return { job: stored } })
     sidecar.respond('cron.update', (params) => { calls.push(params.updates); return { job: stored } })
     const service = new CronService({ sidecar: () => sidecar, profileHome: () => home, profileNames: () => Promise.resolve([{ name: 'default', visible: true }]), profilesMatch: (a, b) => a === b, isolatedProfileMode: () => false, log: () => undefined })
-    await service.create(home, { schedule: '0 9 * * *', prompt: 'hi', timezone: 'America/New_York', catch_up: true, grace_minutes: 30 })
-    expect(calls[0]).toMatchObject({ timezone: 'America/New_York', catch_up: true, grace_minutes: 30 })
-    await service.update(home, { job_id: recurring.id, timezone: null, catch_up: null, grace_minutes: null })
-    expect(calls[1]).toMatchObject({ timezone: null, catch_up: null, grace_minutes: null })
+    await service.create(home, { schedule: '0 9 * * *', prompt: 'hi', timezone: 'America/New_York', catch_up: true, grace_minutes: 30, wrap_response: false })
+    expect(calls[0]).toMatchObject({ timezone: 'America/New_York', catch_up: true, grace_minutes: 30, wrap_response: false })
+    await service.update(home, { job_id: recurring.id, timezone: null, catch_up: null, grace_minutes: null, wrap_response: null })
+    expect(calls[1]).toMatchObject({ timezone: null, catch_up: null, grace_minutes: null, wrap_response: null })
+    expect((await service.list('default', 'none')).wrap_response_supported).toBe(true)
+  })
+
+  it('keeps the wrap capability on the raw record pause answers with (TAL-2634)', async () => {
+    const sidecar = new FakeSidecar()
+    const home = '/homes/default'
+    const listed = { ...recurring, profile: null, toast_notifications: true, monitor: '', continuity: false, wrap_response_supported: true, wrap_response: false } as never
+    sidecar.respond('cron.list', () => ({ jobs: [listed], wrap_response_supported: true }))
+    sidecar.respond('cron.pause', () => ({ job: { ...recurring, state: 'paused', wrap_response: false } as never }))
+    const service = new CronService({ sidecar: () => sidecar, profileHome: () => home, profileNames: () => Promise.resolve([{ name: 'default', visible: true }]), profilesMatch: (a, b) => a === b, isolatedProfileMode: () => false, log: () => undefined })
+    expect((await service.pause(home, String(recurring.id), null)).job).toMatchObject({ wrap_response_supported: true, wrap_response: false })
   })
 })
 

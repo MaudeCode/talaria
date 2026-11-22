@@ -358,7 +358,7 @@ export const STT_METHODS = {
 
 // ── cron ───────────────────────────────────────────────────────────────
 /** `running_elsewhere`: a live execution owner. `recovery_only`: a retained snapshot, not a source for new task context. */
-export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullable().optional(), profile: z.string().nullable(), toast_notifications: z.boolean(), monitor: z.string(), continuity: z.boolean(), running_elsewhere: z.boolean().optional(), recovery_only: z.boolean().optional(), live_execution: z.object({ id: z.string(), stopping: z.boolean() }).nullable().optional() }).catchall(Json)
+export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullable().optional(), profile: z.string().nullable(), toast_notifications: z.boolean(), monitor: z.string(), continuity: z.boolean(), running_elsewhere: z.boolean().optional(), recovery_only: z.boolean().optional(), live_execution: z.object({ id: z.string(), stopping: z.boolean() }).nullable().optional(), wrap_response_supported: z.boolean().optional() }).catchall(Json)
 const CronJob = ProfileHomeParams.extend({ job_id: z.string().min(1) })
 const JobEnvelope = z.object({ job: CronJobSchema })
 export const CronUsageSchema = z.object({ model: z.string().optional(), provider: z.string().optional(), estimated_cost_usd: z.number().optional(), duration_seconds: z.number().optional(), input_tokens: z.number().int().nullable().optional(), output_tokens: z.number().int().nullable().optional(), total_tokens: z.number().int().nullable().optional() })
@@ -366,7 +366,7 @@ export const CRON_METHODS = {
   'cron.blueprints': { params: ProfileHomeParams, result: CronBlueprintsSchema },
   'cron.blueprint_fill': { params: CronBlueprintFillInputSchema.extend({ profile_home: z.string().optional() }), result: CronBlueprintFillSchema },
   /** `probe_store` adds the store's write probe (TAL-810): null when writes land. */
-  'cron.list': { params: ProfileHomeParams.extend({ probe_store: z.boolean().optional() }), result: z.object({ jobs: z.array(CronJobSchema), store_health: z.object({ store: z.string(), error: z.string(), since: z.string(), fix: z.string() }).nullable().optional() }) },
+  'cron.list': { params: ProfileHomeParams.extend({ probe_store: z.boolean().optional() }), result: z.object({ jobs: z.array(CronJobSchema), wrap_response_supported: z.boolean().optional(), store_health: z.object({ store: z.string(), error: z.string(), since: z.string(), fix: z.string() }).nullable().optional() }) },
   'cron.get': { params: CronJob, result: z.object({ job: CronJobSchema.nullable() }) },
   'cron.create': { params: ProfileHomeParams.extend({ job: Loose, execution_home: z.string().nullable().optional() }), result: JobEnvelope },
   'cron.update': { params: CronJob.extend({ updates: Loose }), result: JobEnvelope },

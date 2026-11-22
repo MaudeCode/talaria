@@ -156296,6 +156296,19 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "wrap_response_supported": {
+                            "type": "boolean"
+                          },
+                          "wrap_response": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -156311,7 +156324,9 @@
                           "delivery_unconfirmed_platforms",
                           "timezone",
                           "catch_up",
-                          "grace_minutes"
+                          "grace_minutes",
+                          "wrap_response_supported",
+                          "wrap_response"
                         ],
                         "additionalProperties": {}
                       }
@@ -156367,11 +156382,15 @@
                           "since"
                         ]
                       }
+                    },
+                    "wrap_response_supported": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "jobs",
-                    "unwritable_stores"
+                    "unwritable_stores",
+                    "wrap_response_supported"
                   ],
                   "additionalProperties": {}
                 }
@@ -157179,6 +157198,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -157194,7 +157226,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -157523,6 +157557,7 @@
                   "timezone": {},
                   "catch_up": {},
                   "grace_minutes": {},
+                  "wrap_response": {},
                   "repeat": {}
                 },
                 "additionalProperties": false
@@ -157998,6 +158033,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -158013,7 +158061,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -158069,6 +158119,7 @@
                   "timezone": {},
                   "catch_up": {},
                   "grace_minutes": {},
+                  "wrap_response": {},
                   "job_id": {},
                   "failure_deliver": {},
                   "skill": {},
@@ -158080,8 +158131,7 @@
                   "interpreter": {},
                   "enabled_toolsets": {},
                   "attach_to_session": {},
-                  "workdir": {},
-                  "wrap_response": {}
+                  "workdir": {}
                 },
                 "additionalProperties": false
               }
@@ -158556,6 +158606,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -158571,7 +158634,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -159085,6 +159150,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -159100,7 +159178,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -159615,6 +159695,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -159630,7 +159723,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -160154,6 +160249,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -160169,7 +160277,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
@@ -160683,6 +160793,19 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "wrap_response_supported": {
+                          "type": "boolean"
+                        },
+                        "wrap_response": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -160698,7 +160821,9 @@
                         "delivery_unconfirmed_platforms",
                         "timezone",
                         "catch_up",
-                        "grace_minutes"
+                        "grace_minutes",
+                        "wrap_response_supported",
+                        "wrap_response"
                       ],
                       "additionalProperties": {}
                     },
