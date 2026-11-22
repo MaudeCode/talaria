@@ -719,7 +719,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     let enabled = true
     const { svc } = npmService({
       autoApply: () => auto, checkEnabled: () => enabled,
-      availableNotification: (target, view) => { views.push([target, view?.state ?? null]); return store.updateAvailable(target, view) },
+      availableNotification: async (target, view) => { views.push([target, view?.state ?? null]); await store.updateAvailable(target, view) },
     })
     await svc.check(true)
     expect(await inbox()).toEqual([['update_available', 'webui', 'Talaria Web 2.0.0 is available.']])

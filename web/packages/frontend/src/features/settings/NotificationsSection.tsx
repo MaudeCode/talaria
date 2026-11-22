@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Activity, AppWindow, RefreshCw, Smartphone, Volume2 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WebPushPreferences } from '@maudecode/talaria-web-contracts'
+import { useBootstrap } from '../../app/bootstrap'
 import { webPushSupported } from '../../app/pwa'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -15,11 +16,13 @@ import { CompletionAudioSettings } from './CompletionAudioSettings'
 import { useSettingField } from './useSettingField'
 import { SettingRow, SettingToggle, SettingsGroup, SETTINGS_PAGE } from './SettingsRows'
 
-const KINDS: { key: keyof WebPushPreferences; label: () => string }[] = [
+/** `owner`: TAL-2665, shown only to a login that can manage the server; the server ignores it for any other. */
+const KINDS: { key: keyof WebPushPreferences; label: () => string; owner?: true }[] = [
   { key: 'notify_on_approval', label: () => m.settings_label_notify_approval() },
   { key: 'notify_on_input', label: () => m.settings_label_notify_input() },
   { key: 'notify_on_completion', label: () => m.settings_label_notify_completion() },
   { key: 'notify_on_failure', label: () => m.settings_label_notify_failure() },
+  { key: 'notify_on_update_available', label: () => m.settings_label_notify_update_available(), owner: true },
 ]
 
 interface Confirmed { publicKey: string; endpoint: string | null; preferences: WebPushPreferences | null }
@@ -103,6 +106,7 @@ interface Shown { enabled: boolean; preferences: WebPushPreferences | null }
  */
 function WebPushSettings() {
   const qc = useQueryClient()
+  const canManage = useBootstrap().auth.can_manage_server
   const status = useQuery({ queryKey: keys.webPush, queryFn: readConfirmed })
   const [overlay, setOverlay] = useState<Shown | null>(null)
   const queue = useRef({ tail: Promise.resolve(), pending: 0 })
@@ -170,7 +174,7 @@ function WebPushSettings() {
         detail={<StatusDot state={shown.enabled ? 'ok' : 'idle'}>{shown.enabled ? m.settings_web_push_subscribed() : m.settings_web_push_not_subscribed()}</StatusDot>}>
         <Switch id="settings-web_push" checked={shown.enabled} onCheckedChange={toggle} />
       </SettingRow>
-      {preferences && KINDS.map(({ key, label }) => (
+      {preferences && KINDS.filter((kind) => !kind.owner || canManage).map(({ key, label }) => (
         <SettingRow key={key} label={label()} htmlFor={`settings-${key}`}>
           <Switch id={`settings-${key}`} checked={preferences[key]} onCheckedChange={(checked) => { setKind(preferences, key, checked) }} />
         </SettingRow>

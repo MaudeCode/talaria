@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Server owners can turn on a push alert in Settings › Notifications for when a Talaria Web or Hermes Agent update is available; tapping it opens Settings › System.",
+      "highlight": false,
+      "components": [
+        "web",
+        "relay"
+      ],
+      "announce": false
+    }
+  ]
+}

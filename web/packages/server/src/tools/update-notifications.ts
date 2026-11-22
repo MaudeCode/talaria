@@ -6,6 +6,7 @@ import type { SessionInfo } from '../auth/store.js'
 import { personIdentity } from '../auth/person.js'
 import { str } from '../util.js'
 import type { GatewayProcess } from './health.js'
+import type { ServerNotice } from '../sessions/notify/channel.js'
 
 export function updateNotificationOwner(session: SessionInfo | null): string {
   const authType = str(session?.auth_type).trim()
@@ -109,6 +110,8 @@ export interface CreateUpdateNotificationInput {
 const PHASES = new Set<UpdateNotificationPhase>(UpdateNotificationPhaseSchema.options)
 /** TAL-2001: a server-wide notice that an applicable update waits, one row per target. */
 const UPDATE_AVAILABLE_KIND = 'update_available'
+/** TAL-2665: the Web route of Settings › System, where an update-available push opens. */
+const SETTINGS_SYSTEM_URL = '/settings/system'
 /** Update check states that say nothing new about the target: an existing available notice stays as it is. */
 const UNDECIDED_STATES = new Set(['check_failed', 'finish', 'unknown'])
 const REVISION = /^[a-f0-9]{40}$/
@@ -256,30 +259,34 @@ export class UpdateNotificationStore {
    * TAL-2001: mirror one target's completed update check (`updateTargetView`) in the inbox. An applicable release or
    * newer commits keep one server-wide row; a newer version rewrites it and shows it again, while a repeat keeps its
    * read and dismissed state. A failed or undecided check leaves the row; anything else, or `null`, withdraws it.
+   * TAL-2665: a created or newer-version row returns its push notice, `update_available:<target>:<version>`.
    */
-  async updateAvailable(target: UpdateNotificationTarget, view: Record<string, unknown> | null): Promise<void> {
+  async updateAvailable(target: UpdateNotificationTarget, view: Record<string, unknown> | null): Promise<ServerNotice | null> {
     const key = `${UPDATE_AVAILABLE_KIND}:${target}`
     const row = this.rows.find((entry) => entry.kind === UPDATE_AVAILABLE_KIND && entry.notice_key === key)
-    if (view && UNDECIDED_STATES.has(str(view.state))) return
+    if (view && UNDECIDED_STATES.has(str(view.state))) return null
     const identity = view?.can_apply !== true ? '' : view.state === 'release_ready' ? str(view.target_version) : view.state === 'commits_behind' ? str(view.latest_sha) : ''
     if (!identity) {
-      if (!row) return
+      if (!row) return null
       this.rows = this.rows.filter((entry) => entry !== row)
-      return this.save()
+      await this.save()
+      return null
     }
     const name = target === 'webui' ? 'Talaria Web' : 'Hermes Agent'
+    const title = `${name} update available`
     const message = `${name}${shownVersion(view?.state === 'commits_behind' ? identity.slice(0, 12) : identity)} is available.`
     const hash = createHash('sha256').update(identity).digest('hex')
+    if (row?.notice_text_hash === hash) return null
     if (!row) {
       await this.createRow({ owner: '*', profile: 'default', serverOwner: true }, {
-        kind: UPDATE_AVAILABLE_KIND, target, phase: 'available', title: `${name} update available`, message,
+        kind: UPDATE_AVAILABLE_KIND, target, phase: 'available', title, message,
         destination: { key: 'settings.system', label: 'Open System settings' }, visibility: 'server',
       }, { notice_key: key, notice_text_hash: hash })
-      return
+    } else {
+      Object.assign(row, { message, notice_text_hash: hash, updated_at: this.now().toISOString(), read_at: null, dismissed_at: null })
+      await this.save()
     }
-    if (row.notice_text_hash === hash) return
-    Object.assign(row, { message, notice_text_hash: hash, updated_at: this.now().toISOString(), read_at: null, dismissed_at: null })
-    await this.save()
+    return { kind: UPDATE_AVAILABLE_KIND, id: `${UPDATE_AVAILABLE_KIND}:${target}:${identity}`, title, body: message, url: SETTINGS_SYSTEM_URL }
   }
 
   /** TAL-2001: an installed update answers its own available notice. */

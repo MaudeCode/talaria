@@ -2810,6 +2810,7 @@
 	"settings_label_notify_completion": "Completed runs",
 	"settings_label_notify_failure": "Failed runs",
 	"settings_label_notify_input": "Input requests",
+	"settings_label_notify_update_available": "Update available",
 	"settings_label_password": "Password",
 	"settings_label_pinned_shown": "Pinned chats shown",
 	"settings_label_profile_switcher": "Profile switcher",

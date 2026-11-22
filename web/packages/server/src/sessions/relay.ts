@@ -24,7 +24,7 @@ import type { SessionPrefixIndex } from './prefix-index.js'
 import type { SessionStore } from './store.js'
 import { str } from '../util.js'
 import { ActivityStates, activityRowFields, hasSessionData, TERMINAL_PHASES, type AgentNotice } from './notify/activity.js'
-import type { NotificationChannel } from './notify/channel.js'
+import type { NotificationChannel, ServerNotice } from './notify/channel.js'
 import { completionNotification } from './notify/alerts.js'
 
 export const PRESENCE_LEASE_SECONDS = 90
@@ -610,6 +610,22 @@ export class RelayPublisher {
     }
   }
 
+  /**
+   * TAL-2665: send a server notice to each enrolled profile. Relay alerts the publisher owner's opted-in devices once per
+   * notice and device whichever profile carried it, so a repeat send queues nothing; a failed send is logged, not retried,
+   * and the inbox row still shows the update.
+   */
+  async serverNotice(notice: ServerNotice): Promise<void> {
+    for (const [profile, cfg] of Object.entries(this.config.profiles)) {
+      if (!(await this.publishes(profile, cfg))) continue
+      const path = `/v1/publishers/${encodeURIComponent(this.config.publisher_id)}/profiles/${encodeURIComponent(cfg.profile_id)}/notices/${encodeURIComponent(notice.id)}`
+      const body = JSON.stringify({ version: 1, kind: notice.kind, noticeId: notice.id, publisherId: this.config.publisher_id, profileId: cfg.profile_id, title: notice.title, body: notice.body, deepLink: notice.url })
+      try { await this.put(path, body) } catch (error) {
+        this.deps.log(`[relay] Talaria relay did not take a server notice (${error instanceof RelayHttpError ? `HTTP ${String(error.status)}` : (error as Error).message})`)
+      }
+    }
+  }
+
   private async publishProfileSnapshot(profile: string, profileId: string, change?: number): Promise<void> {
     const states = (await this.buildStates(profile, change))
     // Relay leases by the session's activity, which a finished turn keeps running while its background work runs; a
@@ -703,6 +719,11 @@ export class RelayService implements NotificationChannel {
 
   /** TAL-1970: the adopted publisher sends a session's agent notice to the relay; without one it reaches no device. */
   async noticeReach(profile: string | null, owner: string | null): Promise<boolean> { return await this.publisher?.reaches(profile, owner) ?? false }
+
+  /** TAL-2665: the adopted publisher sends a server notice to the relay; without one it reaches no device. */
+  async serverNotice(notice: ServerNotice): Promise<void> {
+    try { await this.publisher?.serverNotice(notice) } catch (error) { this.deps.log(`[relay] server notice failed (${(error as Error).message})`) }
+  }
 
   private adopt(candidate: RelayPublisher, previous: RelayPublisher | null): void {
     this.publisher = candidate
