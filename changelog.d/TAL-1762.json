@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Web Tasks page has a Scripts tab listing the scripts in the profile's scripts folder that scheduled jobs can run, with each script's description, size and last change.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Browse scheduled task scripts",
+        "description": "See the scripts available to scheduled jobs from the Tasks page.",
+        "icon": "automation"
+      }
+    }
+  ]
+}

@@ -286,6 +286,14 @@ that `workspace/media.ts` `mediaAccessFor` derives from authority:
   attachment folder: PNG, JPEG, GIF or WebP up to 512 KiB, checked by magic
   bytes (`sessions/shares.ts` `shareAllowedRoots`, `embedShareMedia`).
 
+**Job scripts.** `GET /api/crons/scripts` (`tools/cron-scripts.ts`
+`listCronScripts`) lists only the caller's active profile's `scripts/` folder,
+the profile home every cron route uses; no input names another profile. It
+lists `.py` and `.sh` files at most one subdirectory deep, drops any entry whose
+real path leaves the folder, opens each file with `O_NOFOLLOW|O_NONBLOCK`,
+lists it only when the open file is a regular file, reads at most its first
+8 KiB for a description and closes it. No route returns a script's contents.
+
 **Uploads and archives.**
 
 - Upload bodies are capped by `TALARIA_WEB_MAX_UPLOAD_MB` (default 20) and

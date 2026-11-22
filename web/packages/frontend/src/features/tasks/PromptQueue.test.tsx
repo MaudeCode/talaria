@@ -18,7 +18,7 @@ import * as api from '../../api/endpoints'
 const run = PromptQueueRunSchema.parse(fixtures.paused)
 function Workbench() {
   const [selected, setSelected] = useState<string | null>(`queue:${run.id}`)
-  const main = useTasksWorkbench(selected, setSelected)
+  const main = useTasksWorkbench(selected, setSelected, 'jobs', () => undefined)
   return <main data-testid="main">{main}</main>
 }
 function mount() {

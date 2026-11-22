@@ -32,7 +32,10 @@ export const IndexSearchSchema = z.object({
 })
 export type IndexSearch = z.infer<typeof IndexSearchSchema>
 
-export const TasksSearchSchema = z.object({ job: z.string().optional().catch(undefined) })
+/** TAL-1762: `tab` picks Jobs (default) or the profile's Scripts. */
+export const TasksTabSchema = z.enum(['jobs', 'scripts'])
+export type TasksTab = z.infer<typeof TasksTabSchema>
+export const TasksSearchSchema = z.object({ job: z.string().optional().catch(undefined), tab: TasksTabSchema.optional().catch(undefined) })
 
 /** TAL-1691: the section ids, and since TAL-2100 their groups, are shared with the App through the contracts package. */
 export { SettingsSectionSchema, SettingsSectionGroupSchema, SETTINGS_SECTION_GROUPS } from '@maudecode/talaria-web-contracts'
