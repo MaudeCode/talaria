@@ -288,13 +288,81 @@ def validate_name(name: str) -> None:
         raise InvalidParams(f"Invalid profile name {name!r}. Must match [a-z0-9][a-z0-9_-]{{0,63}}")
 
 
-def create_profile(base_home: Path, name: str, *, clone_from: str | None, clone_config: bool) -> Path:
+#: TAL-2656: what a create's ``provisioning`` keeps of the Agent's warnings; the server bounds and redacts them again.
+_PROVISION_WARNINGS_MAX = 20
+_PROVISION_WARNING_CHARS = 500
+
+
+def native_provision():
+    """TAL-2656: the Agent's ``(ProfileCreateRequest, provision_profile)``, or None on an Agent without it."""
+    try:
+        from hermes_cli.profile_provision import ProfileCreateRequest, provision_profile
+    except ImportError:
+        return None
+    return ProfileCreateRequest, provision_profile
+
+
+def _redacted(text) -> str:
+    try:
+        from hermes_cli.profile_provision import redact_create_text
+    except ImportError:
+        return str(text)
+    return redact_create_text(text)
+
+
+def _inherited(mirrored: dict) -> list[str]:
+    """What an inheriting create carried over from the launch profile: ``auth`` is ``"shared"`` when the profile reads the root's logins."""
+    named = (("env", "keys"), ("auth", "logins"), ("model_inherited", "model"), ("voice", "voice"))
+    return [label for key, label in named if mirrored.get(key) in (True, "shared")]
+
+
+def _provision(name: str, *, clone_from: str | None, clone_config: bool, inherit_credentials: bool, native) -> dict:
+    """One create through the Agent's ``provision_profile``. Talaria never writes the ``~/.local/bin`` alias, and shares the
+    launch profile's keys, logins and model only when asked (the Agent's default shares them). A post-create step that
+    fails is a warning: the profile exists. Without inheritance a fresh profile still gets the launch model block, as the
+    core create gave it before."""
+    request_type, provision = native
+    request = request_type(name=name, clone_from=clone_from, clone_config=clone_config, alias=False, quiet=True,
+                           mirror_credentials=inherit_credentials)
+    try:
+        result = provision(request)
+    except FileExistsError as exc:
+        raise RpcError(_redacted(exc), condition="conflict") from exc
+    except (ValueError, FileNotFoundError) as exc:
+        raise InvalidParams(_redacted(exc)) from exc
+    warnings = [str(w) for w in result.warnings]
+    if not inherit_credentials and request.fresh:
+        try:
+            from hermes_cli.profiles import _seed_model_config
+
+            _seed_model_config(result.path)
+        except ImportError:
+            log.debug("launch model seed unavailable")
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"model: {exc}")
+    return {
+        "path": result.path,
+        "warnings": [_redacted(w)[:_PROVISION_WARNING_CHARS] for w in warnings[:_PROVISION_WARNINGS_MAX]],
+        "inherited": _inherited(result.mirrored) if inherit_credentials else [],
+    }
+
+
+def create_profile(base_home: Path, name: str, *, clone_from: str | None, clone_config: bool, inherit_credentials: bool = False) -> tuple[Path, dict | None]:
+    """The new profile's home and, on an Agent with ``provision_profile``, its ``provisioning`` (warnings and what it
+    inherited). An older Agent keeps the core create and cannot inherit credentials."""
     validate_name(name)
     if clone_from is not None and clone_from != "default":
         validate_name(clone_from)
     from .. import home as _home
 
     with _home.scoped_home(base_home):
+        native = native_provision()
+        if native is not None:
+            provisioning = _provision(name, clone_from=clone_from, clone_config=clone_config,
+                                      inherit_credentials=inherit_credentials, native=native)
+            return Path(provisioning.pop("path")), provisioning
+        if inherit_credentials:
+            raise InvalidParams("This Hermes Agent cannot share keys and accounts with a new profile.")
         try:
             from hermes_cli.profiles import create_profile as upstream_create
 
@@ -327,7 +395,7 @@ def create_profile(base_home: Path, name: str, *, clone_from: str | None, clone_
                 log.debug("seed_profile_skills unavailable")
             except Exception:  # noqa: BLE001
                 log.warning("Bundled skills could not be seeded for profile %s", name, exc_info=True)
-    return profile_dir
+    return profile_dir, None
 
 
 def delete_profile(base_home: Path, name: str) -> None:
@@ -401,17 +469,18 @@ def runtime_env(home: Path, protected_keys: set[str]) -> dict[str, str]:
 def register(registry) -> None:
     @registry.method("profiles.list")
     def list_(ctx: CallContext, params: dict) -> dict:
-        return {"profiles": list_profiles(profile_home_param(params, "base_home"))}
+        return {"profiles": list_profiles(profile_home_param(params, "base_home")), "inherit_credentials": native_provision() is not None}
 
     @registry.method("profiles.create")
     def create(ctx: CallContext, params: dict) -> dict:
         base = profile_home_param(params, "base_home")
         name = str(params.get("name") or "").strip()
-        path = create_profile(base, name, clone_from=params.get("clone_from"), clone_config=bool(params.get("clone_config", False)))
+        path, provisioning = create_profile(base, name, clone_from=params.get("clone_from"), clone_config=bool(params.get("clone_config", False)),
+                                            inherit_credentials=params.get("inherit_credentials") is True)
         invalidate_skill_stats(path)
         rows = list_profiles(base)
         row = next((r for r in rows if r["name"] == name), None) or _row(path, name, False)
-        return {"profile": row}
+        return {"profile": row, "provisioning": provisioning}
 
     @registry.method("profiles.set_meta")
     def set_meta(ctx: CallContext, params: dict) -> dict:

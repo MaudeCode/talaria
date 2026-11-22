@@ -3542,6 +3542,10 @@
         "single_profile_mode": {
           "type": "boolean"
         },
+        "inherit_credentials_available": {
+          "description": "TAL-2656: this Agent can share the main profile's keys and accounts with a new profile, so a create may send `inherit_credentials`; false on an older Agent.",
+          "type": "boolean"
+        },
         "summary": {
           "description": "TAL-2143: Settings › Profiles' figures, counted over profiles whose `visible` is not false, and the active profile's display name, else its name.",
           "type": "object",

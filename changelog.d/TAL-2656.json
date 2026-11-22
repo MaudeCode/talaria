@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "When you create a profile, you can share the main profile's API keys, logins and model with it, and see any setup step that did not finish.",
+      "highlight": false,
+      "components": ["web"],
+      "announcement": {
+        "title": "Share keys with new profiles",
+        "description": "Start a new profile with the main profile's API keys, logins and model already set up.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

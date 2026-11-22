@@ -291,7 +291,7 @@ def test_an_invalidated_walk_never_publishes(tmp_path: Path, agent: _Agent, monk
     monkeypatch.setitem(sys.modules, "talaria_sidecar.methods.chat", chat)
     # The Agent's lifecycle helpers are replaced; the handlers' cache invalidation is what runs for real.
     monkeypatch.setattr(profiles, "delete_profile", lambda base, name: shutil.rmtree(base / "profiles" / name))
-    monkeypatch.setattr(profiles, "create_profile", lambda base, name, **kw: (base / "profiles" / name).mkdir() or base / "profiles" / name)
+    monkeypatch.setattr(profiles, "create_profile", lambda base, name, **kw: ((base / "profiles" / name).mkdir() or base / "profiles" / name, None))
     base = tmp_path / "hermes"
     old = base / "profiles" / "alpha"
     _skills(old, 5)

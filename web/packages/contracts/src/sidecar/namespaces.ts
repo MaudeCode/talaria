@@ -239,8 +239,17 @@ export const ProfileRowSchema = z.object({
 })
 export const PROFILES_METHODS = {
   'profiles.import': { params: ProfileHomeParams.extend({ action: z.enum(['discover', 'preview', 'apply', 'result']), agent: AgentImportSourceSchema.optional(), export_text: z.string().min(1).max(AGENT_IMPORT_EXPORT_MAX_CHARS).optional(), receipt: z.string().min(1).max(128).optional() }), result: AgentImportResultSchema },
-  'profiles.list': { params: BaseHomeParams, result: z.object({ profiles: z.array(ProfileRowSchema) }) },
-  'profiles.create': { params: BaseHomeParams.extend({ name: z.string().min(1), clone_from: z.string().nullable().optional(), clone_config: z.boolean().optional() }), result: z.object({ profile: ProfileRowSchema }) },
+  /** TAL-2656: `inherit_credentials` is whether this Agent's `provision_profile` can share the launch profile's keys and accounts with a new profile. */
+  'profiles.list': { params: BaseHomeParams, result: z.object({ profiles: z.array(ProfileRowSchema), inherit_credentials: z.boolean().default(false) }) },
+  /**
+   * TAL-2656: on an Agent with `provision_profile`, one create through it, with `provisioning` naming its post-create
+   * warnings (the profile exists) and, with `inherit_credentials`, what it carried over. Null on an older Agent, which
+   * refuses `inherit_credentials`.
+   */
+  'profiles.create': {
+    params: BaseHomeParams.extend({ name: z.string().min(1), clone_from: z.string().nullable().optional(), clone_config: z.boolean().optional(), inherit_credentials: z.boolean().optional() }),
+    result: z.object({ profile: ProfileRowSchema, provisioning: z.object({ warnings: z.array(z.string()), inherited: z.array(z.string()) }).nullable().default(null) }),
+  },
   'profiles.delete': { params: BaseHomeParams.extend({ name: z.string().min(1) }), result: z.object({ ok: z.literal(true) }) },
   /** TAL-2093: write the profile's own `display_name` (empty clears it) and `description` through the Agent's `write_profile_meta`; omitted fields stay. `name` is `default` for the root profile. */
   'profiles.set_meta': { params: BaseHomeParams.extend({ name: z.string().min(1), display_name: z.string().optional(), description: z.string().optional() }), result: z.object({ profile: ProfileRowSchema }) },

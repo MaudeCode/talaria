@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_profile_provision.py::test_real_agent_shares_keys_only_when_asked": {
+      "layer": "compatibility",
+      "reason": "TAL-2656: the supported Agent's real profile create (provision_profile where the release has it, the core create before it) decides which keys, logins, bot tokens and model a new profile holds in a disposable home; synthetic fakes cannot prove that credential isolation. The sidecar keeps lazy installs off, so the native default-plugin installer never fetches.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_agent_tool_presentations.py::test_every_registered_agent_tool_has_a_presentation": {
       "layer": "compatibility",
       "reason": "The supported Agent's real tool registry (a model_tools import in a disposable home) must match the Talaria presentation table, so an Agent release that adds or drops a tool fails before its pin lands. A separate Agent interpreter loads the registry; no network or providers.",

@@ -1132,6 +1132,10 @@
                             "single_profile_mode": {
                               "type": "boolean"
                             },
+                            "inherit_credentials_available": {
+                              "type": "boolean",
+                              "description": "TAL-2656: this Agent can share the main profile's keys and accounts with a new profile, so a create may send `inherit_credentials`; false on an older Agent."
+                            },
                             "summary": {
                               "type": "object",
                               "properties": {
@@ -122649,6 +122653,10 @@
                     "single_profile_mode": {
                       "type": "boolean"
                     },
+                    "inherit_credentials_available": {
+                      "type": "boolean",
+                      "description": "TAL-2656: this Agent can share the main profile's keys and accounts with a new profile, so a create may send `inherit_credentials`; false on an older Agent."
+                    },
                     "summary": {
                       "type": "object",
                       "properties": {
@@ -122897,6 +122905,10 @@
                     "single_profile_mode": {
                       "type": "boolean"
                     },
+                    "inherit_credentials_available": {
+                      "type": "boolean",
+                      "description": "TAL-2656: this Agent can share the main profile's keys and accounts with a new profile, so a create may send `inherit_credentials`; false on an older Agent."
+                    },
                     "summary": {
                       "type": "object",
                       "properties": {
@@ -123017,6 +123029,10 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "inherit_credentials": {
+                    "type": "boolean",
+                    "description": "TAL-2656: share the main profile's API keys, logins and model with the new profile (default false). Refused with 400 where `inherit_credentials_available` is false."
                   }
                 }
               }
@@ -123157,6 +123173,28 @@
                         "name"
                       ],
                       "additionalProperties": {}
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "maxItems": 5,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      "description": "TAL-2656: setup steps that failed after the profile was created, redacted, one line each. The profile exists; a retry of the create is refused as a duplicate."
+                    },
+                    "inherited": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "keys",
+                          "logins",
+                          "model",
+                          "voice"
+                        ],
+                        "type": "string"
+                      },
+                      "description": "TAL-2656: with `inherit_credentials`, what the profile took from the main profile."
                     }
                   },
                   "required": [

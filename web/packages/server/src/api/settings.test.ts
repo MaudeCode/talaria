@@ -1,4 +1,4 @@
-import { OUTSIDE_SOURCE_SETTING_KEYS } from '@maudecode/talaria-web-contracts'
+import { OUTSIDE_SOURCE_SETTING_KEYS, ProfileCreateResultSchema } from '@maudecode/talaria-web-contracts'
 import { useJsonStorage, useSelectedStorage } from '../test/storage.js'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -2148,6 +2148,64 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect(configs.get(home('delta'))?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
       expect(await json(await deleting)).toEqual({ ok: true, name: 'delta' })
       expect(order).toEqual(['created', 'deleted'])
+    })
+
+    it('TAL-2656: a create shares keys only when asked and answers what it inherited and bounded, redacted warnings', async () => {
+      const fixture = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/profile-create.json', import.meta.url), 'utf8')) as { request: Json; sidecar_provisioning: Json; response: Json }
+      sidecar.respond('profiles.list', () => ({ profiles: [row('default', { path: s.state, is_default: true })] as never, inherit_credentials: true }))
+      s.deps.profiles.invalidate()
+      expect((await json(await s.get('/api/profiles'))).inherit_credentials_available).toBe(true)
+      sidecar.respond('profiles.create', (params) => ({ ...created(params.name), provisioning: fixture.sidecar_provisioning as never }))
+      const res = await post(s, '/api/profile/create', fixture.request)
+      expect(res.status).toBe(200)
+      const body = await json(res)
+      expect(sidecar.calls.findLast((c) => c.method === 'profiles.create')?.params).toMatchObject(fixture.request)
+      expect({ warnings: body.warnings, inherited: body.inherited }).toEqual(fixture.response)
+      expect(ProfileCreateResultSchema.safeParse(body).success).toBe(true)
+      sidecar.respond('profiles.create', (params) => ({ ...created(params.name), provisioning: { warnings: [], inherited: ['keys', 'model'] } }))
+      const picked = await json(await post(s, '/api/profile/create', { name: 'picked', inherit_credentials: true, default_model: '@anthropic:claude-sonnet-4-6', model_provider: 'anthropic' }))
+      expect(picked.inherited, 'an explicit model replaces the inherited one').toEqual(['keys'])
+      sidecar.respond('profiles.create', (params) => created(params.name))
+      const plain = await json(await post(s, '/api/profile/create', { name: 'plain2' }))
+      expect(sidecar.calls.findLast((c) => c.method === 'profiles.create')?.params).not.toHaveProperty('inherit_credentials')
+      expect(plain).not.toHaveProperty('warnings')
+      expect(plain).not.toHaveProperty('inherited')
+    })
+
+    it('TAL-2656: a create whose answer was lost after the home was made keeps the profile and warns, without a second create', async () => {
+      const call = vi.spyOn(sidecar, 'call')
+      // As `SidecarClient` after an exit: restarting, so every later call is refused until it is ready again.
+      const exit = (params: { name: string }) => { mkdirSync(home(params.name), { recursive: true }); sidecar.status = 'restarting'; throw new SidecarError('sidecar exited', { condition: 'sidecar_unavailable' }) }
+      sidecar.respond('profiles.create', exit)
+      const creates = () => sidecar.calls.filter((c) => c.method === 'profiles.create').length
+      const before = creates()
+      try {
+        const res = await post(s, '/api/profile/create', { name: 'lost' })
+        expect(call.mock.calls.find(([method]) => method === 'profiles.create')?.[2], 'no client timeout cuts a create that is still provisioning short').toEqual({ timeoutMs: 0 })
+        expect(res.status).toBe(200)
+        const body = await json(res)
+        expect((body.profile as Json).name).toBe('lost')
+        expect(body.warnings).toEqual(['The profile was created, but its setup did not report back: sidecar exited'])
+        // Requested settings cannot be written while the sidecar restarts: the answer says to retry, and the retry applies
+        // them to the profile already made instead of creating it again.
+        sidecar.status = 'ready'
+        sidecar.respond('profiles.create', exit)
+        const pending = await post(s, '/api/profile/create', { name: 'keyed', api_key: 'sk-synthetic-key' })
+        expect(pending.status).toBe(500)
+        expect(String((await json(pending)).error)).toContain('retry the create to apply the settings')
+        sidecar.status = 'ready'
+        expect((await post(s, '/api/profile/create', { name: 'keyed', api_key: 'sk-synthetic-key' })).status).toBe(200)
+        expect(creates() - before, 'neither the lost create nor its retry ran a second sidecar create').toBe(2)
+      } finally {
+        sidecar.status = 'ready'
+        call.mockRestore()
+      }
+      // Any other failure is the sidecar's answer, never a lost one, even with the home on disk.
+      sidecar.respond('profiles.create', (params) => { mkdirSync(home(params.name), { recursive: true }); throw new SidecarError('disk full', { condition: 'sidecar_error' }) })
+      expect((await post(s, '/api/profile/create', { name: 'answered' })).status).toBe(400)
+      // A refused create that made nothing stays a refusal.
+      sidecar.respond('profiles.create', () => { throw new Error('This Hermes Agent cannot share keys and accounts with a new profile.') })
+      expect((await post(s, '/api/profile/create', { name: 'refused', inherit_credentials: true })).status).toBe(400)
     })
 
     // The deletion tombstone survives a failed recreation: a stale-cookie write is still refused afterwards, and only

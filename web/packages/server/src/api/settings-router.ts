@@ -525,7 +525,7 @@ export async function profileList(deps: AppDeps) {
     uses_default_model: !str(p.model) && !str(p.provider),
     name_differs: !!str(p.display_name) && str(p.display_name) !== str(p.name),
   }))
-  return { profiles: rows as never[], active, single_profile_mode: deps.isolatedProfileMode(), summary }
+  return { profiles: rows as never[], active, single_profile_mode: deps.isolatedProfileMode(), inherit_credentials_available: deps.profiles.canInheritCredentials(), summary }
 }
 
 export const settingsRouter = os.router({
@@ -574,8 +574,8 @@ export const settingsRouter = os.router({
       if (cloneFrom !== null && !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(cloneFrom)) throw new HttpError(400, 'Invalid clone_from name')
       const baseUrl = str(input.base_url).trim() || null
       if (baseUrl && !/^https?:\/\//.test(baseUrl)) throw new HttpError(400, 'base_url must start with http:// or https://')
-      const profile = await ctx.deps.profiles.create({ name, clone_from: cloneFrom, clone_config: pyBool(input.clone_config), base_url: baseUrl, api_key: str(input.api_key).trim() || null, default_model: str(input.default_model).trim() || null, model_provider: str(input.model_provider).trim() || null })
-      return { ok: true as const, profile: profile as never }
+      const created = await ctx.deps.profiles.create({ name, clone_from: cloneFrom, clone_config: pyBool(input.clone_config), base_url: baseUrl, api_key: str(input.api_key).trim() || null, default_model: str(input.default_model).trim() || null, model_provider: str(input.model_provider).trim() || null, inherit_credentials: input.inherit_credentials === true })
+      return { ok: true as const, profile: created.profile as never, ...(created.warnings.length ? { warnings: created.warnings } : {}), ...(created.inherited.length ? { inherited: created.inherited } : {}) }
     })),
     update: os.profiles.update.handler(({ input, context: { ctx } }) => run(async () => {
       if (!(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage profiles')

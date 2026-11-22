@@ -9,7 +9,8 @@ import type { DocumentBackend } from '../sessions/storage/backend.js'
 import { updateDocument } from '../sessions/storage/document.js'
 import { join, resolve } from 'node:path'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX, PROFILE_ID_RE, RPC_ERROR_CODES } from '@maudecode/talaria-web-contracts'
+import { PROFILE_CREATE_WARNING_CHARS, PROFILE_CREATE_WARNINGS_MAX, PROFILE_DESCRIPTION_MAX, PROFILE_DISPLAY_NAME_MAX, PROFILE_ID_RE, ProfileInheritedSchema, RPC_ERROR_CODES, type ProfileInherited } from '@maudecode/talaria-web-contracts'
+import { redactSensitive } from '../redact.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
 import { dict, modelSection, parseProviderQualifiedModel, providerIdentity } from '../config/agent-config.js'
 import { writeProfileEnv } from '../providers/env-file.js'
@@ -45,6 +46,12 @@ export const PROFILE_AVATAR_MAX_BYTES = 2 * 1024 * 1024
 /** TAL-2176: where a row the Agent saw an avatar for loads it; rows without one carry no URL. */
 function withAvatarUrl(row: Dict): Dict {
   return row.has_avatar === true ? { ...row, avatar_url: `./api/profile/avatar?name=${encodeURIComponent(str(row.name))}` } : row
+}
+
+/** TAL-2656: a create's warnings as the client shows them: redacted, one line each, at most the contract's count and length. */
+function boundedWarnings(warnings: string[]): string[] {
+  return warnings.map((w) => redactSensitive(w).replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, PROFILE_CREATE_WARNINGS_MAX)
+    .map((w) => w.length > PROFILE_CREATE_WARNING_CHARS ? `${w.slice(0, PROFILE_CREATE_WARNING_CHARS - 1)}…` : w)
 }
 
 export const escapedProfileMessage = (name: string): string => `Profile '${name}' resolves outside the profiles directory.`
@@ -92,6 +99,8 @@ export function pendingWrites(home: string): number {
 
 export class ProfileService {
   private cache: { at: number; rows: Dict[] } | null = null
+  /** TAL-2656: the last `profiles.list` said this Agent's `provision_profile` can share keys and accounts with a new profile. */
+  private inheritCredentials = false
 
   constructor(private readonly deps: ProfileDeps, private readonly now: () => number = () => Date.now() / 1000) {
   }
@@ -141,12 +150,19 @@ export class ProfileService {
     let rows: Dict[]
     if (this.cache && this.now() - this.cache.at < 5) rows = this.cache.rows
     else {
-      rows = (await this.sidecar().call('profiles.list', { base_home: this.deps.baseHome })).profiles.map((r) => ({ ...r }))
+      const listed = await this.sidecar().call('profiles.list', { base_home: this.deps.baseHome })
+      rows = listed.profiles.map((r) => ({ ...r }))
+      this.inheritCredentials = listed.inherit_credentials
       this.cache = { at: this.now(), rows }
       this.rootAliases = new Set(rows.filter((r) => r.is_default === true && typeof r.name === 'string' && r.name).map((r) => r.name as string))
       this.rootAliasesLoaded = true
     }
     return rows.map((r) => ({ ...withAvatarUrl(r), is_active: str(r.name) === active, pending_writes: pendingWrites(str(r.path)) }))
+  }
+
+  /** TAL-2656: whether a create may share the main profile's keys and accounts, as the last `list` learned it; never in isolated profile mode. */
+  canInheritCredentials(): boolean {
+    return !this.deps.isolatedProfileMode() && this.inheritCredentials
   }
 
   async displayName(profile: string): Promise<string | null> {
@@ -243,7 +259,11 @@ export class ProfileService {
     })
   }
 
-  async create(opts: { name: string; clone_from?: string | null; clone_config?: boolean; base_url?: string | null; api_key?: string | null; default_model?: string | null; model_provider?: string | null }): Promise<Dict> {
+  /**
+   * TAL-2656: `warnings` are the Agent's post-create steps that failed (the profile exists), redacted and bounded, and
+   * `inherited` what `inherit_credentials` carried over from the main profile.
+   */
+  async create(opts: { name: string; clone_from?: string | null; clone_config?: boolean; base_url?: string | null; api_key?: string | null; default_model?: string | null; model_provider?: string | null; inherit_credentials?: boolean }): Promise<{ profile: Dict; warnings: string[]; inherited: ProfileInherited[] }> {
     if (this.deps.isolatedProfileMode()) throw new ProfileError('Profile creation is not allowed in isolated profile mode.', 403)
     validateProfileName(opts.name)
     this.assertContained(opts.name)
@@ -258,7 +278,9 @@ export class ProfileService {
         throw new ProfileError(`Selected model provider '${provider}' is not available`, 400)
       }
     }
-    const params = { base_home: this.deps.baseHome, name: opts.name, ...(opts.clone_from ? { clone_from: opts.clone_from } : {}), clone_config: Boolean(opts.clone_config) }
+    const params = { base_home: this.deps.baseHome, name: opts.name, ...(opts.clone_from ? { clone_from: opts.clone_from } : {}), clone_config: Boolean(opts.clone_config), ...(opts.inherit_credentials ? { inherit_credentials: true } : {}) }
+    const warnings: string[] = []
+    const inherited: ProfileInherited[] = []
     // The clone source is read by the sidecar during creation: hold a write lease on it so its deletion waits (and
     // a source already being deleted / deleted is refused before anything is created).
     let releaseSource: (() => void) | null = null
@@ -277,10 +299,21 @@ export class ProfileService {
       if ((this.deleted.has(opts.name) || this.incomplete.has(opts.name)) && isDir(home)) {
         row = { name: opts.name, path: home }
       } else {
+        const existed = isDir(home)
         try {
-          row = (await this.sidecar().call('profiles.create', params)).profile
+          // No client timeout: a timed-out call leaves the sidecar provisioning, so the home's existence would not mean the
+          // create had settled. Only a sidecar that exited loses the answer, and then provisioning has stopped with it.
+          const result = await this.sidecar().call('profiles.create', params, { timeoutMs: 0 })
+          row = result.profile
+          warnings.push(...(result.provisioning?.warnings ?? []))
+          for (const item of result.provisioning?.inherited ?? []) { const parsed = ProfileInheritedSchema.safeParse(item); if (parsed.success) inherited.push(parsed.data) }
         } catch (error) {
-          throw new ProfileError(str((error as Error).message), 400)
+          // A create whose answer was lost because the sidecar exited after making the home still made the profile:
+          // carry on configuring it and say so, rather than answering a failure a retry would turn into a duplicate.
+          const lost = error instanceof SidecarError && error.condition === 'sidecar_unavailable'
+          if (!lost || existed || !isDir(home)) throw new ProfileError(str((error as Error).message), 400)
+          row = { name: opts.name, path: home }
+          warnings.push(`The profile was created, but its setup did not report back: ${str((error as Error).message)}`)
         }
       }
       this.invalidate()
@@ -315,8 +348,13 @@ export class ProfileService {
       if (this.deleted.has(opts.name)) (await this.clearTombstoneDurably(opts.name))
       return row
     }).finally(() => { releaseSource?.() })
-    const rows = await this.list('default')
-    return rows.find((r) => str(r.name) === opts.name) ?? { ...withAvatarUrl(created), is_active: false }
+    // The profile exists from here on: a sidecar still restarting after a lost answer cannot list it yet, so the created
+    // row stands in rather than answering a failure a retry would turn into a duplicate.
+    let rows: Dict[] = []
+    try { rows = await this.list('default') } catch { rows = [] }
+    const profile = rows.find((r) => str(r.name) === opts.name) ?? { ...withAvatarUrl(created), is_active: false }
+    // An explicit model pick replaced the inherited one, so the profile did not take the main profile's model.
+    return { profile, warnings: boundedWarnings(warnings), inherited: model || provider ? inherited.filter((item) => item !== 'model') : inherited }
   }
 
   /** Per-profile lifecycle chain: creation (+ its configuration) and deletion of one name never overlap. */

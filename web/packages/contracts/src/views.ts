@@ -1263,9 +1263,21 @@ export const ProfileSchema = z.looseObject({
 })
 export const ProfilesSchema = z.looseObject({
   profiles: z.array(ProfileSchema), active: z.string(), single_profile_mode: z.boolean().optional(),
+  inherit_credentials_available: z.boolean().optional().describe('TAL-2656: this Agent can share the main profile\'s keys and accounts with a new profile, so a create may send `inherit_credentials`; false on an older Agent.'),
   summary: z.object({ total: z.number().int(), gateways_running: z.number().int(), active_name: z.string() }).optional().describe('TAL-2143: Settings › Profiles\' figures, counted over profiles whose `visible` is not false, and the active profile\'s display name, else its name.'),
 })
 export type Profiles = z.infer<typeof ProfilesSchema>
+/** TAL-2656: what a create that shared the main profile's keys and accounts carried over. */
+export const ProfileInheritedSchema = z.enum(['keys', 'logins', 'model', 'voice'])
+export type ProfileInherited = z.infer<typeof ProfileInheritedSchema>
+/** TAL-2656: the most warnings a create answers, and the most characters of each. */
+export const PROFILE_CREATE_WARNINGS_MAX = 5
+export const PROFILE_CREATE_WARNING_CHARS = 300
+export const ProfileCreateResultSchema = z.object({
+  ok: z.literal(true), profile: ProfileSchema,
+  warnings: z.array(z.string().max(PROFILE_CREATE_WARNING_CHARS)).max(PROFILE_CREATE_WARNINGS_MAX).optional().describe('TAL-2656: setup steps that failed after the profile was created, redacted, one line each. The profile exists; a retry of the create is refused as a duplicate.'),
+  inherited: z.array(ProfileInheritedSchema).optional().describe('TAL-2656: with `inherit_credentials`, what the profile took from the main profile.'),
+})
 export const ActiveProfileSchema = z.looseObject({ name: z.string(), path: z.string().optional(), is_default: z.boolean().optional(), default_workspace: NullableString.optional() })
 export const ProfileSwitchSchema = ProfilesSchema.extend({ is_default: z.boolean(), default_model: Json, default_model_provider: Json, default_workspace: z.string().nullable() })
 export const AuxiliaryReasoningSchema = z.looseObject({
