@@ -748,6 +748,26 @@ Nothing sends a chat command, touches a session or edits local counters. The
 shared fixture is `contracts/fixtures/codex-reset-credits.json`. This uses sidecar
 RPC version 107.
 
+## Bot Chat teammate requests
+
+`GET /api/session/bot-deliveries` (TAL-2684) lists the requests the requesting
+profile's bot sent its local teammates that they have not settled, newest first,
+for that profile's canonical Bot Chat only (its compression root or tip). The
+sidecar's `gateway.bot_deliveries` resolves the canonical Bot Chat from the
+profile's own home and, only for that chat, calls the native owner's read-only
+`bot_delivery.list` (Agent v0.23.3), which lists the connection's own profile as
+the sender. The server maps the Agent's `queued` to `queued`, `claimed` and
+`working` to `running`, and `waiting_on_you` to `waiting_on_user` with
+`waiting_on` (`clarify` or `approval`); failed deliveries are not listed, and the
+preview is redacted like the transcript. Any other chat, another profile's Bot
+Chat included, is `not_bot_chat`. An owner without the method (an older Agent) or
+one Web cannot verify is `unavailable` with `agent_unsupported`; no running
+gateway is `unavailable` with `gateway_stopped`. A transient owner failure is a
+503, so a client keeps the last list it confirmed. Nothing writes, dismisses or
+resends a delivery. Web shows the list behind a composer chip in the Bot Chat.
+The shared fixture is `contracts/fixtures/bot-deliveries.json`. This uses sidecar
+RPC version 108.
+
 ## Persistent delegation settings
 
 `GET /api/model/auxiliary` includes optional `delegation` settings. The native

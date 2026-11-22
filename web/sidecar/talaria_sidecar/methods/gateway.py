@@ -298,6 +298,11 @@ def register(registry) -> None:
         from .groups import groups
         return groups(ctx, params)
 
+    @registry.method("gateway.bot_deliveries")
+    def bot_deliveries_(ctx: CallContext, params: dict) -> dict:
+        from .bot_deliveries import bot_deliveries
+        return bot_deliveries(ctx, params)
+
     @registry.method("gateway.session")
     def session_(ctx: CallContext, params: dict) -> dict:
         from .gateway_sessions import session

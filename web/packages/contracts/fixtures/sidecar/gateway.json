@@ -255,5 +255,18 @@
         "receipt": null
       }
     }
+  ],
+  "gateway.bot_deliveries": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "<session>"
+      },
+      "result": {
+        "state": "not_bot_chat",
+        "reason": null,
+        "deliveries": []
+      }
+    }
   ]
 }

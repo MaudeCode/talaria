@@ -127,7 +127,7 @@ export function SteerForm({ sessionId, task, onClose }: { sessionId: string; tas
 }
 
 /** One background row's heading: its title, then status and actions as one group that wraps under a long title. */
-export function TaskHeading({ task, title, titleBasis = 'basis-24', children }: { task: BackgroundTask; title: ReactNode; titleBasis?: 'basis-24' | 'basis-36'; children: ReactNode }) {
+export function TaskHeading({ task, title, titleBasis = 'basis-24', children }: { task: { status: BackgroundTask['status'] | BackgroundReviewState; title: string }; title: ReactNode; titleBasis?: 'basis-24' | 'basis-36'; children: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
       <StatusIcon status={task.status} />

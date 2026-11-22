@@ -110,6 +110,8 @@ export const keys = {
   backgroundResult: (sid: string, taskId: string) => ['sessions', 'background', sid, 'result', taskId] as const,
   /** TAL-373: the Agents page's delegations; under `background(sid)`, so the same events refresh it. */
   backgroundAgents: (sid: string) => ['sessions', 'background', sid, 'agents'] as const,
+  /** TAL-2684: the canonical Bot Chat's teammate requests; under `sessions`, so a `sessions_changed` refreshes them. */
+  botDeliveries: (sid: string) => ['sessions', 'bot-deliveries', sid] as const,
   share: (token: string) => ['share', token] as const,
   streamStatus: (streamId: string) => ['stream', 'status', streamId] as const,
 }

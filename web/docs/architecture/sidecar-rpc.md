@@ -1,5 +1,8 @@
 # Sidecar RPC (TAL-245)
 
+RPC v108 adds `gateway.bot_deliveries` (TAL-2684): for a profile's canonical Bot Chat, the native owner's read-only
+`bot_delivery.list` through a closed row allowlist; any other session answers `not_bot_chat` without reaching an owner.
+
 RPC v102 adds `checkpoints.undo_changed_files` (TAL-2069): the files the turns an undo removed changed, by the
 Agent's own `/undo` hint over the profile's checkpoint store; an Agent without the hint answers an empty list.
 

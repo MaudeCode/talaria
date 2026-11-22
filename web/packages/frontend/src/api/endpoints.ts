@@ -137,6 +137,8 @@ export const fetchShowBlock = (block_id: string, signal?: AbortSignal) => orpc()
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
 export const fetchSessionSkills = (id: SessionId) => orpc().session.skills({ session_id: id })
+/** TAL-2684: the canonical Bot Chat's unsettled teammate requests; read-only. */
+export const fetchBotDeliveries = (id: SessionId) => orpc().session.botDeliveries({ session_id: id })
 /** TAL-2152: the chat's questions, one line each, with the position each one's transcript page loads from. */
 export const fetchSessionOutline = (id: SessionId, signal?: AbortSignal) => orpc().session.outline({ session_id: id }, signal ? { signal } : {})
 export const markSessionViewed = (session_id: SessionId) => orpc().talaria.viewed({ session_id })

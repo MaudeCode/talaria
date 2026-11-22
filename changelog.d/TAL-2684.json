@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A bot's Bot Chat lists the requests its teammates have not finished yet, and which ones are waiting on you.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Teammate requests",
+        "description": "See which requests your bot sent its teammates are queued, in progress or waiting on you.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

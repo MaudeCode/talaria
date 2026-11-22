@@ -1,0 +1,28 @@
+{
+  "native": {
+    "state": "available",
+    "reason": null,
+    "deliveries": [
+      { "delivery_id": "d-waiting", "target": "scout", "target_handle": "@scout", "state": "waiting_on_you", "since": 1763800200, "preview": "Which quarter should the summary cover?", "waiting_on": "clarify" },
+      { "delivery_id": "d-working", "target": "writer", "target_handle": "@writer", "state": "working", "since": 1763800100, "preview": "Draft the release announcement", "waiting_on": null },
+      { "delivery_id": "d-claimed", "target": "writer", "target_handle": "@writer", "state": "claimed", "since": 1763800050, "preview": "Proofread the changelog", "waiting_on": null },
+      { "delivery_id": "d-queued", "target": "scout", "target_handle": "@scout", "state": "queued", "since": 1763800000, "preview": "Collect the Q3 numbers", "waiting_on": null },
+      { "delivery_id": "d-failed", "target": "scout", "target_handle": "@scout", "state": "failed", "since": 1763799000, "preview": "An earlier request", "waiting_on": null }
+    ]
+  },
+  "available": {
+    "session_id": "bot-chat-tip",
+    "state": "available",
+    "reason": null,
+    "deliveries": [
+      { "delivery_id": "d-waiting", "target": "scout", "target_handle": "@scout", "state": "waiting_on_user", "waiting_on": "clarify", "since": 1763800200, "preview": "Which quarter should the summary cover?" },
+      { "delivery_id": "d-working", "target": "writer", "target_handle": "@writer", "state": "running", "waiting_on": null, "since": 1763800100, "preview": "Draft the release announcement" },
+      { "delivery_id": "d-claimed", "target": "writer", "target_handle": "@writer", "state": "running", "waiting_on": null, "since": 1763800050, "preview": "Proofread the changelog" },
+      { "delivery_id": "d-queued", "target": "scout", "target_handle": "@scout", "state": "queued", "waiting_on": null, "since": 1763800000, "preview": "Collect the Q3 numbers" }
+    ]
+  },
+  "empty": { "session_id": "bot-chat-tip", "state": "available", "reason": null, "deliveries": [] },
+  "unavailable": { "session_id": "bot-chat-tip", "state": "unavailable", "reason": "agent_unsupported", "deliveries": [] },
+  "gateway_stopped": { "session_id": "bot-chat-tip", "state": "unavailable", "reason": "gateway_stopped", "deliveries": [] },
+  "not_bot_chat": { "session_id": "bot-chat-tip", "state": "not_bot_chat", "reason": null, "deliveries": [] }
+}
