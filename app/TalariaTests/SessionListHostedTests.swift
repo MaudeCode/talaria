@@ -2487,9 +2487,11 @@ extension RegularSplitHostedTests {
         }
     }
 
-    /// The composer's editor as the window draws it.
+    /// The composer as the window draws it: its editor, or the collapsed "Message" shell an unfocused empty composer shows
+    /// in its place, which has no text view (TAL-2695).
     private func composerFrame(in window: UIWindow) -> CGRect? {
         window.firstView(ofType: UITextView.self) { $0.isEditable && !$0.isHidden }.map { $0.convert($0.bounds, to: window) }
+            ?? HostedAccessibility.element(in: window, label: "Message")?.accessibilityFrame
     }
 
     /// TAL-1539: with Open the Agent's File Automatically off, a chat opens without its page until the button.
