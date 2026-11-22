@@ -1,7 +1,7 @@
 import { ProviderQuotaPace } from '../settings/ProviderQuotaPace'
 import { useRef, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
-import { ChevronDown, Cpu, Brain, Gauge, Wrench, FolderOpen, GitBranch, Settings, Shield } from 'lucide-react'
+import { ChevronDown, Cpu, Brain, Gauge, Wrench, FolderOpen, GitBranch, Settings, Shield, Zap } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import { useContextDetailQuery, useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
@@ -20,7 +20,7 @@ import { Segmented } from '../../ui/Segmented'
 import { useSettingField } from '../settings/useSettingField'
 import { useLocale } from '../../i18n/useLocale'
 import { formatDurationUnits, formatElapsed, formatPercent, resetTime } from '../../i18n/units'
-import type { ContextWindowSource, ExecutionMode, ExecutionModes, PromptCacheWindow } from '@maudecode/talaria-web-contracts'
+import type { ContextWindowSource, ExecutionMode, ExecutionModes, PromptCacheWindow, ReasoningStatus } from '@maudecode/talaria-web-contracts'
 import type { z } from 'zod'
 import type { ProviderQuotasSchema } from '../../contracts'
 
@@ -30,9 +30,12 @@ import type { ProviderQuotasSchema } from '../../contracts'
  * target of `Menu`'s trigger, so every other prop (Base UI's aria attributes, handlers, ref) is spread onto the button.
  * `readOnly` shows a value the server froze: the same chip as text, with no chevron or hover. `tooltip` replaces `title` as
  * the hover text only, such as a full name the chip truncates; the accessible name stays `title: label`. `chevron={false}`
- * is a chip that navigates rather than opening a menu.
+ * is a chip that navigates rather than opening a menu. `badge` is a second value after the label, such as the speed beside an
+ * effort (TAL-1423): its icon shows, and its words, when it has any, join the tooltip and the accessible name.
  */
-export function Chip({ icon, label, title, tooltip = title, className, disabled, row, size = 'sm', id, readOnly, chevron = true, ...rest }: { icon: React.ReactNode; label: string; title: string; tooltip?: string; className?: string; disabled?: boolean; row?: boolean | undefined; size?: 'sm' | 'xs'; id?: string | undefined; readOnly?: boolean; chevron?: boolean } & Omit<React.ComponentProps<'button'>, 'title' | 'className' | 'disabled' | 'id'>) {
+export function Chip({ icon, label, title, tooltip = title, className, disabled, row, size = 'sm', id, readOnly, chevron = true, badge, ...rest }: { icon: React.ReactNode; label: string; title: string; tooltip?: string; className?: string; disabled?: boolean; row?: boolean | undefined; size?: 'sm' | 'xs'; id?: string | undefined; readOnly?: boolean; chevron?: boolean; badge?: { icon: React.ReactNode; label?: string | undefined } | undefined } & Omit<React.ComponentProps<'button'>, 'title' | 'className' | 'disabled' | 'id'>) {
+  const name = badge?.label ? `${title}: ${label}, ${badge.label}` : `${title}: ${label}`
+  if (badge?.label) tooltip = `${tooltip} · ${badge.label}`
   const sized = size === 'sm' ? 'h-7 max-w-[240px] gap-1.5 px-2.5 text-[13px] font-medium' : 'h-6 max-w-[220px] gap-1 px-1.5 text-xs font-normal'
   if (readOnly) {
     return (
@@ -44,16 +47,17 @@ export function Chip({ icon, label, title, tooltip = title, className, disabled,
   }
   if (row) {
     return (
-      <button type="button" {...rest} id={id} disabled={disabled} title={title} aria-label={`${title}: ${label}`} className="composer-mobile-config-action">
+      <button type="button" {...rest} id={id} disabled={disabled} title={title} aria-label={name} className="composer-mobile-config-action">
         {icon}
-        <span className="composer-mobile-config-copy"><span className="composer-mobile-config-kicker">{title}</span><span className="composer-mobile-config-value">{label}</span></span>
+        <span className="composer-mobile-config-copy"><span className="composer-mobile-config-kicker">{title}</span><span className="composer-mobile-config-value inline-flex items-center gap-1">{label}{badge?.icon}</span></span>
       </button>
     )
   }
   return (
-    <button type="button" {...rest} id={id} disabled={disabled} title={tooltip} aria-label={`${title}: ${label}`} className={cn('composer-chip inline-flex shrink-0 items-center whitespace-nowrap rounded-(--control-radius) border border-(--chip-border) bg-(--chip-bg) text-(--chip-fg) outline-none hover:border-(--chip-hover-border) hover:bg-(--chip-hover-bg) hover:text-(--chip-hover-fg) data-[popup-open]:bg-(--chip-hover-bg) data-[popup-open]:text-(--chip-hover-fg) focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:pointer-events-none disabled:opacity-60', sized, className)}>
+    <button type="button" {...rest} id={id} disabled={disabled} title={tooltip} aria-label={name} className={cn('composer-chip inline-flex shrink-0 items-center whitespace-nowrap rounded-(--control-radius) border border-(--chip-border) bg-(--chip-bg) text-(--chip-fg) outline-none hover:border-(--chip-hover-border) hover:bg-(--chip-hover-bg) hover:text-(--chip-hover-fg) data-[popup-open]:bg-(--chip-hover-bg) data-[popup-open]:text-(--chip-hover-fg) focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:pointer-events-none disabled:opacity-60', sized, className)}>
       {icon}
       <span className="truncate">{label}</span>
+      {badge?.icon}
       {chevron && <ChevronDown size={12} className="-me-0.5 shrink-0 opacity-50" aria-hidden="true" />}
     </button>
   )
@@ -225,14 +229,52 @@ const REASONING_LEVEL_LABEL = new Map<string, () => string>([
 /** TAL-2097: a server effort id in words; an id without a message shows as sent. The id itself is what is sent back. */
 export const reasoningLevelLabel = (level: string) => REASONING_LEVEL_LABEL.get(level)?.() ?? level
 
-/** `defaultLabel` names what no saved level falls back to (the auxiliary delegation slot inherits its parent's, TAL-1285). */
-export function ReasoningChip({ value, levels, onChange, row, defaultLabel = m.reasoning_default() }: { value: string | null; levels: string[] | undefined; onChange: (level: string | null) => void; row?: boolean; defaultLabel?: string }) {
-  const options = levels?.length ? ['default', ...levels] : [...EFFORTS]
+type SpeedTier = NonNullable<ReasoningStatus['supported_speed_tiers']>[number]
+export type ServiceTier = SpeedTier['service_tier']
+/** A server speed tier in words: Anthropic's Fast and OpenAI's Priority both read as Fast. Shared with Settings › Models. */
+export const speedTierLabel = (tier: Pick<SpeedTier, 'id'>) => tier.id === 'standard' ? m.settings_model_speed_standard() : tier.id === 'ultrafast' ? m.settings_model_speed_ultrafast() : m.settings_model_speed_fast()
+/** TAL-1423: one bolt for Fast, a bolt with an outlined echo for Ultrafast; Standard has none. */
+function SpeedBolt({ tier }: { tier: ServiceTier }) {
+  if (tier === 'default') return null
   return (
-    <ComposerMenu label={m.composer_control_reasoning()} trigger={<Chip id={row ? undefined : "composerReasoningChip"} icon={<Brain size={16} aria-hidden="true" />} label={value === null ? defaultLabel : reasoningLevelLabel(value)} title={m.composer_control_reasoning()} row={row} className="composer-reasoning-chip" />}>
-      <MenuRadioGroup value={value ?? 'default'} onValueChange={(v: string) => onChange(v === 'default' ? null : v)}>
-        {options.map((o) => <MenuChoiceItem key={o} value={o}>{o === 'default' ? defaultLabel : reasoningLevelLabel(o)}</MenuChoiceItem>)}
-      </MenuRadioGroup>
+    <span className="inline-flex shrink-0 items-center text-accent-text" data-speed={tier} aria-hidden="true">
+      <Zap size={13} fill="currentColor" />
+      {tier === 'ultrafast' && <Zap size={13} className="-ms-1.5 opacity-70" />}
+    </span>
+  )
+}
+
+/** TAL-1423: a chat's speed as the server offers it: the tiers its route takes and the one it runs at. */
+export interface ChatSpeed { value: ServiceTier; tiers: SpeedTier[]; onChange: (tier: ServiceTier) => void }
+
+/**
+ * `defaultLabel` names what no saved level falls back to (the auxiliary delegation slot inherits its parent's, TAL-1285).
+ * TAL-1423, after T3 Code's traits picker: with `speed`, one chip holds the effort and speed, its menu a section each; the
+ * chip shows the effort word and a bolt while a faster tier is on. `effort={false}` is a model with speed alone.
+ */
+export function ReasoningChip({ value, levels, onChange, row, defaultLabel = m.reasoning_default(), speed, effort = true }: { value: string | null; levels: string[] | undefined; onChange: (level: string | null) => void; row?: boolean; defaultLabel?: string; speed?: ChatSpeed | undefined; effort?: boolean }) {
+  const options = levels?.length ? ['default', ...levels] : [...EFFORTS]
+  const tier = speed?.tiers.find((t) => t.service_tier === speed.value)
+  const speedName = tier ? speedTierLabel(tier) : ''
+  const title = effort ? m.composer_control_reasoning() : m.settings_model_speed()
+  const label = effort ? (value === null ? defaultLabel : reasoningLevelLabel(value)) : speedName
+  const badge = tier && tier.service_tier !== 'default' ? { icon: <SpeedBolt tier={tier.service_tier} />, label: effort ? `${m.settings_model_speed()}: ${speedName}` : undefined } : undefined
+  return (
+    <ComposerMenu label={title} trigger={<Chip id={row ? undefined : "composerReasoningChip"} icon={<Brain size={16} aria-hidden="true" />} label={label} badge={badge} title={title} row={row} className="composer-reasoning-chip" />}>
+      {effort && (
+        <MenuRadioGroup value={value ?? 'default'} onValueChange={(v: string) => onChange(v === 'default' ? null : v)}>
+          {options.map((o) => <MenuChoiceItem key={o} value={o} closeOnClick>{o === 'default' ? defaultLabel : reasoningLevelLabel(o)}</MenuChoiceItem>)}
+        </MenuRadioGroup>
+      )}
+      {effort && speed && <MenuSeparator />}
+      {speed && (
+        <MenuGroup>
+          {effort && <MenuGroupLabel>{m.settings_model_speed()}</MenuGroupLabel>}
+          <MenuRadioGroup value={speed.value} onValueChange={(v: ServiceTier) => speed.onChange(v)}>
+            {speed.tiers.map((t) => <MenuChoiceItem key={t.service_tier} value={t.service_tier} closeOnClick>{speedTierLabel(t)}<SpeedBolt tier={t.service_tier} /></MenuChoiceItem>)}
+          </MenuRadioGroup>
+        </MenuGroup>
+      )}
     </ComposerMenu>
   )
 }

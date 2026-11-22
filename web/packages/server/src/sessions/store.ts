@@ -160,7 +160,7 @@ export class SessionStore {
   }
 
   /** In-memory only until the first message is persisted (Python `new_session`). */
-  async newSession(opts: { sessionId?: string; workspace?: string | null; model?: string | null; modelProvider?: string | null; profile?: string | null; projectId?: string | null; worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null; enabledToolsets?: string[] | null; reasoningEffort?: string | null } = {}): Promise<Session> {
+  async newSession(opts: { sessionId?: string; workspace?: string | null; model?: string | null; modelProvider?: string | null; profile?: string | null; projectId?: string | null; worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null; enabledToolsets?: string[] | null; reasoningEffort?: string | null; serviceTier?: Session['service_tier'] } = {}): Promise<Session> {
     const profile = opts.profile ?? null
     const defaults = (await this.deps.defaults(profile))
     const wt = opts.worktree ?? null
@@ -174,6 +174,7 @@ export class SessionStore {
         project_id: opts.projectId ?? null,
         personality: null,
         reasoning_effort: opts.reasoningEffort !== undefined ? opts.reasoningEffort : (await this.deps.reasoningDefault?.(profile)) ?? null,
+        service_tier: opts.serviceTier ?? null,
         worktree_path: wt?.path ?? null,
         worktree_branch: wt?.branch ?? null,
         worktree_repo_root: wt?.repo_root ?? null,

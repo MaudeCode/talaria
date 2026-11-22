@@ -5,7 +5,8 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { coerceReasoningEffort, dict, effectiveReasoningEffort, isDict, type Config } from '../config/agent-config.js'
+import { chatServiceTier, coerceReasoningEffort, dict, effectiveReasoningEffort, isDict, type Config, type ServiceTier } from '../config/agent-config.js'
+import type { Session } from './session.js'
 import { BACKGROUND_TURN_PROMPT } from './background-updates.js'
 import { VALID_REASONING_EFFORTS } from '../providers/tables.js'
 import { str } from '../util.js'
@@ -59,9 +60,15 @@ export function reasoningConfigFromConfig(config: Config, provider: string | nul
   return (VALID_REASONING_EFFORTS as readonly string[]).includes(effort) ? { enabled: true, effort } : null
 }
 
-/** The config-decided `AIAgent` budgets a turn builds its agent with; `/refine` builds the same agent (TAL-902). */
-export function agentBuildParams(config: Config, source: string, provider: string | null, env: Record<string, string | undefined>, reasoningEffort: string | null = null): { max_iterations: number | null; max_tokens: number | null; reasoning_config: { enabled: boolean; effort?: string } | null } {
-  return { max_iterations: processWakeupMaxIterations(maxIterationsFromConfig(config), source, env), max_tokens: maxTokensFromConfig(config), reasoning_config: reasoningConfigFromConfig(config, provider, [], reasoningEffort) }
+/**
+ * The config-decided `AIAgent` budgets a turn builds its agent with; `/refine` builds the same agent (TAL-902). `chat` is the
+ * chat's own effort (TAL-1647) and speed (TAL-1423), each `null` to inherit the profile's.
+ */
+export function agentBuildParams(config: Config, source: string, model: string | null, provider: string | null, env: Record<string, string | undefined>, chat: Pick<Session, 'reasoning_effort' | 'service_tier'>): { max_iterations: number | null; max_tokens: number | null; reasoning_config: { enabled: boolean; effort?: string } | null; service_tier: ServiceTier } {
+  return {
+    max_iterations: processWakeupMaxIterations(maxIterationsFromConfig(config), source, env), max_tokens: maxTokensFromConfig(config),
+    reasoning_config: reasoningConfigFromConfig(config, provider, [], chat.reasoning_effort), service_tier: chatServiceTier(config, chat.service_tier, model, provider),
+  }
 }
 
 /** A context value on one line: one with a line break or other control character is JSON-quoted, so it cannot add prompt lines. */

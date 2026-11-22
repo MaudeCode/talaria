@@ -131216,6 +131216,46 @@
                     },
                     "supports_session_scope": {
                       "type": "boolean"
+                    },
+                    "service_tier": {
+                      "enum": [
+                        "default",
+                        "priority",
+                        "ultrafast"
+                      ],
+                      "type": "string",
+                      "description": "TAL-1423, with session_id only: the speed this chat's turns run at now. Its own pick when its route offers it, else the profile's main-model tier when the chat runs on that model and route, else `default`."
+                    },
+                    "supported_speed_tiers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "enum": [
+                              "standard",
+                              "priority",
+                              "ultrafast",
+                              "fast"
+                            ],
+                            "type": "string"
+                          },
+                          "service_tier": {
+                            "enum": [
+                              "default",
+                              "priority",
+                              "ultrafast"
+                            ],
+                            "type": "string",
+                            "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "service_tier"
+                        ]
+                      },
+                      "description": "TAL-1423, with session_id only: the speeds a picker offers this chat, from the Agent's resolver for its turn model and route. Empty when the route has no faster tier, the Agent cannot say, or the chat cannot change speed here (a read-only or owner chat). Absent from an older server: hide the control."
                     }
                   },
                   "additionalProperties": {}
@@ -131227,7 +131267,7 @@
       },
       "post": {
         "operationId": "reasoning.set",
-        "summary": "Body is `{display: show|hide}` or `{effort, session_id?, model?, provider?, base_url?}`. TAL-1647: an effort with session_id is that chat's alone (`''` is the provider default) and answers its status as GET does; the profile default is unchanged. Read-only/native targets return 409 reasoning_unsupported and missing ones 404, without writes. Omit session_id only for explicit profile settings.",
+        "summary": "Body is `{display: show|hide}` or `{effort, session_id?, model?, provider?, base_url?}`. TAL-1647: an effort with session_id is that chat's alone (`''` is the provider default) and answers its status as GET does; the profile default is unchanged. Read-only/native targets return 409 reasoning_unsupported and missing ones 404, without writes. Omit session_id only for explicit profile settings. TAL-1423: `{service_tier, session_id}` sets that chat's speed alone, one of its `supported_speed_tiers` (else 409 speed_unsupported, nothing written; 503 when the Agent cannot say), and answers its status; the profile's `model.service_tier` is never written here.",
         "tags": [
           "settings"
         ],
@@ -131240,6 +131280,14 @@
                 "properties": {
                   "display": {},
                   "effort": {},
+                  "service_tier": {
+                    "enum": [
+                      "default",
+                      "priority",
+                      "ultrafast"
+                    ],
+                    "type": "string"
+                  },
                   "session_id": {
                     "type": "string",
                     "minLength": 1
@@ -131394,6 +131442,46 @@
                     },
                     "supports_session_scope": {
                       "type": "boolean"
+                    },
+                    "service_tier": {
+                      "enum": [
+                        "default",
+                        "priority",
+                        "ultrafast"
+                      ],
+                      "type": "string",
+                      "description": "TAL-1423, with session_id only: the speed this chat's turns run at now. Its own pick when its route offers it, else the profile's main-model tier when the chat runs on that model and route, else `default`."
+                    },
+                    "supported_speed_tiers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "enum": [
+                              "standard",
+                              "priority",
+                              "ultrafast",
+                              "fast"
+                            ],
+                            "type": "string"
+                          },
+                          "service_tier": {
+                            "enum": [
+                              "default",
+                              "priority",
+                              "ultrafast"
+                            ],
+                            "type": "string",
+                            "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "service_tier"
+                        ]
+                      },
+                      "description": "TAL-1423, with session_id only: the speeds a picker offers this chat, from the Agent's resolver for its turn model and route. Empty when the route has no faster tier, the Agent cannot say, or the chat cannot change speed here (a read-only or owner chat). Absent from an older server: hide the control."
                     }
                   },
                   "additionalProperties": {}

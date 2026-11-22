@@ -17,7 +17,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { ModelFavorite, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { configBoolean, managedAgentApprovals, managedPhoneRedaction, phoneRedaction, REDACT_PHONE_NUMBERS_KEY, setPhoneRedaction, auxiliaryModels, auxiliaryReasoning, previewAuxiliaryReasoning, compressionPrepareAhead, dict, parseProviderQualifiedModel, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
+import { configBoolean, managedAgentApprovals, managedPhoneRedaction, phoneRedaction, REDACT_PHONE_NUMBERS_KEY, setPhoneRedaction, auxiliaryModels, auxiliaryReasoning, previewAuxiliaryReasoning, compressionPrepareAhead, dict, parseProviderQualifiedModel, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, chatServiceTier, effectiveServiceTier, type SpeedTier, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -434,10 +434,27 @@ const requestedModel = (ctx: RequestContext, input: { model?: string | null | un
   const [model, provider] = ctx.deps.sessions.deps.modelStateFromRequest(input.model ?? null, input.provider ?? null, null)
   return { model, provider }
 }
-/** TAL-1647: a chat's reasoning status: its own effort, coerced for the model and provider its turns run on. */
-const chatReasoningStatus = (ctx: RequestContext, config: Dict, chat: Session) => {
+/** TAL-1423: the speeds the Agent offers a chat's turn route; none for a chat it cannot change here. `strict` refuses an unanswered lookup. */
+const chatSpeedTiers = async (ctx: RequestContext, config: Dict, chat: Session, strict = false): Promise<SpeedTier[]> => {
   const [model, provider] = ctx.deps.sessions.turnModel(chat)
-  return reasoningStatus(config, effortsResolver(ctx), { model, provider, effort: chat.reasoning_effort })
+  if (!model || await ctx.deps.sessions.isReadOnly(chat)) return []
+  const lookup = ctx.deps.agentConfig.speedTiers(home(ctx), config, [{ model, provider: provider ?? '' }]).then(([tiers]) => tiers ?? [])
+  return strict ? lookup.catch((error: unknown) => { throw new HttpError(503, String(error instanceof Error ? error.message : error)) }) : lookup.catch(() => [])
+}
+/** TAL-1647, TAL-1423: a chat's reasoning status: its own effort and speed, resolved for the model and provider its turns run on. */
+const chatReasoningStatus = async (ctx: RequestContext, config: Dict, chat: Session) => {
+  const [model, provider] = ctx.deps.sessions.turnModel(chat)
+  const [status, tiers] = await Promise.all([reasoningStatus(config, effortsResolver(ctx), { model, provider, effort: chat.reasoning_effort }), chatSpeedTiers(ctx, config, chat)])
+  return { ...status, service_tier: effectiveServiceTier(chatServiceTier(config, chat.service_tier, model, provider), tiers), supported_speed_tiers: tiers }
+}
+/** TAL-1647, TAL-1423: a chat's own effort or speed; native and other read-only chats never fall through to the profile default. */
+const setChatTraits = async (ctx: RequestContext, sid: string, traits: Parameters<RequestContext['deps']['sessions']['setChatTraits']>[1], admit?: (chat: Session) => Promise<void>) => {
+  try {
+    return await ctx.deps.sessions.setChatTraits(sid, traits, admit)
+  } catch (error) {
+    if (error instanceof HttpFailure && error.status === 403) throw new HttpError(409, `${traits.service_tier === undefined ? 'Reasoning' : 'Speed'} changes are unavailable for this conversation`, { code: traits.service_tier === undefined ? 'reasoning_unsupported' : 'speed_unsupported' })
+    throw error
+  }
 }
 
 const OAUTH_GATE_DENIED = 'Onboarding OAuth is only available from local networks when auth is not enabled. To bypass this on a remote server, set TALARIA_WEB_ONBOARDING_OPEN=1.'
@@ -708,18 +725,22 @@ export const settingsRouter = os.router({
         })
         return reasoningStatus(config, effortsResolver(ctx))
       }
+      if (input.service_tier !== undefined) {
+        // TAL-1423: a chat's speed is that chat's alone; the profile's `model.service_tier` is only written by Settings.
+        if (input.session_id === undefined) throw new HttpError(400, 'service_tier needs a session_id')
+        const tier = input.service_tier
+        const config = await ctx.deps.agentConfig.read(h)
+        const chat = await setChatTraits(ctx, input.session_id, { service_tier: tier }, async (target) => {
+          if (!(await chatSpeedTiers(ctx, config, target, true)).some((t) => t.service_tier === tier)) throw new HttpError(409, 'This speed is not available for the conversation\'s model', { code: 'speed_unsupported' })
+        })
+        return chatReasoningStatus(ctx, config, chat)
+      }
       if (input.effort !== undefined && input.effort !== null) {
         const raw = str(input.effort).trim().toLowerCase()
         if (!validReasoningEffort(raw)) throw new HttpError(400, `Unknown reasoning effort '${str(input.effort)}'. Valid: none, minimal, low, medium, high, xhigh, max, ultra.`)
         if (input.session_id !== undefined) {
           // TAL-1647: a chat's change is that chat's alone; the profile default stays as it was.
-          let chat: Session
-          try { chat = await ctx.deps.sessions.setReasoningEffort(input.session_id, raw) } catch (error) {
-            // Native and other read-only chats must never fall through to the profile default.
-            if (error instanceof HttpFailure && error.status === 403) throw new HttpError(409, 'Reasoning changes are unavailable for this conversation', { code: 'reasoning_unsupported' })
-            throw error
-          }
-          return chatReasoningStatus(ctx, await ctx.deps.agentConfig.read(h), chat)
+          return chatReasoningStatus(ctx, await ctx.deps.agentConfig.read(h), await setChatTraits(ctx, input.session_id, { reasoning_effort: raw }))
         }
         const config = await ctx.deps.agentConfig.update(h, (c) => {
           const agent = c.agent && typeof c.agent === 'object' && !Array.isArray(c.agent) ? (c.agent as Dict) : {}
@@ -729,7 +750,7 @@ export const settingsRouter = os.router({
         })
         return reasoningStatus(config, effortsResolver(ctx), { ...requestedModel(ctx, input), baseUrl: input.base_url ?? null })
       }
-      throw new HttpError(400, "reasoning: must supply 'display' or 'effort'")
+      throw new HttpError(400, "reasoning: must supply 'display', 'effort' or 'service_tier'")
     })),
   },
   personalities: {

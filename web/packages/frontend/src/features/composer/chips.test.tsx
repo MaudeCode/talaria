@@ -613,6 +613,32 @@ describe('ReasoningChip (TAL-2097)', () => {
   })
 })
 
+describe('ReasoningChip speed (TAL-1423)', () => {
+  const tiers = [{ id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' }, { id: 'ultrafast', service_tier: 'ultrafast' }] as const
+  it.each([
+    ['default', 'Reasoning effort: High', 0],
+    ['priority', 'Reasoning effort: High, Speed: Fast', 1],
+    ['ultrafast', 'Reasoning effort: High, Speed: Ultrafast', 2],
+  ] as const)('shows the effort word with a bolt only for a faster tier: %s', (tier, name, bolts) => {
+    render(<ReasoningChip value="high" levels={['low', 'high']} onChange={vi.fn()} speed={{ value: tier, tiers: [...tiers], onChange: vi.fn() }} />)
+    const chip = screen.getByRole('button', { name })
+    expect(chip).toHaveTextContent(/^High$/)
+    expect(chip.querySelectorAll('[data-speed] svg')).toHaveLength(bolts)
+  })
+
+  it('holds an Effort and a Speed section, and a choice closes the menu', async () => {
+    const onSpeed = vi.fn()
+    render(<ReasoningChip value="high" levels={['low', 'high']} onChange={vi.fn()} speed={{ value: 'default', tiers: [...tiers], onChange: onSpeed }} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Reasoning effort: High' }))
+    const menu = await screen.findByRole('menu')
+    expect(menu).toHaveTextContent(/^Reasoning effortDefaultLowHighSpeedStandardFastUltrafast$/)
+    expect(within(menu).getByRole('separator')).toBeInTheDocument()
+    await userEvent.click(within(menu).getByRole('menuitemradio', { name: 'Ultrafast' }))
+    expect(onSpeed).toHaveBeenCalledWith('ultrafast')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+  })
+})
+
 describe('ExecutionModeChip (TAL-1040)', () => {
   const renderMode = (props: Parameters<typeof ExecutionModeChip>[0]) => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })

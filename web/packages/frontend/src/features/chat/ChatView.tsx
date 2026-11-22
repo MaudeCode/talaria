@@ -13,7 +13,7 @@ import { keys } from '../../api/queryKeys'
 import { invalidateSessionQueries } from '../../api/sessionQueries'
 import { useBootstrap } from '../../app/bootstrap'
 import { useExecutionModesQuery, useProjectsQuery, useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
-import { reasoningResource, useReasoningDisplayChoice, useReasoningQuery, useSetReasoningDisplay, useSetReasoningEffort } from '../composer/reasoning'
+import { reasoningResource, speedResource, useReasoningDisplayChoice, useReasoningQuery, useSetChatSpeed, useSetReasoningDisplay, useSetReasoningEffort } from '../composer/reasoning'
 import type { Session } from '../../contracts'
 import { configureStream, cancelTurn, getStreamContext, startTurn } from '../../stream/connection'
 import { dispatch, useTurnIntent } from '../../stream/store'
@@ -26,7 +26,7 @@ import { SwapText } from '../../ui/SwapText'
 import { useSessionTitle } from '../sessions/useSessionTitle'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
 import { Composer, turnRequest, type DraftHandover } from '../composer/Composer'
-import { reasoningLevelLabel } from '../composer/chips'
+import { reasoningLevelLabel, speedTierLabel, type ChatSpeed, type ServiceTier } from '../composer/chips'
 import { composerStateId, useQueuedTurns, type QueuedTurn } from '../composer/queue'
 import { returnToComposer } from '../composer/composerReturn'
 import { ApprovalCards } from './ApprovalCard'
@@ -239,6 +239,18 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
     else sendReasoning({ key: keys.reasoning(sessionId, reasoningModel, reasoningProvider), level })
   }
   const { mutate: setReasoningDisplay } = useSetReasoningDisplay()
+  // TAL-1423: the chat's speed is its own server state on the same key; an owner chat's status carries none, so it shows no speed.
+  const speedEffect = effects[speedResource(reasoningKey)]
+  const speedTiers = session?.owner_attachment ? undefined : reasoningQuery.data?.supported_speed_tiers
+  const sendSpeed = useSetChatSpeed((status) => {
+    const tier = status.supported_speed_tiers?.find((t) => t.service_tier === status.service_tier)
+    if (tier) showToast(`${m.settings_model_speed()}: ${speedTierLabel(tier)}`)
+  }).mutate
+  const speed: ChatSpeed | undefined = sessionId && speedTiers?.length ? {
+    value: (speedEffect?.value as ServiceTier | undefined) ?? reasoningQuery.data?.service_tier ?? 'default',
+    tiers: speedTiers,
+    onChange: (tier) => { sendSpeed({ key: keys.reasoning(sessionId, reasoningModel, reasoningProvider), sid: sessionId, tier }) },
+  } : undefined
 
   // Session controls (toolsets, personality) show the choice at once; the reread of the session confirms it.
   const sessionWrite = useSessionWrite({
@@ -633,6 +645,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
           reasoning={reasoning}
           reasoningLevels={reasoningLevels}
           reasoningSupported={reasoningSupported}
+          speed={speed}
           yolo={yoloOn}
           onToggleYolo={onToggleYolo}
           queued={queued}
