@@ -5001,6 +5001,9 @@
       "ok": {
         "type": "boolean"
       },
+      "committed": {
+        "type": "boolean"
+      },
       "refused": {
         "type": "string",
         "enum": [
@@ -5016,7 +5019,8 @@
       }
     },
     "required": [
-      "ok"
+      "ok",
+      "committed"
     ],
     "additionalProperties": false
   },

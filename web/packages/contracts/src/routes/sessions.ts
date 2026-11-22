@@ -5,7 +5,7 @@ import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { ModelSelectionWarningSchema, SessionDeleteRefusedSchema } from '../sidecar-shared.js'
 import { ExecutionModesSchema, SessionHandoffRequestSchema, SessionHandoffSchema } from '../gateway-session.js'
-import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionSkillsSchema, SessionOutlineSchema, SessionFindSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivityGroupSchema, ActivitySceneRowSchema, ActivitySummarySchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
+import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionSkillsSchema, SessionOutlineSchema, SessionFindSchema, SessionDeleteResultSchema, StateDbCleanupFailedSchema, ShareReadSchema, ShareCreateResponseSchema, ActivityGroupSchema, ActivitySceneRowSchema, ActivitySummarySchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
 
@@ -70,7 +70,7 @@ export const SessionsBulkRequestSchema = z.object({
  * stops the rest.
  */
 export const SessionsBulkResultSchema = z.object({
-  results: z.array(z.object({ session_id: z.string(), ok: z.boolean(), status: z.number().int().optional(), error: z.string().optional(), state_db_cleanup_failed: z.boolean().optional(), refused: SessionDeleteRefusedSchema.optional() })),
+  results: z.array(z.object({ session_id: z.string(), ok: z.boolean(), status: z.number().int().optional(), error: z.string().optional(), state_db_cleanup_failed: StateDbCleanupFailedSchema.optional(), refused: SessionDeleteRefusedSchema.optional() })),
 })
 
 /** TAL-258: the handoff dock's body. `since` is a unix time (a numeric string is accepted); only later messages count. */

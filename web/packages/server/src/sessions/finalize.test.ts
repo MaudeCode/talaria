@@ -85,7 +85,7 @@ describe('session finalize (TAL-937)', () => {
 
   it('does not close a conversation whose deletion the Agent refuses', async () => {
     const { sidecar, server, session } = await setup()
-    sidecar.respond('state_db.delete_cli_session', () => ({ ok: false, refused: 'active_turn' }))
+    sidecar.respond('state_db.delete_cli_session', () => ({ ok: false, committed: false, refused: 'active_turn' }))
     await expect(server.deps.sessions.delete(session.session_id)).rejects.toThrow('In use by another Agent process')
     expect(sidecar.calls.filter((c) => c.method === task)).toEqual([])
   })

@@ -3755,26 +3755,28 @@ describe('chat turns through the sidecar', () => {
   it('deleting a session removes its state.db rows through the sidecar and reports the real outcome, except for messaging sessions', async () => {
     const sid = await newSession(s)
     const deletes: string[] = []
-    sidecar.respond('state_db.delete_cli_session', (params) => { deletes.push(params.session_id); return { ok: true } })
+    sidecar.respond('state_db.delete_cli_session', (params) => { deletes.push(params.session_id); return { ok: true, committed: true } })
     expect(await json(await post(s, '/api/session/delete', { session_id: sid }))).toEqual({ ok: true, state_db_cleanup_failed: false })
     expect(deletes).toEqual([sid])
-    // A failed state.db cleanup is reported, not hidden behind a hardcoded false.
+    // A committed delete whose transcript file cleanup is pending is reported, not hidden behind a hardcoded false.
     const sid2 = await newSession(s)
-    sidecar.respond('state_db.delete_cli_session', () => ({ ok: false }))
+    sidecar.respond('state_db.delete_cli_session', () => ({ ok: false, committed: true, deleted_ids: [sid2] }))
     expect(await json(await post(s, '/api/session/delete', { session_id: sid2 }))).toEqual({ ok: true, state_db_cleanup_failed: true })
     // A messaging channel's memory is never erased from the WebUI: no sidecar call, nothing reported as failed.
     const sid3 = await newSession(s)
     const tg = (await s.deps.sessionStore.get(sid3))
     tg.source_tag = 'telegram'
     await s.deps.sessionStore.save(tg)
-    sidecar.respond('state_db.delete_cli_session', (params) => { deletes.push(params.session_id); return { ok: true } })
+    sidecar.respond('state_db.delete_cli_session', (params) => { deletes.push(params.session_id); return { ok: true, committed: true } })
     expect(await json(await post(s, '/api/session/delete', { session_id: sid3 }))).toEqual({ ok: true, state_db_cleanup_failed: false })
     expect(deletes).toEqual([sid])
   })
 
-  it('keeps every cleanup side effect behind an active_turn refusal, including bulk delete', async () => {
-    const refused = 'active_turn'
-    const error = 'In use by another Agent process. Try again later.'
+  // TAL-2673: a state.db delete that did not commit refuses like a guard does; Talaria keeps its copy for a retry.
+  it.each([
+    { outcome: 'an active_turn refusal', status: 409, error: 'In use by another Agent process. Try again later.', refused: 'active_turn' as const },
+    { outcome: 'an uncommitted Agent delete', status: 503, error: 'The Agent could not delete this conversation. Try again.', refused: undefined },
+  ])('keeps every cleanup side effect behind $outcome, including bulk delete', async ({ status, error, refused }) => {
     const persisted = async (): Promise<string> => {
       const sid = await newSession(s)
       const stored = (await s.deps.sessionStore.get(sid))
@@ -3784,7 +3786,7 @@ describe('chat turns through the sidecar', () => {
     }
     const [guarded, free] = [await persisted(), await persisted()]
     const file = (sid: string): string => join(s.state, 'sessions', `${sid}.json`)
-    sidecar.respond('state_db.delete_cli_session', (params) => (params.session_id === guarded ? { ok: false, refused } : { ok: true }))
+    sidecar.respond('state_db.delete_cli_session', (params) => (params.session_id === guarded ? { ok: false, committed: false, ...(refused ? { refused } : {}) } : { ok: true, committed: true, deleted_ids: [params.session_id] }))
     const before = readFileSync(file(guarded), 'utf8')
     const attachmentDir = s.deps.sessions.deps.attachmentDir(guarded)
     mkdirSync(attachmentDir, { recursive: true })
@@ -3797,14 +3799,15 @@ describe('chat turns through the sidecar', () => {
     const relay = vi.spyOn(s.deps.sessions.deps, 'clearRelayCompletions')
     try {
       const res = await post(s, '/api/session/delete', { session_id: guarded })
-      expect(res.status).toBe(409)
-      expect(await json(res)).toEqual({ error, refused })
+      expect(res.status).toBe(status)
+      expect(await json(res)).toEqual({ error, ...(refused ? { refused } : {}) })
       expect(existsSync(file(guarded))).toBe(true)
       expect((await s.get(`/api/session?session_id=${guarded}`)).status).toBe(200)
+      expect(((await json(await s.get('/api/sessions'))).sessions as Json[]).some((row) => row.session_id === guarded)).toBe(true)
 
       const bulk = await json(await post(s, '/api/sessions/bulk', { action: 'delete', session_ids: [guarded, free] }))
       expect(bulk.results).toEqual([
-        { session_id: guarded, ok: false, status: 409, error, refused },
+        { session_id: guarded, ok: false, status, error, ...(refused ? { refused } : {}) },
         { session_id: free, ok: true, state_db_cleanup_failed: false },
       ])
       expect([existsSync(file(guarded)), existsSync(file(free))]).toEqual([true, false])
@@ -3814,7 +3817,7 @@ describe('chat turns through the sidecar', () => {
       for (const spy of [evict, terminal, journal, relay]) expect(spy.mock.calls.every(([sid]) => sid !== guarded)).toBe(true)
     } finally {
       for (const spy of [revoke, evict, terminal, journal, relay]) spy.mockRestore()
-      sidecar.respond('state_db.delete_cli_session', () => ({ ok: true }))
+      sidecar.respond('state_db.delete_cli_session', (params) => ({ ok: true, committed: true, deleted_ids: [params.session_id] }))
     }
   })
 

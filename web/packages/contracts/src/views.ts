@@ -876,7 +876,9 @@ export const ProjectSchema = z.looseObject({
   model_option_id: NullableString.optional(),
 })
 export const ProjectsSchema = z.looseObject({ projects: z.array(ProjectSchema), active_profile: z.string(), all_profiles: z.boolean(), other_profile_count: z.number().int() })
-export const SessionDeleteResultSchema = z.looseObject({ ok: z.literal(true), state_db_cleanup_failed: z.boolean().optional() })
+/** TAL-2673: an Agent delete that did not commit refuses the whole delete instead; this flag is only the pending file cleanup. */
+export const StateDbCleanupFailedSchema = z.boolean().describe('The Agent delete committed, but its transcript file cleanup did not finish; the next delete retries it.')
+export const SessionDeleteResultSchema = z.looseObject({ ok: z.literal(true), state_db_cleanup_failed: StateDbCleanupFailedSchema.optional() })
 
 // ── chat ─────────────────────────────────────────────────────────────────
 

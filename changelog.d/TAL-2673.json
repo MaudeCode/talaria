@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Deleting a conversation the agent could not delete now fails and keeps it, so you can try again.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

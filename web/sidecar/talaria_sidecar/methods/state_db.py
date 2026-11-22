@@ -323,21 +323,23 @@ class _ActiveWriteGuard(Exception):
 
 
 def _delete_locked(sid: str, home: Path) -> dict:
+    """TAL-2673: ``committed`` is true only once nothing of ``sid`` is left in state.db; the server refuses the delete
+    otherwise. ``ok`` false with ``committed`` true means only the transcript file cleanup is pending."""
     stale_complete = _process_stale_manifests(home)
     db_path = home / "state.db"
-    if not db_path.exists():
-        return {"ok": False}
+    if not db_path.exists():  # no rows to retire; a pending manifest it cannot check stays a cleanup failure
+        return {"ok": stale_complete, "committed": True, "deleted_ids": []}
     if agent_store.native():  # the branch below serves Agents before v0.23.3
         result = _delete_conversation(sid, home)
         return {**result, "ok": result["ok"] and stale_complete}
     agent_db = _legacy_session_db(home)
     if agent_db is None:
-        return {"ok": False}
+        return {"ok": False, "committed": False}
     try:
         guarded = _write_guard_check(agent_db)
         if guarded is None:  # fail closed: without the Agent's guard, a live writer's rows cannot be told apart
             log.warning("Agent has no session write-guard check; state.db rows are kept")
-            return {"ok": False}
+            return {"ok": False, "committed": False}
         from hermes_state_mutation_retirement import delete_in_transaction
 
         result = _delete_runtime_rows(sid, home, agent_db, guarded, delete_in_transaction)
@@ -385,7 +387,7 @@ def _delete_conversation(requested: str, home: Path) -> dict:
         _check_local_receipt(requested, lambda sid: getattr(db.sessions.get(sid), "chat_id", None), db.state_meta.get, members)
         reach = [sid for sid in db.runtime.delete_footprint(requested, owner=None).targets if db.sessions.get(sid) is not None]
         if not reach:
-            return {"ok": _process_stale_manifests(home), "deleted_ids": []}
+            return {"ok": _process_stale_manifests(home), "committed": True, "deleted_ids": []}
         for sid in reach:
             if not db.coordination.try_acquire_turn_lease(session_id=sid, holder=holder, ttl_seconds=_DELETE_GUARD_TTL_S):
                 raise _ActiveWriteGuard
@@ -409,8 +411,8 @@ def _delete_conversation(requested: str, home: Path) -> dict:
             collect_retired_media(db, db.scope.profile_dir)
         except Exception:  # noqa: BLE001 - committed; the manifest keeps the files for the next delete
             log.warning("Failed to collect retired session media", exc_info=True)
-            return {"ok": False, "deleted_ids": deleted_ids}
-        return {"ok": _process_stale_manifests(home), "deleted_ids": deleted_ids}
+            return {"ok": False, "committed": True, "deleted_ids": deleted_ids}
+        return {"ok": _process_stale_manifests(home), "committed": True, "deleted_ids": deleted_ids}
     finally:
         for sid in locked:
             db.coordination.release_compression_lock(session_id=sid, holder=holder)
@@ -516,8 +518,8 @@ def _delete_runtime_rows(requested: str, home: Path, agent_db, guarded, delete_i
         collect_retired_media(agent_db)
     except Exception:  # noqa: BLE001 - retirement committed; retain its targets for caller cleanup and manifest retry
         log.warning("Failed to collect retired session media", exc_info=True)
-        return {"ok": False, "deleted_ids": deleted_ids}
-    return {"ok": _process_stale_manifests(home), "deleted_ids": deleted_ids}
+        return {"ok": False, "committed": True, "deleted_ids": deleted_ids}
+    return {"ok": _process_stale_manifests(home), "committed": True, "deleted_ids": deleted_ids}
 
 
 def delete_cli_session(home: Path, sid: str) -> dict:
@@ -527,10 +529,10 @@ def delete_cli_session(home: Path, sid: str) -> dict:
         with _thread_lock(home), _process_lock(home):
             return _delete_locked(sid, home)
     except _ActiveWriteGuard:  # the uncommitted transaction rolls back on close: nothing is removed
-        return {"ok": False, "refused": "active_turn"}
-    except Exception:  # noqa: BLE001
+        return {"ok": False, "committed": False, "refused": "active_turn"}
+    except Exception:  # noqa: BLE001 - a write-lock timeout or failed manifest rolls the transaction back
         log.warning("Failed to delete CLI session %s from state.db", sid, exc_info=True)
-        return {"ok": False}
+        return {"ok": False, "committed": False}
 
 
 def prune_advice(home: Path) -> dict | None:

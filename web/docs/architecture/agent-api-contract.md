@@ -741,6 +741,14 @@ Talaria writes its transcript cleanup manifest inside the same database transact
 before commit. A manifest failure rolls back deletion and retirement. File cleanup
 runs only after commit and retries pending manifests on the next delete, including
 after a sidecar restart. Cleanup checks surviving session IDs before removing files.
+
+The sidecar reports `committed` with every delete. It is false when nothing was
+removed: a guard refusal, a rollback (a held write lock, a failed manifest), or an
+Agent store that did not open. The HTTP server then returns 503, or 409 for
+`refused`, and keeps every Talaria copy so the user can retry. A missing `state.db`
+has no rows to retire and counts as committed, as does a Web-only runtime without a
+sidecar. After a committed delete, `ok: false` means only the file cleanup is pending;
+the server finishes its own removal and answers `state_db_cleanup_failed: true`.
 The mutated state layers are the Agent database and its transcript artifacts; the
 HTTP server removes its session projection only after the sidecar's busy check.
 

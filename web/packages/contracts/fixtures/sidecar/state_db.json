@@ -71,6 +71,7 @@
       },
       "result": {
         "ok": true,
+        "committed": true,
         "deleted_ids": [
           "cli-1"
         ]
@@ -83,9 +84,8 @@
       },
       "result": {
         "ok": true,
-        "deleted_ids": [
-          "missing"
-        ]
+        "committed": true,
+        "deleted_ids": []
       }
     }
   ],

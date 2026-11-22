@@ -225,6 +225,7 @@ export interface SessionServiceDeps {
     /**
      * Python `delete_cli_session`: remove the session and its compression continuations from the profile's state.db in one
      * transaction; `ok` is false on failure, with `refused` when another Agent process holds any of them (TAL-792).
+     * Without a sidecar (a Web-only runtime) there is no state.db to retire: committed, nothing deleted (TAL-2673).
      */
     deleteCliSession: (profile: string | null, sid: string) => Promise<SidecarResult<'state_db.delete_cli_session'>>
   }
@@ -3493,7 +3494,7 @@ export class SessionService {
         if (!isMessaging && !orphaned) {
           const result = await this.deleteStateDbRows(eventProfile, sid)
           stateDbCleanupFailed = !result.ok
-          removedIds = [...new Set([sid, ...(result.deleted_ids ?? (result.ok ? knownIds : []))])]
+          removedIds = [...new Set([sid, ...(result.deleted_ids ?? knownIds)])]
         }
         if (removedIds.some((id) => !isSafeSessionId(id))) throw new HttpFailure(503, 'Session cleanup could not finish because the Agent returned invalid session IDs.')
         removedIds = (await filterAsync(removedIds, async (id) => {
@@ -3532,13 +3533,17 @@ export class SessionService {
     return { ok: true, state_db_cleanup_failed: stateDbCleanupFailed, ...retained }
   }
 
-  /** The committed Agent deletion targets and cleanup outcome; throws 409 `refused` while an Agent process holds a row. */
+  /**
+   * The committed Agent deletion targets and cleanup outcome; throws 409 `refused` while an Agent process holds a row, and
+   * (TAL-2673) 503 when the Agent delete did not commit, so Talaria keeps its copy for a retry.
+   */
   private async deleteStateDbRows(profile: string | null, sid: string): Promise<SidecarResult<'state_db.delete_cli_session'>> {
     // TAL-529: the compression continuations go too; the Agent's delete keeps and detaches them otherwise. TAL-792: the
     // sidecar resolves them inside its delete transaction, so a guard on any of them refuses before anything is removed.
-    let result: SidecarResult<'state_db.delete_cli_session'>
-    try { result = await this.deps.runtime.deleteCliSession(profile, sid) } catch { return { ok: false } }
-    if (result.refused) throw new HttpFailure(409, 'In use by another Agent process. Try again later.', { refused: result.refused })
+    let result: SidecarResult<'state_db.delete_cli_session'> | null = null
+    try { result = await this.deps.runtime.deleteCliSession(profile, sid) } catch (error) { if (error instanceof HttpFailure) throw error }
+    if (result?.refused) throw new HttpFailure(409, 'In use by another Agent process. Try again later.', { refused: result.refused })
+    if (!result?.committed) throw new HttpFailure(503, 'The Agent could not delete this conversation. Try again.')
     return result
   }
 

@@ -142,7 +142,7 @@ describe('show blocks (TAL-1968)', () => {
     const { reply } = await shown('chart', { title: 'x', kind: 'bar', series: [{ points: [{ label: 'a', value: 1 }] }] })
     expect((await block('sb_000000000000')).status).toBe(404)
     expect((await block('not-an-id')).status).toBe(404)
-    sidecar.respond('state_db.delete_cli_session', () => ({ ok: true, deleted_ids: [CALLER] }))
+    sidecar.respond('state_db.delete_cli_session', () => ({ ok: true, committed: true, deleted_ids: [CALLER] }))
     const deleted = await s.get('/api/session/delete', { method: 'POST', body: JSON.stringify({ session_id: CALLER }), headers: { 'content-type': 'application/json' } })
     expect(deleted.status).toBe(200)
     expect((await block(reply.block_id)).status).toBe(404)

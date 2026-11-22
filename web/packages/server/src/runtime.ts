@@ -475,7 +475,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       openDecisionReview: (sid) => decisions.openRef(sid),
       deleteAgentRequests: async (sid) => { await decisions.deleteForSession(sid); await proposals.deleteForSession(sid); await show.deleteForSession(sid) },
       deleteCliSession: async (profile, sid) => {
-        if (!sidecar) return { ok: false }
+        if (!sidecar) return { ok: true, committed: true, deleted_ids: [] }
         const targetProfile = profile ?? activeProfile()
         await sessions.assertWritable(sid, targetProfile)
         return await sidecar.call('state_db.delete_cli_session', { profile_home: profileHome(targetProfile), session_id: sid })
