@@ -138568,11 +138568,47 @@
                     "sources": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {},
-                          {
-                            "type": "null"
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "joplin",
+                              "folder",
+                              "mcp"
+                            ],
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "searchable": {
+                            "type": "boolean"
+                          },
+                          "tools": {
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
                           }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "kind",
+                          "enabled",
+                          "searchable",
+                          "tools"
                         ]
                       }
                     },
@@ -138611,7 +138647,7 @@
     "/api/notes/search": {
       "get": {
         "operationId": "notes.search",
-        "summary": "Joplin notes matching `q` (`limit` 1-50, default 20). 404 while external notes sources are disabled; 502 when Joplin fails.",
+        "summary": "Notes in `source` (default `joplin`) matching `q` (`limit` 1-50, default 20). 404 while external notes sources are disabled or for an unknown source; 400 for a source that cannot be searched; 502 when the provider fails.",
         "tags": [
           "tools"
         ],
@@ -138653,7 +138689,7 @@
                   "type": "object",
                   "properties": {
                     "source": {
-                      "const": "joplin"
+                      "type": "string"
                     },
                     "query": {
                       "type": "string"
@@ -138677,7 +138713,7 @@
                           },
                           "updated_time": {},
                           "source": {
-                            "const": "joplin"
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -138705,7 +138741,7 @@
     "/api/notes/item": {
       "get": {
         "operationId": "notes.item",
-        "summary": "One Joplin note for preview. 404 while external notes sources are disabled; 502 for an invalid id or a Joplin failure.",
+        "summary": "One note from `source` (default `joplin`) for preview. 404 while external notes sources are disabled, for an unknown source, or for an unknown folder note; 400 for a source that cannot be searched or an invalid folder path; 502 for an invalid Joplin id or a provider failure.",
         "tags": [
           "tools"
         ],
@@ -138738,7 +138774,7 @@
                   "type": "object",
                   "properties": {
                     "source": {
-                      "const": "joplin"
+                      "type": "string"
                     },
                     "note": {
                       "type": "object",
@@ -138758,7 +138794,7 @@
                         "updated_time": {},
                         "created_time": {},
                         "source": {
-                          "const": "joplin"
+                          "type": "string"
                         }
                       },
                       "required": [

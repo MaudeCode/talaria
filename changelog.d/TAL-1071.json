@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The notes API can search and preview Obsidian vaults and Logseq graphs from folders named under webui_notes_folders in config.yaml, and each listed notes source now says whether it can be searched.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

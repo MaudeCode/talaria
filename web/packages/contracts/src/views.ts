@@ -2003,12 +2003,21 @@ export type ConnectorsPage = z.infer<typeof ConnectorsPageSchema>
 export type ConnectorView = z.infer<typeof ConnectorViewSchema>
 export type ConnectorToolsView = z.infer<typeof ConnectorToolsViewSchema>
 export const McpToolsSchema = z.looseObject({ tools: z.array(z.looseObject({ name: z.string().optional(), server: z.string().optional(), description: z.string().optional() })), total: z.number().int().optional(), source: z.string().optional(), inventory_scope: z.string().optional(), unavailable_servers: z.array(z.string()).optional() })
-export const NotesSourcesSchema = z.looseObject({ enabled: z.boolean().optional(), sources: z.array(Json).optional(), source: z.string().optional(), inventory_scope: z.string().optional(), recent_ai_notes: z.array(Json).optional(), attach_supported: z.boolean().optional(), automatic_recall_unchanged: z.boolean().optional() })
-/** Joplin search hit: bounded, redacted display text and a snippet around the query; `updated_time` is Joplin's raw value. */
-export const NoteSearchResultSchema = z.object({ id: z.string(), title: z.string(), snippet: z.string(), parent_id: z.string(), updated_time: Json, source: z.literal('joplin') })
-export const NotesSearchSchema = z.object({ source: z.literal('joplin'), query: z.string(), results: z.array(NoteSearchResultSchema) })
-/** One Joplin note for preview: `body` is cut at 50,000 characters (with a notice) and redacted. */
-export const NoteItemSchema = z.object({ source: z.literal('joplin'), note: z.object({ id: z.string(), title: z.string(), body: z.string(), parent_id: z.string(), updated_time: Json, created_time: Json, source: z.literal('joplin') }) })
+/**
+ * One notes source: `joplin`, a `folder:<name>` from `webui_notes_folders`, or a name-matched MCP server (`kind: 'mcp'`).
+ * `searchable` is false for an MCP server no adapter reads; searching it answers 400.
+ */
+export const NotesSourceSchema = z.object({ id: z.string(), name: z.string(), kind: z.enum(['joplin', 'folder', 'mcp']), enabled: z.boolean(), searchable: z.boolean(), tools: z.array(Json) })
+export const NotesSourcesSchema = z.looseObject({ enabled: z.boolean().optional(), sources: z.array(NotesSourceSchema).optional(), source: z.string().optional(), inventory_scope: z.string().optional(), recent_ai_notes: z.array(Json).optional(), attach_supported: z.boolean().optional(), automatic_recall_unchanged: z.boolean().optional() })
+/**
+ * A notes search hit: bounded, redacted display text and a snippet around the query. `source` is the source id. Joplin
+ * gives its raw `updated_time`; a folder note gives its path under the root as `id`, its directory as `parent_id`,
+ * and its mtime in epoch milliseconds.
+ */
+export const NoteSearchResultSchema = z.object({ id: z.string(), title: z.string(), snippet: z.string(), parent_id: z.string(), updated_time: Json, source: z.string() })
+export const NotesSearchSchema = z.object({ source: z.string(), query: z.string(), results: z.array(NoteSearchResultSchema) })
+/** One note for preview: `body` is cut at 50,000 characters (with a notice) and redacted. A folder note has no `created_time` (null). */
+export const NoteItemSchema = z.object({ source: z.string(), note: z.object({ id: z.string(), title: z.string(), body: z.string(), parent_id: z.string(), updated_time: Json, created_time: Json, source: z.string() }) })
 /** LLM wiki summary: counts and timestamps only, never page bodies or the wiki path. `error` names the exception type when `status` is `error`. */
 export const WikiStatusSchema = z.object({
   available: z.boolean(), enabled: z.boolean(), status: z.enum(['missing', 'not_directory', 'ready', 'empty', 'error']), entry_count: z.number().int(), page_count: z.number().int(), raw_source_count: z.number().int(),

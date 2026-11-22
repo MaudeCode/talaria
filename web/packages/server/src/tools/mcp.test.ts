@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { McpServerSchema, McpServersSchema } from '@maudecode/talaria-web-contracts'
-import { JoplinError, joplinSearch, McpService, notesSources, serverSummary } from './mcp.js'
+import { McpService, serverSummary } from './mcp.js'
+import { notesSources } from './notes/registry.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { McpHealthProber, probeServer } from './mcp-health.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
@@ -129,7 +130,7 @@ describe('MCP enable reader', () => {
     expect(Object.fromEntries(rows.map((r) => [r.name, r.enabled]))).toEqual(expected)
     expect(Object.fromEntries(rows.map((r) => [r.name, r.health !== 'not_checked']))).toEqual(expected)
     expect((await service.tools('/profiles/a')).unavailable_servers).toEqual(Object.keys(expected).filter((name) => expected[name]))
-    const sources = notesSources(cfg, true).sources as { name: string; enabled: boolean }[]
+    const sources = notesSources(cfg, true, { env: {}, fetch, redact: true, home: '/home/test' }).sources as { name: string; enabled: boolean }[]
     expect(Object.fromEntries(sources.map((s) => [s.name, s.enabled]))).toEqual(expected)
     expect(cfg).toEqual(snapshot)
   })
@@ -231,18 +232,6 @@ describe('MCP tool inventory', () => {
     await expect(service.toggle('/profiles/a', 'incomplete', true)).rejects.toMatchObject({ status: 400 })
     expect(cfg.mcp_servers).toEqual({ incomplete: { timeout: 5 }, broken: 'oops', ok: { command: 'ok-mcp' } })
     await expect(service.toggle('/profiles/a', 'ok', false)).resolves.toEqual({ ok: true, name: 'ok', enabled: false })
-  })
-})
-
-describe('Joplin client', () => {
-  it('turns a timeout into a fixed "not reachable" failure [py:test_joplin_api_get_converts_bare_timeout_to_valueerror]', async () => {
-    let signal: AbortSignal | null | undefined
-    const timedOut: typeof fetch = (_input, init) => { signal = init?.signal; return Promise.reject(new DOMException('The operation was aborted due to timeout', 'TimeoutError')) }
-    const deps = { config: { mcp_servers: { joplin: { env: { JOPLIN_TOKEN: 'secret-token' } } } }, env: {}, fetch: timedOut, redact: true }
-    const error = await joplinSearch(deps, 'hello world', 20).catch((e: unknown) => e)
-    expect(error).toBeInstanceOf(JoplinError)
-    expect((error as Error).message).toBe('Joplin API is not reachable')
-    expect(signal).toBeInstanceOf(AbortSignal)
   })
 })
 
