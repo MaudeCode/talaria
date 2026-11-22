@@ -1196,6 +1196,17 @@
       }
     }
   ],
+  "providers.fallback_check": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "available": true,
+        "entries": []
+      }
+    }
+  ],
   "providers.nous_account": [
     {
       "params": {
