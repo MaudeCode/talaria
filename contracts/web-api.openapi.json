@@ -3716,6 +3716,16 @@
             "allowReserved": true
           },
           {
+            "name": "archived_only",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "TAL-2649: lists only archived rows, in the list order; implies `include_archived`."
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
             "name": "show_cli_sessions",
             "in": "query",
             "schema": {
