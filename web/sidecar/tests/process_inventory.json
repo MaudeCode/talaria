@@ -2449,8 +2449,9 @@
     },
     "tests/test_state_db_delete_guard.py::test_runtime_delete_cleanup_failure_recovers_after_restart": {
       "layer": "compatibility",
-      "reason": "A manifest, artifact or media cleanup failure injected after the installed Agent's retirement commit must leave work the next delete completes after a restart; state_db runs in the Agent interpreter over the real retirement.",
+      "reason": "Another process's held state.db write lock, or a manifest failure, must roll the installed Agent's retirement back with committed false (TAL-2673), and an artifact or media cleanup failure after its commit must leave work the next delete completes after a restart; state_db runs in the Agent interpreter over the real retirement and real SQLite lock exclusion.",
       "cases": [
+        "[write_lock]",
         "[manifest]",
         "[artifact]",
         "[media]"

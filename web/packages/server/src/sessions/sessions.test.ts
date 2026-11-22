@@ -397,9 +397,8 @@ describe('session lifecycle over HTTP', () => {
     await writeMessages(s, sid, [{ role: 'user', content: 'bye' }])
     const res = await post(s, '/api/session/delete', { session_id: sid })
     expect(res.status).toBe(200)
-    // No sidecar in this harness: the state.db cleanup cannot run, and the response says so (Python reported the
-    // same when the store was unreachable) instead of claiming a cleanup that never happened.
-    expect(await json(res)).toEqual({ ok: true, state_db_cleanup_failed: true })
+    // No sidecar in this harness, so no Agent state.db to retire: a Web-only delete succeeds (TAL-2673).
+    expect(await json(res)).toEqual({ ok: true, state_db_cleanup_failed: false })
     expect(existsSync(join(s.state, 'sessions', `${sid}.json`))).toBe(false)
     expect((await s.get(`/api/session?session_id=${sid}`)).status).toBe(404)
     expect(readFileSync(join(s.state, 'sessions', '_index.json'), 'utf8')).not.toContain(sid)
@@ -445,13 +444,13 @@ describe('session lifecycle over HTTP', () => {
     s.deps.registry.liveIds.add('bulkprobe-run')
     try {
       const del = await json(await bulk('delete', [readOnly, first, running, subagent, last]))
-      // No sidecar in this harness, so each delete reports its state.db cleanup as failed, as the single route does.
+      // No sidecar in this harness: each Web-only delete succeeds with nothing to clean up, as the single route does.
       expect(del.results).toEqual([
         { session_id: readOnly, ok: false, status: 400, error: 'Read-only imported sessions cannot be deleted from WebUI' },
-        { session_id: first, ok: true, state_db_cleanup_failed: true },
+        { session_id: first, ok: true, state_db_cleanup_failed: false },
         { session_id: running, ok: false, status: 409, error: 'Session has an active run; stop it before deleting' },
         { session_id: subagent, ok: false, status: 400, error: 'Subagent sessions are view-only and cannot be deleted from WebUI' },
-        { session_id: last, ok: true, state_db_cleanup_failed: true },
+        { session_id: last, ok: true, state_db_cleanup_failed: false },
       ])
     } finally {
       s.deps.registry.liveIds.delete('bulkprobe-run')
@@ -2382,7 +2381,7 @@ describe('a compressed Web session follows its state.db lineage (TAL-529)', () =
   it('deleting the session removes its compression continuation too, resolved inside one sidecar transaction (TAL-792)', async () => {
     const sid = await compressedSession()
     const calls: unknown[] = []
-    sidecar.respond('state_db.delete_cli_session', (params) => { calls.push(params); return { ok: true } })
+    sidecar.respond('state_db.delete_cli_session', (params) => { calls.push(params); return { ok: true, committed: true } })
     expect(await json(await post(s, '/api/session/delete', { session_id: sid }))).toEqual({ ok: true, state_db_cleanup_failed: false })
     // The sidecar resolves the continuations inside its delete transaction, so a compression finishing meanwhile is covered.
     expect(calls).toEqual([expect.objectContaining({ session_id: sid })])

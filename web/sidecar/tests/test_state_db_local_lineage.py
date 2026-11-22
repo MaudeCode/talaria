@@ -43,18 +43,18 @@ key = 'gateway.local_policy.v1:' + ids[0]
 raw = db.get_meta(key)
 # An unreadable owner receipt cannot turn its physical tip into an independent delete target.
 db.set_meta(key, '{{malformed')
-assert delete_cli_session(HOME, ids[-1]) == {{'ok': False}}
+assert delete_cli_session(HOME, ids[-1]) == {{'ok': False, 'committed': False}}
 assert len(rows('SELECT id FROM sessions')) == len(ids)
 db.set_meta(key, raw)
 previous_config = rows(f"SELECT model_config FROM sessions WHERE id='{{ids[-1]}}'")[0][0]
 config = json.loads(previous_config or '{{}}')
 config['_branched_from'] = ids[-2]
 write('UPDATE sessions SET model_config=? WHERE id=?', json.dumps(config), ids[-1])
-assert delete_cli_session(HOME, ids[-1]) == {{'ok': False}}, 'explicit branch attached to receipt'
+assert delete_cli_session(HOME, ids[-1]) == {{'ok': False, 'committed': False}}, 'explicit branch attached to receipt'
 write('UPDATE sessions SET model_config=? WHERE id=?', previous_config, ids[-1])
 previous_user = rows(f"SELECT user_id FROM sessions WHERE id='{{ids[-1]}}'")[0][0]
 write('UPDATE sessions SET user_id=? WHERE id=?', 'foreign-principal', ids[-1])
-assert delete_cli_session(HOME, ids[-1]) == {{'ok': False}}, 'foreign receipt member deleted'
+assert delete_cli_session(HOME, ids[-1]) == {{'ok': False, 'committed': False}}, 'foreign receipt member deleted'
 write('UPDATE sessions SET user_id=? WHERE id=?', previous_user, ids[-1])
 assert len(rows('SELECT id FROM sessions')) == len(ids)
 assert len(rows('SELECT id FROM messages')) == {len(data['messages'])}
@@ -63,7 +63,7 @@ sessions.mkdir(exist_ok=True)
 for sid in ids:
     (sessions / (sid + '.json')).write_text('synthetic transcript')
 assert lock(ids[0], 'other-terminal-turn')
-assert delete_cli_session(HOME, ids[-1]) == {{'ok': False, 'refused': 'active_turn'}}
+assert delete_cli_session(HOME, ids[-1]) == {{'ok': False, 'committed': False, 'refused': 'active_turn'}}
 assert len(rows('SELECT id FROM sessions')) == len(ids)
 assert len(list(sessions.iterdir())) == len(ids)
 unlock(ids[0], 'other-terminal-turn')

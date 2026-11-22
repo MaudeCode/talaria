@@ -217,7 +217,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     sidecar.respond('state_db.delete_cli_session', async () => {
       if (persisted === 'late-tip') (await save('late-tip'))
       db.exec('DELETE FROM messages; DELETE FROM sessions; DELETE FROM state_meta')
-      return { ok: true, deleted_ids: persisted === 'late-tip' ? [...ids, 'late-tip'] : ids }
+      return { ok: true, committed: true, deleted_ids: persisted === 'late-tip' ? [...ids, 'late-tip'] : ids }
     })
     const response = await server.get('/api/session/delete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: 'reset-empty' }) })
     expect(response.status, await response.text()).toBe(403)

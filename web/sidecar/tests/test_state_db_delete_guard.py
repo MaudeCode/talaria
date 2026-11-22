@@ -62,7 +62,7 @@ def test_a_live_turn_lease_or_compression_lock_refuses_the_delete(hermes_home) -
     proc = SidecarProcess(hermes_home)
     try:
         for sid in ("cli-a", "cli-b", "cli-c", "cli-d"):
-            assert _delete(proc, hermes_home, sid) == {"ok": False, "refused": "active_turn"}, sid
+            assert _delete(proc, hermes_home, sid) == {"ok": False, "committed": False, "refused": "active_turn"}, sid
     finally:
         proc.close()
     # Nothing was removed: the rows, their transcripts, and the guards the live writer holds all remain.
@@ -84,8 +84,8 @@ def test_an_expired_guard_is_reclaimed_and_the_delete_proceeds(hermes_home) -> N
         db.execute("UPDATE compression_locks SET expires_at = 1")
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-a") == {"ok": True}
-        assert _delete(proc, hermes_home, "cli-b") == {"ok": True}
+        assert _delete(proc, hermes_home, "cli-a") == {"ok": True, "committed": True}
+        assert _delete(proc, hermes_home, "cli-b") == {"ok": True, "committed": True}
     finally:
         proc.close()
     # An unguarded delete keeps its lineage cleanup: the delegate child goes with its parent.
@@ -106,11 +106,11 @@ def test_the_lineage_is_resolved_and_guarded_inside_the_delete_transaction(herme
     """)
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-root") == {"ok": False, "refused": "active_turn"}
+        assert _delete(proc, hermes_home, "cli-root") == {"ok": False, "committed": False, "refused": "active_turn"}
         assert sorted(_rows(hermes_home, "SELECT id FROM sessions")) == ["cli-root", "cli-tip"]
         with closing(sqlite3.connect(hermes_home / "state.db")) as db, db:
             db.execute("UPDATE compression_locks SET expires_at = 1")
-        assert _delete(proc, hermes_home, "cli-root") == {"ok": True}
+        assert _delete(proc, hermes_home, "cli-root") == {"ok": True, "committed": True}
     finally:
         proc.close()
     assert _rows(hermes_home, "SELECT id FROM sessions") == []
@@ -128,7 +128,7 @@ def test_the_delete_removes_every_segment_of_a_long_compression_lineage(hermes_h
     assert len(_rows(hermes_home, "SELECT id FROM sessions")) == 30
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-000") == {"ok": True}
+        assert _delete(proc, hermes_home, "cli-000") == {"ok": True, "committed": True}
     finally:
         proc.close()
     assert _rows(hermes_home, "SELECT id FROM sessions") == []
@@ -148,7 +148,7 @@ def test_the_delete_removes_the_legacy_session_transcript(hermes_home) -> None:
     (sessions / ".cleanup_manifest_pending.json").write_text('["cli-gone"]', encoding="utf-8")
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-a") == {"ok": True}
+        assert _delete(proc, hermes_home, "cli-a") == {"ok": True, "committed": True}
     finally:
         proc.close()
     assert sorted(p.name for p in sessions.iterdir()) == ["session_cli-ab.json", "session_cli-b.json"]
@@ -164,7 +164,7 @@ def test_the_legacy_name_of_a_live_prefixed_session_is_its_own_transcript(hermes
     (sessions / "session_cli-a.json").write_text("{}", encoding="utf-8")
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-a") == {"ok": True}
+        assert _delete(proc, hermes_home, "cli-a") == {"ok": True, "committed": True}
     finally:
         proc.close()
     assert sorted(p.name for p in sessions.iterdir()) == ["session_cli-a.json"]
@@ -203,8 +203,8 @@ def test_terminal_ledger_retirement_cleans_files_and_fences_retries(hermes_home)
         (sessions / name).write_text("private prompt", encoding="utf-8")
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-a") == {"ok": True}
-        assert _delete(proc, hermes_home, "cli-a") == {"ok": True}
+        assert _delete(proc, hermes_home, "cli-a") == {"ok": True, "committed": True}
+        assert _delete(proc, hermes_home, "cli-a") == {"ok": True, "committed": True}
     finally:
         proc.close()
     assert _rows(hermes_home, "SELECT id FROM sessions") == ["cli-b"]
@@ -297,7 +297,7 @@ def test_live_ledger_obligations_refuse_the_entire_delete(hermes_home, state) ->
     (sessions / "session_cli-a.json").write_text("keep", encoding="utf-8")
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-a") == {"ok": False, "refused": "active_turn"}
+        assert _delete(proc, hermes_home, "cli-a") == {"ok": False, "committed": False, "refused": "active_turn"}
     finally:
         proc.close()
     assert sorted(_rows(hermes_home, "SELECT id FROM sessions")) == ["cli-a", "cli-child"]
@@ -332,7 +332,7 @@ def test_canonical_compression_targets_include_delegates_and_preserve_forks(herm
         (sessions / f"session_{sid}.json").write_text(sid, encoding="utf-8")
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, target) == {"ok": True}
+        assert _delete(proc, hermes_home, target) == {"ok": True, "committed": True}
     finally:
         proc.close()
     assert sorted(_rows(hermes_home, "SELECT id FROM sessions")) == ["branch", "reset-fork"]
@@ -378,7 +378,7 @@ def test_receipt_backed_reset_conversation_deletes_from_either_end(hermes_home, 
         (sessions / f"session_{sid}.json").write_text(sid, encoding="utf-8")
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, target) == {"ok": True}
+        assert _delete(proc, hermes_home, target) == {"ok": True, "committed": True}
     finally:
         proc.close()
     assert _rows(hermes_home, "SELECT id FROM sessions") == []
@@ -387,7 +387,9 @@ def test_receipt_backed_reset_conversation_deletes_from_either_end(hermes_home, 
     assert _rows(hermes_home, "SELECT key FROM state_meta WHERE key GLOB 'gateway.local_policy.v1:*'") == []
 
 
-@pytest.mark.parametrize("failure", ["manifest", "artifact", "media"])
+# TAL-2673: a held write lock or a failed manifest rolls the delete back (``committed`` false, the row kept); an artifact
+# or media failure after the commit leaves only file cleanup for the next delete.
+@pytest.mark.parametrize("failure", ["write_lock", "manifest", "artifact", "media"])
 def test_runtime_delete_cleanup_failure_recovers_after_restart(hermes_home, failure) -> None:
     _seed(hermes_home, "cli-a")
     _settled(hermes_home)
@@ -399,7 +401,17 @@ def test_runtime_delete_cleanup_failure_recovers_after_restart(hermes_home, fail
         import sys
         sys.path.insert(0, {str(SIDECAR_ROOT)!r})
         from talaria_sidecar.methods import state_db
-        if {failure!r} == "manifest":
+        holder = None
+        if {failure!r} == "write_lock":  # another process's open write transaction
+            import sqlite3
+            if store:
+                from persistence.sqlite._holder import StoreHolder as Writer
+            else:
+                from hermes_state import SessionDB as Writer
+            Writer._WRITE_PATIENCE_S = 0.5  # the Agent's 20 s lock wait, shortened; the outcome is the same
+            holder = sqlite3.connect(Path({str(hermes_home)!r}) / "state.db", isolation_level=None)
+            holder.execute("BEGIN IMMEDIATE")
+        elif {failure!r} == "manifest":
             original = Path.write_text
             def fail_manifest(path, *args, **kwargs):
                 if path.name.startswith(".cleanup_manifest_"):
@@ -419,16 +431,20 @@ def test_runtime_delete_cleanup_failure_recovers_after_restart(hermes_home, fail
                 raise OSError("injected media failure")
             hermes_state_media.collect_retired_media = fail_media
         result = state_db.delete_cli_session(Path({str(hermes_home)!r}), "cli-a")
+        if holder is not None:
+            holder.rollback()
+            holder.close()
         assert result["ok"] is False
-        if {failure!r} != "manifest":
+        assert result["committed"] is ({failure!r} in ("artifact", "media")), result
+        if result["committed"]:
             assert result["deleted_ids"] == ["cli-a"]
     """)
     assert artifact.exists()
-    assert bool(_rows(hermes_home, "SELECT id FROM sessions")) == (failure == "manifest")
+    assert bool(_rows(hermes_home, "SELECT id FROM sessions")) == (failure in ("write_lock", "manifest"))
     assert bool(list(sessions.glob(".cleanup_manifest_*.json"))) == (failure in ("artifact", "media"))
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-a") == {"ok": True}
+        assert _delete(proc, hermes_home, "cli-a") == {"ok": True, "committed": True}
     finally:
         proc.close()
     assert _rows(hermes_home, "SELECT id FROM sessions") == []
@@ -454,7 +470,7 @@ def test_terminal_worker_receipts_keep_only_the_closing_result(hermes_home) -> N
     """)
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, hermes_home, "cli-a") == {"ok": True}
+        assert _delete(proc, hermes_home, "cli-a") == {"ok": True, "committed": True}
     finally:
         proc.close()
     _agent(hermes_home, """
@@ -502,7 +518,7 @@ def register(ctx):
     """)
     proc = SidecarProcess(hermes_home)
     try:
-        assert _delete(proc, profile, "cli-root") == {"ok": True}
+        assert _delete(proc, profile, "cli-root") == {"ok": True, "committed": True}
     finally:
         proc.close()
     assert _rows(profile, "SELECT id FROM sessions") == []

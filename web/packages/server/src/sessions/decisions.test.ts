@@ -340,7 +340,7 @@ describe('decision reviews (TAL-1963)', () => {
   })
 
   it('deletes a session\'s reviews with the session', async () => {
-    sidecar.respond('state_db.delete_cli_session', () => ({ ok: true, deleted_ids: [CALLER] }))
+    sidecar.respond('state_db.delete_cli_session', () => ({ ok: true, committed: true, deleted_ids: [CALLER] }))
     const id = created(await ask('server.decision_review_put', { title: 'Release choices', items: [item('a')] }))
     await save('20261108_120500_other')
     const kept = created(await ask('server.decision_review_put', { title: 'Other choices', items: [item('a')] }, '20261108_120500_other'))

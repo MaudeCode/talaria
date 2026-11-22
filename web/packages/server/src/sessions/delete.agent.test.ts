@@ -41,7 +41,7 @@ describe('request-scoped session gate reads', () => {
     let preliminary: StateDbWorkerRequest[] = []
     const withLock = server!.deps.sessionStore.withLock.bind(server!.deps.sessionStore)
     vi.spyOn(server!.deps.sessionStore, 'withLock').mockImplementation((...args) => { preliminary = requests(); return withLock(...args) })
-    sidecar.respond('state_db.delete_cli_session', () => ({ ok: true, deleted_ids: ['cli-0', 'cli-1', 'cli-2'] }))
+    sidecar.respond('state_db.delete_cli_session', () => ({ ok: true, committed: true, deleted_ids: ['cli-0', 'cli-1', 'cli-2'] }))
     expect(await service.delete('cli-2')).toMatchObject({ ok: true, state_db_cleanup_failed: false })
     expect(preliminary.length).toBeGreaterThan(0)
     const key = (r: StateDbWorkerRequest): string => r.op === 'session' ? `${r.op}:${r.read}:${JSON.stringify(r.args)}` : r.op

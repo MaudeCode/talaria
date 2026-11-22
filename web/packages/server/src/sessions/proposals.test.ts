@@ -276,7 +276,7 @@ describe('proposals (TAL-1967)', () => {
   })
 
   it('deletes a session\'s proposals with the session', async () => {
-    sidecar.respond('state_db.delete_cli_session', () => ({ ok: true, deleted_ids: [CALLER] }))
+    sidecar.respond('state_db.delete_cli_session', () => ({ ok: true, committed: true, deleted_ids: [CALLER] }))
     const { id } = await propose('setting', { key: 'show_token_usage', value: true })
     expect((await http('POST', '/api/session/delete', { session_id: CALLER })).status).toBe(200)
     expect((await http('GET', `/api/proposals/${id}`)).status).toBe(404)

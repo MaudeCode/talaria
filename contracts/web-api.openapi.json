@@ -7440,7 +7440,8 @@
                             "type": "string"
                           },
                           "state_db_cleanup_failed": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "The Agent delete committed, but its transcript file cleanup did not finish; the next delete retries it."
                           },
                           "refused": {
                             "enum": [
@@ -28831,7 +28832,8 @@
                       "const": true
                     },
                     "state_db_cleanup_failed": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "The Agent delete committed, but its transcript file cleanup did not finish; the next delete retries it."
                     }
                   },
                   "required": [
