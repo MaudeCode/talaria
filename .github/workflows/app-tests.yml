@@ -267,14 +267,14 @@ jobs:
     # holds no macOS slot while the build queues, and queue time counts toward no job's timeout, so it may wait long.
     # "Re-run failed jobs" keeps this job's success, so after a failed build use "Re-run all jobs" to keep the gate.
     # Once the build holds a runner it plans the shards (ci/hosted-test-shard, TAL-2390): the hosted lane's tests at the
-    # tested checkout, their measured times, and the macOS demand other pull requests had queued at that moment.
+    # tested checkout and their measured times.
     name: App build started
     if: inputs.mode == 'hosted'
     runs-on: ubuntu-latest
     timeout-minutes: 355
     permissions:
       contents: read
-      # Reads this run's job list to see the build start, and other runs' queued jobs for the shard plan.
+      # Reads this run's job list to see the build start.
       actions: read
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
@@ -302,7 +302,6 @@ jobs:
       - name: Plan the simulator shards
         id: plan
         env:
-          GH_TOKEN: ${{ github.token }}
           PLAN: ${{ inputs.plan }}
           HOSTED_LANE: ${{ inputs.hosted_lane }}
           REPETITIONS: ${{ inputs.repetitions }}
@@ -322,9 +321,7 @@ jobs:
               <<< "${PLAN}" > "${RUNNER_TEMP}/lane.json"
             RESERVED_SLOTS=$(( RESERVED_SLOTS + $(jq '[.lanes.TalariaKitTests.repeat // [] | select(length > 0)] | length' <<< "${PLAN}") ))
           fi
-          # Read-only and bounded: an unavailable or stale observation plans as a quiet pool.
-          ci/hosted-test-shard capacity > "${RUNNER_TEMP}/capacity.json" || echo '{}' > "${RUNNER_TEMP}/capacity.json"
-          ci/hosted-test-shard plan "${RUNNER_TEMP}/lane.json" "${RUNNER_TEMP}/capacity.json" \
+          ci/hosted-test-shard plan "${RUNNER_TEMP}/lane.json" \
             2> >(tee -a "${GITHUB_STEP_SUMMARY}" >&2) > "${RUNNER_TEMP}/shards.json"
           {
             echo "plan=$(cat "${RUNNER_TEMP}/shards.json")"

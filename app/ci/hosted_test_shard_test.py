@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""ci/hosted-test-shard on deterministic timing, capacity and receipt fixtures; no simulator (TAL-1550, TAL-2390)."""
+"""ci/hosted-test-shard on deterministic timing and receipt fixtures; no simulator (TAL-1550, TAL-2390)."""
 
 import importlib.machinery
 import importlib.util
 import json
-import os
 import random
-import subprocess
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
@@ -120,78 +117,16 @@ class PlanTests(unittest.TestCase):
         self.assertTrue(native["duo"] and native["planned"])
         self.assertEqual(native["skip"], sorted(shard.app_test_plan.DUO_KNOWN_FAILURES))
 
-
-class CapacityTests(unittest.TestCase):
-    def setUp(self):
-        self.policy = shard.CONTENTION_POLICY
-
-    def tearDown(self):
-        shard.CONTENTION_POLICY = self.policy
-
-    def observation(self, status, age=0, competing=1):
-        return {"status": status, "observed_at": int(time.time()) - age,
-                "competing": [{"run": index, "pull_request": index, "job": "App build"} for index in range(competing)]}
-
-    def test_the_cap_applies_only_to_fresh_verified_demand(self):
-        # Four shards finish about 940 s after the build starts, three about 1,040 s: a quiet pool takes four.
-        heavy = lane("Heavy1", "Heavy2", "Heavy3", "Light")
-        cases = [("quiet", "enforce", self.observation("quiet", competing=0), 4),
-                 ("contended", "enforce", self.observation("contended"), 3),
-                 ("every slot wanted", "enforce", self.observation("contended", competing=5), 3),
-                 ("stale", "enforce", self.observation("contended", age=shard.STALE_SECONDS + 1), 4),
-                 ("unavailable", "enforce", {"status": "unavailable", "reason": "HTTPError"}, 4),
-                 ("none", "enforce", None, 4),
-                 ("observed only", "observe", self.observation("contended"), 4)]
-        for name, policy, observed, width in cases:
-            with self.subTest(name):
-                shard.CONTENTION_POLICY = policy
-                result = shard.plan(heavy, capacity=observed, table=TABLE)
-                self.assertEqual(result["width"], width)
-                self.assertEqual(sorted(planned(result)), sorted(heavy["identifiers"]))
-        self.assertEqual(result["capacity"]["would_cap"], 3)
-
     def test_a_full_suite_at_reduced_width_keeps_every_class_and_proves_it(self):
-        shard.CONTENTION_POLICY = "enforce"
         classes = ["Heavy1", "Heavy2", "Heavy3", "Light", "Notify"]
-        result = shard.plan({"mode": "full", "identifiers": ["TalariaTests"]}, capacity=self.observation("contended"),
-                            table=TABLE, classes=classes)
+        # Another macOS job beside the build leaves the full suite three shards.
+        result = shard.plan({"mode": "full", "identifiers": ["TalariaTests"]}, reserved=1, table=TABLE, classes=classes)
         self.assertEqual(result["width"], 3)
         ran = {entry["shard"]: [f"{name}/testA" for name in entry["planned"]] for entry in result["shards"]}
         ran[3].append("TalariaTests/Unlisted/testNew")  # A class the scanner missed runs in the catch-all shard.
         lines = shard.check(result, ran)
         self.assertIn("- The catch-all shard also ran unplanned TalariaTests/Unlisted", lines)
         self.assertIn("full suite", lines[-1])
-
-    def test_the_lookup_reads_only_other_live_pull_requests_queued_macos_jobs(self):
-        responses = {
-            "repos/o/r/actions/workflows/ci.yml/runs?event=pull_request&status=queued&per_page=30": {"workflow_runs": [
-                {"id": 10, "head_sha": "a1", "pull_requests": [{"number": 1}]},
-                {"id": 11, "head_sha": "a2", "pull_requests": [{"number": 1}]},  # PR 1's newer head supersedes run 10.
-                {"id": 12, "head_sha": "b1", "pull_requests": [{"number": 2}]},
-                {"id": 99, "head_sha": "self", "pull_requests": [{"number": 3}]}]},  # This run, or a rerun of it.
-            "repos/o/r/actions/workflows/ci.yml/runs?event=pull_request&status=in_progress&per_page=30": {"workflow_runs": []},
-            "repos/o/r/actions/runs/11/jobs?filter=latest&per_page=100": {"jobs": [
-                {"name": "App / App build", "status": "queued", "labels": ["xcode-27"], "created_at": "t"}]},
-            "repos/o/r/actions/runs/12/jobs?filter=latest&per_page=100": {"jobs": [
-                {"name": "CI Gate", "status": "queued", "labels": ["ubuntu-latest"]},
-                {"name": "App / App build", "status": "in_progress", "labels": ["xcode-27"]}]},
-        }
-        with tempfile.TemporaryDirectory() as directory:
-            gh = Path(directory) / "gh"
-            (Path(directory) / "responses.json").write_text(json.dumps(responses))
-            gh.write_text("#!/usr/bin/env python3\nimport json, sys\nfrom pathlib import Path\n"
-                          "responses = json.loads((Path(sys.argv[0]).parent / 'responses.json').read_text())\n"
-                          "path = sys.argv[-1]\nif path not in responses: sys.exit(f'404 {path}')\n"
-                          "print(json.dumps(responses[path]))\n")
-            gh.chmod(0o755)
-            env = {**os.environ, "PATH": f"{directory}:{os.environ['PATH']}"}
-            observed = json.loads(subprocess.check_output([str(SCRIPT), "capacity"], env={
-                **env, "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "99"}, text=True))
-            self.assertEqual((observed["status"], [(item["run"], item["pull_request"]) for item in observed["competing"]]),
-                             ("contended", [(11, 1)]))
-            unavailable = json.loads(subprocess.check_output([str(SCRIPT), "capacity"], env={
-                **env, "GITHUB_REPOSITORY": "missing/r", "GITHUB_RUN_ID": "99"}, text=True))
-            self.assertEqual(unavailable["status"], "unavailable")
 
 
 class ReceiptTests(unittest.TestCase):
