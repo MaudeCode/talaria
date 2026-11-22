@@ -861,7 +861,8 @@ final class SessionListHostedTests: XCTestCase {
     }
 
     func testDeepLinkedChatKeepsNavigationStackAndToolbarMounted() async throws {
-        for size in [HostedSize.phone, HostedSize.padLandscape] {
+        let sizes = [HostedSize.phone, HostedSize.padLandscape]
+        for size in sizes {
             let fixture = try FixtureApp([UITestFixtureEnvironment.forkSessionArgument, UITestFixtureEnvironment.holdDeepLinkedForkArgument],
                                          for: self)
             let window = try await openChat(fixture, size: size)
