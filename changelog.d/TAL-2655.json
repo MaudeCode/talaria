@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Settings › Models lists your fallback models and shows whether each one is set up and has working credentials.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Check your fallback models",
+        "description": "See which fallback models are configured and ready before starting a chat.",
+        "icon": "model"
+      }
+    }
+  ]
+}

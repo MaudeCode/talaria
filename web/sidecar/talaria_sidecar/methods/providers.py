@@ -9,6 +9,7 @@ composes: ``hermes_cli.auth``, ``hermes_cli.models``, ``hermes_cli.runtime_provi
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 import importlib
 import json
@@ -694,6 +695,55 @@ def selection_warnings(home: Path, params: dict) -> dict:
     return {"warnings": [_plain(w) for w in result], "context_tokens": tokens or None, "provider": provider, "base_url": base_url}
 
 
+_POOL_READ_ONLY = contextvars.ContextVar("talaria_pool_read_only", default=False)
+_POOL_GUARD_LOCK = threading.Lock()
+
+
+def _read_only_pool_picks() -> bool:
+    """TAL-2655: inside ``_POOL_READ_ONLY``, ``CredentialPool.select`` answers the Agent's own ``choose``: the same pick,
+    never counted, rotated, refreshed or saved. Every other caller, in this context or another, keeps ``select``.
+    The static check resolves through ``select``, which rotates a ``round_robin`` pool and bumps its counts in
+    auth.json. Installed once; False when the Agent has no ``choose`` to answer with."""
+    from agent.credential_pool import CredentialPool
+
+    with _POOL_GUARD_LOCK:
+        if getattr(CredentialPool.select, "talaria_read_only", False):
+            return True
+        if not callable(getattr(CredentialPool, "choose", None)):
+            return False
+        select = CredentialPool.select
+
+        def guarded(self, *args, **kwargs):
+            return self.choose(*args, **kwargs) if _POOL_READ_ONLY.get() else select(self, *args, **kwargs)
+
+        guarded.talaria_read_only = True
+        CredentialPool.select = guarded
+        return True
+
+
+def fallback_check() -> dict:
+    """TAL-2655: the profile's effective fallback chain (``fallback_providers``, then legacy ``fallback_model``) through
+    the Agent's static ``hermes fallback check``, in chain order. ``run_checks`` holds plugin installs and sends no
+    request; ``_read_only_pool_picks`` keeps it off the pool's counters. An Agent without either is
+    ``available: false``, never a guess. Runs under the call's ``scoped_home``."""
+    try:
+        from hermes_cli.config import load_config_readonly
+        from hermes_cli.fallback_check import run_checks
+        from hermes_cli.fallback_config import get_fallback_chain
+    except ImportError:
+        return {"available": False, "entries": []}
+    if not _read_only_pool_picks():
+        return {"available": False, "entries": []}
+    token = _POOL_READ_ONLY.set(True)
+    try:
+        results = run_checks(get_fallback_chain(load_config_readonly() or {}), live=False)
+    finally:
+        _POOL_READ_ONLY.reset(token)
+    return {"available": True, "entries": [
+        {"provider": r.provider, "model": r.model, "configured": bool(r.configured), "auth_ready": bool(r.auth_ready), "ready": bool(r.ready),
+         "error_class": str(r.error_class or ""), "error": str(r.error or "")} for r in results]}
+
+
 def parse_switch_args(args: str) -> dict:
     """The Agent's one `/model` parser (TAL-1814)."""
     from hermes_cli.model_switch import parse_model_switch_args
@@ -776,6 +826,11 @@ def register(reg) -> None:
             raise InvalidParams("provider is required")
         with scoped_home(profile_home_param(params)):
             return credential_pool(provider)
+
+    @reg.method("providers.fallback_check")
+    def fallback_check_(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params), recover_processes=False):
+            return fallback_check()
 
     @reg.method("models.context_length")
     def ctx_len(ctx: CallContext, params: dict) -> dict:

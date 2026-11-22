@@ -71,6 +71,8 @@ export const fetchModels = (freshness?: 'session_visit', q = '') => orpc().model
 export const setModelFavorite = (write: { provider_id: string; model: string; favorite: boolean }) => orpc().models.favorite(write)
 export const setDefaultModel = (model: string, provider?: string | null, advanced?: { service_tier: string }) => orpc().models.setDefault({ model, ...(provider ? { provider } : {}), ...(advanced ? { advanced } : {}) })
 export const fetchAuxiliaryModels = () => orpc().models.auxiliary()
+/** TAL-2655: the profile's fallback models with the server's static readiness verdicts. */
+export const fetchFallbackCheck = () => orpc().models.fallback()
 /** One auxiliary task slot (`__reset__` returns every slot to Auto); answers the refreshed `auxiliary` state. Without `model`, only `reasoning_effort` changes (TAL-1285). */
 export const setAuxiliaryModel = (task: string, write: { model?: string | undefined; provider?: string | null | undefined; reasoning_effort?: string | null | undefined }) =>
   orpc().models.set({ scope: 'auxiliary', task, ...(write.model !== undefined ? { model: write.model } : {}), ...(write.provider ? { provider: write.provider } : {}), ...(write.reasoning_effort !== undefined ? { reasoning_effort: write.reasoning_effort } : {}) })

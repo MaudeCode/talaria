@@ -1383,6 +1383,13 @@
         ""
       ]
     },
+    "tests/test_fallback_check.py::test_static_verdicts_follow_each_profile_chain_and_leave_the_pool_untouched": {
+      "layer": "compatibility",
+      "reason": "providers.fallback_check must follow the installed Agent's get_fallback_chain order, static fallback_check verdicts (resolver, credential predicate, held plugin installs) and per-profile .env scoping, and leave a real round_robin credential pool store unrotated and uncounted. Real sidecar over disposable homes with synthetic keys; no network or providers.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_evict_agent.py::test_cache_only_eviction_keeps_approval_state_and_a_live_runs_agent": {
       "layer": "compatibility",
       "reason": "The release's tools.approval session grants and parked gateway approvals must survive a cache-only agent eviction and end on clear, in a disposable Agent interpreter.",

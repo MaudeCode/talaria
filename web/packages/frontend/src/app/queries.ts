@@ -72,6 +72,11 @@ export function useAuxiliaryModelsQuery(enabled = true) {
   return useQuery({ queryKey: keys.auxiliaryModels, queryFn: api.fetchAuxiliaryModels, staleTime: 30_000, enabled })
 }
 
+/** TAL-2655: rereads on every visit, so a key added on Providers shows at once. */
+export function useFallbackCheckQuery() {
+  return useQuery({ queryKey: keys.fallbackCheck, queryFn: api.fetchFallbackCheck })
+}
+
 /** One auxiliary slot's write owner; `__reset__` owns every slot. */
 export const auxResource = (task: string) => `aux-model:${task}`
 /** Without `model`, a write that names `reasoning_effort` changes only the slot's effort (TAL-1285). */
