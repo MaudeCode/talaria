@@ -51,6 +51,7 @@ export type Attachment = z.infer<typeof AttachmentSchema>
  * TAL-2326: `session` searches past chats (`session_search`), `schedule` manages scheduled jobs (`cronjob_manage`),
  * `connection` manages connected apps (`manage_connections`) and `question` asks the user (`clarify`).
  * TAL-2327: `kanban` reads or changes Kanban tasks (every `kanban_*` tool); its `ToolVerb` picks the verb.
+ * TAL-993: `todo` updates the run's to-do list (the Agent's `todo_list`, and its legacy `todo`).
  * TAL-2328: `browser` drives the agent's browser (`browser_exec`, `browser_cdp`, `browser_dialog`, `browser_vault`) and
  * `computer` the desktop (`computer_use`); a `ToolVerb` picks the verb of each.
  * TAL-2330: `mcp` runs an MCP server's tool (`mcp__<server>__<tool>`) and `connector` a hosted connector's
