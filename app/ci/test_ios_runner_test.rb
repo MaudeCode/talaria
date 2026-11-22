@@ -210,7 +210,8 @@ class TestIOSRunnerTest < Minitest::Test
     # introduction, TAL-668; notifications, TAL-651; a photo, TAL-633), collected right before the tests (TAL-1599).
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
     # Only the shard whose tests wait on the notification server waits for it (ci/hosted-test-shard, TAL-2352).
-    assert_equal(["printf '%s' \"${SHARD_PLAN}\" > \"${RUNNER_TEMP}/shard.json\"",
+    assert_equal(['echo "SIMULATOR_BOOTED_AT=$(date +%s)" >> "${GITHUB_ENV}"',
+                  "printf '%s' \"${SHARD_PLAN}\" > \"${RUNNER_TEMP}/shard.json\"",
                   'options=$(ci/hosted-test-shard prepare-options "${RUNNER_TEMP}/shard.json")',
                   'ci/background start simulator-prepare scripts/prepare-ui-simulator ${options} "${{ steps.sim.outputs.udid }}"'],
                  shard["steps"][boot + 1]["run"].lines.map(&:strip).reject { |line| line.start_with?("#") })
@@ -218,7 +219,12 @@ class TestIOSRunnerTest < Minitest::Test
                  shard["steps"][boot + 1, 4].map { |step| step["name"] })
     # The guarded launch collects the preparation, so a simulator it could not ready gets the launch's one recovery
     # and, failing that, the runner-fault status, never a test failure (TAL-2469).
-    assert_includes(shard["steps"][boot + 4]["run"], "xctest_ready() { ci/background wait simulator-prepare; }")
+    # It also waits out the render server's post-boot burst, at most until 450 s after the boot (TAL-2705).
+    ready = shard["steps"][boot + 4]["run"][/^ *xctest_ready\(\) \{\n.*?^ *\}$/m].lines.map(&:strip)
+    assert_equal(["xctest_ready() {", "ci/background wait simulator-prepare || return", "local now settle", "now=$(date +%s)",
+                  "settle=$(( SIMULATOR_BOOTED_AT + 450 - now ))", "ci/memory-sampler settle $(( settle > 0 ? settle : 0 ))",
+                  "start_seconds=$(( start_seconds + $(date +%s) - now ))", "}"],
+                 ready)
     assert_equal("true", shard["steps"][boot]["with"]["wait_for_boot"].to_s)
     refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
     steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h

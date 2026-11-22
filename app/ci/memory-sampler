@@ -75,7 +75,9 @@ summary() {
 # app running, and calm down on its own minutes later. XCTest's runner bootstrap waits on Accessibility, which starves
 # inside the burst: an iPad destination that reached xcodebuild 3 minutes after boot lost its runner (UI suite run
 # 38144004591), while those that reached it after 5-9 minutes passed (TAL-696). This returns once the render server's
-# lifetime peak shows the burst came (over 1 GB) and its footprint is back under 400 MB, or after CAP_SECONDS.
+# lifetime peak shows the burst came (over 1 GB) and its footprint is back under 400 MB, or after CAP_SECONDS. The
+# hosted test shards call it before their first launch, since a burst that lands mid-shard stalls the tests it
+# overlaps (TAL-2705).
 settle() {
   local cap=$1 start=${SECONDS} processes current=0 peak=0
   while true; do

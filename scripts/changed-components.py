@@ -33,7 +33,7 @@ E2E_SERVER_FIXTURES = {"canonical-ownership.json", "compaction-carrier.json"}
 # (TAL-1674). test_fixture_readers_are_routed rescans the readers so the lists cannot fall behind them. The
 # release-note generator and stamp tests share the What's New fixture (TAL-1616).
 FIXTURE_READERS = {
-    "web_sidecar": {"connectors.json", "kanban-task-age.json", "mcp-cost-policy.json", "mcp-events.json", "native-cron-refusal.json", "plan-allowance.json",
+    "web_sidecar": {"bot-deliveries.json", "connectors.json", "kanban-task-age.json", "mcp-cost-policy.json", "mcp-events.json", "native-cron-refusal.json", "plan-allowance.json",
                     "talaria-tool-names.json", "tool-presentations.json", "web-native-notices.json", "web-native-todos.json", "web-native-work.json", "web-reactions.json"},
     "tooling": {"whats-new.json"},
     "app": {"answered-question.json", "connectors.json", "decision-review.json", "delegation-status.json", "execution-modes.json",
