@@ -7,6 +7,7 @@ import json
 import random
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -214,28 +215,35 @@ class RepeatTests(unittest.TestCase):
                 self.assertLessEqual(len(result["shards"]), shard.MAX_SHARDS - options.get("reserved", 0))
                 *lanes, last = result["shards"]
                 self.assertEqual(len(lanes), width)
-                self.assertEqual((last["shard"], last["repeat"], last["planned"], last["budget"]),
-                                 (width + 1, True, repeat, shard.REPEAT_BUDGET))
-                # Its one 300 s pass is over the 90 s budget, so it gets the one attempt that proves it completes.
+                self.assertEqual((last["shard"], last["repeat"], last["planned"]), (width + 1, True, repeat))
+                # Its one 290 s pass fills the 300 s ceiling, so it gets the one attempt that proves it completes.
                 self.assertEqual(shard.selection(last), ["-only-testing:TalariaTests/Heavy1/testSlow"])
         # A focused diagnostic repeats its own selection; nothing else joins it.
         focused = shard.plan(four, table=TABLE, repetitions=3)
         self.assertFalse(any(entry.get("repeat") for entry in focused["shards"]))
 
-    def test_repeat_attempts_fit_one_pass_of_every_planned_test_in_the_budget(self):
-        # xcodebuild runs each test's iterations back to back, so a fixed 50 let the first tests spend the budget and
-        # left later ones with no attempt (TAL-2535, PR run 44304145594). One pass of the selection sets the count.
-        table = {**TABLE, "methods": {**TABLE["methods"], "Cheap1/testFast": 0.1}}
+    def test_repeat_budget_gives_each_test_ten_attempts_within_the_ceiling(self):
+        # xcodebuild runs each test's iterations back to back, so the attempts are what one pass of the selection fits
+        # in the budget (TAL-2535). A fixed 90 s budget left the median repeated test one attempt; the budget is ten
+        # passes, at most 300 s, in whole seconds for the workflow's TALARIA_TEST_BUDGET (TAL-2689).
+        table = {**TABLE, "classes": {**TABLE["classes"], "Cheap1": 0.3},
+                 "methods": {**TABLE["methods"], "Cheap1/testFast": 0.3, "Light/testLong": 100.0}}
         cases = [
-            ("a sub-second selection keeps the cap", ["TalariaTests/Cheap1/testFast"], 50),
-            ("a 2 s pass fits 45 attempts", ["TalariaTests/Cheap0/testX"], 45),
-            ("a 20 s pass fits 4", ["TalariaTests/Split/testA", "TalariaTests/Split/testB"], 4),
-            ("a test longer than the budget still gets its one attempt", ["TalariaTests/Heavy1/testSlow"], 1),
+            # 10 × 0.3 is 3.0000000000000004 in floating point: still 3 s and ten attempts.
+            ("a sub-second selection gets ten attempts in whole seconds", ["TalariaTests/Cheap1/testFast"], 10, 3),
+            ("a 20 s pass gets ten attempts", ["TalariaTests/Split/testA", "TalariaTests/Split/testB"], 10, 200),
+            ("a 100 s pass gets what the 300 s ceiling holds", ["TalariaTests/Light/testLong"], 3, 300),
+            ("a test longer than the ceiling still gets its one attempt", ["TalariaTests/Heavy1/testSlow"], 1, 300),
         ]
-        for name, repeat, attempts in cases:
+        for name, repeat, attempts, budget in cases:
             with self.subTest(name):
                 last = shard.plan({"mode": "empty", "identifiers": [], "repeat": repeat}, table=table)["shards"][-1]
-                self.assertEqual(last["repetitions"], attempts)
+                self.assertEqual((last["repetitions"], last["budget"], last["estimate"]), (attempts, budget, budget))
+        with self.subTest("a target above the 50-attempt cap stops at the cap"), \
+                mock.patch.object(shard, "REPEAT_TARGET", 100):
+            last = shard.plan({"mode": "empty", "identifiers": [], "repeat": ["TalariaTests/Cheap1/testFast"]},
+                              table=table)["shards"][-1]
+            self.assertEqual(last["repetitions"], shard.REPEAT_ATTEMPTS)
 
     def test_native_duo_tests_get_their_own_shard_within_the_five_slots(self):
         native = (["TalariaTests/Heavy1/testSlow", "TalariaTests/Split"], {"TalariaTests/Split/testKnown": "TAL-2563"})

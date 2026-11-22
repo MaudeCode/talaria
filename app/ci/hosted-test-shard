@@ -35,8 +35,8 @@ the least-loaded shard, estimates each width's finish from the measured timeline
 the fewest shards within 10% of the fastest. A focused run (repetitions) always uses one shard.
 
 A pull request's lane also lists the test methods its diff added or changed (`repeat`, TAL-2402). They get one more shard,
-the repeat shard: it runs them up to REPEAT_ATTEMPTS times on one simulator beside the lane's shards, stopping at the first
-failure or once REPEAT_BUDGET seconds of testing are spent after the first complete attempt. It is a detector, not a
+the repeat shard: it runs them about REPEAT_TARGET times on one simulator beside the lane's shards, stopping at the first
+failure or once its budget of testing is spent after the first complete attempt. It is a detector, not a
 retry: any failing attempt fails it. Its receipts prove nothing for the lane, so the lane's gate leaves it out.
 
 A lane that selects tests only a native iPhone Duo runs (app_test_plan.native_duo, TAL-1456) also gets the native Duo
@@ -48,6 +48,7 @@ and the gate proves it on its own; a runner image without a compatible Duo skips
 import functools
 import heapq
 import json
+import math
 import os
 import re
 import sys
@@ -61,16 +62,18 @@ TARGET = app_test_plan.HOSTED
 WEIGHTS = HERE / "hosted-test-weights.json"
 MAX_SHARDS = 4  # Five hosted macOS slots: one build and four simulators.
 WITHIN = 1.10  # The fewest shards predicted to finish within 10% of the fastest width.
-# Repeats of a pull request's added and changed tests (TAL-2402). The budgets keep the repeats inside the time a pull
-# request already spends: in benchmark run 44224379174 the 90 s repeat shard's test step took 156 s beside its lane
-# shard's 127 s, and the 60 s package repeat job finished with the App build (about 400 s each). There, a 15 s hosted
-# test got 6 attempts and a TalariaKit method 7 (8.5 s per `swift test` process), so a test failing one run in five fails
-# its pull request about three times in four; a test under 2 s reaches the 50-attempt cap. Raising either budget makes
-# every pull request with repeats slower by the same amount.
+# Repeats of a pull request's added and changed tests (TAL-2402) aim for about ten attempts per test (TAL-2689). The
+# fixed 90 s hosted budget gave the median repeated test one attempt: over the pull request runs of 2026-11-18 to 22,
+# 422 of 507 repeated tests got fewer than ten (TAL-2517), since a selection whose one pass takes over 45 s ran once. The
+# hosted budget is ten passes of the selection, at most 300 s, which leaves the repeat job's ~110 s of simulator overhead
+# well inside the 30-minute step limit (TAL-2544). The package budget of 100 s gives the slowest observed attempt (10 s,
+# 6 attempts in 60 s) ten. Replayed against 64 green pull request runs with repeats, this adds a median 0 s and a p90
+# 210 s to push-to-green, since the repeat job mostly finishes beside the lane's slowest App job.
 REPEAT_ATTEMPTS = 50
-REPEAT_BUDGET = 90
+REPEAT_TARGET = 10
+REPEAT_MAX_BUDGET = 300
 PACKAGE_REPEAT_ATTEMPTS = 50
-PACKAGE_REPEAT_BUDGET = 60
+PACKAGE_REPEAT_BUDGET = 100
 CANCELED = "Testing was canceled"
 # Classes whose tests await the simulator's notification server. Only a shard that runs one waits for the server in
 # preparation (TAL-2352); the catch-all shard always does. The screen gallery's Notifications page shows the
@@ -224,12 +227,16 @@ def plan(lane, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS, rese
 
 def repeat_shard(identifiers, number, table):
     """xcodebuild runs each test's iterations back to back, so the attempts are what one pass of the whole selection fits
-    in the budget: every planned test then gets its first attempt before the budget can stop the run (TAL-2535)."""
-    one_pass = sum(seconds for _, seconds, _ in groups(identifiers, table).values())
-    repetitions = max(1, min(REPEAT_ATTEMPTS, int(REPEAT_BUDGET // max(one_pass, 0.1))))
+    in the budget: every planned test then gets its first attempt before the budget can stop the run (TAL-2535). The
+    budget is REPEAT_TARGET passes up to REPEAT_MAX_BUDGET, rounded up to whole seconds for TALARIA_TEST_BUDGET."""
+    one_pass = max(sum(seconds for _, seconds, _ in groups(identifiers, table).values()), 0.1)
+    budget = min(REPEAT_MAX_BUDGET, REPEAT_TARGET * one_pass)
+    # Rounded first, so float error in budget / one_pass cannot drop an attempt (1.0 // 0.1 is 9).
+    repetitions = max(1, min(REPEAT_ATTEMPTS, int(round(budget / one_pass, 6))))
+    budget = math.ceil(round(budget, 6))
     return {"shard": number, "target": TARGET, "planned": identifiers, "catch_all": False, "only": identifiers, "skip": [],
             "notifications": any(identifier.split("/")[1] in NOTIFICATION_CLASSES for identifier in identifiers),
-            "estimate": REPEAT_BUDGET, "repetitions": repetitions, "repeat": True, "budget": REPEAT_BUDGET}
+            "estimate": budget, "repetitions": repetitions, "repeat": True, "budget": budget}
 
 
 def duo_shard(identifiers, left_out, number, table):
