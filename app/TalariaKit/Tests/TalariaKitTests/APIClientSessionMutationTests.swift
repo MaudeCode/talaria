@@ -157,7 +157,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         let snapshot = ContextWindowSnapshot(session: try XCTUnwrap(response.session))
 
         XCTAssertEqual(ContextWindowIndicatorPresentation(snapshot: snapshot).percentageLabel, "10")
-        XCTAssertEqual(ContextWindowFormatter.tokensLabel(from: snapshot), "12.8K / 128.0K")
+        XCTAssertEqual(ContextWindowFormatter.tokensLabel(from: snapshot, locale: Locale(identifier: "en_US")), "12.8K / 128.0K")
     }
 
     func testUndoSessionBuildsExpectedBodyAndDecodesResponse() async throws {

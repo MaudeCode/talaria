@@ -80,11 +80,11 @@ public struct ContextWindowSnapshot: Decodable, Equatable, Sendable {
 }
 
 public enum ContextWindowFormatter {
-    public static func tokensLabel(from snapshot: ContextWindowSnapshot) -> String {
+    public static func tokensLabel(from snapshot: ContextWindowSnapshot, locale: Locale = .current) -> String {
         guard let used = snapshot.contextUsedTokens, let total = snapshot.contextWindowTokens else {
             return String(localized: "Unavailable")
         }
-        return "\(formatTokens(used)) / \(formatTokens(total))"
+        return "\(formatTokens(used, locale: locale)) / \(formatTokens(total, locale: locale))"
     }
 
     public static func inputTokensLabel(from snapshot: ContextWindowSnapshot) -> String {
@@ -111,11 +111,13 @@ public enum ContextWindowFormatter {
         return cost.formattedCost(precision: 4, locale: locale)
     }
 
-    static func formatTokens(_ count: Int) -> String {
+    static func formatTokens(_ count: Int, locale: Locale = .current) -> String {
+        let style = FloatingPointFormatStyle<Double>.number
+            .precision(.fractionLength(1)).grouping(.never).locale(locale)
         if count >= 1_000_000 {
-            return String(format: "%.1fM", Double(count) / 1_000_000)
+            return (Double(count) / 1_000_000).formatted(style) + "M"
         } else if count >= 1_000 {
-            return String(format: "%.1fK", Double(count) / 1_000)
+            return (Double(count) / 1_000).formatted(style) + "K"
         } else {
             return "\(count)"
         }
