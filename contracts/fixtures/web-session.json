@@ -15119,6 +15119,7 @@
           "daily-brief",
           "inbox-triage"
         ],
+        "_collapsible": true,
         "_display": "row"
       },
       {

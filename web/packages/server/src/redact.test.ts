@@ -1026,6 +1026,8 @@ describe('redactSessionData', () => {
     // Rows the Agent wrote in the user role are not prompts: background wakeups and compaction markers render their own way.
     expect(collapsible({ role: 'user', content: lines(40), _background_update: { kind: 'process' } })).toBeUndefined()
     expect(collapsible({ role: 'user', content: lines(40), _marker_kind: 'context_compaction' })).toBeUndefined()
+    // TAL-2638: a scheduled task's prompt stays bounded for a client that shows it as a message.
+    expect(collapsible({ role: 'user', content: lines(40), _marker_kind: 'scheduled_task', _marker_body: 'Short job.' })).toBe(true)
     // Measured without the `[Attached files: ...]` line clients hide: a short prompt with many long paths stays whole.
     const attached = `\n\n[Attached files: ${Array.from({ length: 40 }, (_, i) => `/workspace/uploads/${'deep/'.repeat(10)}file-${i}.png`).join(', ')}]`
     expect(collapsible({ role: 'user', content: `Look at these${attached}` })).toBeUndefined()

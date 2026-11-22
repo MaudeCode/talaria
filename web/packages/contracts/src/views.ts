@@ -536,6 +536,7 @@ export const MessageSchema = z.looseObject({
   /**
    * TAL-452: a typed user message (never a steer, background update or marker) longer than 20 lines or 2,000
    * characters. Clients show it folded to a few lines with a local "Show more"; copy and edit use the whole `content`.
+   * TAL-2638: a `scheduled_task` row carries it too, measured on `content`, for a client that shows that kind as a message.
    */
   _collapsible: z.boolean().optional(),
   /**

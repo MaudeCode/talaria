@@ -2484,10 +2484,12 @@ const COLLAPSIBLE_USER_MESSAGE_CHARS = 2000
 
 /**
  * Whether a public (redacted) row is a typed user message (no steer, wakeup, marker or delivery) longer than either limit, measured
- * without the `[Attached files: ...]` line clients hide.
+ * without the `[Attached files: ...]` line clients hide. TAL-2638: a scheduled task's prompt counts too, so a client that shows it
+ * as a message keeps it bounded.
  */
 function isCollapsibleUserMessage(item: Record<string, unknown>): boolean {
-  if (item.role !== 'user' || item._steer !== undefined || item._background_update !== undefined || item._marker_kind !== undefined || item._delivery !== undefined) return false
+  const marker = item._marker_kind !== undefined && item._marker_kind !== 'scheduled_task'
+  if (item.role !== 'user' || item._steer !== undefined || item._background_update !== undefined || marker || item._delivery !== undefined) return false
   const text = stripAttachedFilesMarker(messageText(item.content))
   return text.length > COLLAPSIBLE_USER_MESSAGE_CHARS || text.split('\n').length > COLLAPSIBLE_USER_MESSAGE_LINES
 }
