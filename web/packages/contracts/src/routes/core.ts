@@ -33,6 +33,8 @@ export const AuthStatusSchema = z.object({
    * `warning` once `auth_disabled_acknowledged` is on, null when auth is on or the session cannot manage the server.
    */
   no_password_warning: z.enum(['error', 'warning']).nullable(),
+  /** TAL-2663: this install's stable opaque ID, so a client recognizes the server whatever address reaches it. */
+  instance_id: z.string(),
   trusted_auth_enabled: z.boolean().optional(),
   auth_type: z.string().optional(),
   user: NullableString.optional(),

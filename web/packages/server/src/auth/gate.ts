@@ -472,6 +472,7 @@ export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus
     can_manage_server: canManageServer,
     // TAL-2158: who sees the sidebar's no-password warning, and how loudly.
     no_password_warning: authEnabled || !canManageServer ? null : acknowledged ? 'warning' : 'error',
+    instance_id: ctx.deps.instanceId,
   }
   if (auth.isTrustedAuthEnabled() || sessionInfo?.auth_type === 'trusted') payload.trusted_auth_enabled = true
   // Isolation needs a sign-in to tell people apart; a server without auth stays single-user.
