@@ -213,7 +213,20 @@ so a restart cannot reuse a deletion's revision for a new activity.
 }
 ```
 
-The publisher sends this once when a session first appears in an enrolled profile, whether it started in Talaria Web or in the Agent. `startedAt` is the session's start in publisher milliseconds. A retry or restart reuses the same `eventId`, so the relay may deduplicate on it. The body carries exactly these fields and nothing from the transcript: an unknown field, a value past its bound, or a `sessionId` that differs from the path answers 400. A `publisherId` or `profileId` that differs from the path answers 403, and a profile this publisher has not enrolled answers 409 with `status: "unauthorized"`. The relay validates and acknowledges the event; it does not deliver anything to devices yet.
+The publisher sends this once when a session first appears in an enrolled profile, whether it started in Talaria Web or in the Agent. `startedAt` is the session's start in publisher milliseconds. A retry or restart reuses the same `eventId`, so the relay may deduplicate on it. The body carries exactly these fields and nothing from the transcript: an unknown field, a value past its bound, or a `sessionId` that differs from the path answers 400. A `publisherId` or `profileId` that differs from the path answers 403, and a profile this publisher has not enrolled answers 409 with `status: "unauthorized"`. The relay acknowledges the event before delivering anything, so a push that fails never refuses it.
+
+Each accepted event queues one silent APNs push to every enrolled device of each user whose grant names this profile, skipping a revoked device, a device whose sign-in expired, a device without a push token, and a device that excluded this publisher. The relay sends it at most once per `eventId` and device, so a retried or restarted publisher's repeat queues nothing. The push uses `apns-push-type: background` and `apns-priority: 5`, carries no alert, sound or badge, and holds only what the App needs to refresh Chats (`contracts/fixtures/relay-session-started-push.json`):
+
+```json
+{
+  "aps": { "content-available": 1 },
+  "event": "session_started",
+  "publisherId": "https://hermes.example.com",
+  "sessionId": "session-id"
+}
+```
+
+Delivery is best effort: APNs may throttle or drop a background push, retries and token pruning follow the other device pushes, and the App's periodic refresh still finds the chat.
 
 ## Device and Live Activity routes
 

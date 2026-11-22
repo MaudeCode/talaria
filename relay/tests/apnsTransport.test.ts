@@ -206,9 +206,9 @@ describe("apns.sendJob", () => {
   });
 
   // A queued job of each kind, produced by Relay's own publish and recompute.
-  async function queuedJob(kind: "notification" | "live_activity_start" | "live_activity_update") {
+  async function queuedJob(kind: "notification" | "live_activity_start" | "live_activity_update" | "background") {
     const backend = await seed({
-      ...(kind === "notification" ? { pushToken: "push-token" } : {}),
+      ...(kind === "notification" || kind === "background" ? { pushToken: "push-token" } : {}),
       ...(kind === "live_activity_start" ? { pushToStartToken: "start-token" } : {}),
       activity: kind === "live_activity_update",
     });
@@ -216,6 +216,11 @@ describe("apns.sendJob", () => {
       await backend.mutation(internal.publishers.acceptSnapshot, {
         ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
         states: [snapshotState("session-1", 2, "waiting_for_approval"), snapshotState("session-2", 1, "running")],
+      });
+      await runScheduledRecomputes(backend);
+    } else if (kind === "background") {
+      await backend.mutation(internal.publishers.acceptSessionStarted, {
+        ...publish, nonce: "n1", receivedAt: now + 1, sessionId: "session-3", eventId: "started:session-3", startedAt: now,
       });
       await runScheduledRecomputes(backend);
     } else {
@@ -238,6 +243,14 @@ describe("apns.sendJob", () => {
     await expect(backend.action(internal.apns.sendJob, { jobId: job._id }))
       .resolves.toEqual({ outcome: "delivered", status: 200, apnsId: "apns-id" });
     expect((await read(backend, job._id)).job).toMatchObject({ status: "done", apnsStatus: 200, apnsId: "apns-id" });
+  });
+
+  // TAL-232: APNs drops a background push sent at priority 10 or without its push type.
+  it("sends a session-started push as a silent priority 5 background push", async () => {
+    const { backend, job } = await queuedJob("background");
+
+    await expect(backend.action(internal.apns.sendJob, { jobId: job._id })).resolves.toMatchObject({ outcome: "delivered" });
+    expect(http2.requests.at(-1)).toMatchObject({ "apns-push-type": "background", "apns-priority": "5", "apns-topic": "dev.kil.talaria" });
   });
 
   it("throws on a transient failure so the workpool retries, keeping the token", async () => {
@@ -263,6 +276,7 @@ describe("apns.sendJob", () => {
 
   it.each([
     ["notification", (state: Awaited<ReturnType<typeof read>>) => expect(state.device.pushToken).toBeUndefined()],
+    ["background", (state: Awaited<ReturnType<typeof read>>) => expect(state.device.pushToken).toBeUndefined()],
     ["live_activity_start", (state: Awaited<ReturnType<typeof read>>) => expect(state.device.pushToStartToken).toBeUndefined()],
     ["live_activity_update", (state: Awaited<ReturnType<typeof read>>) => expect(state.activity?.endedAt).toBe(now)],
   ] as const)("retires the token a %s job used when APNs says it is unregistered", async (kind, retired) => {

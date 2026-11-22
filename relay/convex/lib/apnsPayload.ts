@@ -4,7 +4,7 @@ export interface ApnsRequest {
   token: string;
   topic: string;
   environment: ApsEnvironment;
-  pushType: "alert" | "liveactivity";
+  pushType: "alert" | "liveactivity" | "background";
   priority: "5" | "10";
   payload: Record<string, unknown>;
   // Replaces the delivered alert with the same ID; unset falls back to the per-job ID.
@@ -201,5 +201,24 @@ export function makeNotification(input: {
         ? { [input.alert.category === "talaria.approval" ? "approvalHeadId" : "inputHeadId"]: input.alert.headId }
         : {}),
     },
+  };
+}
+
+// TAL-232: a silent background push that tells the App a session started, so it refreshes Chats before its next poll.
+// It carries only the IDs the refresh needs; APNs requires priority 5 for a background push.
+export function makeSessionStartedPush(input: {
+  token: string;
+  bundleId: string;
+  environment: ApsEnvironment;
+  publisherId: string;
+  sessionId: string;
+}): ApnsRequest {
+  return {
+    token: input.token,
+    topic: input.bundleId,
+    environment: input.environment,
+    pushType: "background",
+    priority: "5",
+    payload: { aps: { "content-available": 1 }, event: "session_started", publisherId: input.publisherId, sessionId: input.sessionId },
   };
 }

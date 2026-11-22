@@ -1,6 +1,7 @@
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
 import { retainedStates } from "./completions";
+import { grantsForProfile } from "./publishers";
 import { sha256 } from "./lib/crypto";
 import { isPublisherStateVisible, publisherForGrant, visiblePublisherStates } from "./lib/publisherVisibility";
 import { activityPhase, isCurrentActivityState, isTerminalPhase } from "./lib/model";
@@ -24,12 +25,14 @@ import {
   makeLiveActivityStart,
   makeLiveActivityUpdate,
   makeNotification,
+  makeSessionStartedPush,
   type ApnsRequest,
 } from "./lib/apnsPayload";
 import type { ActivityAggregate, ActivityAlert, SessionState } from "./lib/model";
 import {
   apnsDeliveryResultValidator,
   apnsRequestValidator,
+  deliveryJobKindValidator,
   sessionPhaseValidator,
   storedSessionStateValidator,
 } from "./lib/validators";
@@ -196,14 +199,17 @@ async function pendingDeviceJobs(
   return [...queued, ...running].filter((job) => job.stateFingerprint === fingerprint);
 }
 
-function receivesNotifications(
-  device: Doc<"devices">,
-  now: number,
-): device is Doc<"devices"> & Required<Pick<Doc<"devices">, "pushToken" | "bundleId" | "apsEnvironment">> {
+type PushableDevice = Doc<"devices"> & Required<Pick<Doc<"devices">, "pushToken" | "bundleId" | "apsEnvironment">>;
+
+// A signed-in device APNs can reach through its push token.
+function receivesPushes(device: Doc<"devices">, now: number): device is PushableDevice {
   return device.revokedAt === undefined
     && (device.sessionExpiresAt === undefined || device.sessionExpiresAt > now)
-    && device.preferences.notificationsEnabled
     && !!device.pushToken && !!device.bundleId && !!device.apsEnvironment;
+}
+
+function receivesNotifications(device: Doc<"devices">, now: number): device is PushableDevice {
+  return receivesPushes(device, now) && device.preferences.notificationsEnabled;
 }
 
 // A Time Sensitive alert moves to the standalone notification. A device that cannot receive one keeps it on its activity.
@@ -228,7 +234,9 @@ async function enqueueJob(
     sourceApprovalHeadId?: string;
     sourceDecisionReviewId?: string;
     sourceAgentNotifyId?: string;
-    kind: "live_activity_update" | "live_activity_end" | "live_activity_start" | "notification";
+    sourcePublisherOwnerUserId?: string;
+    sourceProfileId?: string;
+    kind: Infer<typeof deliveryJobKindValidator>;
     request: ApnsRequest;
     aggregate?: ActivityAggregate;
     stateFingerprint: string;
@@ -256,6 +264,8 @@ async function enqueueJob(
     sourceApprovalHeadId: input.sourceApprovalHeadId,
     sourceDecisionReviewId: input.sourceDecisionReviewId,
     sourceAgentNotifyId: input.sourceAgentNotifyId,
+    sourcePublisherOwnerUserId: input.sourcePublisherOwnerUserId,
+    sourceProfileId: input.sourceProfileId,
     kind: input.kind,
     expectedToken: input.request.token,
     stateFingerprint: input.stateFingerprint,
@@ -304,6 +314,55 @@ export async function enqueueDisplacedActivityEnd(
     now,
   });
 }
+
+// TAL-232: one silent push per enrolled device of each user the profile grant reaches, once per event and device. A
+// replayed or retried event finds the job it already queued, whatever its status, and queues nothing. Grants are read
+// here, not when the event arrived, so an enrollment that moved in between receives nothing.
+export const enqueueSessionStarted = internalMutation({
+  args: { publisherOwnerUserId: v.string(), publisherId: v.string(), profileId: v.string(), sessionId: v.string(), eventId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const grants = await grantsForProfile(ctx, args.publisherOwnerUserId, args.publisherId, args.profileId);
+    for (const userId of new Set(grants.map((grant) => grant.userId))) {
+      const devices = await ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_updated_at", (query) => query.eq("userId", userId))
+        .order("desc")
+        .take(100);
+      for (const device of devices) {
+        if (!receivesPushes(device, now) || (await excludedPublisherIds(ctx, userId, device.deviceId)).has(args.publisherId)) continue;
+        const stateFingerprint = `background:started:${JSON.stringify([args.publisherId, args.profileId, args.eventId])}:${device.deviceId}`;
+        const existing = await ctx.db
+          .query("deliveryJobs")
+          .withIndex("by_user_id_and_device_id_and_state_fingerprint", (query) =>
+            query.eq("userId", userId).eq("deviceId", device.deviceId).eq("stateFingerprint", stateFingerprint),
+          )
+          .first();
+        if (existing) continue;
+        await enqueueJob(ctx, {
+          userId,
+          deviceId: device.deviceId,
+          kind: "background",
+          sourcePublisherId: args.publisherId,
+          sourceSessionId: args.sessionId,
+          sourcePublisherOwnerUserId: args.publisherOwnerUserId,
+          sourceProfileId: args.profileId,
+          request: makeSessionStartedPush({
+            token: device.pushToken,
+            bundleId: device.bundleId,
+            environment: device.apsEnvironment,
+            publisherId: args.publisherId,
+            sessionId: args.sessionId,
+          }),
+          stateFingerprint,
+          now,
+        });
+      }
+    }
+    return null;
+  },
+});
 
 export const recompute = internalMutation({
   args: {
@@ -674,12 +733,7 @@ export const claimJob = internalMutation({
     v.object({ status: v.literal("stale") }),
     v.object({
       status: v.literal("ready"),
-      kind: v.union(
-        v.literal("live_activity_update"),
-        v.literal("live_activity_end"),
-        v.literal("live_activity_start"),
-        v.literal("notification"),
-      ),
+      kind: deliveryJobKindValidator,
       request: apnsRequestValidator,
     }),
   ),
@@ -839,19 +893,24 @@ export const claimJob = internalMutation({
         const publisher = grant ? await publisherForGrant(ctx, grant) : null;
         if (
           !grant ||
-          !state ||
-          state.deleted ||
-          !isPublisherStateVisible(publisher, state.receivedAt) ||
           !isPublisherStateVisible(publisher, job.createdAt) ||
-          // TAL-1970: a queued agent notice stays deliverable while its session state exists; the publisher decided muting.
-          (job.sourceAgentNotifyId === undefined && (
-            state.alertEligible === false ||
-            (job.sourceDecisionReviewId !== undefined
-              ? state.decisionReviewId !== job.sourceDecisionReviewId || !device.preferences.notifyOnInput
-              : (job.kind === "notification" && !alertForState(state, device.preferences)) ||
-                (job.sourceApprovalHeadId === undefined
-                  ? !job.stateFingerprint.includes(`:${state.eventId}:`)
-                  : activityPhase(state) !== "waiting_for_approval" || state.approvalHeadId !== job.sourceApprovalHeadId))))
+          // TAL-232: a session-started push needs only the enrollment it came from; the session may not have published
+          // state yet.
+          (job.kind === "background"
+            ? grant.publisherOwnerUserId !== job.sourcePublisherOwnerUserId || grant.profileId !== job.sourceProfileId
+            : (
+              !state ||
+              state.deleted ||
+              !isPublisherStateVisible(publisher, state.receivedAt) ||
+              // TAL-1970: a queued agent notice stays deliverable while its session state exists; the publisher decided muting.
+              (job.sourceAgentNotifyId === undefined && (
+                state.alertEligible === false ||
+                (job.sourceDecisionReviewId !== undefined
+                  ? state.decisionReviewId !== job.sourceDecisionReviewId || !device.preferences.notifyOnInput
+                  : (job.kind === "notification" && !alertForState(state, device.preferences)) ||
+                    (job.sourceApprovalHeadId === undefined
+                      ? !job.stateFingerprint.includes(`:${state.eventId}:`)
+                      : activityPhase(state) !== "waiting_for_approval" || state.approvalHeadId !== job.sourceApprovalHeadId))))))
         ) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           return { status: "stale" as const };

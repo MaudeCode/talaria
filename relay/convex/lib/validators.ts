@@ -166,11 +166,20 @@ export function apnsToken(value: unknown): string | null {
   return apnsTokenPattern.test(token) ? token : null;
 }
 
+// TAL-232: `background` is the silent session-started push.
+export const deliveryJobKindValidator = v.union(
+  v.literal("live_activity_update"),
+  v.literal("live_activity_end"),
+  v.literal("live_activity_start"),
+  v.literal("notification"),
+  v.literal("background"),
+);
+
 export const apnsRequestValidator = v.object({
   token: v.string(),
   topic: v.string(),
   environment: apsEnvironmentValidator,
-  pushType: v.union(v.literal("alert"), v.literal("liveactivity")),
+  pushType: v.union(v.literal("alert"), v.literal("liveactivity"), v.literal("background")),
   priority: v.union(v.literal("5"), v.literal("10")),
   payloadJson: v.string(),
   collapseId: v.optional(v.string()),
