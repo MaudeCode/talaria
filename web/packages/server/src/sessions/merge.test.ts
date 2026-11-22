@@ -530,6 +530,12 @@ describe('scheduled task prompts (TAL-2638)', () => {
     }
   })
 
+  it('names at most 50 loaded skills however many a crafted prompt lists', () => {
+    const bundle = cases.bundle.replace('Skills loaded: daily-brief, inbox-triage', `Skills loaded: ${'s,'.repeat(100_000)}`)
+    const single = `${'[IMPORTANT: The user has invoked the "s" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]\n\n'.repeat(200)}${cases.skills.slice(cases.skills.indexOf('\nThe user has provided'))}`
+    for (const content of [bundle, single]) expect(marked(content)!._marker_skills).toHaveLength(50)
+  })
+
   it('collapses a long job text, not the skills loaded before it', () => {
     const excerpt = (body: string) => withBodyExcerpts([{ role: 'user', content: `${'s'.repeat(4000)}${body}`, _marker_kind: 'scheduled_task', _marker_body: body }], null, null)[0] as Record<string, unknown>
     expect(excerpt('Short job.')).not.toHaveProperty('_display_truncated')

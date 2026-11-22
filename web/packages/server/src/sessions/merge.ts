@@ -216,6 +216,8 @@ const CRON_HINT = '[IMPORTANT: You are running as a scheduled cron job.'
 const CRON_RUN_TIME = /^\[CURRENT RUN TIME: [^\]\n]*\]\n\n/
 const SKILL_INSTRUCTION = `\nThe user has provided the following instruction alongside the skill invocation: ${CRON_HINT}`
 const SKILL_SCAFFOLD = /^\[IMPORTANT: (?:The user has invoked the "|The following skill\(s\) were listed for this job but could not be found)/
+// ponytail: a fixed cap on names shown; no cron job lists more, a crafted row lists millions.
+const MAX_SKILLS = 50
 const LOADED_SKILLS = /^\[IMPORTANT: The user has invoked the "([^"\n]*)" skill, indicating [^\n]*\]$|^\[IMPORTANT: The user has invoked the "[^"\n]*" skill bundle, [^\n]*\]\n\n(?:Bundle: [^\n]*\n)?Skills loaded: ([^\n]*)$/gm
 
 /**
@@ -236,7 +238,14 @@ function scheduledTaskPrompt(msg: unknown): { body: string; skills: string[] } |
   const end = text.indexOf(']\n\n', hint)
   if (end < 0) return null
   const body = text.slice(end + 3).replace(CRON_RUN_TIME, '').trim()
-  const skills = [...scaffold.matchAll(LOADED_SKILLS)].flatMap(([, skill, bundle]) => skill ?? bundle!.split(',').map((name) => name.trim()).filter(Boolean))
+  // A stored row is untrusted: an imported prompt can list millions of names, so collection stops at the cap.
+  const skills: string[] = []
+  for (const [, skill, bundle] of scaffold.matchAll(LOADED_SKILLS)) {
+    for (const name of skill === undefined ? bundle!.split(',', MAX_SKILLS) : [skill]) {
+      if (name.trim()) skills.push(name.trim())
+      if (skills.length === MAX_SKILLS) return { body, skills }
+    }
+  }
   return { body, skills }
 }
 
