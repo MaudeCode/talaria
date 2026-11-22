@@ -11,6 +11,8 @@ import { Button } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { cn } from '../../ui/cn'
+import { Badge, Dot, type DotState } from '../../ui/Badge'
+import { Row, RowList } from '../../ui/List'
 import { showToast } from '../toast/toast'
 import { Toaster } from '../toast/Toaster'
 import { useLocale } from '../../i18n/useLocale'
@@ -189,35 +191,37 @@ export function OnboardingPage() {
 
   return (
     <main className="onboarding-overlay flex min-h-full items-start justify-center overflow-y-auto bg-bg p-4 text-text md:items-center" id="onboardingOverlay">
-      <div className="onboarding-card grid w-[min(1040px,100%)] gap-6 rounded-2xl border border-border bg-surface p-6 shadow-md md:grid-cols-[260px_1fr]">
+      <div className="grid w-[min(1040px,100%)] gap-6 py-2 md:grid-cols-[260px_1fr] md:gap-10">
         <aside>
-          <div className="inline-flex rounded-full border border-border2 bg-surface-subtle px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-muted">{m.onboarding_badge()}</div>
+          <Badge tone="border-border text-muted">{m.onboarding_badge()}</Badge>
           <h1 className="mt-3 text-xl font-semibold text-strong" id="onboardingTitle">{m.onboarding_title()}</h1>
           <p className="mt-2 text-sm text-muted" id="onboardingLead">{m.onboarding_lead()}</p>
-          <ol className="mt-5 flex flex-col gap-2" id="onboardingSteps">
+          <RowList className="mt-5" id="onboardingSteps">
             {STEPS.map((s, idx) => {
               const meta = stepMeta(s)
               return (
-                <li key={s} className={cn('onboarding-step flex gap-3 rounded-lg px-2 py-2', idx === step && 'active bg-accent-bg', idx < step && 'done opacity-70')} aria-current={idx === step ? 'step' : undefined}>
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-xs">{idx + 1}</div>
-                  <div><div className="text-sm font-medium text-text">{meta.title}</div><div className="text-xs text-muted">{meta.desc}</div></div>
-                </li>
+                <Row compact key={s} className={cn('flex-nowrap gap-x-3', idx === step ? 'text-strong' : 'text-muted')} aria-current={idx === step ? 'step' : undefined}>
+                  <span className="w-4 shrink-0 tabular-nums">{idx + 1}</span>
+                  <div className="min-w-0"><div className="text-sm font-medium">{meta.title}</div><div className="text-muted">{meta.desc}</div></div>
+                </Row>
               )
             })}
-          </ol>
+          </RowList>
         </aside>
         <section className="flex min-w-0 flex-col">
-          {notice && <div className={cn('mb-4 rounded-lg border px-3 py-2 text-sm', notice.kind === 'success' && 'border-success text-success', notice.kind === 'warn' && 'border-warning text-warning', notice.kind === 'info' && 'border-border text-muted')} role={notice.kind === 'warn' ? 'alert' : 'status'} id="onboardingNotice">{notice.text}</div>}
+          {notice && <p className={cn('mb-4 flex items-baseline gap-2 text-sm', NOTICE_TONE[notice.kind])} role={notice.kind === 'warn' ? 'alert' : 'status'} id="onboardingNotice">{notice.kind === 'success' && <Dot state="ok" className="translate-y-[-1px]" />}{notice.text}</p>}
           {status.isPending && <p className="text-sm text-muted">{m.loading()}</p>}
           {status.isError && <p className="text-sm text-error" role="alert">{m.error_generic()}</p>}
           {data && (
             <form onSubmit={(e) => { e.preventDefault(); void next() }} className="flex min-h-[260px] flex-1 flex-col gap-3" id="onboardingBody" autoComplete="off">
               {key === 'system' && (
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <Check ok={!!(system.hermes_found && system.imports_ok)} label={m.onboarding_check_agent()} value={system.hermes_found && system.imports_ok ? m.onboarding_check_agent_ready() : m.onboarding_check_agent_missing()} />
-                  <Check ok={!!system.chat_ready} muted={!system.provider_configured} label={m.onboarding_check_provider()} value={providerStatusLabel(system)} />
-                  <Check ok={!!settings.password_enabled} muted={!settings.password_enabled} label={m.onboarding_check_password()} value={settings.password_enabled ? m.onboarding_check_password_enabled() : m.onboarding_check_password_disabled()} />
-                  <div className="onboarding-copy col-span-full text-sm text-muted">
+                <div className="flex flex-col gap-4">
+                  <RowList>
+                    <Check ok={!!(system.hermes_found && system.imports_ok)} label={m.onboarding_check_agent()} value={system.hermes_found && system.imports_ok ? m.onboarding_check_agent_ready() : m.onboarding_check_agent_missing()} />
+                    <Check ok={!!system.chat_ready} muted={!system.provider_configured} label={m.onboarding_check_provider()} value={providerStatusLabel(system)} />
+                    <Check ok={!!settings.password_enabled} muted={!settings.password_enabled} label={m.onboarding_check_password()} value={settings.password_enabled ? m.onboarding_check_password_enabled() : m.onboarding_check_password_disabled()} />
+                  </RowList>
+                  <div className="text-xs leading-relaxed text-muted">
                     <p><strong className="text-text">{m.onboarding_config_file()}</strong> {system.config_path ?? m.onboarding_unknown()}</p>
                     <p><strong className="text-text">{m.onboarding_env_file()}</strong> {system.env_path ?? m.onboarding_unknown()}</p>
                     {system.missing_modules && system.missing_modules.length > 0 && <p><strong className="text-text">{m.onboarding_missing_imports()}</strong> {system.missing_modules.join(', ')}</p>}
@@ -228,7 +232,7 @@ export function OnboardingPage() {
                 <>
                   <form.Field name="provider">
                     {(field) => (
-                      <label className="onboarding-field flex flex-col gap-1 text-sm">
+                      <label className="flex flex-col gap-1 text-sm">
                         <span>{m.onboarding_provider_label()}</span>
                         <Select id="onboardingProviderSelect" value={field.state.value} onValueChange={(v) => { field.handleChange(v); form.setFieldValue('model', selectedProvider(v)?.default_model ?? '') }}>
                           {providers.map((p) => <option key={p.id} value={p.id}>{p.label ?? p.name ?? p.id}</option>)}
@@ -245,7 +249,7 @@ export function OnboardingPage() {
                       <>
                         <form.Field name="apiKey">
                           {(field) => (
-                            <label className="onboarding-field flex flex-col gap-1 text-sm">
+                            <label className="flex flex-col gap-1 text-sm">
                               <span>{m.onboarding_api_key_label()}</span>
                               <TextInput id="onboardingApiKeyInput" type="password" autoComplete="off" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} placeholder={m.onboarding_api_key_placeholder()} />
                             </label>
@@ -253,7 +257,7 @@ export function OnboardingPage() {
                         </form.Field>
                         <form.Field name="baseUrl">
                           {(field) => (
-                            <label className="onboarding-field flex flex-col gap-1 text-sm">
+                            <label className="flex flex-col gap-1 text-sm">
                               <span>{m.onboarding_base_url_label()}</span>
                               <TextInput id="onboardingBaseUrlInput" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} placeholder={m.onboarding_base_url_placeholder()} />
                             </label>
@@ -270,14 +274,14 @@ export function OnboardingPage() {
                   <form.Field name="workspace">
                     {(field) => (
                       <>
-                        <label className="onboarding-field flex flex-col gap-1 text-sm">
+                        <label className="flex flex-col gap-1 text-sm">
                           <span>{m.onboarding_workspace_label()}</span>
                           <Select id="onboardingWorkspaceSelect" value={workspaces.some((w) => w.path === field.state.value) ? field.state.value : ''} onValueChange={(v) => field.handleChange(v)}>
                             <option value="">—</option>
                             {workspaces.map((w) => <option key={w.path} value={w.path}>{w.name} — {w.path}</option>)}
                           </Select>
                         </label>
-                        <label className="onboarding-field flex flex-col gap-1 text-sm">
+                        <label className="flex flex-col gap-1 text-sm">
                           <span>{m.onboarding_workspace_or_path()}</span>
                           <TextInput id="onboardingWorkspaceInput" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} placeholder={m.onboarding_workspace_placeholder()} />
                         </label>
@@ -286,7 +290,7 @@ export function OnboardingPage() {
                   </form.Field>
                   <form.Field name="model">
                     {(field) => (
-                      <label className="onboarding-field flex flex-col gap-1 text-sm">
+                      <label className="flex flex-col gap-1 text-sm">
                         <span>{m.onboarding_model_label()}</span>
                         <TextInput id="onboardingModelInput" list="onboardingModelChoices" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} />
                         <datalist id="onboardingModelChoices">{modelChoices.map((id) => <option key={id} value={id} />)}</datalist>
@@ -299,7 +303,7 @@ export function OnboardingPage() {
                 <form.Field name="password">
                   {(field) => (
                     <>
-                      <label className="onboarding-field flex flex-col gap-1 text-sm">
+                      <label className="flex flex-col gap-1 text-sm">
                         <span>{m.onboarding_password_label()}</span>
                         <TextInput id="onboardingPasswordInput" type="password" autoComplete="new-password" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} placeholder={m.onboarding_password_placeholder()} />
                       </label>
@@ -309,11 +313,13 @@ export function OnboardingPage() {
                 </form.Field>
               )}
               {key === 'finish' && (
-                <div className="onboarding-summary grid gap-2 text-sm">
-                  <div><strong className="text-text">{m.onboarding_provider_label()}</strong> <span className="text-muted">{selectedProvider(form.state.values.provider)?.label ?? form.state.values.provider ?? m.onboarding_not_set()}</span></div>
-                  <div><strong className="text-text">{m.onboarding_model_label()}</strong> <span className="text-muted">{form.state.values.model || m.onboarding_not_set()}</span></div>
-                  <div><strong className="text-text">{m.onboarding_workspace_label()}</strong> <span className="text-muted">{form.state.values.workspace || m.onboarding_not_set()}</span></div>
-                  <div><strong className="text-text">{m.onboarding_check_password()}</strong> <span className="text-muted">{form.state.values.password ? m.onboarding_password_summary_set() : settings.password_enabled ? m.onboarding_check_password_enabled() : m.onboarding_check_password_disabled()}</span></div>
+                <div className="flex flex-col gap-4">
+                  <RowList>
+                    <SummaryRow label={m.onboarding_provider_label()} value={selectedProvider(form.state.values.provider)?.label ?? form.state.values.provider ?? m.onboarding_not_set()} />
+                    <SummaryRow label={m.onboarding_model_label()} value={form.state.values.model || m.onboarding_not_set()} />
+                    <SummaryRow label={m.onboarding_workspace_label()} value={form.state.values.workspace || m.onboarding_not_set()} />
+                    <SummaryRow label={m.onboarding_check_password()} value={form.state.values.password ? m.onboarding_password_summary_set() : settings.password_enabled ? m.onboarding_check_password_enabled() : m.onboarding_check_password_disabled()} />
+                  </RowList>
                   <p className="text-xs text-muted">{m.onboarding_finish_help()}</p>
                 </div>
               )}
@@ -333,11 +339,25 @@ export function OnboardingPage() {
   )
 }
 
+const NOTICE_TONE: Record<NonNullable<Notice>['kind'], string> = { success: 'text-text', warn: 'text-warning', info: 'text-muted' }
+
+/** One system check: a leading state dot, the check's name, then its status in muted words (§7). */
 function Check({ ok, muted, label, value }: { ok: boolean; muted?: boolean; label: string; value: string }) {
+  const state: DotState = ok ? 'ok' : muted ? 'idle' : 'warning'
   return (
-    <div className={cn('onboarding-check rounded-lg border px-3 py-2 text-sm', ok ? 'border-success' : muted ? 'border-border text-muted' : 'border-warning')}>
-      <strong className="block text-text">{label}</strong>
+    <Row compact className="items-center gap-x-2 text-sm" data-check-state={state}>
+      <Dot state={state} />
+      <span className="font-medium text-text">{label}</span>
       <span className="text-muted">{value}</span>
-    </div>
+    </Row>
+  )
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <Row compact className="text-sm">
+      <span className="font-medium text-text">{label}</span>
+      <span className="min-w-0 break-words text-muted">{value}</span>
+    </Row>
   )
 }

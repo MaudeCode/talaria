@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "First-run setup and the sign-in page drop their card frames: setup steps, system checks and the summary are plain rows with a status dot, and sign-in sits directly on the page.",
+      "highlight": true,
+      "components": ["web"],
+      "announcement": {
+        "title": "A cleaner look",
+        "description": "Hubs, settings and sign-in drop their card frames for plain rows.",
+        "icon": "appearance"
+      }
+    }
+  ]
+}
