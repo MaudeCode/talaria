@@ -193,6 +193,8 @@ describe('the notify agent tool (TAL-1970)', () => {
   })
 
   it('builds the activity rows once per session event and shares them with the Relay and Web Push (TAL-1722)', async () => {
+    // TAL-2346: the spies count every build, so no earlier change's build or retry may still be in flight on either channel.
+    await Promise.all([s.deps.webPush.idle(), s.deps.relay.current()!.idle()])
     const builds = vi.spyOn(s.deps.background, 'sessionIds')
     const states = vi.spyOn(ActivityStates.prototype, 'states')
     try {
