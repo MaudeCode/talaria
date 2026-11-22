@@ -50,15 +50,15 @@ export class StreamChannel {
   lastEventId: string | null = null
 
   /**
-   * `tail` (TAL-2644): start at the live tail. The subscriber skips the output buffered while no subscriber was attached,
-   * keeping its prompts, status and outcome, and consumes the buffer so a later attach cannot deliver the skipped output.
+   * `tail` (TAL-2644): start at the live tail. The subscriber skips the output buffered while no subscriber was attached
+   * and removes it from the buffer, so a later attach cannot deliver it either; prompts, status and outcome stay for every attach.
    */
   subscribeWithSnapshot(opts: { tail?: boolean } = {}): [StreamSubscriber, SubscribeSnapshot] {
     const offline = opts.tail ? this.offline.filter(([event]) => !CONTENT_EVENTS.has(event)) : this.offline
     const sub: StreamSubscriber = { queue: [...offline, ...this.toolProgress.values()], wake: null, closed: false, gap: null }
     const first = offline[0]
     const snapshot: SubscribeSnapshot = { offline_buffered_events: offline.length, offline_dropped_events: opts.tail ? 0 : this.offlineDropped, offline_first_event_id: first?.[2] ?? null, last_event_id: this.lastEventId }
-    if (opts.tail) { this.offline.length = 0; this.offlineDropped = 0 }
+    if (opts.tail) { this.offline.splice(0, this.offline.length, ...offline); this.offlineDropped = 0 }
     this.subscribers.add(sub)
     return [sub, snapshot]
   }
