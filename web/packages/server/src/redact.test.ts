@@ -814,6 +814,7 @@ describe('values a browser_exec call types into a page (TAL-2299)', () => {
     ['a value set through an attribute or an object', `js("el.setAttribute('value', 'hunter2')")\njs("Object.assign(el, { value: 'hunter2' })")`, `js('***')\njs('***')`],
     ['page script that only reads a value', `print(js("return document.querySelector('#user').value"))`, `print(js("return document.querySelector('#user').value"))`],
     ['a page assignment whose property name is interpolated', `field = 'value'\njs(f"el.{field} = 'hunter2'")\njs("el." + field + " = 'hunter2'")`, `field = '***'\njs('***')\njs('***' + field + '***')`],
+    ['a page assignment assembled with +=', `field = 'value'\nscript = 'el.' + field\nscript += " = 'hunter2'"\njs(script)`, `field = '***'\nscript = '***' + field\nscript += '***'\njs(script)`],
     ['a .value assigned a concatenation', `js("el.value = 'hun' + 'ter2'")`, `js('***')`],
     ['a CDP insertion of a converted number', `cdp('Input.insertText', {'text': str(123456)})`, `cdp('Input.insertText', {'text': str(***)})`],
     ['a CDP insertion computed from a dict key', `cdp('Input.insertText', {'text': next(iter({'hunter2': 1}))})`, `cdp('Input.insertText', {'text': next(iter({'***': ***}))})`],

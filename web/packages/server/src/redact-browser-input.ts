@@ -333,11 +333,11 @@ function typedSpans(code: string, cut: boolean): Span[] {
   // Page script can set a value in ways no pattern lists (a comment before the `=`, `setAttribute('value', ...)`,
   // `{ value: ... }`). A string that names `value` and then assigns, lists or labels anything, outside the assignments
   // settled above, is masked whole; one that only reads it (`return el.value`) stays.
-  // A string the snippet builds (an f-string, `%`, `+`, `.format`) may spell the property through a name
+  // A string the snippet builds (an f-string, `%`, `+`, `+=`, `.format`) may spell the property through a name
   // (`f"el.{field} = 'pw'"`): one that assigns anything is masked whole as well.
   for (const literal of literals) {
     let text = code.slice(literal.start, literal.end)
-    const built = literal.f || /^\s*(?:[%+]|\.\s*format\b)/.test(skeleton.slice(literal.end, literal.end + 200)) || /[%+]\s*$/.test(skeleton.slice(Math.max(0, literal.start - 200), literal.start))
+    const built = literal.f || /^\s*(?:[%+]|\.\s*format\b)/.test(skeleton.slice(literal.end, literal.end + 200)) || /[%+]=?\s*$/.test(skeleton.slice(Math.max(0, literal.start - 200), literal.start))
     if (built && /(?<![=!<>])=(?![=>])/.test(text)) {
       maskLiteral(literal)
       maskStatement(literal.stmt)
