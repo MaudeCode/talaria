@@ -283,19 +283,19 @@ def test_context_detail_projects_the_agents_prompt_cache_window(hermes_home):
         return  # an Agent before v0.23.2: absence above is the whole contract
     warm, cold = windows['proven']
     assert warm == {'state': 'warm', 'confidence': 'proven', 'reason': None, 'tier': '1h', 'guaranteed_until': 4600.0, 'estimated_until': 4600.0,
-                    'coverage': [{'tier': '1h', 'until': 4600.0}]}
+                    'remaining_seconds': 3600.0, 'coverage': [{'tier': '1h', 'until': 4600.0}]}
     assert cold['state'] == 'expired', 'Anthropic tiers are exact: the guaranteed end is also the last moment'
     assert windows['declared'] | {'coverage': None} == {'state': 'warm', 'confidence': 'declared', 'reason': None, 'tier': '5m', 'guaranteed_until': 1300.0,
-                                                          'estimated_until': 1300.0, 'coverage': None}
+                                                          'estimated_until': 1300.0, 'remaining_seconds': 200.0, 'coverage': None}
     maybe, gone = windows['assumed']
-    assert (maybe['state'], maybe['confidence'], maybe['guaranteed_until'], maybe['estimated_until'], maybe['coverage']) == ('maybe_warm', 'assumed', None, 4600.0, [])
+    assert (maybe['state'], maybe['confidence'], maybe['guaranteed_until'], maybe['estimated_until'], maybe['remaining_seconds'], maybe['coverage']) == ('maybe_warm', 'assumed', None, 4600.0, None, [])
     assert gone['state'] == 'expired'
     only, past = windows['guarantee_only']
-    assert (only['state'], only['guaranteed_until'], only['estimated_until']) == ('warm', 2800.0, None) and past['reason'] == 'no_published_window'
+    assert (only['state'], only['guaranteed_until'], only['estimated_until'], only['remaining_seconds']) == ('warm', 2800.0, None, 1800.0) and past['reason'] == 'no_published_window'
     mixed = windows['mixed']
     assert (mixed['state'], mixed['tier'], mixed['guaranteed_until'], mixed['estimated_until']) == ('maybe_warm', '5m', 1300.0, 4600.0)
     assert mixed['coverage'] == [{'tier': '5m', 'until': 1300.0}, {'tier': '1h', 'until': 4600.0}]
-    unknown = {'state': 'unknown', 'confidence': 'unknown', 'tier': None, 'guaranteed_until': None, 'estimated_until': None, 'coverage': []}
+    unknown = {'state': 'unknown', 'confidence': 'unknown', 'tier': None, 'guaranteed_until': None, 'estimated_until': None, 'remaining_seconds': None, 'coverage': []}
     for case, reason in (('unobserved', 'no_published_window'), ('route_changed', 'route_changed'), ('compacted', 'compacted'), ('storage', 'storage_unavailable'),
                          ('missing', 'no_published_window')):
         assert windows[case] == {**unknown, 'reason': reason}, case

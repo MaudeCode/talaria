@@ -16,12 +16,13 @@ export const PromptCacheWindowSchema = z.discriminatedUnion('state', [
   z.object({
     state: z.enum(['warm', 'maybe_warm', 'expired']), confidence: z.enum(['proven', 'declared', 'assumed']), reason: z.null(),
     tier: z.enum(['5m', '30m', '1h', '12h', '24h', 'in_memory']).nullable(), guaranteed_until: CacheTime.nullable(), estimated_until: CacheTime.nullable().describe('Null only on a `warm` window whose end is eviction, not a clock (a local endpoint).'),
+    remaining_seconds: z.number().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable().describe('Seconds of guaranteed warmth left at the read; set only on a `warm` window.'),
     coverage: z.array(z.object({ tier: z.enum(['5m', '30m', '1h', '12h']), until: CacheTime })).max(4).describe('One deadline per tier the cached prefix holds, earliest first.'),
   }),
   z.object({
     state: z.literal('unknown'), confidence: z.literal('unknown'),
     reason: z.enum(['session_rotated', 'compacted', 'route_changed', 'storage_unavailable', 'no_published_window', 'invalid']),
-    tier: z.null(), guaranteed_until: z.null(), estimated_until: z.null(), coverage: z.array(z.never()).max(0),
+    tier: z.null(), guaranteed_until: z.null(), estimated_until: z.null(), remaining_seconds: z.null(), coverage: z.array(z.never()).max(0),
   }),
 ])
 export type PromptCacheWindow = z.infer<typeof PromptCacheWindowSchema>

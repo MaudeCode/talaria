@@ -12143,6 +12143,19 @@
                         ],
                         "description": "Null only on a `warm` window whose end is eviction, not a clock (a local endpoint)."
                       },
+                      "remaining_seconds": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Seconds of guaranteed warmth left at the read; set only on a `warm` window."
+                      },
                       "coverage": {
                         "maxItems": 4,
                         "type": "array",
@@ -12181,6 +12194,7 @@
                       "tier",
                       "guaranteed_until",
                       "estimated_until",
+                      "remaining_seconds",
                       "coverage"
                     ],
                     "additionalProperties": false
@@ -12216,6 +12230,9 @@
                       "estimated_until": {
                         "type": "null"
                       },
+                      "remaining_seconds": {
+                        "type": "null"
+                      },
                       "coverage": {
                         "maxItems": 0,
                         "type": "array",
@@ -12231,6 +12248,7 @@
                       "tier",
                       "guaranteed_until",
                       "estimated_until",
+                      "remaining_seconds",
                       "coverage"
                     ],
                     "additionalProperties": false
@@ -13729,6 +13747,19 @@
                         ],
                         "description": "Null only on a `warm` window whose end is eviction, not a clock (a local endpoint)."
                       },
+                      "remaining_seconds": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Seconds of guaranteed warmth left at the read; set only on a `warm` window."
+                      },
                       "coverage": {
                         "maxItems": 4,
                         "type": "array",
@@ -13767,6 +13798,7 @@
                       "tier",
                       "guaranteed_until",
                       "estimated_until",
+                      "remaining_seconds",
                       "coverage"
                     ],
                     "additionalProperties": false
@@ -13802,6 +13834,9 @@
                       "estimated_until": {
                         "type": "null"
                       },
+                      "remaining_seconds": {
+                        "type": "null"
+                      },
                       "coverage": {
                         "maxItems": 0,
                         "type": "array",
@@ -13817,6 +13852,7 @@
                       "tier",
                       "guaranteed_until",
                       "estimated_until",
+                      "remaining_seconds",
                       "coverage"
                     ],
                     "additionalProperties": false
@@ -15922,6 +15958,19 @@
                     ],
                     "description": "Null only on a `warm` window whose end is eviction, not a clock (a local endpoint)."
                   },
+                  "remaining_seconds": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Seconds of guaranteed warmth left at the read; set only on a `warm` window."
+                  },
                   "coverage": {
                     "maxItems": 4,
                     "type": "array",
@@ -15960,6 +16009,7 @@
                   "tier",
                   "guaranteed_until",
                   "estimated_until",
+                  "remaining_seconds",
                   "coverage"
                 ],
                 "additionalProperties": false
@@ -15995,6 +16045,9 @@
                   "estimated_until": {
                     "type": "null"
                   },
+                  "remaining_seconds": {
+                    "type": "null"
+                  },
                   "coverage": {
                     "maxItems": 0,
                     "type": "array",
@@ -16010,6 +16063,7 @@
                   "tier",
                   "guaranteed_until",
                   "estimated_until",
+                  "remaining_seconds",
                   "coverage"
                 ],
                 "additionalProperties": false

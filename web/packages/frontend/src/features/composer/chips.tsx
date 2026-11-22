@@ -504,16 +504,14 @@ const CACHE_UNKNOWN = { session_rotated: m.context_cache_unknown_session_rotated
 const CACHE_CONFIDENCE = { proven: m.context_cache_proven, declared: m.context_cache_declared, assumed: m.context_cache_assumed }
 const CACHE_TIERS: Record<'5m' | '30m' | '1h' | '12h' | '24h', Parameters<typeof formatDurationUnits>[1]> = { '5m': [5, 'minute'], '30m': [30, 'minute'], '1h': [1, 'hour'], '12h': [12, 'hour'], '24h': [24, 'hour'] }
 
-/** TAL-2647: the Agent's prompt-cache window as the server classified it; only its times and tiers are formatted here. */
+/** TAL-2647: the Agent's prompt-cache window as the server classified it, countdown included; only times, tiers and durations are formatted here. */
 function PromptCacheRows({ window: cache }: { window: PromptCacheWindow }) {
   const locale = useLocale()
-  // The countdown is read once with the window; each open of the details is a new read.
-  const [now] = useState(Date.now)
   const at = (seconds: number) => resetTime(locale, seconds * 1000)
   const tier = (t: NonNullable<PromptCacheWindow['tier']>) => t === 'in_memory' ? m.context_cache_in_memory() : formatDurationUnits(locale, CACHE_TIERS[t])
   let line: string
   if (cache.state === 'unknown') line = CACHE_UNKNOWN[cache.reason]()
-  else if (cache.state === 'warm' && cache.guaranteed_until != null) line = m.context_cache_warm({ time: at(cache.guaranteed_until), remaining: formatElapsed(locale, cache.guaranteed_until - now / 1000, false) })
+  else if (cache.state === 'warm' && cache.guaranteed_until != null && cache.remaining_seconds != null) line = m.context_cache_warm({ time: at(cache.guaranteed_until), remaining: formatElapsed(locale, cache.remaining_seconds, false) })
   else if (cache.estimated_until == null) line = m.context_unknown()
   else line = (cache.state === 'expired' ? m.context_cache_expired : m.context_cache_maybe_warm)({ time: at(cache.estimated_until) })
   return <div className="flex flex-col" data-prompt-cache={cache.state}>

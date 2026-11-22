@@ -29,37 +29,31 @@ describe('context details in the existing inspector', () => {
     expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
   })
 
-  it('shows the prompt-cache window the server classified, with only its times and tiers formatted (TAL-2647)', async () => {
+  it('shows the prompt-cache window the server classified, with only its times, tiers and countdown formatted (TAL-2647)', async () => {
     const fixtures = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/context-detail.json'), 'utf8')) as Record<string, ContextDetail>
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime((1763820000 - 41 * 60) * 1000)
     const show = async (fixture: string) => {
       vi.mocked(fetchContextDetail).mockResolvedValue(fixtures[fixture]!)
       const view = render(<ContextRow {...props} detailKey={fixture} />, { wrapper: wrapper() })
       expect(await screen.findByText('AGENTS.md')).toBeVisible()
       return view
     }
-    try {
-      let view = await show('cache_proven_warm')
-      expect(screen.getByText(/^Warm until .+ · 41m left$/)).toBeVisible()
-      expect(screen.getByText('Proven by the provider · 1h')).toBeVisible()
+    let view = await show('cache_proven_warm')
+    expect(screen.getByText(/^Warm until .+ · 41m left$/)).toBeVisible()
+    expect(screen.getByText('Proven by the provider · 1h')).toBeVisible()
+    view.unmount()
+    view = await show('cache_declared_mixed_maybe_warm')
+    expect(screen.getByText(/^May still be warm until /)).toBeVisible()
+    expect(screen.getByText('Declared by the request · 5m')).toBeVisible()
+    expect(screen.getAllByRole('listitem').map((row) => row.textContent?.split(' until ')[0])).toEqual(expect.arrayContaining(['5m', '1h']))
+    view.unmount()
+    view = await show('cache_unknown_compacted')
+    expect(screen.getByText('Unknown after compression')).toBeVisible()
+    expect(screen.queryByText(/Proven|Declared|Assumed/)).not.toBeInTheDocument()
+    view.unmount()
+    for (const absent of ['available', 'older_server']) {
+      view = await show(absent)
+      expect(screen.queryByText('Prompt cache')).not.toBeInTheDocument()
       view.unmount()
-      view = await show('cache_declared_mixed_maybe_warm')
-      expect(screen.getByText(/^May still be warm until /)).toBeVisible()
-      expect(screen.getByText('Declared by the request · 5m')).toBeVisible()
-      expect(screen.getAllByRole('listitem').map((row) => row.textContent?.split(' until ')[0])).toEqual(expect.arrayContaining(['5m', '1h']))
-      view.unmount()
-      view = await show('cache_unknown_compacted')
-      expect(screen.getByText('Unknown after compression')).toBeVisible()
-      expect(screen.queryByText(/Proven|Declared|Assumed/)).not.toBeInTheDocument()
-      view.unmount()
-      for (const absent of ['available', 'older_server']) {
-        view = await show(absent)
-        expect(screen.queryByText('Prompt cache')).not.toBeInTheDocument()
-        view.unmount()
-      }
-    } finally {
-      vi.useRealTimers()
     }
   })
 

@@ -106,6 +106,7 @@
       "tier": "1h",
       "guaranteed_until": 1763820000,
       "estimated_until": 1763820000,
+      "remaining_seconds": 2460,
       "coverage": [
         {
           "tier": "1h",
@@ -162,6 +163,7 @@
       "tier": "5m",
       "guaranteed_until": 1763816700,
       "estimated_until": 1763820000,
+      "remaining_seconds": null,
       "coverage": [
         {
           "tier": "5m",
@@ -222,6 +224,7 @@
       "tier": "1h",
       "guaranteed_until": null,
       "estimated_until": 1763820000,
+      "remaining_seconds": null,
       "coverage": []
     }
   },
@@ -273,6 +276,7 @@
       "tier": "30m",
       "guaranteed_until": 1763818200,
       "estimated_until": null,
+      "remaining_seconds": 1200,
       "coverage": [
         {
           "tier": "30m",
@@ -328,6 +332,7 @@
       "tier": null,
       "guaranteed_until": null,
       "estimated_until": null,
+      "remaining_seconds": null,
       "coverage": [],
       "reason": "compacted"
     }
@@ -379,6 +384,7 @@
       "tier": null,
       "guaranteed_until": null,
       "estimated_until": null,
+      "remaining_seconds": null,
       "coverage": [],
       "reason": "route_changed"
     }
@@ -430,6 +436,7 @@
       "tier": null,
       "guaranteed_until": null,
       "estimated_until": null,
+      "remaining_seconds": null,
       "coverage": [],
       "reason": "storage_unavailable"
     }
@@ -481,6 +488,7 @@
       "tier": null,
       "guaranteed_until": null,
       "estimated_until": null,
+      "remaining_seconds": null,
       "coverage": [],
       "reason": "no_published_window"
     }
@@ -532,6 +540,7 @@
       "tier": null,
       "guaranteed_until": null,
       "estimated_until": null,
+      "remaining_seconds": null,
       "coverage": [],
       "reason": "invalid"
     }

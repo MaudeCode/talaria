@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import re
+import time
 
 CATEGORIES = {'system_prompt', 'tool_definitions', 'rules', 'skills', 'mcp', 'subagent_definitions', 'memory', 'conversation'}
 STATUSES = {'loaded', 'truncated', 'flagged', 'shadowed', 'blocked', 'empty', 'unreadable', 'suppressed'}
@@ -37,7 +38,7 @@ def prompt_cache(window):
     except ImportError:
         return None
     unknown = {'state': 'unknown', 'confidence': 'unknown', 'reason': 'invalid', 'tier': None, 'guaranteed_until': None,
-               'estimated_until': None, 'coverage': []}
+               'estimated_until': None, 'remaining_seconds': None, 'coverage': []}
     if not isinstance(window, dict):
         return unknown
     confidence = window.get('confidence')
@@ -49,16 +50,18 @@ def prompt_cache(window):
                                                    in (('guaranteed_until', guaranteed), ('estimated_until', estimated))):
         return unknown
     clean = {'confidence': confidence, 'guaranteed_until': guaranteed, 'estimated_until': estimated}
-    if cache_certainly_warm(clean):
-        state = 'warm'
+    now = time.time()  # one read time for the state and the warm countdown, so a client's clock never decides either
+    if cache_certainly_warm(clean, now=now):
+        state, remaining = 'warm', guaranteed - now
     elif estimated is None:
         return {**unknown, 'reason': 'no_published_window'}
     else:
-        state = 'expired' if cache_certainly_cold(clean) else 'maybe_warm'
+        state, remaining = 'expired' if cache_certainly_cold(clean, now=now) else 'maybe_warm', None
     raw = window.get('coverage')
     coverage = sorted(({'tier': tier, 'until': timestamp(until)} for tier, until in (raw.items() if isinstance(raw, dict) else ())
                        if choice(tier, CACHE_TIERS) and timestamp(until) is not None), key=lambda row: row['until'])
-    return {'state': state, 'confidence': confidence, 'reason': None, 'tier': choice(window.get('tier'), CACHE_DISPLAY_TIERS), **clean, 'coverage': coverage}
+    return {'state': state, 'confidence': confidence, 'reason': None, 'tier': choice(window.get('tier'), CACHE_DISPLAY_TIERS), **clean,
+            'remaining_seconds': remaining, 'coverage': coverage}
 
 
 def unavailable(reason='unavailable') -> dict:
