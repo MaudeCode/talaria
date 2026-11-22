@@ -2831,6 +2831,7 @@
 	"settings_label_profile_switcher": "Profile switcher",
 	"settings_label_project_new_chat": "New-chat button per project",
 	"settings_label_raw_audio": "Send raw audio instead of transcribing",
+	"settings_label_redact_phone_numbers": "Mask phone numbers in assistant replies",
 	"settings_label_render_user_markdown": "Format Markdown in my messages",
 	"settings_label_rtl": "Right-to-left chat layout",
 	"settings_label_send_key": "Send with",

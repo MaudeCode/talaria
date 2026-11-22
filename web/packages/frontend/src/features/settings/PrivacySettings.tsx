@@ -7,7 +7,7 @@ import { SettingText, SettingToggle as Toggle, SettingsGroup } from './SettingsR
 
 /** TAL-1691: Settings › Access › Privacy, what leaves the server and how links are presented. */
 export function PrivacySettings() {
-  const { settings } = useSettingField(['trusted_link_hosts', 'trusted_link_hosts_count', 'sync_to_insights_available'])
+  const { settings } = useSettingField(['trusted_link_hosts', 'trusted_link_hosts_count', 'sync_to_insights_available', 'redact_phone_numbers'])
   // Link safety and the insights sync apply to every user of the server; only an owner may change them.
   const canManage = useBootstrap().auth.can_manage_server
   const hostCount = settings.data?.trusted_link_hosts_count
@@ -18,6 +18,8 @@ export function PrivacySettings() {
       {/* TAL-2160: the sync copies every Web chat into the Agent's database through the sidecar. */}
       <Toggle label={m.settings_label_sync_insights()} settingKey="sync_to_insights" icon={ChartLine} disabled={!canManage || settings.data.sync_to_insights_available === false} />
       <Toggle label={m.settings_label_api_redact()} settingKey="api_redact_enabled" fallback disabled={!canManage} icon={EyeOff} />
+      {/* TAL-2651: a sub-option of redaction, the active profile's `security.redact_phone_numbers`; null when its Agent has no such opt-out. */}
+      {typeof settings.data.redact_phone_numbers === 'boolean' ? <Toggle label={m.settings_label_redact_phone_numbers()} settingKey="redact_phone_numbers" disabled={!canManage} indent /> : null}
       {/* TAL-2336: off, Live Activities and push alerts name a call only by its kind. */}
       <Toggle label={m.settings_label_activity_call_details()} settingKey="activity_call_details" fallback disabled={!canManage} icon={Smartphone} />
       <Toggle label={m.settings_label_confirm_external_links()} settingKey="confirm_external_links" fallback disabled={!canManage} icon={ExternalLink} />

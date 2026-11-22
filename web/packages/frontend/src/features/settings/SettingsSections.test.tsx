@@ -241,8 +241,24 @@ describe('settings pages', () => {
     }
   })
 
-  it('lets only a server owner change link safety and redaction (TAL-279, TAL-1880)', async () => {
+  it('shows the profile\'s phone masking under redaction only when the server offers it, and writes it (TAL-2651)', async () => {
+    vi.mocked(fetchSettings).mockResolvedValueOnce({ default_model: 'claude-sonnet-4-6', redact_phone_numbers: true })
+    const offered = await renderSection(<PrivacySettings />)
+    const phones = await screen.findByRole('switch', { name: 'Mask phone numbers in assistant replies' })
+    expect(phones).toBeChecked()
+    await userEvent.click(phones)
+    expect(saveSettings).toHaveBeenLastCalledWith({ redact_phone_numbers: false })
+    offered.unmount()
+    vi.mocked(fetchSettings).mockResolvedValueOnce({ default_model: 'claude-sonnet-4-6', redact_phone_numbers: null })
+    await renderSection(<PrivacySettings />)
+    expect(await screen.findByRole('switch', { name: 'Redact sensitive data in API responses' })).toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: 'Mask phone numbers in assistant replies' })).toBeNull()
+  })
+
+  it('lets only a server owner change link safety and redaction (TAL-279, TAL-1880, TAL-2651)', async () => {
+    vi.mocked(fetchSettings).mockResolvedValueOnce({ default_model: 'claude-sonnet-4-6', redact_phone_numbers: false })
     await renderSection(<PrivacySettings />, false)
+    expect(await screen.findByRole('switch', { name: 'Mask phone numbers in assistant replies' })).toHaveAttribute('aria-disabled', 'true')
     expect(await screen.findByRole('switch', { name: 'Confirm before opening external links' })).toHaveAttribute('aria-disabled', 'true')
     await userEvent.click(screen.getByRole('button', { name: 'Trusted link hosts' }))
     expect(screen.getByRole('textbox', { name: 'Trusted link hosts' })).toBeDisabled()

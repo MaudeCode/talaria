@@ -30,6 +30,14 @@
       "result": {
         "declared": true
       }
+    },
+    {
+      "params": {
+        "key": "security.redact_phone_numbers"
+      },
+      "result": {
+        "declared": true
+      }
     }
   ],
   "config.env_write": [

@@ -17,7 +17,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { ModelFavorite, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { configBoolean, managedAgentApprovals, auxiliaryModels, auxiliaryReasoning, previewAuxiliaryReasoning, compressionPrepareAhead, dict, parseProviderQualifiedModel, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
+import { configBoolean, managedAgentApprovals, managedPhoneRedaction, phoneRedaction, REDACT_PHONE_NUMBERS_KEY, setPhoneRedaction, auxiliaryModels, auxiliaryReasoning, previewAuxiliaryReasoning, compressionPrepareAhead, dict, parseProviderQualifiedModel, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -172,6 +172,7 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   Reflect.deleteProperty(into, HIDDEN_MODELS_BY_PROFILE_KEY)
   into.provider_quota_thresholds = (await deps.settings.quotaThresholds(activeProfileName(ctx)))
   into.compression_prepare_ahead = await compressionPrepareAhead(deps.agentConfig, home(ctx))
+  into.redact_phone_numbers = await phoneRedaction(deps.agentConfig, home(ctx))
   // TAL-2160: title refresh rewrites only generated titles, so it runs only while the profile generates them.
   into.auto_title_refresh_available = await deps.agentConfig.read(home(ctx)).then(titleGenerationEnabled, () => false)
   // TAL-2160: the insights sync writes through the sidecar, so it does nothing without one.
@@ -189,7 +190,7 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
 
 const DISCUSSION_LIMIT_FIELDS = { group_discussion_max_rounds: 'max_rounds', group_discussion_max_messages: 'max_messages' } as const
 const ROOT_PROFILE = 'default'
-const PROFILE_MANAGED_FIELDS = ['max_tokens', 'compression_prepare_ahead', 'agent_approvals'] as const
+const PROFILE_MANAGED_FIELDS = ['max_tokens', 'compression_prepare_ahead', 'agent_approvals', 'redact_phone_numbers'] as const
 
 interface ManagedSetting { key: string; value: unknown }
 
@@ -209,6 +210,8 @@ async function managedSettings(ctx: RequestContext, includeDiscussion: boolean, 
     const approvals = managedAgentApprovals(managed)
     if (projection) projection.agent_approvals = approvals ?? configBoolean(dict(config.talaria).agent_approvals)
     if (approvals !== undefined) fields.agent_approvals = { key: 'talaria.agent_approvals', value: approvals }
+    const phones = managedPhoneRedaction(managed)
+    if (phones !== undefined) fields.redact_phone_numbers = { key: REDACT_PHONE_NUMBERS_KEY, value: phones }
   }
   if (includeDiscussion) {
     const { config, managed } = await store.readWithManaged(ctx.deps.profileHome(ROOT_PROFILE), { profileFile: true })
@@ -288,7 +291,7 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   // Link safety applies to every user of this server, so only an owner may relax it.
   if (['confirm_external_links', 'trusted_link_hosts'].some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage link safety')
   // Redaction decides what every user of this server sees, so only an owner may change it.
-  if ('api_redact_enabled' in body && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage secret redaction')
+  if (['api_redact_enabled', 'redact_phone_numbers'].some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage secret redaction')
   // TAL-2336: call details leave the server for every user's Live Activities and push alerts.
   if ('activity_call_details' in body && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage call details outside the chat')
   // TAL-2022: approval summaries send every user's approvals through the model, so only an owner may turn them on.
@@ -334,6 +337,10 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   const agentApprovalsValue = body.agent_approvals
   Reflect.deleteProperty(body, 'agent_approvals')
   if (agentApprovalsProvided && typeof agentApprovalsValue !== 'boolean') throw new HttpError(400, 'agent_approvals must be a boolean')
+  const phonesProvided = 'redact_phone_numbers' in body
+  const phonesValue = body.redact_phone_numbers
+  Reflect.deleteProperty(body, 'redact_phone_numbers')
+  if (phonesProvided && typeof phonesValue !== 'boolean') throw new HttpError(400, 'redact_phone_numbers must be a boolean')
   const discussionPatch: Partial<DiscussionLimits> = {}
   for (const [field, limit] of Object.entries(DISCUSSION_LIMIT_FIELDS)) {
     if (!(field in body)) continue
@@ -363,6 +370,10 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
     await deps.agentConfig.update(cfgHome, (c) => { c.compression = { ...dict(c.compression), prepare_ahead: prepareAhead } })
   }
   if (agentApprovalsProvided) await setAgentApprovals(deps.agentConfig, cfgHome, agentApprovalsValue as boolean)
+  if (phonesProvided) {
+    if (!(await deps.agentConfig.declaresKey(REDACT_PHONE_NUMBERS_KEY))) throw new HttpError(409, 'This Agent does not offer keeping phone numbers in chat.', { condition: 'setting_unavailable' })
+    await setPhoneRedaction(deps.agentConfig, cfgHome, phonesValue as boolean)
+  }
   if (Object.keys(discussionPatch).length) {
     if (!(await discussionLimitsOffered(ctx))) throw new HttpError(409, 'This Agent does not offer Group Chat limits.', { condition: 'setting_unavailable' })
     await saveGroupDiscussionLimits(ctx, discussionPatch, pins)

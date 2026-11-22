@@ -192,6 +192,8 @@ export interface SessionServiceDeps {
   assistantName: (profile: string | null) => string
   redactEnabled: () => boolean
   showReasoning?: (profile: string | null) => Promise<boolean>
+  /** TAL-2651: the profile sets `security.redact_phone_numbers: false` on an Agent that offers it; false when unknown. */
+  chatKeepsPhones?: (profile: string | null) => Promise<boolean>
   /** The `worklog_details_expanded_default` setting (TAL-2149): every turn's "Worked" opens by default. */
   worklogExpandedDefault?: () => boolean
   pinnedSessionsLimit: () => number
@@ -1061,7 +1063,13 @@ export class SessionService {
     if (withMessages) {
       payload.messages = (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(messages), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, ...(await this.sceneDisplay(s.profile)), runningScene: !(await this.journaledActiveTurn(s)) })))
     }
-    return this.publicProjection(redactSessionData(payload, this.deps.redactEnabled()), s.profile)
+    return this.publicProjection(await this.redactedRow(payload, s.profile), s.profile)
+  }
+
+  /** A chat row redacted for the wire; TAL-2651: its assistant replies keep phone numbers when its own profile opts in. */
+  private async redactedRow(row: Record<string, unknown>, profile: string | null): Promise<Record<string, unknown>> {
+    const enabled = this.deps.redactEnabled()
+    return redactSessionData(row, enabled, enabled && (await this.deps.chatKeepsPhones?.(profile)) === true)
   }
 
   /** Opaque read identity, including context changes that do not alter display message counts. */
@@ -1430,7 +1438,7 @@ export class SessionService {
     raw.notices = this.deps.runtime.sessionNotices?.(s.session_id) ?? []
     raw.goal = this.deps.runtime.sessionGoal?.(s.session_id) ?? null
     raw.decision_review = (await this.deps.runtime.openDecisionReview?.(s.session_id)) ?? null
-    const publicRow = redactSessionData(raw, this.deps.redactEnabled())
+    const publicRow = await this.redactedRow(raw, s.profile)
     return this.publicProjection(this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow, s.profile)
   }
 
@@ -1570,7 +1578,7 @@ export class SessionService {
     }
     if (loadMessages) attachTodoState(sess, msgs)
     const merged = withSessionWireFlags((await this.ownerLocked([meta ? mergeCliSidebarMetadata(sess, meta) : sess]))[0]!, this.deps.runtime.activeStreamIds)
-    const publicRow = redactSessionData(merged, this.deps.redactEnabled())
+    const publicRow = await this.redactedRow(merged, synth.profile)
     return this.publicProjection(this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow, synth.profile)
   }
 

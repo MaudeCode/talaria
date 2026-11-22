@@ -60,7 +60,7 @@ export interface ConfigFileOptions { profileFile?: boolean }
 
 export class AgentConfig {
   /** `resolved` is per home: homes sharing an `HERMES_CONFIG_PATH` override expand it under their own secret scopes, and `.env` is an input. */
-  private readonly cache = new Map<string, { key: string; config: Config; resolved: Map<string, { env: string; config: Config }> }>()
+  private readonly cache = new Map<string, { key: string; config: Config; resolved: Map<string, { env: string; config: Config }>; managed: Config | null }>()
   private readonly locks = new Map<string, Promise<unknown>>()
 
   constructor(private readonly deps: { sidecar: () => SidecarLike | null; env: Record<string, string | undefined> }) {}
@@ -151,11 +151,20 @@ export class AgentConfig {
         const homes = previous?.key === before ? previous.resolved : new Map<string, { env: string; config: Config }>()
         const resolved = resolvedView(isDict(result.resolved) ? result.resolved : config)
         homes.set(profileHome, { env, config: resolved })
-        this.cache.set(file, { key: before, config, resolved: homes })
-        return { config, resolved, managed: result.managed === null ? null : dict(result.managed) }
+        const managed = result.managed === null ? null : dict(result.managed)
+        this.cache.set(file, { key: before, config, resolved: homes, managed })
+        return { config, resolved, managed }
       }
     }
     throw new ConfigUnavailable('config.yaml changed while it was being read; retry')
+  }
+
+  /**
+   * TAL-2651: the administrator overlay the last read of this home's config returned, or null. It can be older than the
+   * administrator's file, so a caller uses it only to skip work that a fresh `readWithManaged` would otherwise do.
+   */
+  peekManaged(profileHome: string): Config | null {
+    return this.cache.get(this.path(profileHome))?.managed ?? null
   }
 
   /** Synchronous last-known config for callers that cannot await (workspace resolution); refreshes in the background. */
@@ -670,6 +679,56 @@ export async function compressionPrepareAhead(store: AgentConfig, home: string):
   } catch {
     return null
   }
+}
+
+// ── chat phone numbers ────────────────────────────────────────────────
+
+export const REDACT_PHONE_NUMBERS_KEY = 'security.redact_phone_numbers'
+
+/**
+ * TAL-2651: `security.redact_phone_numbers` as the Agent reads it (`agent/redact_phone_policy.py`): only a YAML `false`
+ * keeps phone numbers in assistant replies; anything else, absent and malformed included, masks them.
+ */
+const redactsPhoneNumbers = (config: Config): boolean => dict(config.security).redact_phone_numbers !== false
+
+/** TAL-2651: an administrator's pin of `security.redact_phone_numbers`, when the managed config sets it. */
+export function managedPhoneRedaction(managed: Config): boolean | undefined {
+  return 'redact_phone_numbers' in dict(managed.security) ? redactsPhoneNumbers(managed) : undefined
+}
+
+/** TAL-2651: the effective `security.redact_phone_numbers`: the Agent lays administrator policy over the profile file. Throws when either is unreadable. */
+async function effectivePhoneRedaction(store: AgentConfig, home: string): Promise<boolean> {
+  const { config, managed } = await store.readWithManaged(home)
+  return managedPhoneRedaction(managed) ?? redactsPhoneNumbers(config)
+}
+
+/**
+ * TAL-2651: the profile, or an administrator pin over it, opted out of masking phone numbers in assistant replies, on
+ * an Agent that offers it. Anything unknown keeps the mask.
+ */
+export async function chatKeepsPhoneNumbers(store: AgentConfig, home: string): Promise<boolean> {
+  try {
+    // Every transcript read asks. A profile that masks, under a last-read administrator overlay that pins no opt-out,
+    // costs only the cached config read; a pin added since is honoured from the next config read, masked until then.
+    if (redactsPhoneNumbers(await store.read(home)) && managedPhoneRedaction(store.peekManaged(home) ?? {}) !== false) return false
+    return !(await effectivePhoneRedaction(store, home)) && await store.declaresKey(REDACT_PHONE_NUMBERS_KEY)
+  } catch {
+    return false
+  }
+}
+
+/** TAL-2651: the Settings value: whether assistant replies mask phone numbers; null when the Agent does not offer the opt-out or the config cannot be read. */
+export async function phoneRedaction(store: AgentConfig, home: string): Promise<boolean | null> {
+  if (!(await store.declaresKey(REDACT_PHONE_NUMBERS_KEY))) return null
+  try {
+    return await effectivePhoneRedaction(store, home)
+  } catch {
+    return null
+  }
+}
+
+export async function setPhoneRedaction(store: AgentConfig, home: string, enabled: boolean): Promise<void> {
+  await store.update(home, (c) => { c.security = { ...dict(c.security), redact_phone_numbers: enabled } })
 }
 
 // ── agent approvals ───────────────────────────────────────────────────

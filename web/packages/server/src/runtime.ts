@@ -83,7 +83,7 @@ import { SessionChannels, StreamRegistry } from './sessions/streams.js'
 import { PendingPrompts } from './sessions/pending.js'
 import { SSE_STREAM_LEASE_MS, StreamSlots } from './api/sse-routes.js'
 import { ScreenService, UNAVAILABLE_SCREEN } from './tools/screen.js'
-import { AgentConfig, agentApprovals, showReasoning, coerceProviderCostBudgetValue, dict as asDict, modelBaseUrl, parseProviderQualifiedModel, profileReasoningEffort } from './config/agent-config.js'
+import { AgentConfig, agentApprovals, chatKeepsPhoneNumbers, showReasoning, coerceProviderCostBudgetValue, dict as asDict, modelBaseUrl, parseProviderQualifiedModel, profileReasoningEffort } from './config/agent-config.js'
 import { ProviderCatalog } from './providers/catalog.js'
 import { containedProfileHome, escapedProfileMessage, ProfileError, ProfileService } from './profiles/profiles.js'
 import { Onboarding } from './onboarding.js'
@@ -386,6 +386,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     screen: async (profile) => ((await requestServerOwner()) ? screens.view(profileHome(profile ?? activeProfile())) : UNAVAILABLE_SCREEN),
     recoveryStampingSince: async () => await recoveryStampingSince(storage.documents),
     showReasoning: async (profile) => { try { return showReasoning(await agentConfig.read(profileHome(profile ?? activeProfile()))) } catch { return false } },
+    // TAL-2651: a profileless session is the root's, never the active profile's.
+    chatKeepsPhones: async (profile) => { try { return await chatKeepsPhoneNumbers(agentConfig, profileHome(profile ?? 'default')) } catch { return false } },
     sidecar: () => sidecar,
     media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile), serverOwner: requestServerOwner },
     profileActivity,
