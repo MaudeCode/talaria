@@ -207,9 +207,6 @@ struct ComposerStripScrollRow<Content: View>: View {
     let accessibilityIdentifier: String
     @ViewBuilder let content: Content
 
-    @State private var edgeFades = ComposerStripEdgeFades(leading: false, trailing: false)
-    @Environment(\.layoutDirection) private var layoutDirection
-
     var body: some View {
         ScrollView(.horizontal) {
             content
@@ -220,28 +217,45 @@ struct ComposerStripScrollRow<Content: View>: View {
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .scrollDismissesKeyboard(.never)
-        .onScrollGeometryChange(for: ComposerStripEdgeFades.self) { geometry in
-            ComposerStripEdgeFades(
-                contentOffset: geometry.contentOffset.x,
-                contentWidth: geometry.contentSize.width,
-                containerWidth: geometry.containerSize.width
-            )
-        } action: { _, fades in
-            edgeFades = fades
-        }
-        .mask {
-            HStack(spacing: 0) {
-                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: edgeFades.leading ? edgeFadeWidth : 0)
-                Rectangle()
-                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: edgeFades.trailing ? edgeFadeWidth : 0)
-            }
-        }
+        .horizontalOverflowEdgeFades()
         .clipShape(PaneEdgeClip())
     }
+}
 
-    private var edgeFadeWidth: CGFloat { 18 }
+extension View {
+    /// Fades only the edge of a horizontal scroll view that hides content, so a cut-off row or table reads as
+    /// "scroll for more" (TAL-629, TAL-772). A mask, so it has no colour of its own. Apply to the `ScrollView`.
+    func horizontalOverflowEdgeFades(width: CGFloat = 18) -> some View {
+        modifier(HorizontalOverflowEdgeFades(width: width))
+    }
+}
+
+private struct HorizontalOverflowEdgeFades: ViewModifier {
+    let width: CGFloat
+
+    @State private var edgeFades = ComposerStripEdgeFades(leading: false, trailing: false)
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: ComposerStripEdgeFades.self) { geometry in
+                ComposerStripEdgeFades(
+                    contentOffset: geometry.contentOffset.x,
+                    contentWidth: geometry.contentSize.width,
+                    containerWidth: geometry.containerSize.width
+                )
+            } action: { _, fades in
+                edgeFades = fades
+            }
+            .mask {
+                HStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: edgeFades.leading ? width : 0)
+                    Rectangle()
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: edgeFades.trailing ? width : 0)
+                }
+            }
+    }
 }
 
 /// A strip's outline: both sides and the rounded free edge, open where it meets the card.
