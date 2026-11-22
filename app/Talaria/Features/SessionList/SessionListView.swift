@@ -639,6 +639,11 @@ struct SessionListView: View {
             else { isResumingSidebarLayout = appliedSidebarLayout != nil }
         }
         .onChange(of: sidebarPresentation, initial: true) { updateSidebarColumn() }
+        // A suspended page has its room back once the column hides, however it hides: a second chat taking the page's
+        // slot, a rotation, or the reader's own press (TAL-1540).
+        .onChange(of: nativeColumnVisibility) { _, visibility in
+            if visibility == .detailOnly { navigationState.companionPageIsSuspended = false }
+        }
         .onDisappear { sidebarLayoutResumeTask?.cancel() }
     }
 
@@ -1011,7 +1016,8 @@ struct SessionListView: View {
 
     private var sidebarPresentation: SidebarPresentation { sidebarPresentation(storedChoice: regularSidebarIsShown) }
 
-    private func sidebarPresentation(storedChoice: Bool) -> SidebarPresentation {
+    private func sidebarPresentation(storedChoice: Bool,
+                                     companionPage: SidebarPresentation.CompanionPage? = nil) -> SidebarPresentation {
         SidebarPresentation(
             isRegularWidth: horizontalSizeClass == .regular,
             splitSize: regularSplitFullSize,
@@ -1019,9 +1025,10 @@ struct SessionListView: View {
             storedChoice: storedChoice,
             drawerIsPresented: appSidebar.isPresented,
             columnIsVisible: nativeColumnVisibility != .detailOnly,
-            hidesSidebarColumn: chatNeedsSecondaryPaneRoom && widensForCompanionPage,
+            hidesSidebarColumn: secondaryChatNeedsRoom && widensForCompanionPage,
             hasVerticalDivision: foldedSidebarWidth != nil,
             hasSecondaryChat: shownSecondarySession != nil,
+            companionPage: companionPage ?? self.companionPage,
             filesInspectorPresented: navigationState.filesInspectorPresented,
             filesInspectorIsEligible: regularWidthChat != nil
                 && (navigationState.section == .chats || navigationState.selectedSectionSession != nil)
@@ -1072,14 +1079,15 @@ struct SessionListView: View {
                 navigationState.filesInspectorPresented = false
                 navigationState.chatShowsFilesInspector = false
             }
-            // The column takes the companion page's room, as it does Files'; the chat hides its page (TAL-1539).
-            if storedChoice == true, navigationState.chatShowsCompanionPage, widensForCompanionPage {
-                navigationState.companionPageHideRequest += 1
-                navigationState.chatShowsCompanionPage = false
-            }
             reconcileFilesInspector()
         }
-        let presentation = sidebarPresentation(storedChoice: storedChoice ?? regularSidebarIsShown)
+        // The column suspends a companion page in its room and hiding it brings that page back (TAL-1540). The chat
+        // swaps the page and its own width now; the page slides with the column in the transaction below.
+        let companionPage = storedChoice.map { sidebarPresentation.companionPage(showingColumn: $0) }
+        if let companionPage, companionPage != .none {
+            withTransaction(.unanimated) { navigationState.companionPageIsSuspended = companionPage == .suspended }
+        }
+        let presentation = sidebarPresentation(storedChoice: storedChoice ?? regularSidebarIsShown, companionPage: companionPage)
         let visibility: NavigationSplitViewVisibility = presentation.showsColumn ? .all : .detailOnly
         let width = regularChatLayoutWidth(for: presentation)
         let foldWidth = foldedColumnWidth
@@ -1102,6 +1110,12 @@ struct SessionListView: View {
             guard columnUpdateRevision == revision, scenePhase == .active, !isResumingSidebarLayout else { return }
             var transition = Transaction(animation: reduceMotion ? nil : SessionListMotion.foldAnimation(reduceMotion: false))
             transition.disablesAnimations = reduceMotion
+            // UIKit slides the native column on its own unless its animations are off for the turn (TAL-1540).
+            if reduceMotion {
+                let animates = UIView.areAnimationsEnabled
+                UIView.setAnimationsEnabled(false)
+                DispatchQueue.main.async { UIView.setAnimationsEnabled(animates) }
+            }
             withTransaction(transition) {
                 if let storedChoice, !presentation.columnIsForced {
                     let stored = storedChoice ? "all" : "detailOnly"
@@ -1124,8 +1138,10 @@ struct SessionListView: View {
     }
 
     private func regularChatLayoutWidth(for presentation: SidebarPresentation) -> CGFloat? {
-        guard presentation.tiled, regularSplitWidth > 0,
-              !navigationState.filesInspectorPresented, !chatNeedsSecondaryPaneRoom else { return nil }
+        // A page in the column's room takes it from the split's width inside the chat (TAL-1540); elsewhere the chat
+        // fits its pane beside the page.
+        guard presentation.tiled, regularSplitWidth > 0, !navigationState.filesInspectorPresented, !secondaryChatNeedsRoom,
+              !navigationState.chatShowsCompanionPage || presentation.companionPage != .none else { return nil }
         if let foldedColumnWidth { return regularSplitWidth - foldedColumnWidth }
         return max(0, regularSplitWidth - (presentation.showsColumn
             ? sidebarColumnWidth : 0))
@@ -1141,6 +1157,13 @@ struct SessionListView: View {
     private var hidesSidebarColumn: Bool {
         (sidebarPresentation.showsFilesInspector && widensForFilesInspector)
             || (chatNeedsSecondaryPaneRoom && widensForCompanionPage)
+    }
+
+    /// The chat's companion page where it shows only in the sidebar column's room (TAL-1540).
+    private var companionPage: SidebarPresentation.CompanionPage {
+        guard widensForCompanionPage else { return .none }
+        if navigationState.companionPageIsSuspended { return .suspended }
+        return navigationState.chatShowsCompanionPage ? .shown : .none
     }
 
     /// Whether hiding the sidebar column is what lets a chat's companion page split beside it (TAL-1458).
@@ -1159,7 +1182,8 @@ struct SessionListView: View {
         inspector.widensChat = sidebarPresentation.filesInspectorFits
         inspector.offersCompanionPage = horizontalSizeClass == .regular
         inspector.widensForCompanionPage = widensForCompanionPage
-        inspector.companionPageHideRequest = navigationState.companionPageHideRequest
+        inspector.companionPageIsSuspended = navigationState.companionPageIsSuspended
+        inspector.sidebarColumnIsShown = nativeColumnVisibility != .detailOnly
         inspector.secondaryChat = secondaryChat
         inspector.chatUsesFoldRegions = chatUsesFoldRegions
         inspector.chatDropIsEnabled = canSplitChats
@@ -1228,6 +1252,10 @@ struct SessionListView: View {
         navigationState.chatNeedsSecondaryPaneRoom || shownSecondarySession != nil
     }
 
+    private var secondaryChatNeedsRoom: Bool {
+        navigationState.secondarySession != nil || shownSecondarySession != nil
+    }
+
     private var sidebarChatDropHandler: (([NSItemProvider]) -> Bool)? {
         guard canDropSidebarChat else { return nil }
         return sessionActionContext?.filesInspector.onChatDrop ?? { providers in acceptSidebarChatDrop(providers) }
@@ -1281,6 +1309,8 @@ struct SessionListView: View {
             chatSplitFraction: $chatSplitFraction,
             chatUsesFoldRegions: chatUsesFoldRegions,
             reportCompanionPage: { navigationState.chatShowsCompanionPage = $0 },
+            // The page's own button brings it back as the column's close does.
+            resumeCompanionPage: { updateSidebarColumn(storedChoice: false) },
             reportEmptyTranscript: { chatShowsEmptyTranscript = $0 }
         )
     }
@@ -1317,9 +1347,8 @@ struct SessionListView: View {
             guard !sidebarPresentation.columnIsForced else { return }
             switch sidebarPresentation.toggleTarget {
             case .column:
-                let opensColumn = (navigationState.filesInspectorPresented && widensForFilesInspector)
-                    || (chatNeedsSecondaryPaneRoom && widensForCompanionPage)
-                updateSidebarColumn(storedChoice: opensColumn || !regularSidebarIsShown)
+                let opensForFiles = navigationState.filesInspectorPresented && widensForFilesInspector
+                updateSidebarColumn(storedChoice: opensForFiles || sidebarPresentation.toggleShowsColumn)
             case .drawer:
                 if sidebarPresentation.drawerEnabled { appSidebar.isPresented.toggle() }
             }
@@ -1420,7 +1449,8 @@ struct SessionListView: View {
                 inspectorFits: sidebarPresentation.filesInspectorFits,
                 offersCompanionPage: horizontalSizeClass == .regular,
                 widensForCompanionPage: widensForCompanionPage,
-                companionPageHideRequest: navigationState.companionPageHideRequest,
+                companionPageIsSuspended: navigationState.companionPageIsSuspended,
+                sidebarColumnIsShown: nativeColumnVisibility != .detailOnly,
                 secondaryChat: secondaryChat,
                 chatUsesFoldRegions: chatUsesFoldRegions,
                 chatDropIsEnabled: canSplitChats,
@@ -2671,7 +2701,8 @@ private struct SessionChatDestination: View {
     let inspectorFits: Bool
     let offersCompanionPage: Bool
     let widensForCompanionPage: Bool
-    let companionPageHideRequest: Int
+    let companionPageIsSuspended: Bool
+    let sidebarColumnIsShown: Bool
     let secondaryChat: AnyView?
     let chatUsesFoldRegions: Bool
     let chatDropIsEnabled: Bool
@@ -2682,7 +2713,8 @@ private struct SessionChatDestination: View {
         inspector?.widensChat = inspectorFits
         inspector?.offersCompanionPage = offersCompanionPage
         inspector?.widensForCompanionPage = widensForCompanionPage
-        inspector?.companionPageHideRequest = companionPageHideRequest
+        inspector?.companionPageIsSuspended = companionPageIsSuspended
+        inspector?.sidebarColumnIsShown = sidebarColumnIsShown
         inspector?.secondaryChat = secondaryChat
         inspector?.chatUsesFoldRegions = chatUsesFoldRegions
         inspector?.chatDropIsEnabled = chatDropIsEnabled

@@ -36,13 +36,14 @@ struct FilePreviewView: View {
         entry: WorkspaceEntry,
         initialLine: Int? = nil,
         showsNavigationTitle: Bool = true,
+        viewModel: FilePreviewViewModel? = nil,
         onAPIError: @escaping (Error) -> Void
     ) {
         self.entry = entry
         self.initialLine = initialLine
         self.showsNavigationTitle = showsNavigationTitle
         self.onAPIError = onAPIError
-        _viewModel = State(initialValue: FilePreviewViewModel(session: session, server: server, path: entry.path ?? ""))
+        _viewModel = State(initialValue: viewModel ?? FilePreviewViewModel(session: session, server: server, path: entry.path ?? ""))
     }
 
     var body: some View {

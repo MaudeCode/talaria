@@ -77,9 +77,13 @@ struct SplitFilesInspector {
     var chatUsesFoldRegions = false
     /// Hiding the sidebar column would give a companion page room beside the chat (TAL-1539).
     var widensForCompanionPage = false
-    /// Counts the split's requests to hide the companion page: opening the sidebar column takes its room (TAL-1539).
-    var companionPageHideRequest = 0
+    /// The sidebar column took the companion page's room; hiding the column brings the page back (TAL-1540).
+    var companionPageIsSuspended = false
+    /// Whether the split shows its sidebar column. It changes in the column's own transaction, so the page slides with it.
+    var sidebarColumnIsShown = false
     var reportCompanionPage: (Bool) -> Void = { _ in }
+    /// The reader's Companion Page button brings a suspended page back, as it would a hidden one.
+    var resumeCompanionPage: () -> Void = {}
     var reportEmptyTranscript: (Bool) -> Void = { _ in }
 }
 
@@ -114,6 +118,9 @@ struct ChatView: View {
     /// TAL-1539: the companion page's opacity as it fades, and whether a hidden page stays until it has faded out.
     @State private var companionPageOpacity = 0.0
     @State private var companionPageFadesOut = false
+    /// TAL-1540: the page that slides with the sidebar column, out past the trailing edge or back in beside the chat.
+    @State private var slidingCompanionPage: SlidingCompanionPage?
+    @State private var companionPagePreview = CompanionPagePreview()
     @Environment(\.holdsForegroundLayout) private var holdsForegroundLayout
     @Environment(\.targetChatLayoutWidth) private var splitTargetChatLayoutWidth
     @State private var lastActiveLayoutSize: CGSize = .zero
@@ -706,7 +713,9 @@ struct ChatView: View {
                     transaction.disablesAnimations = true
                 }
             }
-            .frame(width: viewportSize.width, height: viewportSize.height, alignment: .trailing)
+            // A page returning beside the chat keeps its room at the trailing edge (TAL-1540).
+            .padding(.trailing, returningCompanionPageWidth)
+            .frame(width: viewportSize.width, height: viewportSize.height, alignment: chatFollowsLeadingEdge ? .leading : .trailing)
             .clipShape(PaneEdgeClip())
         }
         .onGeometryChange(for: CGSize.self, of: { [layoutInputs, targetChatLayoutWidth] in layoutInputs.size(in: $0, width: targetChatLayoutWidth) }) { size in
@@ -935,12 +944,10 @@ struct ChatView: View {
             .onChange(of: showsEmptyTranscript,
                       initial: true) { _, isEmpty in splitFilesInspector?.reportEmptyTranscript(isEmpty) }
             .onChange(of: showsFilesInspector, initial: true) { splitFilesInspector?.reportShown(showsFilesInspector) }
-            .onChange(of: showsCompanionPage && !viewModel.companionFocus.isHidden, initial: true) { _, needsRoom in
+            // A page coming back with the column's close claims the column's room once it has arrived (TAL-1540).
+            .onChange(of: showsCompanionPage && !viewModel.companionFocus.isHidden && !companionPageIsSuspended
+                        && slidingCompanionPage?.returns != true, initial: true) { _, needsRoom in
                 splitFilesInspector?.reportCompanionPage(needsRoom)
-            }
-            .onChange(of: splitFilesInspector?.companionPageHideRequest) { old, new in
-                guard let old, let new, new > old else { return }
-                viewModel.setCompanionPageHidden(true)
             }
             .onAppear(perform: reportFilesInspector)
             .onChange(of: splitFilesInspector != nil) { reportFilesInspector() }
@@ -1146,10 +1153,14 @@ struct ChatView: View {
         showsCompanionPage && (companionPageFits || splitFilesInspector?.widensForCompanionPage == true)
     }
 
-    /// Whether the companion page shows beside the chat: where it fits, unless the reader hid it (TAL-1539).
+    /// Whether the companion page shows beside the chat: where it fits, unless the reader hid it (TAL-1539) or the
+    /// sidebar column took its room (TAL-1540). A page coming back joins the arrangement under its sliding copy.
     private var companionPageIsBeside: Bool {
-        companionPageFits && !viewModel.companionFocus.isHidden && !secondaryChatIsBeside
+        companionPageFits && !viewModel.companionFocus.isHidden && !companionPageIsSuspended
+            && slidingCompanionPage?.returns != false && !secondaryChatIsBeside
     }
+
+    private var companionPageIsSuspended: Bool { splitFilesInspector?.companionPageIsSuspended == true }
 
     /// Whether the arrangement shows a page or chat beside this one, a fading page included.
     private var arrangementShowsSecondary: Bool {
@@ -1157,9 +1168,16 @@ struct ChatView: View {
     }
 
     /// The chat block's width: the split's target, or the pane's own while the arrangement narrows it (TAL-1538). A block
-    /// wider than its pane overflows the pane's leading edge and is clipped there.
+    /// wider than its pane overflows the pane's leading edge and is clipped there. A page returning with the column's
+    /// close takes its width from the target (TAL-1540).
     private var targetChatLayoutWidth: CGFloat? {
-        arrangementShowsSecondary ? nil : splitTargetChatLayoutWidth
+        arrangementShowsSecondary ? nil : splitTargetChatLayoutWidth.map { $0 - returningCompanionPageWidth }
+    }
+
+    /// The room a page sliding back in keeps at the chat's trailing edge.
+    private var returningCompanionPageWidth: CGFloat {
+        guard let slidingCompanionPage, slidingCompanionPage.returns else { return 0 }
+        return slidingCompanionPage.width
     }
 
     /// One of two chats side by side: the leading chat with a secondary beside it, or that secondary.
@@ -1171,7 +1189,53 @@ struct ChatView: View {
     }
 
     private var companionPageShown: Binding<Bool> {
-        Binding(get: { !viewModel.companionFocus.isHidden }, set: { viewModel.setCompanionPageHidden(!$0) })
+        Binding(get: { !viewModel.companionFocus.isHidden && !companionPageIsSuspended }, set: { shown in
+            if shown { splitFilesInspector?.resumeCompanionPage() }
+            viewModel.setCompanionPageHidden(!shown)
+        })
+    }
+
+    /// TAL-1540: on the turn before the sidebar column moves, a page the column suspends leaves the arrangement for one
+    /// drawn in place over the chat's trailing edge, and a page it brings back waits past that edge.
+    private func prepareSlidingCompanionPage(suspended: Bool) {
+        // ponytail: the system split gives the page half the arrangement, measured or, before the column closes, the
+        // split's target; measure the pane if a style ever stops halving it.
+        let width = max(arrangementSize.width, splitTargetChatLayoutWidth ?? 0) / 2
+        if suspended {
+            guard companionPageFits, !viewModel.companionFocus.isHidden, !secondaryChatIsBeside else { return }
+            slidingCompanionPage = SlidingCompanionPage(width: width, returns: false)
+        } else if showsCompanionPage, !viewModel.companionFocus.isHidden, splitFilesInspector?.sidebarColumnIsShown == true {
+            slidingCompanionPage = SlidingCompanionPage(width: width, returns: true)
+        } else {
+            slidingCompanionPage = nil
+        }
+    }
+
+    /// Where the sliding page sits from the pane's edge. One leaving sits just past the chat's new width from the leading
+    /// edge, and one coming back waits past the trailing edge until the column closes. Either way it holds its place in
+    /// the pane's final layout, so UIKit's move of the pane carries it in the column's own frames, and Reduce Motion's
+    /// jump with it.
+    private var slidingCompanionPageOffset: CGFloat {
+        guard let slidingCompanionPage else { return 0 }
+        if !slidingCompanionPage.returns { return splitTargetChatLayoutWidth ?? (arrangementSize.width - slidingCompanionPage.width) }
+        return splitFilesInspector?.sidebarColumnIsShown == true ? slidingCompanionPage.width : 0
+    }
+
+    /// While a page leaves, the chat keeps to the pane's leading edge, which carries it beside the opening column.
+    private var chatFollowsLeadingEdge: Bool { slidingCompanionPage?.returns == false }
+
+    /// Once the column has moved, a page that left is gone and one that came back leaves its place to the arrangement.
+    private func settleSlidingCompanionPage() {
+        guard let sliding = slidingCompanionPage, (splitFilesInspector?.sidebarColumnIsShown == true) != sliding.returns
+        else { return }
+        func finish() {
+            guard slidingCompanionPage?.id == sliding.id else { return }
+            if sliding.returns { companionPageOpacity = 1 }
+            slidingCompanionPage = nil
+        }
+        guard !reduceMotion else { return finish() }
+        // ponytail: twice the fold's duration, which its spring settles within, rather than UIKit's own completion.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2 * SessionListMotion.foldDuration, execute: finish)
     }
 
     /// The page fades in shortly after it is inserted; one still fading out turns back from where it is.
@@ -1185,7 +1249,8 @@ struct ChatView: View {
 
     /// A hidden page fades out before it leaves; one the chat can no longer split for (a fold or rotation) leaves at once.
     private func fadeOutCompanionPage() {
-        guard companionPageFits, companionPageOpacity > 0, let animation = ChatMotion.companionPage(reduceMotion: reduceMotion) else {
+        // A page the column suspends slides out instead (TAL-1540).
+        guard companionPageFits, companionPageOpacity > 0, !companionPageIsSuspended, let animation = ChatMotion.companionPage(reduceMotion: reduceMotion) else {
             companionPageOpacity = 0
             companionPageFadesOut = false
             return
@@ -1208,7 +1273,8 @@ struct ChatView: View {
                         if secondaryChatIsBeside, let secondaryChat = splitFilesInspector?.secondaryChat {
                             secondaryChat
                         } else {
-                            ChatCompanionPage(viewModel: viewModel, session: session, server: server, onAPIError: onAPIError)
+                            ChatCompanionPage(viewModel: viewModel, session: session, server: server, onAPIError: onAPIError,
+                                              preview: companionPagePreview)
                                 // Reduce Motion shows the page on its first frame.
                                 .opacity(reduceMotion ? 1 : companionPageOpacity)
                         }
@@ -1220,6 +1286,19 @@ struct ChatView: View {
                     chat
                 }
             }
+            .overlay(alignment: chatFollowsLeadingEdge ? .leading : .trailing) {
+                if let slidingCompanionPage {
+                    // Its controls leave the bar with the suspension and return with the arrangement's page.
+                    ChatCompanionPage(viewModel: viewModel, session: session, server: server, onAPIError: onAPIError,
+                                      preview: companionPagePreview, showsControls: false)
+                        .frame(width: slidingCompanionPage.width)
+                        .background(Color(uiColor: .systemBackground))
+                        .offset(x: slidingCompanionPageOffset)
+                }
+            }
+            // Outside the branch the suspension switches, so the page's slide starts on the very update that switches it.
+            .onChange(of: companionPageIsSuspended) { _, suspended in prepareSlidingCompanionPage(suspended: suspended) }
+            .onChange(of: splitFilesInspector?.sidebarColumnIsShown) { settleSlidingCompanionPage() }
             .onChange(of: companionPageIsBeside, initial: true) { _, isBeside in
                 if isBeside { fadeInCompanionPage() } else { fadeOutCompanionPage() }
             }
@@ -4408,6 +4487,14 @@ private struct ChatLiveSync: ViewModifier {
             onAPIError(lastError)
         }
     }
+}
+
+/// TAL-1540: a companion page sliding with the sidebar column.
+private struct SlidingCompanionPage: Equatable {
+    let id = UUID()
+    let width: CGFloat
+    /// The page comes back as the column closes, rather than leaving as it opens.
+    let returns: Bool
 }
 
 /// Clips the pane's side edges, where a wider destination layout overflows under the sliding column, while content

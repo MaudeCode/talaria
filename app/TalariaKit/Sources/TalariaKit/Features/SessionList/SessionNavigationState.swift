@@ -33,6 +33,7 @@ public struct SessionNavigationState: Equatable, Sendable {
             filesInspectorPresented = false
             chatShowsFilesInspector = false
             chatShowsCompanionPage = false
+            companionPageIsSuspended = false
             secondarySession = nil
         }
     }
@@ -83,8 +84,8 @@ public struct SessionNavigationState: Equatable, Sendable {
         select(secondary)
         secondarySession = primary
     }
-    /// Counts requests that the open chat hide its companion page: the sidebar column takes its room (TAL-1539).
-    public var companionPageHideRequest = 0
+    /// The sidebar column took the open chat's companion page's room; hiding the column brings the page back (TAL-1540).
+    public var companionPageIsSuspended = false
     public private(set) var lastSelectedSessionID: String?
     /// The mounted chat reports itself, including a fork pushed above the root.
     public private(set) var displayedSessionID: String?

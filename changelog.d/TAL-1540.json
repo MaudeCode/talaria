@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On the open iPhone Duo, pressing Sidebar a second time beside a companion page closes the sidebar and brings the page back, sliding both together. A page you hid with its own button stays hidden.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
