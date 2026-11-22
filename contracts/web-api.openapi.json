@@ -47960,10 +47960,13 @@
                   "session_id": {
                     "type": "string"
                   },
-                  "enabled": {}
+                  "enabled": {
+                    "type": "boolean"
+                  }
                 },
                 "required": [
-                  "session_id"
+                  "session_id",
+                  "enabled"
                 ]
               }
             }
