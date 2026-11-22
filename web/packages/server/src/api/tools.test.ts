@@ -570,6 +570,8 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       // Web-only commands carry the message other clients show.
       expect(commands.find((c) => c.name === 'terminal')).toMatchObject({ clients: ['web'], unsupported_message: 'Terminal is not available in the mobile app.' })
       expect(commands.find((c) => c.name === 'usage')?.clients).toEqual(['web'])
+      // TAL-2641: Web runs /handoff through the owner's native verbs; the App adopts it in TAL-2311.
+      expect(commands.filter((c) => c.name === 'handoff')).toEqual([expect.objectContaining({ handler: 'client', clients: ['web'], unsupported_message: 'Handoff is not available in the mobile app yet.' })])
       // Agent rows follow; only executable commands and expandable prompts list clients.
       expect(names.slice(-9)).toEqual(['reload-skills', 'history', 'initiate-setup', 'blueprint', 'agents', 'reload-mcp', 'autoprune', 'refine', 'plugin-task'])
       expect(commands.find((c) => c.name === 'reload-skills')).toMatchObject({ handler: 'agent', clients: ['web', 'ios'], aliases: ['reload_skills'], exec: true })

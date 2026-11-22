@@ -77297,6 +77297,240 @@
         }
       }
     },
+    "/api/session/native-handoff": {
+      "post": {
+        "operationId": "session.nativeHandoff",
+        "summary": "TAL-2641: read, request or cancel moving the chat to a messaging platform's home channel through its own native owner. An unknown outcome is never replayed; read again.",
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "action": {
+                        "const": "read"
+                      }
+                    },
+                    "required": [
+                      "session_id",
+                      "action"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "action": {
+                        "const": "request"
+                      },
+                      "platform": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+                      }
+                    },
+                    "required": [
+                      "session_id",
+                      "action",
+                      "platform"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "action": {
+                        "const": "cancel"
+                      }
+                    },
+                    "required": [
+                      "session_id",
+                      "action"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "profile": {
+                      "type": "string",
+                      "description": "The profile whose owner holds the chat and its handoff record."
+                    },
+                    "available": {
+                      "type": "boolean",
+                      "description": "The chat's owner serves handoff and has at least one configured destination."
+                    },
+                    "unavailable_reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "not_owned",
+                            "unsupported",
+                            "owner_unavailable",
+                            "no_destination"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "destinations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "platform",
+                          "label"
+                        ]
+                      },
+                      "description": "Where a request delivers, shown before the user asks: the platform and its configured home channel name."
+                    },
+                    "state": {
+                      "enum": [
+                        "none",
+                        "pending",
+                        "running",
+                        "completed",
+                        "failed",
+                        "unknown"
+                      ],
+                      "type": "string",
+                      "description": "`pending`: queued for the gateway; `running`: the gateway claimed it; `unknown`: the owner's record could not be read."
+                    },
+                    "platform": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The platform of the latest handoff."
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Why the latest handoff failed, redacted and bounded."
+                    },
+                    "outcome": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "queued",
+                            "refused",
+                            "unknown",
+                            "cancelled",
+                            "not_pending"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "What the owner did with this request or cancel; null on a read."
+                    },
+                    "refusal": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "session_busy",
+                            "handoff_in_flight",
+                            "unknown_execution",
+                            "destination_unavailable",
+                            "permission_denied",
+                            "not_found",
+                            "profile_mismatch",
+                            "runtime_draining",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "can_request": {
+                      "type": "boolean",
+                      "description": "A request may be sent now."
+                    },
+                    "can_cancel": {
+                      "type": "boolean",
+                      "description": "The handoff is queued and no gateway claimed it, so a cancel can still fail it."
+                    }
+                  },
+                  "required": [
+                    "session_id",
+                    "profile",
+                    "available",
+                    "unavailable_reason",
+                    "destinations",
+                    "state",
+                    "platform",
+                    "error",
+                    "outcome",
+                    "refusal",
+                    "can_request",
+                    "can_cancel"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/draft": {
       "get": {
         "operationId": "session.draftGet",

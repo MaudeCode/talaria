@@ -580,6 +580,13 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       const { sid, since } = (await handoffInput(ctx, input))
       return (await ctx.deps.sessions.handoffSummary(sid, since))
     })),
+    // TAL-2641: the chat's native handoff, through its own owner only.
+    nativeHandoff: os.session.nativeHandoff.handler(({ input, context: { ctx } }) => run(async () => {
+      await guardVisibility(ctx, input.session_id)
+      const owner = ctx.deps.sessions.owner
+      if (!owner) throw new HttpError(503, 'Native session controls are unavailable')
+      return owner.handoff(input)
+    })),
     compressStatus: os.session.compressStatus.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = input.session_id.trim()
       if (!sid) throw new HttpError(400, 'session_id is required')
