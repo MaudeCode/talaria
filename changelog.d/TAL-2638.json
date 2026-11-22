@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "A scheduled task's run in Talaria Web opens with the job's own prompt and the skills it loaded, instead of the Agent's cron instructions.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

@@ -210,6 +210,45 @@ export function refusedNotice(msg: unknown): string | null {
   return isDict(refused) && typeof refused.notice === 'string' ? refused.notice : ''
 }
 
+// The Agent's cron prompt (`cron/scheduler_prompt.py` `_build_job_prompt`): its `_CRON_HINT` and run-time line before the
+// job's text, after any skill scaffold, which ends with the slash-skill instruction line (`session_rules/turns.py`).
+const CRON_HINT = '[IMPORTANT: You are running as a scheduled cron job.'
+const CRON_RUN_TIME = /^\[CURRENT RUN TIME: [^\]\n]*\]\n\n/
+const SKILL_INSTRUCTION = `\nThe user has provided the following instruction alongside the skill invocation: ${CRON_HINT}`
+const SKILL_SCAFFOLD = /^\[IMPORTANT: (?:The user has invoked the "|The following skill\(s\) were listed for this job but could not be found)/
+// ponytail: a fixed cap on names shown; no cron job lists more, a crafted row lists millions.
+const MAX_SKILLS = 50
+const LOADED_SKILLS = /^\[IMPORTANT: The user has invoked the "([^"\n]*)" skill, indicating [^\n]*\]$|^\[IMPORTANT: The user has invoked the "[^"\n]*" skill bundle, [^\n]*\]\n\n(?:Bundle: [^\n]*\n)?Skills loaded: ([^\n]*)$/gm
+
+/**
+ * TAL-2638: a cron run's prompt as the job's own text and the skills it loaded, parsed from the Agent's prompt shape; null
+ * for any other row. A missing skill's notice names no loaded skill.
+ */
+function scheduledTaskPrompt(msg: unknown): { body: string; skills: string[] } | null {
+  if (!isDict(msg) || msg.role !== 'user') return null
+  const text = messageText(msg.content).trimStart()
+  let hint = 0
+  let scaffold = ''
+  if (!text.startsWith(CRON_HINT)) {
+    const at = SKILL_SCAFFOLD.test(text) ? text.indexOf(SKILL_INSTRUCTION) : -1
+    if (at < 0) return null
+    scaffold = text.slice(0, at)
+    hint = at + SKILL_INSTRUCTION.length - CRON_HINT.length
+  }
+  const end = text.indexOf(']\n\n', hint)
+  if (end < 0) return null
+  const body = text.slice(end + 3).replace(CRON_RUN_TIME, '').trim()
+  // A stored row is untrusted: an imported prompt can list millions of names, so collection stops at the cap.
+  const skills: string[] = []
+  for (const [, skill, bundle] of scaffold.matchAll(LOADED_SKILLS)) {
+    for (const name of skill === undefined ? bundle!.split(',', MAX_SKILLS) : [skill]) {
+      if (name.trim()) skills.push(name.trim())
+      if (skills.length === MAX_SKILLS) return { body, skills }
+    }
+  }
+  return { body, skills }
+}
+
 /** `row` marked as an ask the safety filter refused, with `notice`, as the Agent's retention marks its own copy. */
 export function asRefusedAsk(row: Message, notice: string): void {
   row.display_kind = 'content_refused'
@@ -320,7 +359,8 @@ export function withMirrorSources<T>(messages: T[], session: object): T[] {
 
 /**
  * TAL-305: stamps `_marker_kind` on marker rows, and `_marker_body` (the list without its marker line) on a preserved
- * task list, so clients render a marker card instead of a message. TAL-815: a failed turn's boundary gets
+ * task list, so clients render a marker card instead of a message. TAL-2638: a cron run's prompt gets `scheduled_task`
+ * with the job's own text in `_marker_body` and its loaded skills in `_marker_skills`. TAL-815: a failed turn's boundary gets
  * `_notice_kind`, unless the turn (`_turn_id`) already carries Web's own error row; that copy and every other row the
  * Agent hides leave as `display_kind: 'hidden'`. TAL-816: a mirrored delivery in a messaging `session`, or one a copy
  * marked with its `mirror_source`, gets `_delivery`. Returns copies; stored rows are untouched.
@@ -336,6 +376,8 @@ export function withMarkerKinds<T>(messages: T[], session: object): T[] {
     if (delivery && (messaging || m.mirror_source === delivery.kind)) return { ...m, _delivery: delivery }
     const notice = refusedNotice(m)
     if (notice !== null) return { ...m, _marker_kind: 'content_refused', _refused_notice: notice }
+    const task = scheduledTaskPrompt(m)
+    if (task) return { ...m, _marker_kind: 'scheduled_task', _marker_body: task.body, _marker_skills: task.skills }
     const kind = markerKind(m)
     if (!kind) {
       const agentKind = agentRowKind(m)
@@ -1797,8 +1839,8 @@ export function withBodyExcerpts<T>(messages: T[], activeTurnId: string | null, 
     }
     if (activeTurnId && m._turn_id === activeTurnId) return out as T
     const newest = index + offset === newestReplyIndex
-    // A delivery shows its body under its own label (TAL-816), so the excerpt is the body's.
-    const text = isDict(m._delivery) ? str(m._delivery.body) : typeof m._display_content === 'string' ? m._display_content : messageText(m.content)
+    // A delivery (TAL-816) and a scheduled task (TAL-2638) show their body under their own label, so the excerpt is the body's.
+    const text = isDict(m._delivery) ? str(m._delivery.body) : m._marker_kind === 'scheduled_task' ? str(m._marker_body) : typeof m._display_content === 'string' ? m._display_content : messageText(m.content)
     if (!newest && text.length > BODY_EXCERPT_LIMIT) {
       out = { ...out, _display_excerpt: bodyExcerpt(text), _display_truncated: true }
     } else {

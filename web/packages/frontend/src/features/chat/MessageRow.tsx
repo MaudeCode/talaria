@@ -191,7 +191,7 @@ export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { 
 })
 
 /**
- * TAL-305: a marker the server stamped `_marker_kind` (a compaction summary, a preserved task list or a refused ask), one quiet line in its
+ * TAL-305: a marker the server stamped `_marker_kind` (a compaction summary, a preserved task list, a refused ask or a scheduled task's prompt), one quiet line in its
  * place like a notice, titled by its kind, never anyone's message. TAL-1566: no card. The body opens from the title:
  * `_marker_body` when sent, else `content`.
  */
@@ -208,6 +208,7 @@ export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage 
     </div>
   }
   if (!message._marker_kind) return null
+  if (message._marker_kind === 'scheduled_task') return <ScheduledTaskRow row={row} />
   // TAL-2057: an ask the safety filter refused, under the server's notice, greyed and without any action.
   if (message._marker_kind === 'content_refused') return (
     <div className="msg-row" data-role="marker" data-marker-kind="content_refused" data-msg-idx={row.index} data-message-key={row.key}>
@@ -230,6 +231,31 @@ export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage 
     </div>
   )
 })
+
+/**
+ * TAL-2638: a cron run's prompt, titled with the skills it loaded, showing the job's own text in place of the Agent's cron
+ * instructions. Copy copies the stored prompt in full.
+ */
+function ScheduledTaskRow({ row }: { row: VisibleMessage }) {
+  const { message } = row
+  const locale = useLocale()
+  const skills = message._marker_skills ?? []
+  const title = skills.length ? m.marker_scheduled_task_skills({ skills: new Intl.ListFormat(locale, { type: 'conjunction' }).format(skills) }) : m.marker_scheduled_task()
+  const text = rowText(message)
+  const items: MessageAction[] = [{ label: m.copy(), Icon: Copy, run: () => copyWithToast(text) }]
+  return <MessageMenu items={items} row={
+    <div className="msg-row" data-role="marker" data-marker-kind="scheduled_task" data-msg-idx={row.index} data-message-key={row.key}>
+      <TranscriptActivityLine title={title} icon={<CalendarClock size={14} aria-hidden="true" className="shrink-0" />} />
+      <CollapsedBody excerpt={message._display_truncated ? message._display_excerpt : undefined}>
+        {(excerpt) => <div className="msg-body mt-2 whitespace-pre-wrap">{excerpt ?? message._marker_body ?? text}</div>}
+      </CollapsedBody>
+      <div className="msg-foot">
+        {message.timestamp ? <span className="msg-time">{formatDate(message.timestamp)}</span> : null}
+        <ActionButtons items={items} />
+      </div>
+    </div>
+  } />
+}
 
 /** The line for a group discussion waiting at its cap, by the server's notice kind. */
 export const pausedNotice = { paused_max_rounds: () => m.group_paused_rounds(), paused_max_messages: () => m.group_paused_messages() }

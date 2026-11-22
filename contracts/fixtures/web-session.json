@@ -15089,5 +15089,70 @@
         }
       ]
     }
+  },
+  "scheduled_task_session": {
+    "session_id": "contract-scheduled-task",
+    "stored": [
+      {
+        "role": "user",
+        "content": "[IMPORTANT: The user has invoked the \"daily-brief\" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]\n\n---\nname: daily-brief\ndescription: Fixture skill daily-brief.\n---\n\nFollow the daily-brief steps.\n\n[IMPORTANT: The user has invoked the \"inbox-triage\" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]\n\n---\nname: inbox-triage\ndescription: Fixture skill inbox-triage.\n---\n\nFollow the inbox-triage steps.\n\nThe user has provided the following instruction alongside the skill invocation: [IMPORTANT: You are running as a scheduled cron job. DELIVERY: Your final response will be automatically delivered to the user — do NOT use send_message or try to deliver the output yourself. Just produce your report/output as your final response and the system handles the rest. SILENT: If there is genuinely nothing new to report, respond with exactly \"[SILENT]\" (nothing else) to suppress delivery. [SILENT] is a literal ASCII control token — never translate or rephrase it, whatever language the rest of your answer uses. Never combine [SILENT] with content — either report your findings normally, or say [SILENT] and nothing more. FAILURE: If a delegated child fails and this cron run must be recorded as failed, put [CRON_FAILURE] on the first line by itself, then explain the child failure on following lines. RECURSION: This is a run of an EXISTING scheduled job — execute the task now. NEVER create or update a cron job because of recurring or future-schedule language in the task prompt below; treat phrasing like \"each Monday\" or \"every day at 9\" as context for this run, not as a request to schedule another job.]\n\n[CURRENT RUN TIME: Sunday, 2026-11-22 09:00 UTC (UTC+00:00)]\n\nSummarize what changed in the repo since yesterday.\nList open pull requests.",
+        "message_id": "scheduled-prompt",
+        "timestamp": 1770000700
+      },
+      {
+        "role": "assistant",
+        "content": "Three commits landed; two pull requests are open.",
+        "message_id": "scheduled-reply",
+        "timestamp": 1770000701
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "[IMPORTANT: The user has invoked the \"daily-brief\" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]\n\n---\nname: daily-brief\ndescription: Fixture skill daily-brief.\n---\n\nFollow the daily-brief steps.\n\n[IMPORTANT: The user has invoked the \"inbox-triage\" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]\n\n---\nname: inbox-triage\ndescription: Fixture skill inbox-triage.\n---\n\nFollow the inbox-triage steps.\n\nThe user has provided the following instruction alongside the skill invocation: [IMPORTANT: You are running as a scheduled cron job. DELIVERY: Your final response will be automatically delivered to the user — do NOT use send_message or try to deliver the output yourself. Just produce your report/output as your final response and the system handles the rest. SILENT: If there is genuinely nothing new to report, respond with exactly \"[SILENT]\" (nothing else) to suppress delivery. [SILENT] is a literal ASCII control token — never translate or rephrase it, whatever language the rest of your answer uses. Never combine [SILENT] with content — either report your findings normally, or say [SILENT] and nothing more. FAILURE: If a delegated child fails and this cron run must be recorded as failed, put [CRON_FAILURE] on the first line by itself, then explain the child failure on following lines. RECURSION: This is a run of an EXISTING scheduled job — execute the task now. NEVER create or update a cron job because of recurring or future-schedule language in the task prompt below; treat phrasing like \"each Monday\" or \"every day at 9\" as context for this run, not as a request to schedule another job.]\n\n[CURRENT RUN TIME: Sunday, 2026-11-22 09:00 UTC (UTC+00:00)]\n\nSummarize what changed in the repo since yesterday.\nList open pull requests.",
+        "message_id": "scheduled-prompt",
+        "timestamp": 1770000700,
+        "_turn_id": "legacy:0",
+        "_marker_kind": "scheduled_task",
+        "_marker_body": "Summarize what changed in the repo since yesterday.\nList open pull requests.",
+        "_marker_skills": [
+          "daily-brief",
+          "inbox-triage"
+        ],
+        "_collapsible": true,
+        "_display": "row"
+      },
+      {
+        "role": "assistant",
+        "content": "Three commits landed; two pull requests are open.",
+        "message_id": "scheduled-reply",
+        "timestamp": 1770000701,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Three commits landed; two pull requests are open.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "turn_summary": [],
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          },
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "6479744bed134ebe2e3ba285f0b176dff35d96568ebb9fb620ef71b7f438cb85"
+        },
+        "_turn_id": "legacy:0",
+        "_display": "row"
+      }
+    ]
   }
 }

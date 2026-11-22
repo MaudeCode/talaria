@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { BODY_EXCERPT_LIMIT, truncateToolArgs, assistantReplyAddedAfterCurrentTurn, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, messageIdentity, messagesHavePrefix, normalizeAssistantDisplay, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withFinalAssistantAnswer, withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
+import cronPrompts from '../test/fixtures/cron-prompts.json' with { type: 'json' }
+import agentSupport from '../../../../sidecar/agent_support.json' with { type: 'json' }
 
 describe('withFinalAssistantAnswer (TAL-1030)', () => {
   const opts = { previousContext: [], msgText: 'question', prompt: { role: 'user', content: 'question', api_content: 'Expanded prompt' }, streamedText: 'Streamed prose', toolLimitReached: false }
@@ -512,6 +514,40 @@ describe('assistant display text (TAL-302)', () => {
     expect(normalizeAssistantDisplay({ role: 'assistant', content: 'A', reasoning_content: 'plan', reasoning: 'plan\n\ninline' })).toEqual({ role: 'assistant', content: 'A', reasoning: 'plan\n\ninline' })
     // Text that merely occurs inside another part is still its own reasoning.
     expect(normalizeAssistantDisplay({ role: 'assistant', content: 'A', reasoning_content: 'Yes', reasoning: 'Yes, it exists.' })).toEqual({ role: 'assistant', content: 'A', reasoning: 'Yes\n\nYes, it exists.' })
+  })
+})
+
+describe('scheduled task prompts (TAL-2638)', () => {
+  const { cases, prompt } = cronPrompts
+  const marked = (content: string, role = 'user') => (withMarkerKinds([{ role, content }], {}) as Record<string, unknown>[])[0]
+
+  it('shows a cron run\'s prompt as the job\'s own text and loaded skills, keeping the stored content', () => {
+    // The recording stays on a release Web supports; re-record it with its generator when the window drops it.
+    expect(agentSupport.releases.map((release) => release.sourceRevision)).toContain(cronPrompts.agentRevision)
+    const expected: [string, string[]][] = [[cases.plain, []], [cases.skills, ['daily-brief', 'inbox-triage']], [cases.bundle, ['daily-brief', 'inbox-triage']], [cases.missing, ['daily-brief']]]
+    for (const [content, skills] of expected) {
+      expect(marked(content), content.slice(0, 80)).toEqual({ role: 'user', content, _marker_kind: 'scheduled_task', _marker_body: prompt, _marker_skills: skills })
+    }
+  })
+
+  it('names at most 50 loaded skills however many a crafted prompt lists', () => {
+    const bundle = cases.bundle.replace('Skills loaded: daily-brief, inbox-triage', `Skills loaded: ${'s,'.repeat(100_000)}`)
+    const single = `${'[IMPORTANT: The user has invoked the "s" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]\n\n'.repeat(200)}${cases.skills.slice(cases.skills.indexOf('\nThe user has provided'))}`
+    for (const content of [bundle, single]) expect(marked(content)!._marker_skills).toHaveLength(50)
+  })
+
+  it('collapses a long job text, not the skills loaded before it', () => {
+    const excerpt = (body: string) => withBodyExcerpts([{ role: 'user', content: `${'s'.repeat(4000)}${body}`, _marker_kind: 'scheduled_task', _marker_body: body }], null, null)[0] as Record<string, unknown>
+    expect(excerpt('Short job.')).not.toHaveProperty('_display_truncated')
+    expect(excerpt('j'.repeat(3001))).toMatchObject({ _display_truncated: true, _display_excerpt: 'j'.repeat(3000) })
+  })
+
+  it('leaves prose and other skill turns as messages', () => {
+    const hint = cases.plain.slice(0, cases.plain.indexOf('\n\n'))
+    const skillTurn = cases.skills.slice(0, cases.skills.indexOf('[IMPORTANT: You are running')) + 'Summarize the repo.'
+    for (const [content, role] of [[`Why does my job say ${hint}`, 'user'], [skillTurn, 'user'], [hint, 'user'], [cases.plain, 'assistant']] as const) {
+      expect(marked(content, role), content.slice(0, 80)).toEqual({ role, content })
+    }
   })
 })
 

@@ -536,6 +536,7 @@ export const MessageSchema = z.looseObject({
   /**
    * TAL-452: a typed user message (never a steer, background update or marker) longer than 20 lines or 2,000
    * characters. Clients show it folded to a few lines with a local "Show more"; copy and edit use the whole `content`.
+   * TAL-2638: a `scheduled_task` row carries it too, measured on `content`, for a client that shows that kind as a message.
    */
   _collapsible: z.boolean().optional(),
   /**
@@ -574,13 +575,17 @@ export const MessageSchema = z.looseObject({
    * Web runs is one row in its place, with role `marker` and a stable `message_id`, display-only and excluded from model
    * history; it is never a turn's prompt or reply. TAL-2057: `content_refused` is a user's ask the provider's safety filter
    * refused, kept on screen and out of model history. Clients show `content` greyed with `_refused_notice`, and offer no
-   * Edit, Retry or reply for it.
+   * Edit, Retry or reply for it. TAL-2638: `scheduled_task` is a cron run's prompt: clients title it with `_marker_skills`
+   * and show `_marker_body` (the job's own text, without the Agent's cron instructions) in place of the user's bubble;
+   * Copy copies the stored `content` in full.
    */
-  _marker_kind: z.enum(['context_compaction', 'preserved_task_list', 'content_refused']).optional(),
+  _marker_kind: z.enum(['context_compaction', 'preserved_task_list', 'content_refused', 'scheduled_task']).optional(),
   /** TAL-2057: why a `content_refused` ask got no answer, the Agent's own copy; always set on that kind, possibly empty. */
   _refused_notice: z.string().optional(),
-  /** TAL-305: a preserved task list's card body, without its marker line. */
+  /** TAL-305: a preserved task list's card body, without its marker line. TAL-2638: a scheduled task's own prompt text. */
   _marker_body: z.string().optional(),
+  /** TAL-2638: the skills a `scheduled_task` run loaded, in order; always set on that kind, possibly empty. */
+  _marker_skills: z.array(z.string()).optional(),
   /**
    * TAL-815: an assistant row the Agent wrote as a notice, not the model's reply. `failed_turn`: the boundary closing a
    * turn that failed, with its copy in `content`. Clients show it as a notice in its place, never as a reply bubble or

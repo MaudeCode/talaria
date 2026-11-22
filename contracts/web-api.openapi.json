@@ -11063,7 +11063,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -11072,6 +11073,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -19248,7 +19255,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -19257,6 +19265,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -25796,7 +25810,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -25805,6 +25820,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -35667,7 +35688,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -35676,6 +35698,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -44860,7 +44888,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -44869,6 +44898,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -54613,7 +54648,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -54622,6 +54658,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -61105,7 +61147,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -61114,6 +61157,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -67659,7 +67708,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -67668,6 +67718,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -74211,7 +74267,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -74220,6 +74277,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -94369,7 +94432,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -94378,6 +94442,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -101036,7 +101106,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -101045,6 +101116,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -108300,7 +108377,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -108309,6 +108387,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
@@ -115012,7 +115096,8 @@
                                     "enum": [
                                       "context_compaction",
                                       "preserved_task_list",
-                                      "content_refused"
+                                      "content_refused",
+                                      "scheduled_task"
                                     ],
                                     "type": "string"
                                   },
@@ -115021,6 +115106,12 @@
                                   },
                                   "_marker_body": {
                                     "type": "string"
+                                  },
+                                  "_marker_skills": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
                                   },
                                   "_notice_kind": {
                                     "enum": [
@@ -171631,7 +171722,8 @@
                                 "enum": [
                                   "context_compaction",
                                   "preserved_task_list",
-                                  "content_refused"
+                                  "content_refused",
+                                  "scheduled_task"
                                 ],
                                 "type": "string"
                               },
@@ -171640,6 +171732,12 @@
                               },
                               "_marker_body": {
                                 "type": "string"
+                              },
+                              "_marker_skills": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_notice_kind": {
                                 "enum": [
