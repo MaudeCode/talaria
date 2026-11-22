@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The export button beside an audio clip in a chat now has a full-size tap target, so a tap no longer misses it.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
