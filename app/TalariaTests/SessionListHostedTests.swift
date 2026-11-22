@@ -4059,3 +4059,15 @@ private final class DrawerDrag {
         XCTAssertTrue(closed, "The drawer did not close")
     }
 }
+
+/// TAL-2411 throwaway fixture (never merged): passes its first attempt and fails every later one, so a focused
+/// diagnostic must stop at attempt 2.
+@MainActor
+final class DiagnosticFailingFixtureTests: XCTestCase {
+    private static var attempts = 0
+
+    func testFailsOnItsSecondAttempt() {
+        Self.attempts += 1
+        XCTAssertLessThan(Self.attempts, 2, "TAL-2411 fixture fails attempt \(Self.attempts) on purpose")
+    }
+}
