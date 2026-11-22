@@ -8,6 +8,7 @@ import {
   aggregateValidator,
   apnsRequestValidator,
   apsEnvironmentValidator,
+  deliveryJobKindValidator,
   preferencesValidator,
   sessionPhaseValidator,
   turnOriginValidator,
@@ -275,12 +276,7 @@ export default defineSchema({
     sourceDecisionReviewId: v.optional(v.string()),
     // TAL-1970: an agent notice alert stays deliverable through retries while its session state exists.
     sourceAgentNotifyId: v.optional(v.string()),
-    kind: v.union(
-      v.literal("live_activity_update"),
-      v.literal("live_activity_end"),
-      v.literal("live_activity_start"),
-      v.literal("notification"),
-    ),
+    kind: deliveryJobKindValidator,
     expectedToken: v.string(),
     stateFingerprint: v.string(),
     request: apnsRequestValidator,
@@ -301,6 +297,8 @@ export default defineSchema({
   })
     .index("by_user_id_and_activity_id_and_status", ["userId", "activityId", "status"])
     .index("by_user_id_and_device_id_and_status", ["userId", "deviceId", "status"])
+    // TAL-232: a session-started push is sent once per event and device, whatever became of an earlier job for it.
+    .index("by_user_id_and_device_id_and_state_fingerprint", ["userId", "deviceId", "stateFingerprint"])
     .index("by_status_and_updated_at", ["status", "updatedAt"]),
 
   // `requestId` is unique: the submit mutation reads it before inserting in the same transaction.

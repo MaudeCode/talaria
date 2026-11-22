@@ -41,7 +41,7 @@ FIXTURE_READERS = {
             "terminal-view.json", "tool-approval-and-agents.json", "vault-prompts.json", "web-native-work.json", "web-session.json"},
     "relay": {"app-registration.json", "feedback-attachment-limits.json", "feedback-report.json",
               "feedback-report-agent.json", "notification-alerts.json", "publisher-session-started.json", "publisher-snapshot.json",
-              "relay-approval-alert.json", "relay-pairing.json", "relay-snapshot.json"},
+              "relay-approval-alert.json", "relay-pairing.json", "relay-session-started-push.json", "relay-snapshot.json"},
 }
 JOBS = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend", "web_sidecar"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}

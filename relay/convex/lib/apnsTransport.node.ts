@@ -1,14 +1,15 @@
 import { createHash, createPrivateKey, sign } from "node:crypto";
 import { connect, type ClientHttp2Session, type IncomingHttpHeaders } from "node:http2";
 
+import type { ApnsRequest } from "./apnsPayload";
 import type { ApsEnvironment } from "./model";
 
 interface ApnsWireRequest {
   token: string;
   topic: string;
   environment: ApsEnvironment;
-  pushType: "alert" | "liveactivity";
-  priority: "5" | "10";
+  pushType: ApnsRequest["pushType"];
+  priority: ApnsRequest["priority"];
   payloadJson: string;
   // Sent as apns-collapse-id when set; notifications use one per chat.
   collapseId?: string;

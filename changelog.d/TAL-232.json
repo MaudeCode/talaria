@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "When a new chat starts, your relay sends a silent background push to each of your iPhones enrolled in that profile, so Talaria can refresh Chats without waiting for its next check.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

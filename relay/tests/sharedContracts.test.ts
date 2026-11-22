@@ -8,6 +8,7 @@ import { internal } from "../convex/_generated/api";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
 import { defaultNotificationPreferences } from "../convex/lib/model";
 import schema from "../convex/schema";
+import { runScheduledRecomputes } from "./relayFixture";
 
 const modules = import.meta.glob("../convex/**/*.ts");
 const fixture = (name: string) => readFileSync(new URL(`../../contracts/fixtures/${name}.json`, import.meta.url), "utf8");
@@ -139,6 +140,24 @@ it("accepts only the bounded session-started fields for the publisher's own prof
   );
   expect(other.status).toBe(409);
   expect(await other.json()).toEqual({ status: "unauthorized" });
+});
+
+// TAL-232: the App recognizes a session start by this silent push (relay-session-started-push.json).
+it("answers an accepted session-started event with the silent push the App refreshes Chats from", async () => {
+  const { backend, signedPut } = await relayWithPublisher();
+  await backend.run(async (ctx) => {
+    const device = await ctx.db.query("devices").first();
+    await ctx.db.patch(device!._id, { pushToken: "contract-push-token" });
+  });
+  const path = publisherPath("prf_default", "sessions/contract-session/started");
+  expect((await signedPut(path, fixture("publisher-session-started"))).status).toBe(200);
+  await runScheduledRecomputes(backend);
+
+  const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+  const expected = JSON.parse(fixture("relay-session-started-push")) as { apnsPushType: string; apnsPriority: string; payload: unknown };
+  expect(jobs.map((job) => ({
+    apnsPushType: job.request.pushType, apnsPriority: job.request.priority, payload: JSON.parse(job.request.payloadJson) as unknown,
+  }))).toEqual([expected]);
 });
 
 // TAL-868, TAL-874: the run's start times the activity; its tool count and last activity replace the lock screen's

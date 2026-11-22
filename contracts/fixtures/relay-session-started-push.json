@@ -1,0 +1,10 @@
+{
+  "apnsPushType": "background",
+  "apnsPriority": "5",
+  "payload": {
+    "aps": { "content-available": 1 },
+    "event": "session_started",
+    "publisherId": "https://contract.example",
+    "sessionId": "contract-session"
+  }
+}
