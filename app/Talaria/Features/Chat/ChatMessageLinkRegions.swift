@@ -148,6 +148,7 @@ struct ChatMarkdownParagraph: View {
     let tracksLinks: Bool
 
     @Environment(\.transcriptMediaParagraphImages) private var media
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         if let media, case let nested = media.nestedImages(in: configuration.content.renderMarkdown()), !nested.isEmpty {
@@ -164,10 +165,85 @@ struct ChatMarkdownParagraph: View {
 
     private var text: some View {
         ChatMarkdownLinkTrackedText(content: configuration.content, tracksLinks: tracksLinks) {
-            configuration.label
+            label
         }
         .fixedSize(horizontal: false, vertical: true)
         .relativeLineSpacing(.em(0.25))
+    }
+
+    /// TAL-2024: MarkdownUI's label is one `Text` `+` per inline, which overflows the phone's stack on a long paragraph;
+    /// such a paragraph draws as one `Text` instead.
+    @ViewBuilder
+    private var label: some View {
+        let markdown = configuration.content.renderMarkdown()
+        if MarkdownContentRenderingPolicy.hasTooManyInlineElements(markdown) {
+            Text(
+                ChatMarkdownInlineStyle.flatParagraph(
+                    markdown: markdown,
+                    plainText: configuration.content.renderPlainText(),
+                    colorScheme: colorScheme
+                )
+            )
+        } else {
+            configuration.label
+        }
+    }
+}
+
+/// The chat theme's inline text styles, shared by `Theme.chat` and the paragraphs drawn without MarkdownUI's label.
+enum ChatMarkdownInlineStyle {
+    static let fontSize: CGFloat = 16
+    static let codeFontScale: CGFloat = 0.85
+    /// The base `gitHub` theme's link color, which `Theme.chat` keeps.
+    static let link = Color(light: Color(rgba: 0x2c65_cfff), dark: Color(rgba: 0x4c8e_f8ff))
+
+    static func codeBackground(_ colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color(red: 0.08, green: 0.09, blue: 0.12) : Color(.tertiarySystemGroupedBackground)
+    }
+
+    /// A paragraph as one attributed string in these styles: Foundation's inline Markdown plus the bare URLs GFM
+    /// autolinks. Soft breaks draw as spaces, as in MarkdownUI, so the link ranges' character offsets still apply.
+    static func flatParagraph(markdown: String, plainText: String, colorScheme: ColorScheme) -> AttributedString {
+        let source = markdown.trimmingCharacters(in: .newlines)
+        let parsed = (try? AttributedString(
+            markdown: source,
+            options: .init(
+                allowsExtendedAttributes: false,
+                interpretedSyntax: .inlineOnlyPreservingWhitespace,
+                failurePolicy: .returnPartiallyParsedIfPossible
+            )
+        )) ?? AttributedString(source)
+
+        // MarkdownUI sizes code as a scale of the fixed body size, rounded.
+        let codeSize = (fontSize * codeFontScale).rounded()
+        var text = AttributedString()
+        for run in parsed.runs {
+            let characters = parsed[run.range].characters.map { $0.isNewline ? " " : $0 }
+            var piece = AttributedString(String(characters), attributes: run.attributes)
+            let intent = run.inlinePresentationIntent ?? []
+            let code = intent.contains(.code)
+            var font = Font.system(
+                size: code ? codeSize : fontSize,
+                weight: intent.contains(.stronglyEmphasized) ? .semibold : .regular,
+                design: code ? .monospaced : .default
+            )
+            if intent.contains(.emphasized) { font = font.italic() }
+            piece.font = font
+            piece.foregroundColor = run.link == nil ? .primary : link
+            if code { piece.backgroundColor = codeBackground(colorScheme) }
+            if intent.contains(.strikethrough) { piece.strikethroughStyle = .single }
+            text.append(piece)
+        }
+
+        let count = text.characters.count
+        for range in MarkdownLinkRanges.cachedRanges(markdown: markdown, plainText: plainText)
+        where range.range.upperBound <= count {
+            let lower = text.characters.index(text.startIndex, offsetBy: range.range.lowerBound)
+            let upper = text.characters.index(lower, offsetBy: range.range.count)
+            text[lower..<upper].link = range.url
+            text[lower..<upper].foregroundColor = link
+        }
+        return text
     }
 }
 

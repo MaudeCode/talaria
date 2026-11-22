@@ -322,6 +322,34 @@ public enum MarkdownContentRenderingPolicy {
 
         return nil
     }
+
+    /// MarkdownUI joins a paragraph's inline elements with `Text` `+`, which SwiftUI resolves recursively; a few hundred
+    /// overflow an iPhone's 1 MB main-thread stack (TAL-2024). A paragraph over this limit renders as one `Text`.
+    static let maxInlineElementsPerParagraph = 300
+
+    /// Overestimates a paragraph's inline elements without parsing it: each delimiter counts once; each line, and each
+    /// `:`, `@` or `www.` of a bare URL or email that GFM autolinks, counts twice.
+    public static func hasTooManyInlineElements(_ markdown: String) -> Bool {
+        var count = 0
+        var trailingW = 0
+        for byte in markdown.utf8 {
+            switch byte {
+            case UInt8(ascii: "\n"), UInt8(ascii: "\r"), UInt8(ascii: ":"), UInt8(ascii: "@"):
+                count += 2
+            case UInt8(ascii: ".") where trailingW >= 3:
+                count += 2
+            case _ where inlineDelimiters.contains(byte):
+                count += 1
+            default:
+                break
+            }
+            trailingW = byte == UInt8(ascii: "w") ? trailingW + 1 : 0
+            if count > maxInlineElementsPerParagraph { return true }
+        }
+        return false
+    }
+
+    private static let inlineDelimiters = Set("`*_~[]<>!$\\".utf8)
 }
 
 enum MarkdownHighlightEngine: Equatable {
