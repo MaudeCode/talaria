@@ -1622,11 +1622,17 @@ export class TurnRunner {
         // usually finds the session compacted; a follow-up turn admitted meanwhile joins it.
         void deps.service().ensureCompacted(sessionId)
         await this.startSteerFollowUp(sessionId, leftovers)
-        // Before the title work, so a generated title's own state.db sync lands after this one's provisional title.
         await deps.syncUsage?.(s, usedModel || null)
       } catch (error) { logAfterOutcome(error) }
       // Title work and the goal judge run side by side; `stream_end` follows both, so their frames reach the stream.
       for (const work of await Promise.allSettled([this.backgroundTitle(s, put), this.continueGoal(s, streamId, put)])) if (work.status === 'rejected') logAfterOutcome(work.reason)
+      // TAL-2626: the usage sync above carries only a manual name. The Agent lets an automatic title fill only an
+      // untitled state.db row, so this lowest-rank sync after the title work lands an automatic title no turn synced
+      // (Sync to Insights turned on later, title generation off) and is refused wherever a title already landed.
+      try {
+        const current = await deps.store.get(sessionId).catch(() => null)
+        if (current && !current.manual_title && !['Untitled', 'New Chat', ''].includes(str(current.title).trim())) await deps.syncTitle?.(current, 'derived')
+      } catch (error) { logAfterOutcome(error) }
       // TAL-1841: `stream_end` follows the turn's outcome write, and a write that rejects still ends the stream.
       try {
         if (succeeded) await opts.onDone?.(lastAnswer(s.messages))

@@ -627,6 +627,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     checkpointStoreBusy: (profile) => rollback.storeBusy(profileHome(profile ?? activeProfile())),
     syncTitle: (session, provenance) => sessions.deps.syncTitle(session, provenance),
     // Python `sync_session_usage` after a settled turn: with `sync_to_insights` on, the state.db row carries the usage.
+    // The sidecar writes a usage title with `user` provenance, so only a manual name rides along; an automatic title
+    // reaches state.db through `syncTitle` at its own `llm` or `derived` rank (TAL-2626).
     syncUsage: async (session, model) => {
       if (!sidecar || !pyBool(settings.peek().sync_to_insights)) return
       try {
@@ -636,7 +638,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
           profile_home: profileHome(targetProfile), session_id: session.session_id,
           input_tokens: session.input_tokens || 0, output_tokens: session.output_tokens || 0, estimated_cost: typeof session.estimated_cost === 'number' ? session.estimated_cost : null,
           cache_read_tokens: session.cache_read_tokens || 0, cache_write_tokens: session.cache_write_tokens || 0,
-          model, title: session.title, message_count: session.messages.length,
+          model, ...(session.manual_title ? { title: session.title } : {}), message_count: session.messages.length,
         })
       } catch (error) {
         log(`[webui] state.db usage sync failed for ${session.session_id}: ${(error as Error).message}`)
