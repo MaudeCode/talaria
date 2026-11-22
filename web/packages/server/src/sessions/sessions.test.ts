@@ -4506,7 +4506,7 @@ describe('runtime seams from review round 10', () => {
       const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
       const started = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'fix the docker volume permissions' }))
       await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
-      return synced.findLast((params) => params.session_id === sid)
+      return synced.find((params) => params.session_id === sid)
     }
     await s.deps.settings.save({ sync_to_insights: true })
     try {
@@ -4558,22 +4558,33 @@ describe('runtime seams from review round 10', () => {
     sidecar.respond('state_db.sync_usage', (params) => { usageSynced.push(params); return { ok: true as const } })
     sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Docker volume permissions', usage: null }))
-    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const turn = async (message: string): Promise<void> => {
+    const newSession = async (): Promise<string> => String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const turn = async (sid: string, message: string): Promise<void> => {
       const started = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
       await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
     }
+    const titleSyncs = (sid: string): Json[] => synced.filter((params) => params.session_id === sid).map(({ title, manual, title_source }) => ({ title, manual, title_source }))
+    // Titled while Sync to Insights was off: a later turn still fills the state.db row with it.
+    const titledEarlier = await newSession()
+    await turn(titledEarlier, 'fix the docker volume permissions')
+    expect(titleSyncs(titledEarlier)).toEqual([])
     await s.deps.settings.save({ sync_to_insights: true })
     try {
-      await turn('fix the docker volume permissions')
+      const sid = await newSession()
+      await turn(sid, 'fix the docker volume permissions')
       expect(usageSynced).toHaveLength(1)
       expect(usageSynced[0]).toMatchObject({ session_id: sid, message_count: 2 })
       expect(usageSynced[0]).not.toHaveProperty('title')
-      expect(synced.findLast((params) => params.session_id === sid)).toMatchObject({ title: 'Docker volume permissions', title_source: 'llm' })
+      // The generated title lands first; the trailing lowest-rank fill cannot replace it.
+      const generated = { title: 'Docker volume permissions', manual: false }
+      expect(titleSyncs(sid)).toEqual([{ ...generated, title_source: 'llm' }, { ...generated, title_source: 'derived' }])
+      await turn(titledEarlier, 'and the log directory?')
+      expect(usageSynced.at(-1)).not.toHaveProperty('title')
+      expect(titleSyncs(titledEarlier)).toEqual([{ ...generated, title_source: 'derived' }])
       await post(s, '/api/session/rename', { session_id: sid, title: 'Volume fix' })
-      await turn('and the log directory?')
-      expect(usageSynced).toHaveLength(2)
-      expect(usageSynced[1]).toMatchObject({ session_id: sid, title: 'Volume fix' })
+      await turn(sid, 'and the log directory?')
+      expect(usageSynced.at(-1)).toMatchObject({ session_id: sid, title: 'Volume fix' })
+      expect(titleSyncs(sid).at(-1)).toEqual({ title: 'Volume fix', manual: true, title_source: undefined })
     } finally {
       await s.deps.settings.save({ sync_to_insights: false })
     }

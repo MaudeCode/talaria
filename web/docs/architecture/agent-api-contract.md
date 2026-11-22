@@ -656,6 +656,9 @@ A rename or explicit regenerate lands with `user` provenance, a model title with
 local fallback summary with `derived`, so a later model title still replaces the summary.
 A turn's `state_db.sync_usage` carries the title only for a manually named session, because the
 sidecar writes a usage title as `user`; an automatic title reaches state.db only at its own rank.
+After the title work, each turn also syncs an automatic title as `derived`. The Agent lets an
+automatic title fill only an untitled row, so this lands a title generated while sync was off
+and is refused once any title is there.
 Chat turns pass `title_user_message=""` when the Agent explicitly declares that parameter,
 preventing duplicate Agent title requests and titles derived from workspace-prefixed prompts.
 The sidecar caches turn signatures per Agent class. Older or uninspectable Agents retain
