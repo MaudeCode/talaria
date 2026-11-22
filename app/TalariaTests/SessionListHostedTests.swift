@@ -2398,6 +2398,79 @@ extension RegularSplitHostedTests {
         UITestFixtureURLProtocol.advanceCompanionRun()
     }
 
+    /// TAL-1538: with the sidebar column already hidden, a page the agent opens takes no room from the column, so the
+    /// chat must narrow to its pane on its own. Nothing in it may start off the pane's leading edge. Opening the column
+    /// then hides the page, and the chat fits the pane beside the column.
+    func testBesideTheCompanionPageTheChatStaysInsideItsPane() async throws {
+        try requireArrangement()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInnerLandscape, writes: false)
+        let split = try XCTUnwrap(HostedAccessibility.splitViewController(under: window.rootViewController))
+        func pressSidebar() async throws {
+            let button = await barButton("Sidebar", in: window) { window.bounds.contains($0) }
+            press(try XCTUnwrap(button, "The chat has no Sidebar button"))
+        }
+        try await pressSidebar()
+        let columnHidden = await awaitCondition { split.displayMode == .secondaryOnly }
+        XCTAssertTrue(columnHidden, "The Sidebar button did not hide the column")
+
+        // The page inserts while the chat still holds the split's full-width target; no frame may draw it clipped.
+        var samples = 0
+        var clipped: [CGRect] = []
+        var page = CGRect.null
+        try await sampleCommittedLayouts(in: window) {
+            samples += 1
+            if let composer = self.composerFrame(in: window), composer.minX < -0.5 { clipped.append(composer) }
+        } during: {
+            try await sendFromComposer("Write the demo files", in: window)
+            page = frame(await companionTitle("Alpha.swift", in: window))
+            settle(0.3)
+        }
+        XCTAssertFalse(page.isEmpty, "The companion page never showed")
+        XCTAssertGreaterThan(samples, 0, "The page's insertion must sample committed layouts")
+        XCTAssertEqual(clipped, [], "The composer started off the chat pane's leading edge in \(clipped.count) of \(samples) frames")
+        window.endEditing(true)
+        try await assertTheChatLiesInsideItsPane(in: window, split: split, paneMaxX: page.minX, "beside the page")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-chat-in-pane")
+
+        try await pressSidebar()
+        let columnShown = await awaitCondition { split.displayMode == .oneBesideSecondary && self.companionPage(in: window) == nil }
+        XCTAssertTrue(columnShown, "The Sidebar button did not open the column in the page's room")
+        try await assertTheChatLiesInsideItsPane(in: window, split: split, paneMaxX: window.bounds.maxX, "with the column shown")
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+        UITestFixtureURLProtocol.advanceCompanionRun()
+    }
+
+    /// The transcript's newest row and the composer lie inside the chat's pane: from the detail column's leading edge to
+    /// `paneMaxX`. A chat block wider than its pane overflows that leading edge and is clipped there.
+    private func assertTheChatLiesInsideItsPane(in window: UIWindow, split: UISplitViewController, paneMaxX: CGFloat,
+                                                _ moment: String, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let detail = try XCTUnwrap(split.viewController(for: .secondary)?.view, file: file, line: line)
+        var pane = CGRect.null
+        var row = CGRect.null
+        var composer = CGRect.null
+        // The pane settles once the column finishes moving; the chat must then fit it.
+        _ = await awaitCondition {
+            let detailFrame = detail.convert(detail.bounds, to: window)
+            pane = CGRect(x: detailFrame.minX, y: detailFrame.minY, width: paneMaxX - detailFrame.minX, height: detailFrame.height)
+            row = self.frame(self.elements(in: window).first { $0.accessibilityLabel?.contains("Writing Alpha.swift.") == true })
+            composer = self.composerFrame(in: window) ?? .null
+            return !row.isNull && !composer.isNull && [row, composer].allSatisfy { $0.minX >= pane.minX - 0.5 && $0.maxX <= pane.maxX + 0.5 }
+        }
+        for (name, element) in [("newest row", row), ("composer", composer)] {
+            XCTAssertFalse(element.isNull, "\(moment) the chat shows no \(name)", file: file, line: line)
+            XCTAssertGreaterThanOrEqual(element.minX, pane.minX - 0.5,
+                "\(moment) the \(name) \(element) starts off the leading edge of its pane \(pane)", file: file, line: line)
+            XCTAssertLessThanOrEqual(element.maxX, pane.maxX + 0.5,
+                "\(moment) the \(name) \(element) runs past its pane \(pane)", file: file, line: line)
+        }
+    }
+
+    /// The composer's editor as the window draws it.
+    private func composerFrame(in window: UIWindow) -> CGRect? {
+        window.firstView(ofType: UITextView.self) { $0.isEditable && !$0.isHidden }.map { $0.convert($0.bounds, to: window) }
+    }
+
     /// TAL-1539: with Open the Agent's File Automatically off, a chat opens without its page until the button.
     func testWithAutoOpenOffAChatShowsNoPageUntilTheButton() async throws {
         try requireArrangement()
