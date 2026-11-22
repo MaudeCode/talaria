@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A sidebar search result that matched a message opens the chat at that message and briefly marks it.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Search opens at the match",
+        "description": "Pick a search result to jump straight to the message that matched.",
+        "icon": "search"
+      }
+    }
+  ]
+}

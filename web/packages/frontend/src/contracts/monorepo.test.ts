@@ -20,6 +20,15 @@ describe('shared monorepo contracts', () => {
     expect(InsightsSchema.parse(fixture.fallback.body).range).toMatchObject({ mode: 'preset', fallback_reason: 'invalid_start' })
   })
 
+  it('lands each content search hit on the transcript row the server keyed it by (TAL-1922)', () => {
+    const { cases } = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/session-search-landing.json'), 'utf8')) as { cases: { match_message_idx: number; match_message_key: string; offset: number; messages: unknown[] }[] }
+    expect(cases.length).toBeGreaterThan(0)
+    for (const hit of cases) {
+      const rows = projectMessages(hit.messages.map((m) => MessageSchema.parse(m)), hit.offset)
+      expect(rows.find((row) => row.key === hit.match_message_key)?.index, hit.match_message_key).toBe(hit.match_message_idx)
+    }
+  })
+
   it('parses the shared compression span the App decodes (TAL-1006)', () => {
     const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/compression.json'), 'utf8')) as Record<string, unknown>
     const events = ['compressing', 'heartbeat', 'compressed'].map((key) => ChatEventSchema.parse(fixture[key]))

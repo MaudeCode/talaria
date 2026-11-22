@@ -169,6 +169,8 @@ export const SessionListItem = memo(function SessionListItem({ row, active, proj
       <ContextMenu label={m.session_menu()} trigger={<Link
         to="/session/$sessionId"
         params={{ sessionId: row.session_id }}
+        // TAL-1922: a content hit opens at the message it matched.
+        search={row.match_message_key ? { msg: row.match_message_key } : {}}
         onClick={closeMobileSidebar}
         draggable={!!onDragStart && row.can_pin && !row.read_only}
         onDragStart={(event) => { if (onDragStart) onDragStart(event, row); else event.preventDefault() }}

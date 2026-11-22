@@ -102,7 +102,7 @@ it('finds matches across 200 sessions with one statement driven by the trigram i
   const statements = [vi.spyOn(StatementSync.prototype, 'all'), vi.spyOn(StatementSync.prototype, 'get'), vi.spyOn(StatementSync.prototype, 'run'), vi.spyOn(StatementSync.prototype, 'iterate')]
   const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare')
   const found = await storage.sessions.searchMessages(sids, sessionSearchTerms('needle'), 5)
-  expect(found).toEqual(new Map([['session-77', { idx: 4, text: 'The NEEDLE is here' }]]))
+  expect(found).toEqual(new Map([['session-77', { idx: 4, text: 'The NEEDLE is here', key: '4-user' }]]))
   expect(statements.reduce((total, spy) => total + spy.mock.calls.length, 0)).toBe(1)
   const sql = prepare.mock.calls.at(-1)?.[0] ?? ''
   vi.restoreAllMocks()
@@ -132,7 +132,7 @@ it('finds no match in a hidden row indexed before its text was excluded', async 
   await storage.sessions.write('session', { doc: doc('session'), messages: { kind: 'replace', rows: [{ role: 'assistant', content: 'older withheld words', display_kind: 'hidden' }, { role: 'assistant', content: 'older shown words' }] } }, null)
   storage.db.db.exec("UPDATE messages SET search_text = 'older withheld words' WHERE idx = 0")
   expect(await storage.sessions.searchMessages(['session'], sessionSearchTerms('withheld'), 0)).toEqual(new Map())
-  expect(await storage.sessions.searchMessages(['session'], sessionSearchTerms('older'), 0)).toEqual(new Map([['session', { idx: 1, text: 'older shown words' }]]))
+  expect(await storage.sessions.searchMessages(['session'], sessionSearchTerms('older'), 0)).toEqual(new Map([['session', { idx: 1, text: 'older shown words', key: '1-assistant' }]]))
   expect(await storage.sessions.diagnose()).toEqual([])
 })
 

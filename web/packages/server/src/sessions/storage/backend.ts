@@ -27,7 +27,8 @@ export interface SessionChange {
 }
 /** A session's transcript before a shrinking write; `savedAt` (epoch seconds) decides whether it predates shrink stamping. */
 export interface ShrinkBackup { doc: SessionDocument; messages: Message[]; savedAt: number }
-export interface MessageMatch { idx: number; text: string }
+/** The first matching stored row: its absolute index, its text, and the transcript key to land on (null: not shown on its own). */
+export interface MessageMatch { idx: number; text: string; key: string | null }
 export type StorageIssue = RecoveryAuditItem & { profile?: string; revision?: string | null; backupRevision?: string | null }
 
 export class RevisionConflict extends Error {

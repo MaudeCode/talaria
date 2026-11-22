@@ -5,7 +5,7 @@ import { backupIssue, backupStatus, indexIssues } from './json-recovery.js'
 import { NEXT_REVISION, PgDb, SCHEMA_VERSION, type PostgresOptions, type Queries } from './postgres-db.js'
 import { PostgresDocuments } from './postgres-documents.js'
 import { PostgresJournal } from './postgres-journal.js'
-import { sessionSearchMatches, sessionSearchMessageText } from './search-text.js'
+import { sessionSearchEntry, sessionSearchMatches, sessionSearchMessageText } from './search-text.js'
 
 export interface PostgresStorageOptions extends PostgresOptions { sessionDir: string; env?: Record<string, string | undefined>; stampingSince: () => number | Promise<number>; log?: (line: string) => void }
 
@@ -110,8 +110,8 @@ class PostgresSessions implements SessionBackend {
         FROM ${this.s}messages WHERE ${where.join(' AND ')}) AS candidates
       WHERE exact_before = 0 ORDER BY session_id, idx`, ...params)) {
       if (matches.has(row.session_id)) continue
-      const text = sessionSearchMessageText(JSON.parse(row.body))
-      if (sessionSearchMatches(text, terms)) matches.set(row.session_id, { idx: row.idx, text })
+      const entry = sessionSearchEntry(JSON.parse(row.body), row.idx)
+      if (sessionSearchMatches(entry.text, terms)) matches.set(row.session_id, { idx: row.idx, ...entry })
     }
     return matches
   }

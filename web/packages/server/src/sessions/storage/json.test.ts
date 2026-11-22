@@ -117,7 +117,7 @@ it('content search parses at most depth messages per file and a repeated search 
       const rows = Array.from({ length: 2000 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: i === (n % 2 ? 3 : 1500) ? `needle ${sid}` : `filler ${i}` }))
       await storage.sessions.write(sid, { doc: { session_id: sid, title: sid, updated_at: 1, anchor_scene_index: [] }, messages: { kind: 'replace', rows } }, null)
     }
-    const expected = new Map(sids.filter((_, n) => n % 2).map((sid) => [sid, { idx: 3, text: `needle ${sid}` }]))
+    const expected = new Map(sids.filter((_, n) => n % 2).map((sid) => [sid, { idx: 3, text: `needle ${sid}`, key: '3-assistant' }]))
     const parse = vi.spyOn(JSON, 'parse')
     expect(await storage.sessions.searchMessages(sids, ['needle'], 5)).toEqual(expected)
     const parsedRows = parse.mock.results.reduce((sum, r) => sum + (Array.isArray((r.value as { messages?: unknown } | null)?.messages) ? (r.value as { messages: unknown[] }).messages.length : 1), 0)
@@ -195,7 +195,7 @@ it('coalesces concurrent identical uncached prefix reads into one descriptor (TA
     const results = await Promise.all(Array.from({ length: 32 }, () => storage.sessions.searchMessages(['big'], ['nohit'], 21)))
     expect(results).toEqual(Array.from({ length: 32 }, () => new Map()))
     expect(stats.perPath.get(join(directory, 'big.json'))).toBe(1)
-    expect(await storage.sessions.searchMessages(['big'], ['big 20'], 21)).toEqual(new Map([['big', { idx: 20, text: expect.stringContaining('big 20 x') as string }]]))
+    expect(await storage.sessions.searchMessages(['big'], ['big 20'], 21)).toEqual(new Map([['big', { idx: 20, text: expect.stringContaining('big 20 x') as string, key: '20-user' }]]))
   })
 })
 

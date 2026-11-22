@@ -23,7 +23,7 @@ vi.mock('../toast/toast', () => ({ showToast: toast }))
 vi.mock('@tanstack/react-router', () => ({
   useParams: () => ({ sessionId: useSyncExternalStore((callback) => { route.listeners.add(callback); return () => { route.listeners.delete(callback) } }, () => route.sessionId) }),
   useNavigate: () => navigate,
-  Link: ({ children, className, ...rest }: { children: ReactNode; className?: string; 'data-sid'?: string; 'aria-current'?: 'page' }) => <a className={className} data-sid={rest['data-sid']} aria-current={rest['aria-current']}>{children}</a>,
+  Link: ({ children, className, ...rest }: { children: ReactNode; className?: string; 'data-sid'?: string; 'aria-current'?: 'page'; search?: { msg?: string } }) => <a className={className} data-sid={rest['data-sid']} data-msg={rest.search?.msg} aria-current={rest['aria-current']}>{children}</a>,
 }))
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -349,6 +349,15 @@ describe('SessionListPanel search (TAL-308, TAL-2184)', () => {
     answer({ sessions: [{ ...delta, match_type: 'content', match_preview: 'a zebra here' }, { ...alpha, match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
     await waitFor(() => { expect(shown()).toEqual(['delta', 'alpha']) })
     expect(screen.getByText('a zebra here')).toBeInTheDocument()
+  })
+
+  it('opens a content hit at its matched message and a title or metadata hit at the bottom (TAL-1922)', async () => {
+    vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [{ ...delta, match_type: 'content', match_preview: 'a zebra here', match_message_idx: 3, match_message_key: '3-user' }, { ...alpha, match_type: 'title' }, { ...other, match_type: 'metadata' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await userEvent.type(screen.getByRole('searchbox'), 'zebra')
+    await waitFor(() => { expect(shown()).toEqual(['delta', 'alpha', 'other']) })
+    const msg = (sid: string) => document.querySelector(`a[data-sid="${sid}"]`)?.getAttribute('data-msg')
+    expect([msg('delta'), msg('alpha'), msg('other')]).toEqual(['3-user', null, null])
   })
 
 })

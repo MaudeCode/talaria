@@ -1,0 +1,64 @@
+{
+  "cases": [
+    {
+      "query": "landprobe alpha",
+      "match_message_idx": 3,
+      "match_message_key": "3-user",
+      "offset": 2,
+      "messages": [
+        {
+          "role": "marker",
+          "message_id": "compaction:landing",
+          "_display": "row"
+        },
+        {
+          "role": "user",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "id": "a-77",
+          "_display": "row"
+        }
+      ]
+    },
+    {
+      "query": "landprobe beta",
+      "match_message_idx": 6,
+      "match_message_key": "a-77",
+      "offset": 2,
+      "messages": [
+        {
+          "role": "marker",
+          "message_id": "compaction:landing",
+          "_display": "row"
+        },
+        {
+          "role": "user",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "id": "a-77",
+          "_display": "row"
+        }
+      ]
+    }
+  ]
+}
