@@ -106,6 +106,61 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(await json(res)).toMatchObject({ error: 'Ambiguous skill name' })
   })
 
+  // TAL-2717: a tab still showing `alpha` after another tab switched the shared cookie to `beta` writes nothing into `beta`.
+  it('refuses skill and memory writes naming a profile other than the active one, and writes when it matches', async () => {
+    const homes = { alpha: join(s.state, 'profiles', 'alpha'), beta: join(s.state, 'profiles', 'beta') }
+    const beta = homes.beta
+    const files = [join(beta, 'config.yaml'), join(beta, 'skills', 'notes', 'SKILL.md'), join(beta, 'memories', 'MEMORY.md')]
+    for (const home of Object.values(homes)) {
+      mkdirSync(join(home, 'skills', 'notes'), { recursive: true })
+      mkdirSync(join(home, 'memories'), { recursive: true })
+      writeFileSync(join(home, 'config.yaml'), `# ${home}\n`)
+      writeFileSync(join(home, 'skills', 'notes', 'SKILL.md'), `---\nname: notes\n---\n${home}`)
+      writeFileSync(join(home, 'memories', 'MEMORY.md'), '')
+    }
+    const row = (name: string, path: string): Json => ({ name, path, is_default: name === 'default', gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 })
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', s.state), row('alpha', homes.alpha), row('beta', beta)] as never[] }))
+    sidecar.respond('skills.find', ({ profile_home, name }) => ({ found: existsSync(join(profile_home, 'skills', name, 'SKILL.md')), skill_dir: join(profile_home, 'skills', name), skill_md: join(profile_home, 'skills', name, 'SKILL.md') }))
+    sidecar.respond('skills.set_locked', () => ({ status: 'ok' }))
+    s.deps.profiles.invalidate()
+    try {
+      const cookie = ((await post(s, '/api/profile/switch', { name: 'beta' })).headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+      expect(cookie).toMatch(/^hermes_profile=beta/)
+      const asBeta = (path: string, body: Json) => post(s, path, body, 'POST', { cookie })
+      const memory = await json(await s.get('/api/memory', { headers: { cookie } }))
+      const writes = (profile: string): [string, Json][] => [
+        ['/api/skills/toggle', { name: 'notes', enabled: false, profile }],
+        ['/api/skills/lock', { name: 'notes', locked: true, profile }],
+        ['/api/skills/save', { name: 'notes', content: `---\nname: notes\n---\ntyped for ${profile}`, profile }],
+        // Both files are empty, so the revision `alpha`'s editor started from is also `beta`'s.
+        ['/api/memory/write', { section: 'memory', content: `typed for ${profile}`, revision: memory.memory_revision, profile }],
+        ['/api/skills/delete', { name: 'notes', profile }],
+      ]
+      const before = files.map((file) => readFileSync(file))
+      const writeCalls = () => sidecar.calls.filter((c) => ['config.set', 'skills.set_locked', 'memory.write'].includes(c.method)).length
+      const callsBefore = writeCalls()
+      for (const [path, body] of writes('alpha')) {
+        const res = await asBeta(path, body)
+        expect([path, res.status]).toEqual([path, 409])
+        expect(await json(res)).toEqual({ error: 'The active profile changed to beta in another tab. Nothing was saved.', condition: 'profile_changed' })
+      }
+      expect(files.map((file) => readFileSync(file))).toEqual(before)
+      expect(writeCalls()).toBe(callsBefore)
+      // The owning profile each page sends back is the server's.
+      expect(memory).toMatchObject({ profile: 'beta' })
+      expect(await json(await s.get('/api/skills', { headers: { cookie } }))).toMatchObject({ profile: 'beta' })
+      // The tab showing `beta` writes as before.
+      for (const [path, body] of writes('beta')) expect([path, (await asBeta(path, body)).status]).toEqual([path, 200])
+      expect(readFileSync(join(beta, 'memories', 'MEMORY.md'), 'utf8')).toBe('typed for beta')
+      expect(existsSync(join(beta, 'skills', 'notes'))).toBe(false)
+      expect(readFileSync(join(homes.alpha, 'skills', 'notes', 'SKILL.md'), 'utf8')).toBe(`---\nname: notes\n---\n${homes.alpha}`)
+    } finally {
+      for (const method of ['profiles.list', 'skills.find', 'skills.set_locked'] as const) sidecar.respond(method, undefined)
+      s.deps.profiles.invalidate()
+      rmSync(join(s.state, 'profiles'), { recursive: true, force: true })
+    }
+  })
+
   describe('lists skills from the Agent, reads usage counters, and saves/toggles/deletes local skills', () => {
     const skills = (): string => join(s.state, 'skills')
     const mySkill = (): string => join(skills(), 'custom', 'my-skill')

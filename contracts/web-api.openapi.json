@@ -139727,12 +139727,17 @@
                           "names"
                         ]
                       }
+                    },
+                    "profile": {
+                      "type": "string",
+                      "description": "TAL-2717: the active profile these rows belong to; a write from this list sends it back as `profile`."
                     }
                   },
                   "required": [
                     "skills",
                     "total",
-                    "categories"
+                    "categories",
+                    "profile"
                   ],
                   "additionalProperties": {}
                 }
@@ -139914,6 +139919,9 @@
                   },
                   "category": {
                     "type": "string"
+                  },
+                  "profile": {
+                    "type": "string"
                   }
                 }
               }
@@ -139946,6 +139954,46 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Refused; nothing was written. `condition: profile_changed`: `profile` is no longer the active profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "condition": {
+                          "type": "string",
+                          "const": "profile_changed"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "condition"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -139964,6 +140012,9 @@
                 "type": "object",
                 "properties": {
                   "name": {
+                    "type": "string"
+                  },
+                  "profile": {
                     "type": "string"
                   }
                 }
@@ -139993,6 +140044,46 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Refused; nothing was written. `condition: profile_changed`: `profile` is no longer the active profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "condition": {
+                          "type": "string",
+                          "const": "profile_changed"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "condition"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -140014,7 +140105,10 @@
                   "name": {
                     "type": "string"
                   },
-                  "enabled": {}
+                  "enabled": {},
+                  "profile": {
+                    "type": "string"
+                  }
                 }
               }
             }
@@ -140046,6 +140140,46 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Refused; nothing was written. `condition: profile_changed`: `profile` is no longer the active profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "condition": {
+                          "type": "string",
+                          "const": "profile_changed"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "condition"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -140070,6 +140204,9 @@
                   },
                   "locked": {
                     "type": "boolean"
+                  },
+                  "profile": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -140102,6 +140239,46 @@
                     "ok",
                     "name",
                     "locked"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused; nothing was written. `condition: profile_changed`: `profile` is no longer the active profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "condition": {
+                          "type": "string",
+                          "const": "profile_changed"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "condition"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    }
                   ]
                 }
               }
@@ -141232,6 +141409,10 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "profile": {
+                      "type": "string",
+                      "description": "TAL-2717: the active profile these files belong to; a save sends it back as `profile`."
                     }
                   },
                   "required": [
@@ -141241,7 +141422,8 @@
                     "project_context_detail",
                     "memory_revision",
                     "user_revision",
-                    "soul_revision"
+                    "soul_revision",
+                    "profile"
                   ],
                   "additionalProperties": {}
                 }
@@ -141275,6 +141457,9 @@
                     "type": "string"
                   },
                   "revision": {
+                    "type": "string"
+                  },
+                  "profile": {
                     "type": "string"
                   }
                 },
@@ -141313,25 +141498,46 @@
             }
           },
           "409": {
-            "description": "The file changed since `revision`; the file is untouched.",
+            "description": "The file changed since `revision`, or `profile_changed`; the file is untouched.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "const": "memory_conflict"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code"
+                      ],
+                      "additionalProperties": false
                     },
-                    "code": {
-                      "type": "string",
-                      "const": "memory_conflict"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "condition": {
+                          "type": "string",
+                          "const": "profile_changed"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "condition"
+                      ],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               }
             }

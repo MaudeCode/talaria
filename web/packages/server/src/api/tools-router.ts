@@ -9,7 +9,7 @@ import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { clientStreamKey } from './sse-routes.js'
-import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer, requestCanManageServer } from '../auth/gate.js'
+import { activeProfileName, profilesMatch, ensureTrustedAuthSession, sessionCanManageServer, requestCanManageServer } from '../auth/gate.js'
 import { currentChatReadiness, HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { stateDbSessionReadAsync } from '../sessions/state-db.js'
@@ -68,6 +68,15 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 }
 
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
+/**
+ * TAL-2717: the profile cookie is shared by every tab, so a page still showing another profile names the one its data came
+ * from; a write naming a profile that is no longer active lands nowhere. Without `profile` (the App) the write goes as before.
+ */
+function activeHome(ctx: RequestContext, profile: string | undefined): string {
+  const active = activeProfileName(ctx)
+  if (profile !== undefined && !profilesMatch(ctx, profile, active)) throw new HttpError(409, `The active profile changed to ${active} in another tab. Nothing was saved.`, { condition: 'profile_changed' })
+  return ctx.deps.profileHome(active)
+}
 
 /** TAL-1514: Meshy work for the active profile, aborted when the request goes away. */
 function meshy<T>(ctx: RequestContext, fn: (signal: AbortSignal) => Promise<T>): Promise<never> {
@@ -612,7 +621,7 @@ export const toolsRouter = os.router({
     replays: os.skills.replays.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.skillReplays.list(await replayScope(ctx), input.name, replayRedact(ctx)))),
     replayStart: os.skills.replayStart.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.skillReplays.start(await replayScope(ctx), home(ctx), input, replayRedact(ctx)))),
     replayCancel: os.skills.replayCancel.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.skillReplays.cancel(await replayScope(ctx), input.id, replayRedact(ctx)))),
-    list: os.skills.list.handler(({ input, context: { ctx } }) => run(async () => skillListing(await ctx.deps.skills.list(home(ctx)), input.q, str(input.category).trim()))),
+    list: os.skills.list.handler(({ input, context: { ctx } }) => run(async () => ({ ...skillListing(await ctx.deps.skills.list(home(ctx)), input.q, str(input.category).trim()), profile: activeProfileName(ctx) }))),
     usage: os.skills.usage.handler(({ context: { ctx } }) => run(() => ctx.deps.skills.usage(home(ctx)) as Promise<never>)),
     content: os.skills.content.handler(({ input, context: { ctx } }) => run(async () => {
       const name = str(input.name)
@@ -628,17 +637,17 @@ export const toolsRouter = os.router({
     })),
     save: os.skills.save.handler(({ input, context: { ctx } }) => run(() => {
       requireFields(input, 'name', 'content')
-      return ctx.deps.skills.save(home(ctx), str(input.name), str(input.content), str(input.category))
+      return ctx.deps.skills.save(activeHome(ctx, input.profile), str(input.name), str(input.content), str(input.category))
     })),
     delete: os.skills.delete.handler(({ input, context: { ctx } }) => run(() => {
       if (input.name === undefined) throw new HttpError(400, 'Missing required field(s): name')
-      return ctx.deps.skills.delete(home(ctx), str(input.name))
+      return ctx.deps.skills.delete(activeHome(ctx, input.profile), str(input.name))
     })),
     toggle: os.skills.toggle.handler(({ input, context: { ctx } }) => run(() => {
       if (input.name === undefined || input.enabled === undefined) throw new HttpError(400, 'Missing required field(s): name, enabled')
-      return ctx.deps.skills.toggle(home(ctx), str(input.name).trim(), pyBool(input.enabled))
+      return ctx.deps.skills.toggle(activeHome(ctx, input.profile), str(input.name).trim(), pyBool(input.enabled))
     })),
-    lock: os.skills.lock.handler(({ input, context: { ctx } }) => run(() => ctx.deps.skills.setLocked(home(ctx), input.name, input.locked))),
+    lock: os.skills.lock.handler(({ input, context: { ctx } }) => run(() => ctx.deps.skills.setLocked(activeHome(ctx, input.profile), input.name, input.locked))),
   },
   memory: {
     compactionPreview: os.memory.compactionPreview.handler(({ input, context: { ctx } }) => run(async () => {
@@ -654,12 +663,12 @@ export const toolsRouter = os.router({
     })),
     get: os.memory.get.handler(({ input, context: { ctx } }) => run(async () => {
       const config = await ctx.deps.agentConfig.read(home(ctx))
-      return readMemory(home(ctx), config, (await memoryWorkspace(ctx, str(input.session_id), str(input.workspace))), ctx.deps.config.env, ctx.deps.sessions.deps.redactEnabled(), ctx.deps.auth.signingKey(), ctx.deps.git) as never
+      return { ...await readMemory(home(ctx), config, (await memoryWorkspace(ctx, str(input.session_id), str(input.workspace))), ctx.deps.config.env, ctx.deps.sessions.deps.redactEnabled(), ctx.deps.auth.signingKey(), ctx.deps.git), profile: activeProfileName(ctx) } as never
     })),
     write: os.memory.write.handler(({ input, context: { ctx } }) => run(async () => {
       const section = input.section ?? input.target
       if (section === undefined || input.content === undefined) throw new HttpError(400, 'Missing required field(s): section, content')
-      const profileHome = home(ctx)
+      const profileHome = activeHome(ctx, input.profile)
       const saved = await writeMemory(profileHome, await ctx.deps.agentConfig.read(profileHome), str(section), str(input.content), input.revision, memoryWriteDeps(ctx, profileHome))
       // Only SOUL.md: a session's MEMORY.md and USER.md snapshot is frozen by design.
       if (saved.section === 'soul') await requestPromptRefresh(ctx.deps.sidecar(), profileHome, ctx.deps.log)

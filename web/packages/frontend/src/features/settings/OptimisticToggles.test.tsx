@@ -25,7 +25,7 @@ const manifests = vi.hoisted(() => vi.fn())
 vi.mock('../../extensions/registry', () => ({ fetchExtensionManifestList: manifests }))
 
 const ids = ['alpha', 'beta']
-const skills = () => ({ skills: ids.map((name) => ({ name, disabled: true, category: null, description: '' })), total: ids.length, categories: [] })
+const skills = () => ({ skills: ids.map((name) => ({ name, disabled: true, category: null, description: '' })), total: ids.length, categories: [], profile: 'default' })
 const mcp = () => ({ toggle_supported: true, reload_required: true, servers: ids.map((name) => ({ name, enabled: false, can_toggle: true, status: 'disabled', health: 'unhealthy' })) })
 // TAL-2282: unselected available rows, each free to change; `gamma` keeps the list from ever being empty.
 const toolsetDefaults = () => ({ toolsets: [...ids, 'gamma'].map((name) => ({ name, description: '', available: true, selected: name === 'gamma', unavailable_reason: null, group: 'available' as const, can_deselect: true })), selected_toolsets: ['gamma'], using_defaults: true, default_toolsets: ['gamma'] })
@@ -350,7 +350,7 @@ it('sends a second skill save only after the first answers, so the newest text l
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
   expect(api.saveSkill).toHaveBeenCalledTimes(1)
   await act(async () => { first({ ok: true }); await Promise.resolve() })
-  await waitFor(() => expect(api.saveSkill).toHaveBeenLastCalledWith('alpha', '# alpha!?'))
+  await waitFor(() => expect(api.saveSkill).toHaveBeenLastCalledWith('alpha', '# alpha!?', 'default'))
 })
 
 it('saves only the flipped default toolset, and offers no switch the server refuses (TAL-2282)', async () => {

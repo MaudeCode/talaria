@@ -279,10 +279,11 @@ export const fetchSkillReplayPlan = (name: string, baseline: string, candidate: 
 export const fetchSkillReplays = (name: string) => orpc().skills.replays({ name })
 export const startSkillReplay = (input: Parameters<ReturnType<typeof orpc>['skills']['replayStart']>[0]) => orpc().skills.replayStart(input)
 export const cancelSkillReplay = (id: string) => orpc().skills.replayCancel({ id })
-export const saveSkill = (name: string, content: string) => orpc().skills.save({ name, content })
-export const deleteSkill = (name: string) => orpc().skills.delete({ name })
-export const toggleSkill = (name: string, enabled: boolean) => orpc().skills.toggle({ name, enabled })
-export const lockSkill = (name: string, locked: boolean) => orpc().skills.lock({ name, locked })
+// TAL-2717: `profile` is the one the page's data came from; the server refuses the write once another tab switched away from it.
+export const saveSkill = (name: string, content: string, profile?: string) => orpc().skills.save({ name, content, profile })
+export const deleteSkill = (name: string, profile?: string) => orpc().skills.delete({ name, profile })
+export const toggleSkill = (name: string, enabled: boolean, profile?: string) => orpc().skills.toggle({ name, enabled, profile })
+export const lockSkill = (name: string, locked: boolean, profile?: string) => orpc().skills.lock({ name, locked, profile })
 export const fetchSkillsUsage = () => orpc().skills.usage()
 /** TAL-819: the Agent's staged skill or memory writes; approve applies them, reject discards them. */
 export const fetchPendingWrites = (kind: 'skills' | 'memory') => orpc().pendingWrites.list({ kind })
@@ -292,7 +293,7 @@ export const previewMemoryCompaction = (body: { section: 'memory' | 'user'; revi
 export const applyMemoryCompaction = (receipt: string) => orpc().memory.compactionApply({ receipt })
 export const fetchMemory = (workspace?: string) => orpc().memory.get(workspace ? { workspace } : {})
 /** `section` names the file: `memory`, `user`, or `soul`; `revision` is its `*_revision` the edit started from (TAL-784). */
-export const writeMemory = (body: { section: 'memory' | 'user' | 'soul'; content: string; revision: string }) => orpc().memory.write(body)
+export const writeMemory = (body: { section: 'memory' | 'user' | 'soul'; content: string; revision: string; profile?: string | undefined }) => orpc().memory.write(body)
 export const fetchCronContextSources = (input: { profile?: string; editing_job_id?: string; exclude_job_id?: string; selected_refs?: string[] }) => orpc().crons.contextSources(input)
 export const fetchCrons = (allProfiles = false) => orpc().crons.list(allProfiles ? { all_profiles: '1' } : {})
 export const cronAction = (action: 'create' | 'update' | 'delete' | 'run' | 'stop' | 'pause' | 'resume', body: Record<string, unknown>) => {

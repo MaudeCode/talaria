@@ -10,15 +10,18 @@ import jobFixture from '../../../../../../contracts/fixtures/skill-replay-job.js
 vi.mock('../../api/endpoints', () => ({ fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), fetchSkillContent: vi.fn(), fetchSkillRevisions: vi.fn(), fetchSkillReplayPlan: vi.fn(), fetchSkillReplays: vi.fn(), startSkillReplay: vi.fn(), cancelSkillReplay: vi.fn(), saveSkill: vi.fn(), deleteSkill: vi.fn(), toggleSkill: vi.fn(), lockSkill: vi.fn(), fetchPendingWrites: vi.fn(() => Promise.resolve({ kind: 'skills', visible: false, enabled: false, items: [] })) }))
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ actions, toolbar, children }: { actions: React.ReactNode; toolbar: React.ReactNode; children: React.ReactNode }) => <div>{actions}{toolbar}{children}</div> }))
 import * as api from '../../api/endpoints'
+import { keys } from '../../api/queryKeys'
 import { ApiError } from '../../contracts/common'
 import { teardownAll } from '../../stream/connection'
 import { SkillsPage } from './SkillsPage'
 import { showToast } from '../toast/toast'
+import { loadBootstrap } from '../../app/bootstrap'
 
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
+vi.mock('../../app/bootstrap', async (original) => ({ ...await original<typeof import('../../app/bootstrap')>(), loadBootstrap: vi.fn(() => Promise.resolve()) }))
 
 beforeEach(() => {
-  vi.mocked(api.fetchSkills).mockReset().mockResolvedValue({ skills: [{ name: 'demo', description: 'Example skill', category: null, disabled: false }], total: 1, categories: [] })
+  vi.mocked(api.fetchSkills).mockReset().mockResolvedValue({ skills: [{ name: 'demo', description: 'Example skill', category: null, disabled: false }], total: 1, categories: [], profile: 'default' })
   vi.mocked(api.fetchSkillsUsage).mockReset().mockResolvedValue({ usage: {} })
   vi.mocked(api.fetchSkillContent).mockReset().mockResolvedValue({ success: true, content: 'Current editable content', linked_files: {} })
   vi.mocked(api.fetchSkillRevisions).mockReset().mockResolvedValue(SkillRevisionsSchema.parse(fixture))
@@ -33,9 +36,10 @@ afterEach(() => { vi.unstubAllGlobals() })
 function renderSkills() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(<QueryClientProvider client={client}><SkillsPage /></QueryClientProvider>)
+  return client
 }
 
-const lockRow = (locked: boolean | null) => vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false, locked }], total: 1, categories: [] })
+const lockRow = (locked: boolean | null) => vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false, locked }], total: 1, categories: [], profile: 'default' })
 
 it('shows the lock at once, then rolls it back and reports a refusal', async () => {
   lockRow(false)
@@ -46,10 +50,56 @@ it('shows the lock at once, then rolls it back and reports a refusal', async () 
   expect(lock).toHaveAttribute('aria-pressed', 'false')
   await userEvent.click(lock)
   expect(lock).toHaveAttribute('aria-pressed', 'true')
-  expect(api.lockSkill).toHaveBeenCalledWith('demo', true)
+  expect(api.lockSkill).toHaveBeenCalledWith('demo', true, 'default')
   await act(async () => { refuse(new ApiError({ kind: 'http', status: 409, path: '/api/skills/lock', message: 'skills/.usage.json could not be written' })); await Promise.resolve() })
   await vi.waitFor(() => expect(lock).toHaveAttribute('aria-pressed', 'false'))
   expect(showToast).toHaveBeenCalledWith('skills/.usage.json could not be written', 4000, 'error')
+})
+
+// TAL-2717: another tab switched the shared profile; the toggle lands nowhere and the page reloads onto the active profile.
+it('rolls a toggle refused with profile_changed back, shows the server error and reloads the list', async () => {
+  const refused = 'The active profile changed to beta in another tab. Nothing was saved.'
+  vi.mocked(api.toggleSkill).mockRejectedValue(new ApiError({ kind: 'http', status: 409, path: '/api/skills/toggle', message: refused, body: { error: refused, condition: 'profile_changed' } }))
+  renderSkills()
+  const toggle = await screen.findByRole('switch', { name: 'demo' })
+  expect(toggle).toBeChecked()
+  const reads = vi.mocked(api.fetchSkills).mock.calls.length
+  await userEvent.click(toggle)
+  expect(api.toggleSkill).toHaveBeenCalledWith('demo', false, 'default')
+  await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith(refused, 4000, 'error'))
+  await vi.waitFor(() => expect(vi.mocked(api.fetchSkills).mock.calls.length).toBeGreaterThan(reads))
+  expect(await screen.findByRole('switch', { name: 'demo' })).toBeChecked()
+  // The shell's profile and every other cached read reload, as an in-tab switch does.
+  expect(loadBootstrap).toHaveBeenCalledTimes(1)
+})
+
+it('keeps a skill edit refused with profile_changed, and reloads the profile once the editor is left', async () => {
+  const refused = 'The active profile changed to beta in another tab. Nothing was saved.'
+  vi.mocked(api.saveSkill).mockRejectedValue(new ApiError({ kind: 'http', status: 409, path: '/api/skills/save', message: refused, body: { error: refused, condition: 'profile_changed' } }))
+  renderSkills()
+  await userEvent.click(await screen.findByRole('button', { name: /^demo/ }))
+  const editor = await screen.findByRole('textbox')
+  await userEvent.type(editor, '!')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(api.saveSkill).toHaveBeenCalledWith('demo', 'Current editable content!', 'default')
+  await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith(refused, 4000, 'error'))
+  expect(editor).toHaveValue('Current editable content!')
+  expect(loadBootstrap).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: 'Back' }))
+  expect(loadBootstrap).toHaveBeenCalledTimes(1)
+})
+
+it('saves a skill edit naming the profile it started on after the list refetches another', async () => {
+  vi.mocked(api.saveSkill).mockResolvedValue({ ok: true, name: 'demo', path: '/h/skills/demo/SKILL.md' })
+  const client = renderSkills()
+  await userEvent.click(await screen.findByRole('button', { name: /^demo/ }))
+  await userEvent.type(await screen.findByRole('textbox'), '!')
+  // Another tab switched to `beta`; a focus refetch brings the list under that profile while the editor stays open.
+  vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false }], total: 1, categories: [], profile: 'beta' })
+  await act(() => client.refetchQueries())
+  await vi.waitFor(() => expect(client.getQueryData<{ profile: string }>([...keys.skills.list, { q: '', category: '' }])?.profile).toBe('beta'))
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(api.saveSkill).toHaveBeenCalledWith('demo', 'Current editable content!', 'default')
 })
 
 it('unlocks a locked skill from its row menu, the same action as the row control', async () => {
@@ -59,11 +109,11 @@ it('unlocks a locked skill from its row menu, the same action as the row control
   expect(await screen.findByRole('button', { name: 'Lock demo' })).toHaveAttribute('aria-pressed', 'true')
   fireEvent.contextMenu(screen.getByRole('button', { name: /^demo/ }))
   await userEvent.click(await screen.findByRole('menuitem', { name: 'Unlock' }))
-  expect(api.lockSkill).toHaveBeenCalledWith('demo', false)
+  expect(api.lockSkill).toHaveBeenCalledWith('demo', false, 'default')
 })
 
 it.each([[null], [undefined]])('offers no lock while the server reports it unavailable (%s)', async (locked) => {
-  vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false, ...(locked === null ? { locked } : {}) }], total: 1, categories: [] })
+  vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false, ...(locked === null ? { locked } : {}) }], total: 1, categories: [], profile: 'default' })
   renderSkills()
   await screen.findByRole('switch', { name: 'demo' })
   expect(screen.queryByRole('button', { name: 'Lock demo' })).toBeNull()
@@ -71,7 +121,7 @@ it.each([[null], [undefined]])('offers no lock while the server reports it unava
 
 // TAL-2480: the server filters and names the categories; the page sends the filter and shows the answer.
 it('sends the search and category to the server and renders its answer', async () => {
-  vi.mocked(api.fetchSkills).mockImplementation(({ q = '', category = '' } = {}) => Promise.resolve({ total: 3, categories: ['docs', 'tools'],
+  vi.mocked(api.fetchSkills).mockImplementation(({ q = '', category = '' } = {}) => Promise.resolve({ total: 3, categories: ['docs', 'tools'], profile: 'default',
     skills: q || category ? [{ name: `${category}:${q}`, description: '', category: null, disabled: false }] : [{ name: 'demo', description: '', category: null, disabled: false }] }))
   renderSkills()
   await screen.findByRole('switch', { name: 'demo' })

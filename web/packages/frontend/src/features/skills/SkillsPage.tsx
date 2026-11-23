@@ -18,6 +18,7 @@ import { useResourceEffects, useResourceMutation, withEffects } from '../session
 import { SkillRow } from './SkillRow'
 import { PendingWritesPanel, TextDiffReview } from '../pending-writes/PendingWritesPanel'
 import { useStreamContext } from '../../stream/connection'
+import { isProfileChanged, useReloadActiveProfile } from '../../app/queries'
 
 /** TAL-2326: `initialSkill` opens that skill's detail first, as a tool row's link asks. */
 export function SkillsPage({ initialSkill }: { initialSkill?: string | undefined } = {}) {
@@ -30,11 +31,14 @@ export function SkillsPage({ initialSkill }: { initialSkill?: string | undefined
   const usage = useQuery({ queryKey: keys.skills.usage, queryFn: api.fetchSkillsUsage, staleTime: 60_000 })
   const effects = useResourceEffects<boolean>()
   const list = withEffects(skills.data?.skills ?? [], (s) => `skill:${s.name}`, effects)
+  const profile = skills.data?.profile
+  const reloadProfile = useReloadActiveProfile()
+  const onError = (e: unknown) => { showErrorToast(e); if (isProfileChanged(e)) reloadProfile() }
   const categories = skills.data?.category_groups?.flatMap(({ category }) => category === null ? [] : [category]) ?? skills.data?.categories ?? []
-  const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showErrorToast(e) })
-  const lock = useResourceMutation({ resource: ({ name }: { name: string; locked: boolean }) => `skill-lock:${name}`, effect: ({ locked }) => ({ value: locked }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: ({ name, locked }: { name: string; locked: boolean }) => api.lockSkill(name, locked), onError: (e) => showErrorToast(e) })
+  const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled, profile), onError })
+  const lock = useResourceMutation({ resource: ({ name }: { name: string; locked: boolean }) => `skill-lock:${name}`, effect: ({ locked }) => ({ value: locked }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: ({ name, locked }: { name: string; locked: boolean }) => api.lockSkill(name, locked, profile), onError })
 
-  if (selected) return <SkillDetail key={selected} name={selected} onBack={() => setSelected(null)} />
+  if (selected) return <SkillDetail key={selected} name={selected} profile={profile} onError={onError} onReloadProfile={reloadProfile} onBack={() => setSelected(null)} />
   return (
     <HubPage
       title={m.tab_skills()}
@@ -71,27 +75,30 @@ function SkillSearch({ initialQuery, onSearch }: { initialQuery: string; onSearc
   )
 }
 
-function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
+function SkillDetail({ name, profile, onError, onReloadProfile, onBack }: { name: string; profile: string | undefined; onError: (e: unknown) => void; onReloadProfile: () => void; onBack: () => void }) {
   const content = useQuery({ queryKey: keys.skills.content(name), queryFn: () => api.fetchSkillContent(name) })
-  const [draft, setDraft] = useState<string | null>(null)
+  // TAL-2717: a draft keeps the profile it started on; the list refetches on focus and may name another one by the save.
+  const [draft, setDraft] = useState<{ text: string; profile: string | undefined } | null>(null)
   const [confirm, setConfirm] = useState(false)
   const [file, setFile] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  // TAL-2717: a save refused because another tab switched profile keeps its text; leaving the editor reloads the profile.
+  const [profileMoved, setProfileMoved] = useState(false)
   // The editor keeps the submitted text; a confirmed save clears only a draft nobody edited since. A later save waits for
   // the one in flight, so the server always ends on the newest text.
   const save = useResourceMutation({
     resource: () => `skill-content:${name}`, queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.content(name), exact: true }],
-    effect: (text: string) => ({ value: text }),
-    mutationFn: (text) => api.saveSkill(name, text),
-    onSuccess: (_, text) => { showToast(m.skill_saved()); setDraft((d) => d === text ? null : d) },
-    onError: (e) => showErrorToast(e),
+    effect: (submitted: { text: string; profile: string | undefined }) => ({ value: submitted.text }),
+    mutationFn: (submitted) => api.saveSkill(name, submitted.text, submitted.profile),
+    onSuccess: (_, submitted) => { showToast(m.skill_saved()); setDraft((d) => d === submitted ? null : d) },
+    onError: (e) => { if (isProfileChanged(e)) { showErrorToast(e); setProfileMoved(true) } else onError(e) },
   })
-  const del = useResourceMutation({ resource: () => `skill:${name}`, effect: () => ({ remove: true }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: () => api.deleteSkill(name), onError: (e) => showErrorToast(e) })
-  const text = draft ?? content.data?.content ?? ''
+  const del = useResourceMutation({ resource: () => `skill:${name}`, effect: () => ({ remove: true }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: () => api.deleteSkill(name, profile), onError })
+  const text = draft?.text ?? content.data?.content ?? ''
   const linked = Object.entries(content.data?.linked_files ?? {})
   if (file) return <SkillFile name={name} file={file} onBack={() => setFile(null)} />
   return (
-    <HubPage title={name} actions={<BackButton onClick={onBack} />}>
+    <HubPage title={name} actions={<BackButton onClick={() => { onBack(); if (profileMoved) onReloadProfile() }} />}>
       {content.isPending && <LoadingState />}
       {content.isError && <ErrorState error={content.error} onRetry={() => { void content.refetch() }} />}
       {content.isSuccess && (
@@ -103,7 +110,7 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
           </details>
           <label className="flex flex-col gap-1 text-sm">
             <span>{m.skill_content_label()}</span>
-            <textarea value={text} readOnly={content.data.editable === false} onChange={(e) => setDraft(e.target.value)} rows={24} spellCheck={false} placeholder={m.skill_content_placeholder()} className="w-full rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text" />
+            <textarea value={text} readOnly={content.data.editable === false} onChange={(e) => { const value = e.target.value; setDraft((d) => ({ text: value, profile: d ? d.profile : profile })) }} rows={24} spellCheck={false} placeholder={m.skill_content_placeholder()} className="w-full rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text" />
           </label>
           {content.data.editable !== false && <div className="flex gap-2">
             <Button variant="primary" disabled={draft === null} onClick={() => { if (draft !== null) save.mutate(draft) }}>{m.save()}</Button>

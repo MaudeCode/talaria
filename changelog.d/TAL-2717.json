@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A Talaria Web tab still showing a profile you switched away from in another tab no longer saves skill changes or Memory edits into the new profile. The tab reloads onto the active profile and keeps your Memory text.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
