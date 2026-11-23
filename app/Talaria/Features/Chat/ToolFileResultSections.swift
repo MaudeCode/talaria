@@ -45,7 +45,8 @@ private struct ToolFilePath: View {
 }
 
 /// TAL-2323: a read's lines under its path, coloured by the source viewer's highlighter with the grammar the server
-/// named, numbered as in the file, and where a cut-short read stopped.
+/// named, numbered as in the file, and where a cut-short read stopped. TAL-2594: an archive read that wrapped its long
+/// lines says so, since its numbers count wrapped lines.
 struct FileExcerptSection: View {
     let excerpt: FileExcerpt
     @Environment(\.colorScheme) private var colorScheme
@@ -82,6 +83,11 @@ struct FileExcerptSection: View {
             }
             if excerpt.truncated, let last = excerpt.lines.last?.n {
                 Text(excerpt.totalLines.map { String(localized: "Stopped at line \(last) of \($0)") } ?? String(localized: "Stopped at line \(last)"))
+                    .font(AppFont.caption())
+                    .foregroundStyle(.secondary)
+            }
+            if let width = excerpt.wrappedAt {
+                Text("Long lines wrapped at \(width) characters")
                     .font(AppFont.caption())
                     .foregroundStyle(.secondary)
             }

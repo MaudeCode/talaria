@@ -270,7 +270,8 @@ public struct FileExcerptLine: Decodable, Equatable, Sendable {
 
 /// TAL-2323: a `read_file` result: the file the call named, the lines it returned with their real numbers, the file's
 /// `totalLines`, and whether the read stopped early. `focusPath` locates the file inside the session workspace;
-/// `language` is the highlight grammar the server named.
+/// `language` is the highlight grammar the server named. TAL-2594: `wrappedAt` is the width an archive read wrapped its
+/// long lines at, so its numbers count wrapped lines; nil for an unwrapped read and from an older server.
 public struct FileExcerpt: Decodable, Equatable, Sendable {
     public let path: String
     public let focusPath: String?
@@ -280,6 +281,7 @@ public struct FileExcerpt: Decodable, Equatable, Sendable {
     public let totalLines: Int?
     public let truncated: Bool
     public let nextOffset: Int?
+    public let wrappedAt: Int?
 }
 
 /// TAL-2323: one matching line of a `search_files` result.

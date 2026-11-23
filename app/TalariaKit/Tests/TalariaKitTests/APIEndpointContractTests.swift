@@ -1138,6 +1138,12 @@ final class SharedContractTests: XCTestCase {
             XCTAssertEqual(excerpt.lines.last?.text, "run(2)")
             XCTAssertEqual([excerpt.totalLines, excerpt.nextOffset], [40, 14])
             XCTAssertTrue(excerpt.truncated)
+            // TAL-2594: an unwrapped read, like any read from before TAL-2686, carries no wrap width.
+            XCTAssertNil(excerpt.wrappedAt)
+            // A Web from before TAL-2686 has no archive read.
+            if let archive = views["call-archive"] {
+                XCTAssertEqual(archive?.fileExcerpt?.wrappedAt, 20)
+            }
             let search = try XCTUnwrap(views["call-search"]??.matches)
             XCTAssertEqual(search.files.map(\.path), ["src/app.ts", "src/run.ts"])
             XCTAssertEqual(search.files.last?.matches.map(\.line), [1, 4, 9])
