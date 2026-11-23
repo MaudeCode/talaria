@@ -198,6 +198,30 @@ extension SessionListMutationTests {
         ActiveServerProfile.record(nil, for: server)
     }
 
+    /// Every defaults write re-renders each `@AppStorage` view, so a profile list that reports the profile already
+    /// recorded must not write: an open chat re-rendered whole when its composer's profile read answered mid-stream
+    /// (TAL-1890). A main-thread write notifies before it returns, so the count is read right after each record.
+    func testRecordingTheProfileAlreadyRecordedLeavesDefaultsUnwritten() {
+        let server = URL(string: "https://profile-unchanged-\(UUID().uuidString).test")!
+        let writes = LockedValue(0)
+        let observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
+            object: UserDefaults.standard, queue: nil) { _ in
+            // Background work from earlier tests may write defaults; only this test writes on the main thread.
+            if Thread.isMainThread { writes.value += 1 }
+        }
+        defer {
+            NotificationCenter.default.removeObserver(observer)
+            ActiveServerProfile.record(nil, for: server)
+        }
+
+        ActiveServerProfile.record("fixture", for: server)
+        XCTAssertEqual(writes.value, 1, "A newly recorded profile must be stored")
+        ActiveServerProfile.record("fixture", for: server, ifNoSwitchSince: ActiveServerProfile.switchCount(for: server))
+        XCTAssertEqual(writes.value, 1, "A profile list reporting the recorded profile rewrote defaults")
+        ActiveServerProfile.record("fixture", for: server)
+        XCTAssertEqual(writes.value, 1, "Recording the stored profile again rewrote defaults")
+    }
+
     func testRunningChatsNeverOpenedHereArePrefetchedOncePerRun() async throws {
         let context = try makeContext()
         let server = try XCTUnwrap(URL(string: "https://example.test"))

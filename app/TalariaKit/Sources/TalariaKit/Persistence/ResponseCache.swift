@@ -137,20 +137,28 @@ public enum ActiveServerProfile {
     }
 
     static func record(_ name: String?, for server: URL, ifNoSwitchSince switchCount: Int) {
-        let accepted = lock.withLock {
+        let changed = lock.withLock {
             guard switches[server.absoluteString, default: 0] == switchCount else { return false }
-            names[server.absoluteString] = name
-            return true
+            return store(name, for: server)
         }
-        if accepted { persist() }
+        if changed { persist() }
     }
 
     static func record(_ name: String?, for server: URL) {
-        lock.withLock {
+        let changed = lock.withLock {
             switches[server.absoluteString, default: 0] += 1
-            names[server.absoluteString] = name
+            return store(name, for: server)
         }
-        persist()
+        if changed { persist() }
+    }
+
+    /// Whether `name` replaced a different one; the caller holds the lock. Writing defaults notifies every `@AppStorage`
+    /// view, so an unchanged profile from each profile list must not rewrite them: an open chat re-rendered whole when
+    /// its composer's profile read answered mid-stream (TAL-1890).
+    private static func store(_ name: String?, for server: URL) -> Bool {
+        guard names[server.absoluteString] != name else { return false }
+        names[server.absoluteString] = name
+        return true
     }
 
     private static func persist() {
