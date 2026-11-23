@@ -869,6 +869,16 @@ final class UITestFixtureURLProtocol: URLProtocol {
         case "/api/background/dismiss" where UITestFixtureEnvironment.hasBackgroundUpdates:
             Self.backgroundDismissed.withLock { $0 = true }
             return json(["ok": true, "task": Self.backgroundTasks()[1]])
+        case "/api/session/tool-result" where UITestFixtureEnvironment.hasCompanionTurn:
+            // TAL-1478: a read's whole result, whose file the companion page opens.
+            return json([
+                "tool_call_id": "ui-fixture-tool",
+                "result": "fixture result, in full",
+                "result_view": ["text": "fixture result, in full", "file_excerpt": [
+                    "path": Self.companionFiles[1], "focus_path": Self.companionFiles[1], "language": "swift", "start_line": 1,
+                    "lines": [["n": 1, "text": "fixture result, in full"]], "total_lines": 1, "truncated": false
+                ]]
+            ])
         case "/api/session/tool-result":
             return json([
                 "tool_call_id": "ui-fixture-tool",

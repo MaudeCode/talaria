@@ -444,7 +444,15 @@ public final class ChatViewModel {
     private func restoreCachedBranchedFrom(sessionID: String, modelContext: ModelContext) {
         branchedFrom = try? CacheStore.cachedBranchedFrom(serverURL: server, sessionID: sessionID, in: modelContext)
     }
-    private(set) var liveAssistantActivity = AssistantActivityTimeline()
+    private(set) var liveAssistantActivity = AssistantActivityTimeline() {
+        // TAL-1478: a call shown on the companion page takes each update the stream brings, drawn or not.
+        didSet {
+            guard let id = companionFocus.shownToolCallID,
+                  let call = liveAssistantActivity.toolCalls.last(where: { $0.id == id }),
+                  companionFocus.shown != .toolResult(call) else { return }
+            companionFocus.show(.toolResult(call), runID: activeStreamID)
+        }
+    }
     public var liveActivityRows: [AssistantActivityRow] { liveAssistantActivity.rows }
     public var liveToolCalls: [ToolCall] { liveAssistantActivity.toolCalls }
     public var liveReasoningText: String { liveAssistantActivity.reasoningText }

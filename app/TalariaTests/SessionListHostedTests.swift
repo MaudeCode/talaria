@@ -3065,6 +3065,19 @@ extension RegularSplitHostedTests {
         XCTAssertNotNil(restored, "Reopening the Duo lost the page's tool result")
     }
 
+    /// The page's tool result opens its file as the transcript's would: on the page.
+    func testAFileInTheCompanionPagesToolResultOpensOnThePage() async throws {
+        try requireArrangement()
+        let window = try await openSettledCompanionTurn(size: HostedSize.duoInnerLandscape)
+        HostedAccessibility.activate(try await clippedToolRow(in: window))
+        let open = try await requireElement(in: window, "The page's result offers no way to open its file") {
+            $0.accessibilityLabel?.hasPrefix("Open Sources/Demo/Beta.swift") == true && $0.accessibilityFrame.minX > window.bounds.width / 3
+        }
+        HostedAccessibility.activate(open)
+        let beta = await companionTitle("Beta.swift", in: window)
+        XCTAssertNotNil(beta, "Opening the result's file did not show it on the page")
+    }
+
     /// Portrait has no page beside the chat: the card opens inline and Changes opens its sheet, as on a phone.
     func testDuoInnerPortraitOpensToolDetailsInlineAndChangesInASheet() async throws {
         try requireArrangement()

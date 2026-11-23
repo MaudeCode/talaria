@@ -6,7 +6,7 @@ import Foundation
 public struct ChatCompanionFocus: Equatable, Sendable {
     /// What the page shows over its file.
     public enum Shown: Equatable, Sendable {
-        /// The call as its card last saw it, so a running call's result fills in.
+        /// The call as the stream last updated it, so a running call's result fills in.
         case toolResult(ToolCall)
         /// The turn's changed files, and the one whose diff is open.
         case turnChanges([GitFile], opened: GitFile?)
@@ -95,7 +95,7 @@ public struct ChatCompanionFocus: Equatable, Sendable {
     }
 
     /// TAL-1478: a tool result or a turn's changes pin the page as a chosen file does. The call the page already shows
-    /// only takes its newer state, so its card's updates keep the page current without re-pinning it.
+    /// only takes its newer state, so the stream's updates keep the page current without re-pinning it.
     public mutating func show(_ shown: Shown, runID: String?) {
         if case .toolResult(let call) = shown, call.id == shownToolCallID {
             self.shown = shown

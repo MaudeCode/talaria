@@ -132,12 +132,9 @@ struct ToolCallCardView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // The page shows the whole result at once; a running call's page follows its card.
+        // The page shows the whole result at once.
         .task(id: isOnPage ? toolCall.id : nil) {
             if isOnPage, toolCall.resultTruncated, fullResult == nil, !fullResultFailed { startFullResult() }
-        }
-        .onChange(of: toolCall) { _, call in
-            if isShownBeside { companionPresentation?.show(call) }
         }
     }
 

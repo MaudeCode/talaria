@@ -115,9 +115,6 @@ struct ChatCompanionPage: View {
             .environment(\.chatTranscriptRowState, preview.toolState)
             .environment(\.chatScreenReads, reads)
             .ownsReads(reads)
-            .chatEnvironmentAction(\.chatFullToolResultLoader) { toolCallID in
-                { try await viewModel.fullToolResult(toolCallID: toolCallID) }
-            }
         case .turnChanges(let files, opened: let opened):
             heading(opened?.displayPath ?? GitTurnFilesList.title(for: files))
             if let opened {

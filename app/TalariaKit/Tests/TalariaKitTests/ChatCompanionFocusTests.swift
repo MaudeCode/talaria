@@ -80,6 +80,17 @@ final class ChatCompanionFocusTests: XCTestCase {
         XCTAssertEqual(focus.path, "b.swift")
     }
 
+    /// TAL-1478: a running call shown on the page takes its completion from the stream, whether or not its card is drawn.
+    func testTheShownToolResultTakesItsCallsCompletionWithoutItsCard() throws {
+        let chat = try makeChat(id: "-shown")
+        chat.streamCoordinatorAppendToolCall(try frame("tool_a"))
+        chat.showOnCompanionPage(.toolResult(try XCTUnwrap(chat.liveToolCalls.last)))
+        chat.streamCoordinatorCompleteToolCall(try toolEvent(#"{"id": "call-alpha", "name": "write_file", "edit_diff": \#(editDiffJSON)}"#))
+        guard case .toolResult(let shown) = chat.companionFocus.shown else { return XCTFail("The page lost its tool result") }
+        XCTAssertTrue(shown.isCompleted, "The page kept the running call")
+        XCTAssertEqual(shown.editDiff?.added, 1)
+    }
+
     /// TAL-1478: Back steps from a changed file's diff to the turn's list, then to the pinned file under it.
     func testBackStepsFromAChangedFileToTheListThenToThePinnedFile() throws {
         var focus = ChatCompanionFocus()
