@@ -77,7 +77,8 @@ function SkillSearch({ initialQuery, onSearch }: { initialQuery: string; onSearc
 
 function SkillDetail({ name, profile, onError, onReloadProfile, onBack }: { name: string; profile: string | undefined; onError: (e: unknown) => void; onReloadProfile: () => void; onBack: () => void }) {
   const content = useQuery({ queryKey: keys.skills.content(name), queryFn: () => api.fetchSkillContent(name) })
-  const [draft, setDraft] = useState<string | null>(null)
+  // TAL-2717: a draft keeps the profile it started on; the list refetches on focus and may name another one by the save.
+  const [draft, setDraft] = useState<{ text: string; profile: string | undefined } | null>(null)
   const [confirm, setConfirm] = useState(false)
   const [file, setFile] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -87,13 +88,13 @@ function SkillDetail({ name, profile, onError, onReloadProfile, onBack }: { name
   // the one in flight, so the server always ends on the newest text.
   const save = useResourceMutation({
     resource: () => `skill-content:${name}`, queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.content(name), exact: true }],
-    effect: (text: string) => ({ value: text }),
-    mutationFn: (text) => api.saveSkill(name, text, profile),
-    onSuccess: (_, text) => { showToast(m.skill_saved()); setDraft((d) => d === text ? null : d) },
+    effect: (submitted: { text: string; profile: string | undefined }) => ({ value: submitted.text }),
+    mutationFn: (submitted) => api.saveSkill(name, submitted.text, submitted.profile),
+    onSuccess: (_, submitted) => { showToast(m.skill_saved()); setDraft((d) => d === submitted ? null : d) },
     onError: (e) => { if (isProfileChanged(e)) { showErrorToast(e); setProfileMoved(true) } else onError(e) },
   })
   const del = useResourceMutation({ resource: () => `skill:${name}`, effect: () => ({ remove: true }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: () => api.deleteSkill(name, profile), onError })
-  const text = draft ?? content.data?.content ?? ''
+  const text = draft?.text ?? content.data?.content ?? ''
   const linked = Object.entries(content.data?.linked_files ?? {})
   if (file) return <SkillFile name={name} file={file} onBack={() => setFile(null)} />
   return (
@@ -109,7 +110,7 @@ function SkillDetail({ name, profile, onError, onReloadProfile, onBack }: { name
           </details>
           <label className="flex flex-col gap-1 text-sm">
             <span>{m.skill_content_label()}</span>
-            <textarea value={text} readOnly={content.data.editable === false} onChange={(e) => setDraft(e.target.value)} rows={24} spellCheck={false} placeholder={m.skill_content_placeholder()} className="w-full rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text" />
+            <textarea value={text} readOnly={content.data.editable === false} onChange={(e) => { const value = e.target.value; setDraft((d) => ({ text: value, profile: d ? d.profile : profile })) }} rows={24} spellCheck={false} placeholder={m.skill_content_placeholder()} className="w-full rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text" />
           </label>
           {content.data.editable !== false && <div className="flex gap-2">
             <Button variant="primary" disabled={draft === null} onClick={() => { if (draft !== null) save.mutate(draft) }}>{m.save()}</Button>

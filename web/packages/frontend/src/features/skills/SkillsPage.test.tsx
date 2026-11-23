@@ -10,6 +10,7 @@ import jobFixture from '../../../../../../contracts/fixtures/skill-replay-job.js
 vi.mock('../../api/endpoints', () => ({ fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), fetchSkillContent: vi.fn(), fetchSkillRevisions: vi.fn(), fetchSkillReplayPlan: vi.fn(), fetchSkillReplays: vi.fn(), startSkillReplay: vi.fn(), cancelSkillReplay: vi.fn(), saveSkill: vi.fn(), deleteSkill: vi.fn(), toggleSkill: vi.fn(), lockSkill: vi.fn(), fetchPendingWrites: vi.fn(() => Promise.resolve({ kind: 'skills', visible: false, enabled: false, items: [] })) }))
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ actions, toolbar, children }: { actions: React.ReactNode; toolbar: React.ReactNode; children: React.ReactNode }) => <div>{actions}{toolbar}{children}</div> }))
 import * as api from '../../api/endpoints'
+import { keys } from '../../api/queryKeys'
 import { ApiError } from '../../contracts/common'
 import { teardownAll } from '../../stream/connection'
 import { SkillsPage } from './SkillsPage'
@@ -35,6 +36,7 @@ afterEach(() => { vi.unstubAllGlobals() })
 function renderSkills() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(<QueryClientProvider client={client}><SkillsPage /></QueryClientProvider>)
+  return client
 }
 
 const lockRow = (locked: boolean | null) => vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false, locked }], total: 1, categories: [], profile: 'default' })
@@ -85,6 +87,19 @@ it('keeps a skill edit refused with profile_changed, and reloads the profile onc
   expect(loadBootstrap).not.toHaveBeenCalled()
   await userEvent.click(screen.getByRole('button', { name: 'Back' }))
   expect(loadBootstrap).toHaveBeenCalledTimes(1)
+})
+
+it('saves a skill edit naming the profile it started on after the list refetches another', async () => {
+  vi.mocked(api.saveSkill).mockResolvedValue({ ok: true, name: 'demo', path: '/h/skills/demo/SKILL.md' })
+  const client = renderSkills()
+  await userEvent.click(await screen.findByRole('button', { name: /^demo/ }))
+  await userEvent.type(await screen.findByRole('textbox'), '!')
+  // Another tab switched to `beta`; a focus refetch brings the list under that profile while the editor stays open.
+  vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false }], total: 1, categories: [], profile: 'beta' })
+  await act(() => client.refetchQueries())
+  await vi.waitFor(() => expect(client.getQueryData<{ profile: string }>([...keys.skills.list, { q: '', category: '' }])?.profile).toBe('beta'))
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(api.saveSkill).toHaveBeenCalledWith('demo', 'Current editable content!', 'default')
 })
 
 it('unlocks a locked skill from its row menu, the same action as the row control', async () => {
