@@ -14,7 +14,9 @@
       ],
       "consumers": [
         "app/TalariaKit/Sources/TalariaKit/Features/Chat/MarkdownMathSegmenter.swift",
-        "app/Talaria/Features/Chat/DisplayMathView.swift"
+        "app/Talaria/Features/Chat/ChatMessageLinkRegions.swift",
+        "app/Talaria/Features/Chat/DisplayMathView.swift",
+        "app/Talaria/Features/Chat/TranscriptMediaContentView.swift"
       ],
       "tests": [
         "TalariaKitTests/MarkdownMathFormattingBudgetTests",
@@ -22,7 +24,7 @@
         "TalariaKitTests/MarkdownMathRendererTests",
         "TalariaTests/MarkdownMathRendererTests"
       ],
-      "review": "The formatter reaches the App through two consumers. MarkdownMathSegmenter calls mayContainMath and replacingInlineMath for every message and feeds MarkdownMathLayoutCache; the package renderer, formatting-budget and layout-cache tests drive both through the segmenter. DisplayMathView falls back to renderedText for LaTeX SwiftMath cannot parse; the hosted MarkdownMathRendererTests render it."
+      "review": "The formatter reaches the App through two consumers. MarkdownMathSegmenter calls mayContainMath and replacingInlineMath for every message and feeds MarkdownMathLayoutCache; the package renderer, formatting-budget and layout-cache tests drive both through the segmenter. DisplayMathView falls back to renderedText for LaTeX SwiftMath cannot parse. Inline math reaches the App as InlineMathReference images: ChatMessageLinkRegions draws a paragraph holding them through DisplayMathView's InlineMathParagraphText and TranscriptMediaContentView's inline image provider draws them in headings and table cells; the hosted MarkdownMathRendererTests render both."
     }
   ]
 }

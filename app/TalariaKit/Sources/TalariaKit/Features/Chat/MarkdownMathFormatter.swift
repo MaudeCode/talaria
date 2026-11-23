@@ -41,7 +41,7 @@ public struct MarkdownMathFormatter: Sendable {
             // A `$` span ending in `/` or `:` is a shell path such as `$HOME/foo:$PATH`.
             let isShellPath = delimiter == .dollar && (latex.hasSuffix("/") || latex.hasSuffix(":"))
             if !isShellPath, looksLikeMath(latex) {
-                result += renderedText(for: latex)
+                result += InlineMathReference.markdown(for: latex) ?? renderedText(for: latex)
                 index = closeIndex + delimiter.closeLength
             } else {
                 result.append(characters[index])
@@ -192,6 +192,7 @@ public struct MarkdownMathFormatter: Sendable {
             return true
         }
         if trimmed.contains("\\") || trimmed.contains("^") || trimmed.contains("_") { return true }
+        if trimmed.range(of: numericTuplePattern, options: .regularExpression) != nil { return true }
         if trimmed.range(of: #"[A-Za-z0-9]\s*[=<>+\-*/|]\s*[A-Za-z0-9]"#, options: .regularExpression) != nil {
             return true
         }
@@ -231,11 +232,67 @@ public struct MarkdownMathFormatter: Sendable {
 
     private static let identifierPattern = #"^[A-Za-z](?:_[A-Za-z0-9]+|\^[A-Za-z0-9]+)?$"#
 
+    /// A point such as `(4,-2)`: two or more signed numbers in parentheses. A lone price never opens a span.
+    private static let numericTuplePattern = #"^\(\s*[+-]?\d+(?:\.\d+)?(?:\s*,\s*[+-]?\d+(?:\.\d+)?)+\s*\)$"#
+
     private static let groupPairs: [Character: Character] = ["[": "]", "(": ")", "{": "}"]
 
     private static let groupedAssignmentCharacters = CharacterSet.alphanumerics
         .union(.whitespaces)
         .union(CharacterSet(charactersIn: #"_^,.+-*/<>|[](){}"#))
+}
+
+/// An inline expression as a Markdown image whose address carries its LaTeX, which the App draws with SwiftMath in
+/// the line of text (TAL-971). The alt text is one character, as the drawn image is, so plain-text offsets such as
+/// link ranges match what the line draws.
+public enum InlineMathReference {
+    public static let scheme = "talaria-math"
+    /// Longer expressions keep the text approximation rather than a long image address.
+    static let maxLaTeXBytes = 512
+
+    static func markdown(for latex: String) -> String? {
+        let source = latex.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty, source.utf8.count <= maxLaTeXBytes else { return nil }
+        let encoded = Data(source.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+        return "![\u{FFFC}](\(scheme):///\(encoded))"
+    }
+
+    /// The LaTeX an inline-math image carries; nil for any other image.
+    public static func latex(from url: URL?) -> String? {
+        guard let url, url.scheme == scheme else { return nil }
+        let encoded = String(url.path.dropFirst())
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        guard let data = Data(base64Encoded: encoded), data.count <= maxLaTeXBytes else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Whether Markdown holds an inline-math image, without parsing it.
+    public static func occurs(in markdown: String) -> Bool {
+        markdown.contains("](\(scheme):")
+    }
+
+    /// Whether Markdown holds an image other than inline math. Literal `![` text also counts, which only costs a
+    /// paragraph its synchronous math drawing.
+    public static func hasOtherImages(in markdown: String) -> Bool {
+        markdown.components(separatedBy: "![").count > markdown.components(separatedBy: "](\(scheme):").count
+    }
+
+    /// Plain text with each expression's one-character alt replaced by its LaTeX, which VoiceOver reads (TAL-971).
+    /// Nil when the Markdown holds no inline math.
+    public static func spokenText(plainText: String, markdown: String) -> String? {
+        guard occurs(in: markdown) else { return nil }
+        var sources = markdown.components(separatedBy: "](\(scheme):///").dropFirst().map { part in
+            latex(from: URL(string: "\(scheme):///" + part.prefix { $0 != ")" })) ?? ""
+        }.makeIterator()
+        let spoken = plainText.trimmingCharacters(in: .newlines).flatMap { character -> [Character] in
+            if character == "\u{FFFC}" { return Array(sources.next() ?? "") }
+            return [character.isNewline ? " " : character]
+        }
+        return String(spoken)
+    }
 }
 
 private enum InlineDelimiter: CaseIterable {

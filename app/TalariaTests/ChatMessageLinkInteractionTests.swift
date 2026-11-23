@@ -169,6 +169,14 @@ final class ChatMarkdownInlineStackDepthTests: XCTestCase {
         try renderOnPhoneStack((0..<400).map { "https://example.invalid/p/\($0)" }.joined(separator: " "))
     }
 
+    /// TAL-971: adjacent copies of one cached expression share an attributed run, yet each is its own attachment.
+    func testRepeatedInlineMathParagraphRendersOnAPhoneStack() throws {
+        for scale in [2.0, 3.0] {
+            InlineMathImages.draw("x", style: InlineMathImageStyle(colorScheme: .light, scale: scale))
+        }
+        try renderOnPhoneStack(String(repeating: #"\(x\)"#, count: 1_000))
+    }
+
     private func renderOnPhoneStack(_ markdown: String) throws {
         let window = try HostedScene.window(size: CGSize(width: 390, height: 900))
         addTeardownBlock { MainActor.assumeIsolated { window.isHidden = true; window.rootViewController = nil } }

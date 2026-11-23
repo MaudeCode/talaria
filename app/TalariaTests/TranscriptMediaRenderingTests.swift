@@ -53,6 +53,28 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         XCTAssertFalse(loads.urls.contains(audio.url), "Audio renders as a tile, not an inline image")
     }
 
+    /// TAL-971: a paragraph holding inline math still loads its other images through the authenticated loader.
+    func testImageBesideInlineMathStillLoads() async throws {
+        let image = TranscriptMediaReference(url: "./api/media?path=%2Ftmp%2Fplot.png&session_id=s1", name: "plot.png", mime: "image/png", mediaKind: .image)
+        let display = TranscriptDisplayBody(text: "The value $M_S$ is plotted ![Plot](\(image.url)) here.", media: [image])
+        let message = ChatMessage(role: "assistant", content: "The value $M_S$ is plotted MEDIA:/tmp/plot.png here.",
+                                  timestamp: nil, messageId: "math-media-reply", displayBody: display)
+        let loads = LoadRecorder()
+
+        try hostInOwnWindow(MessageBubbleView(
+            message: message,
+            loadTranscriptMediaImage: { reference in
+                loads.record(reference.url)
+                return TestPNG.data
+            },
+            loadTranscriptMediaData: { _ in nil },
+            transcriptMediaCacheNamespace: "https://example.invalid|\(UUID().uuidString)"
+        ), size: CGSize(width: 360, height: 400))
+
+        let loaded = await awaitCondition { loads.urls == [image.url] }
+        XCTAssertTrue(loaded, "The image beside the math loaded \(loads.urls)")
+    }
+
     /// TAL-753: the audio tile's export button keeps the 44 pt minimum touch target around its 15 pt glyph.
     func testAudioExportButtonHasAMinimumTouchTarget() async throws {
         let audio = TranscriptMediaReference(url: "./api/media?path=%2Ftmp%2Fclip.mp3&session_id=s1", name: "clip.mp3", mime: "audio/mpeg", mediaKind: .audio)
