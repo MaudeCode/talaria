@@ -44,6 +44,7 @@ import { fetchRemoteImage, publicImageFetch, relaySlot, RemoteImageError, vouche
 import { dashboardScope } from '../tools/dashboard-plugins.js'
 import { ProfileError } from '../profiles/profiles.js'
 import { agentBackupRefusal } from '../tools/agent-backup.js'
+import { STORAGE_FULL, storageFull } from '../util.js'
 
 const SANDBOX_CSP = 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox'
 const DANGEROUS_TYPES = new Set(['text/html', 'application/xhtml+xml', 'image/svg+xml'])
@@ -573,6 +574,7 @@ async function handleUpload(ctx: RequestContext): Promise<void> {
     if (error instanceof UploadConflict) { (await ctx.json({ error: error.message }, { status: 409 })); return }
     if (error instanceof UploadRejected) { (await ctx.json({ error: error.message }, { status: 403 })); return }
     if (error instanceof Error && error.message === 'Invalid filename') { (await ctx.json({ error: error.message }, { status: 400 })); return }
+    if (storageFull(error)) throw error
     ctx.deps.log(`[webui] upload error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
     await ctx.json({ error: 'Upload failed' }, { status: 500 })
   }
@@ -589,6 +591,7 @@ async function handleUploadExtract(ctx: RequestContext): Promise<void> {
     await ctx.json({ ok: true, ...(await ctx.deps.uploads.extract(sessionId, file.filename, file.body, ctx.deps.config.maxExtractedBytes)) })
   } catch (error) {
     if (error instanceof ArchiveRejected) { (await ctx.json({ error: error.message }, { status: 400 })); return }
+    if (storageFull(error)) throw error
     ctx.deps.log(`[webui] upload extract error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
     await ctx.json({ error: 'Archive extraction failed' }, { status: 500 })
   }
@@ -648,7 +651,8 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
   assertWorkspaceFileAllowed(ctx, targetDir)
   try {
     makeAnchoredDir(workspace, targetDir)
-  } catch {
+  } catch (error) {
+    if (storageFull(error)) throw error
     throw new HttpError(403, 'Upload target escapes workspace')
   }
   const results: WorkspaceUploadResult[] = []
@@ -672,6 +676,7 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
           fd = openAnchoredCreateFd(workspace, dest)
         } catch (error) {
           if (error instanceof FileExistsError) throw new HttpError(409, `Upload destination already exists: ${safeName}`)
+          if (storageFull(error)) throw error
           throw new HttpError(403, `Path traversal blocked: ${safeName}`)
         }
         try { writeFully(fd, file.body) } finally { closeSync(fd) }
@@ -682,7 +687,7 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
             const extraction = await extractArchive(file.body, safeName, workspace, targetDir, ctx.deps.config.maxExtractedBytes)
             outcome = { filename: safeName, path: extraction.dest, size: file.body.length, is_image: false, extracted: true, extracted_files: extraction.files, extracted_count: extraction.extracted }
           } catch (error) {
-            const reason = error instanceof ArchiveRejected || error instanceof CorruptArchive ? error.message : null
+            const reason = error instanceof ArchiveRejected || error instanceof CorruptArchive ? error.message : storageFull(error) ? STORAGE_FULL.error : null
             ctx.deps.log(`[webui] workspace upload extract error: ${reason ?? (error instanceof Error ? (error.stack ?? error.message) : String(error))}`)
             outcome = { filename: safeName, path: targetDir, size: file.body.length, mime, is_image: false, extracted: false, extract_error: reason || 'Archive extraction failed' }
           }
@@ -697,6 +702,7 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
   } catch (error) {
     if (error instanceof HttpError) throw error
     if (error instanceof Error && error.message === 'Invalid filename') throw new HttpError(400, error.message)
+    if (storageFull(error)) throw error
     ctx.deps.log(`[webui] workspace upload error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
     throw new HttpError(500, 'Upload failed')
   }

@@ -11,7 +11,7 @@ import { removeWorktreeForSession, worktreeStatusForSession } from '../workspace
 import { isSafeSessionId, type Session } from '../sessions/session.js'
 import { sanitizeError } from '../workspace/media.js'
 import { SidecarError } from '../sidecar/client.js'
-import { str } from '../util.js'
+import { storageFull, str } from '../util.js'
 
 const os = implement(gitContract).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -22,6 +22,12 @@ function gitBad(error: unknown, status = 400): never {
   if (error instanceof GitWorkspaceError) throw new HttpError(error.code === 'active_stream' ? 409 : status, sanitizeError(error), { code: error.code || 'git_failed' })
   // Python let anything that was not a `GitWorkspaceError` escape to the dispatcher's 500.
   throw error
+}
+
+/** Python: `ValueError` (every message `worktrees.ts` raises on purpose) → 400; a full disk → the dispatcher's 507; anything else → 500 sanitised. */
+function worktreeFailure(error: unknown): never {
+  if (storageFull(error)) throw error
+  throw error instanceof Error && !('code' in error) ? new HttpError(400, error.message) : new HttpError(500, sanitizeError(error))
 }
 
 async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
@@ -238,8 +244,7 @@ export const gitRouter = os.router({
       try {
         return { status: await worktreeStatusForSession(session, ctx.deps.worktreeLocks) }
       } catch (error) {
-        // Python: `ValueError` (every message `worktrees.ts` raises on purpose) → 400; anything else → 500 sanitised.
-        throw error instanceof Error && !('code' in error) ? new HttpError(400, error.message) : new HttpError(500, sanitizeError(error))
+        worktreeFailure(error)
       }
     }),
     remove: os.worktree.remove.handler(async ({ input, context: { ctx } }) => {
@@ -261,7 +266,7 @@ export const gitRouter = os.router({
         return await (worktree ? ctx.deps.git.removeWorktreeExclusive(worktree, str(session.worktree_repo_root) || null, remove) : remove()) as { ok: true; removed_path: string; warnings: string[] | null }
       } catch (error) {
         if (error instanceof GitWorkspaceError) gitBad(error)
-        throw error instanceof Error && !('code' in error) ? new HttpError(400, error.message) : new HttpError(500, sanitizeError(error))
+        worktreeFailure(error)
       }
     }),
   },

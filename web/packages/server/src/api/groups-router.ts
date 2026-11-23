@@ -6,6 +6,7 @@ import { HttpError, type ApiContext } from './router.js'
 import { HttpFailure } from '../sessions/service.js'
 import { claimOrReject } from './sse-routes.js'
 import { nextItem } from '../sessions/streams.js'
+import { storageFull } from '../util.js'
 import { contentDispositionValue, INLINE_IMAGE_TYPES } from '../workspace/media.js'
 
 const os = implement(groupsContract).$context<ApiContext>()
@@ -14,6 +15,7 @@ async function run<T>(fn: () => Promise<T>): Promise<T> {
   try { return await fn() }
   catch (error) {
     if (error instanceof HttpFailure) throw new HttpError(error.status, error.message, error.extra)
+    if (storageFull(error)) throw error
     throw new HttpError(503, 'Discussion unavailable')
   }
 }

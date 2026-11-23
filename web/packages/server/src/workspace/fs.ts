@@ -27,6 +27,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython, resolvePathLikePythonAsync } from './paths.js'
 import { isBlockedSystemPath } from './workspaces.js'
 import { writeFully } from '../fs/atomic.js'
+import { storageFull } from '../util.js'
 
 export const MAX_FILE_BYTES = 400_000
 
@@ -246,6 +247,8 @@ export function openAnchoredCreateFd(root: string, dest: string): number {
   } catch (error) {
     if (error instanceof NotFoundError) throw error
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new FileExistsError(dest)
+    // A full disk keeps its errno so the dispatcher answers 507 (TAL-2716).
+    if (storageFull(error)) throw error
     throw new NotFoundError(`Not found: ${dest}`)
   } finally {
     dir.close()

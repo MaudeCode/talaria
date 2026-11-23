@@ -30,6 +30,7 @@ import { BodyError, RequestContext, acceptsEncoding, encodeJsonResponse, loggedU
 import { activeProfileName, checkAuth, checkCsrf, clearProfileCookieHeader, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
 import { guardQuerySessionId } from './api/session-visibility.js'
 import { checkSameOriginBrowserRequest, unexpectedRequestHost } from './http/origin.js'
+import { STORAGE_FULL, storageFull } from './util.js'
 import { coreRouter, HttpError, errorResponseBody, errorResponseHeaders, shellLanguage, startupUnavailable, type ApiContext } from './api/router.js'
 import { isSpaPath, type Asset } from './spa.js'
 import { buildCspReportOnlyPolicy, CSP_REPORT_TO } from './http/csp.js'
@@ -375,6 +376,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
             throw error
           }
           options.context.ctx.deps.log(`[webui] ERROR ${options.context.ctx.method} ${loggedUrl(options.context.ctx.req.url)}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
+          if (storageFull(error)) throw new HttpError(507, STORAGE_FULL.error, { condition: STORAGE_FULL.condition })
           throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Internal server error' })
         }
       },
@@ -553,7 +555,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       if (ctx.isFinished) return
       deps.log(`[webui] ERROR ${ctx.method} ${loggedUrl(req.url)}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
       try {
-        await ctx.json({ error: 'Internal server error' }, { status: 500 })
+        await (storageFull(error) ? ctx.json(STORAGE_FULL, { status: 507 }) : ctx.json({ error: 'Internal server error' }, { status: 500 }))
       } catch {
         /* client gone */
       }
