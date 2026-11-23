@@ -1930,7 +1930,8 @@ final class ChatHostedTests: XCTestCase {
         let status = try JSONSerialization.data(withJSONObject: try XCTUnwrap(summary["running_and_awaiting"]))
         UITestFixtureURLProtocol.backgroundDelegationStatus.withLock { $0 = status }
         let session = try await fixture.session(UITestFixtureURLProtocol.sessionID)
-        let model = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client, networkPath: nil)
+        let model = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client,
+                                  liveActivityManager: SpyChatLiveActivityManager(), networkPath: nil)
         let window = try hostWindow(fixture.chat(session, viewModel: model), size: size)
 
         let chip = try await requireElement(in: window, label: "1 running · 3 awaiting delivery", "Nothing pinned, and the summary has no way in")

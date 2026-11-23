@@ -325,7 +325,8 @@ final class StreamHostedTests: XCTestCase {
     func testChatStreamPreservesChronologyAndSettlesWithoutDuplication() async throws {
         let fixture = try FixtureApp(["--ui-test-chat-full"], for: self)
         let session = try await fixture.session()
-        let viewModel = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client, networkPath: nil)
+        let viewModel = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client,
+                                      liveActivityManager: SpyChatLiveActivityManager(), networkPath: nil)
         let window = try hostWindow(fixture.chat(session, viewModel: viewModel))
         try await sendFromComposer("Run the deterministic fixture", in: window)
 

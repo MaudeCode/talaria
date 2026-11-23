@@ -750,7 +750,7 @@ final class ChatViewModelCacheTests: XCTestCase {
     func testANewChatsReadingRowReturnsWithItsCreatedSession() {
         let cache = ChatViewModelCache()
         let pending = cache.pendingChat(for: PendingNewChatRoute(), server: server) { provisional in
-            ChatViewModel(session: provisional, server: server)
+            ChatViewModel(session: provisional, server: server, liveActivityManager: SpyChatLiveActivityManager())
         }
         pending.session = session("created")
         pending.readingRowID = "row-created"
@@ -783,7 +783,7 @@ final class ChatViewModelCacheTests: XCTestCase {
         _ = cache.chat(for: session("a"), server: server) { viewModel("a") }
         let route = PendingNewChatRoute()
         let pending = cache.pendingChat(for: route, server: server) { provisional in
-            ChatViewModel(session: provisional, server: server)
+            ChatViewModel(session: provisional, server: server, liveActivityManager: SpyChatLiveActivityManager())
         }
 
         cache.keepOnly(sessionIDs: [])
@@ -791,7 +791,7 @@ final class ChatViewModelCacheTests: XCTestCase {
         XCTAssertEqual(cache.count, 1)
         let kept = cache.pendingChat(for: route, server: server) { provisional in
             XCTFail("The mounted pending root's view model was created again")
-            return ChatViewModel(session: provisional, server: server)
+            return ChatViewModel(session: provisional, server: server, liveActivityManager: SpyChatLiveActivityManager())
         }
         XCTAssertTrue(kept === pending)
     }
