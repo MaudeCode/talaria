@@ -46,9 +46,15 @@ struct MarkdownMathSegmenter {
                 index += 1
                 continue
             }
+            let latex = String(characters[(index + delimiter.openLength)..<closeIndex])
+            // `$$` is also the shell's PID: `$$ and $$` is prose, `$$ 42 $$` is math.
+            // A rejected pair stays literal, and its closer never opens a later span.
+            if delimiter == .dollars, isShellProse(latex) {
+                index = closeIndex + delimiter.closeLength
+                continue
+            }
 
             appendMarkdown(String(characters[cursor..<index]), to: &segments)
-            let latex = String(characters[(index + delimiter.openLength)..<closeIndex])
             appendDisplayMath(latex, to: &segments)
             index = closeIndex + delimiter.closeLength
             cursor = index
@@ -56,6 +62,14 @@ struct MarkdownMathSegmenter {
 
         appendMarkdown(String(characters[cursor...]), to: &segments)
         return segments.isEmpty ? [.markdown(MarkdownMathFormatter.replacingInlineMath(in: content))] : segments
+    }
+
+    /// A spaced body with no number or group that does not read as math, such as ` and ` between two `$$`.
+    /// A number or group keeps blocks such as `$$ 42 $$` and `$$ (a, b) $$` as display math.
+    private static func isShellProse(_ latex: String) -> Bool {
+        latex.contains(where: \.isWhitespace)
+            && !latex.contains(where: { $0.isNumber || "([{".contains($0) })
+            && !MarkdownMathFormatter.looksLikeMath(latex)
     }
 
     private static func closingDisplayDelimiter(
@@ -377,7 +391,7 @@ public enum MarkdownMathLayoutCache {
             // second full-string walk for an identical result.
             //
             // One exception: the segmenter *recognises* a display-math span but
-            // drops it when the body is empty or whitespace-only (`$$ $$`,
+            // drops it when the body is empty or whitespace-only (`$$$$`,
             // `\[ \]`). Those produce no `.displayMath` segment, so
             // `containsMath` is false, yet the surrounding markdown segments no
             // longer contain the delimiters — joining them would silently
