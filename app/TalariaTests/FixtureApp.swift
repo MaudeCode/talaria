@@ -124,11 +124,14 @@ final class FixtureApp {
     }
 
     func sessionList(scenePhase: ScenePhase = .active, chats: ChatViewModelCache? = nil,
-                     viewModel: SessionListViewModel? = nil) -> some View {
+                     viewModel: SessionListViewModel? = nil, hasWaitingSharedImport: Bool = false,
+                     openNextSharedImport: @escaping () -> Void = {}) -> some View {
         SessionListView(
             authManager: environment.authManager,
             server: UITestFixtureEnvironment.serverURL,
             modelContext: cache.mainContext,
+            hasWaitingSharedImport: hasWaitingSharedImport,
+            openNextSharedImport: openNextSharedImport,
             pendingDeepLinkedSessionID: Binding(get: { self.pendingSessionID }, set: { self.pendingSessionID = $0 }),
             pendingDestination: Binding(get: { self.pendingDestination }, set: { self.pendingDestination = $0 }),
             opensProviderQuotaWidgetSettings: Binding(get: { self.opensQuotaWidgetSettings }, set: { self.opensQuotaWidgetSettings = $0 }),
