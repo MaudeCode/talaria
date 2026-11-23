@@ -25,7 +25,7 @@ import { previewUrl, readFilePreview } from '../workspace/preview.js'
 import { OfficeError, officeFormat, saveDocx } from '../workspace/office.js'
 import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, readFileBytes, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
-import { pyOsError, pyRepr, str } from '../util.js'
+import { pyOsError, pyRepr, storageFull, str } from '../util.js'
 import { activeProfileName, ensureTrustedAuthSession, requestCanManageServer, sessionCanManageServer } from '../auth/gate.js'
 import { RelayPairingError } from '../sessions/relay.js'
 import { loginHash, WebPushRequestError, type WebPushRequester } from '../sessions/notify/web-push.js'
@@ -1073,6 +1073,8 @@ export function fileError(error: unknown, notFoundStatus = 400): Error {
   if (error instanceof HttpError) return error
   if (error instanceof HttpFailure) return new HttpError(error.status, error.message, error.extra)
   if (error instanceof OfficeError) return new HttpError(400, error.message)
+  // A full disk reaches the dispatcher unchanged, which answers 507 (TAL-2716).
+  if (storageFull(error)) return error as Error
   if (error instanceof NotFoundError || error instanceof PathTraversalError || error instanceof FileTooLargeError) return new HttpError(notFoundStatus, sanitizeError(error))
   if (error instanceof Error && 'code' in error) return new HttpError(notFoundStatus, sanitizeError(error))
   return error as Error

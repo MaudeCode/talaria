@@ -1143,8 +1143,32 @@ describe('storage full (TAL-2716)', () => {
     expect({ status: res.status, body: await json(res) }).toEqual({ status: 507, body: STORAGE_FULL })
   })
 
+  const newSession = async (): Promise<string> => String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+  const upload = (path: string, sid: string, filename: string): Promise<Response> => s.get(path, {
+    method: 'POST',
+    body: ['--b', 'Content-Disposition: form-data; name="session_id"', '', sid, '--b', `Content-Disposition: form-data; name="file"; filename="${filename}"`, 'Content-Type: application/octet-stream', '', 'synthetic', '--b--', ''].join('\r\n'),
+    headers: { 'content-type': 'multipart/form-data; boundary=b' },
+  })
+
+  it.each([
+    ['/api/upload', 'notes.txt', 'store'],
+    ['/api/upload/extract', 'bundle.zip', 'extract'],
+  ] as const)('%s that fails with ENOSPC answers 507, not 500', async (path, filename, method) => {
+    const sid = await newSession()
+    vi.spyOn(s.deps.uploads, method).mockRejectedValueOnce(osError('ENOSPC'))
+    const res = await upload(path, sid, filename)
+    expect({ status: res.status, body: await json(res) }).toEqual({ status: 507, body: STORAGE_FULL })
+  })
+
+  it('a workspace upload that fails with ENOSPC answers 507, not 500', async () => {
+    const sid = await newSession()
+    vi.spyOn(s.deps.git, 'holdWrite').mockRejectedValueOnce(osError('ENOSPC'))
+    const res = await upload('/api/workspace/upload', sid, 'notes.txt')
+    expect({ status: res.status, body: await json(res) }).toEqual({ status: 507, body: STORAGE_FULL })
+  })
+
   it('a git procedure that fails with ENOSPC answers 507, not 500', async () => {
-    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const sid = await newSession()
     const session = await s.deps.sessionStore.get(sid)
     Object.assign(session, { worktree_path: join(s.state, 'wt-full') })
     await s.deps.sessionStore.save(session)

@@ -61,11 +61,13 @@ async function fixture() {
 }
 
 describe('workspace save preserves the last complete file', () => {
-  it.each(['first write', 'partial write', 'sync', 'replace'])('preserves original bytes and mode after a %s failure', async (at) => {
+  // A full disk answers 507 with the storage-full condition (TAL-2716); any other write failure stays a 400.
+  it.each([['first write', 507], ['partial write', 507], ['sync', 400], ['replace', 400]] as const)('preserves original bytes and mode after a %s failure', async (at, status) => {
     const f = await fixture()
     faults.at = at
     const response = await f.save('replacement content')
-    expect(response.status).toBe(400)
+    expect(response.status).toBe(status)
+    if (status === 507) expect(await response.json()).toMatchObject({ condition: 'storage_full' })
     expect(readFileSync(f.path, 'utf8')).toBe('original valuable content')
     expect(statSync(f.path).mode & 0o777).toBe(0o640)
     expect(faults.triggered).toBe(true)
