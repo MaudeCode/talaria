@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An open chat no longer redraws in full when its profile check answers during a streaming reply.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
