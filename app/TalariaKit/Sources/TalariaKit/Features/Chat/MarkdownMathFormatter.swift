@@ -28,7 +28,9 @@ public struct MarkdownMathFormatter: Sendable {
             }
 
             let latex = String(characters[(index + delimiter.openLength)..<closeIndex])
-            if looksLikeMath(latex) {
+            // A `$` span ending in `/` or `:` is a shell path such as `$HOME/foo:$PATH`.
+            let isShellPath = delimiter == .dollar && (latex.hasSuffix("/") || latex.hasSuffix(":"))
+            if !isShellPath, looksLikeMath(latex) {
                 result += renderedText(for: latex)
                 index = closeIndex + delimiter.closeLength
             } else {
@@ -170,7 +172,7 @@ public struct MarkdownMathFormatter: Sendable {
         return nil
     }
 
-    private static func looksLikeMath(_ value: String) -> Bool {
+    static func looksLikeMath(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         if trimmed.range(of: identifierPattern, options: .regularExpression) != nil {

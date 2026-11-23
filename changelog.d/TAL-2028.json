@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Replies about shell setup keep variables such as $HOME/foo:$PATH and the $$ process ID as written instead of turning them into math.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

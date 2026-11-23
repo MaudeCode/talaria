@@ -715,6 +715,29 @@ final class MarkdownMathRendererTests: XCTestCase {
         )
     }
 
+    func testShellVariablesInProseStayLiteral() {
+        for input in ["Use $HOME/foo:$PATH.", "Set $FOO_BAR/$BAZ before running.", "The shell prints $$ and $$."] {
+            XCTAssertEqual(MarkdownMathLayoutCache.uncachedLayout(for: input), .plain(input), input)
+        }
+        // A rejected `$$` pair stays literal and its closer never opens a later span.
+        XCTAssertEqual(
+            MarkdownMathSegmenter.segments(in: "The shell prints $$ and $$; a non-zero exit stops it.\n\n$$x^2$$"),
+            [.markdown("The shell prints $$ and $$; a non-zero exit stops it.\n\n"), .displayMath("x^2")]
+        )
+    }
+
+    func testRealMathStillRendersAlongsideShellVariableRules() {
+        let cases: [(input: String, expected: String)] = [
+            ("Take $x^2$ here.", "Take x² here."),
+            (#"Take $\alpha$ here."#, "Take α here."),
+            ("Take $M_S$ here.", "Take MS here."),
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(MarkdownMathLayoutCache.uncachedLayout(for: input), .plain(expected), input)
+        }
+        XCTAssertEqual(MarkdownMathSegmenter.segments(in: "$$42$$"), [.displayMath("42")])
+    }
+
     func testGroupedAssignmentsRespectEscapesAndCodeProtection() {
         let input = #"""
         Escaped \$E=[4,-2]\$ stays.
