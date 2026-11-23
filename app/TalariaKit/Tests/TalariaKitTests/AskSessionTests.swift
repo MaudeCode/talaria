@@ -77,7 +77,7 @@ final class AskSessionTests: XCTestCase {
     // MARK: - TAL-2231: Reply continues the last chat; long runs report progress
 
     func testAskWithAStoredSessionContinuesItInsteadOfStartingAnother() async throws {
-        let memory = AskFixture.memory(in: self)
+        let memory = AskFixture.memory()
         memory.remember(.init(sessionID: "earlier-chat", profile: "work"))
         let fixture = AskFixture(frames: [AskFixture.doneFrame(finalAnswer: "Done.")])
         let session = fixture.session(memory: memory)
@@ -93,7 +93,7 @@ final class AskSessionTests: XCTestCase {
     }
 
     func testAskWithoutAStoredSessionStartsOneAndRemembersItForThisServerOnly() async throws {
-        let memory = AskFixture.memory(in: self)
+        let memory = AskFixture.memory()
         let fixture = AskFixture(frames: [AskFixture.doneFrame(finalAnswer: "Done.")])
         let session = fixture.session(memory: memory)
         XCTAssertNil(session.last, "A reply with nothing stored asks in a new chat.")

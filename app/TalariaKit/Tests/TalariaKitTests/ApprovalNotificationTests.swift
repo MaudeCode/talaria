@@ -247,9 +247,7 @@ final class ApprovalNotificationTests: XCTestCase {
 
     @MainActor
     func testRetainedPushTokenDoesNotSuppressLocalApprovalWhenRelayApprovalPreferenceIsOff() async throws {
-        let suite = "approval-relay-preference-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("approval-relay-preference")
         let keychain = InMemoryKeychainStore()
         try TalariaRelayConfigurationStore.save(TalariaRelayCredentials(
             baseURL: URL(string: "https://relay-alert.test")!, deviceID: "test-device",

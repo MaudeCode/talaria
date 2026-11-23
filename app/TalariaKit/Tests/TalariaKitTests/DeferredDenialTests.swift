@@ -19,15 +19,13 @@ final class DeferredDenialTests: XCTestCase {
         ))
     }
 
-    private func defaults() throws -> UserDefaults {
-        let name = "DeferredDenialTests.\(UUID())"
-        addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
-        return try XCTUnwrap(UserDefaults(suiteName: name))
+    private func defaults() -> UserDefaults {
+        .ephemeral("DeferredDenialTests")
     }
 
     func testDenyIsSentWhenTheFiveSecondWindowEnds() async throws {
         let clock = ManualTestClock()
-        let denials = denials(clock: clock, defaults: try defaults())
+        let denials = denials(clock: clock, defaults: defaults())
 
         let deny = Task { await denials.deny(record) }
         await clock.advance(by: .milliseconds(4_999))
@@ -39,7 +37,7 @@ final class DeferredDenialTests: XCTestCase {
 
     func testUndoInsideTheWindowSendsNothingAndRestoresTheWaitingState() async throws {
         let clock = ManualTestClock()
-        let store = try defaults()
+        let store = defaults()
         let denials = denials(clock: clock, defaults: store)
 
         let deny = Task { await denials.deny(record) }
@@ -57,7 +55,7 @@ final class DeferredDenialTests: XCTestCase {
 
     func testASecondDenyInsideTheWindowReplacesTheFirst() async throws {
         let clock = ManualTestClock()
-        let denials = denials(clock: clock, defaults: try defaults())
+        let denials = denials(clock: clock, defaults: defaults())
         let next = DeferredDenial.Record(
             publisherID: record.publisherID, sessionID: "s1", approvalHeadID: "head-s1-next", approvalID: nil, fromBanner: true
         )
@@ -84,7 +82,7 @@ final class DeferredDenialTests: XCTestCase {
     }
 
     func testARelaunchKeepsTheRestOfTheWindowThenSendsTheDenial() async throws {
-        let store = try defaults()
+        let store = defaults()
         await killInsideTheWindow(record, defaults: store)
         date += 2
 
@@ -101,7 +99,7 @@ final class DeferredDenialTests: XCTestCase {
     }
 
     func testUndoAfterARelaunchInsideTheWindowSendsNothing() async throws {
-        let store = try defaults()
+        let store = defaults()
         await killInsideTheWindow(record, defaults: store)
         date += 2
 
@@ -115,7 +113,7 @@ final class DeferredDenialTests: XCTestCase {
     }
 
     func testADenialWhoseWindowEndedWhileKilledIsSentAtLaunch() async throws {
-        let store = try defaults()
+        let store = defaults()
         await killInsideTheWindow(record, defaults: store)
         date += 60
 

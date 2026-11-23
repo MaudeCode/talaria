@@ -1230,7 +1230,7 @@ final class CacheStoreTests: XCTestCase {
     }
 
     private func makeChatViewModel(session: SessionSummary, server: URL) throws -> ChatViewModel {
-        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: "CacheStoreTests.\(UUID().uuidString)"))
+        let userDefaults = UserDefaults.ephemeral("CacheStoreTests")
         return ChatViewModel(
             session: session,
             server: server,

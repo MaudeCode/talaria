@@ -986,7 +986,7 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertFalse(persisted.contains("pw-a"))
         // macOS merges the global domain (for example com.apple.finder.SyncExtensions) into every suite; only keys
         // this device wrote count.
-        let platformKeys = Set(try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)).dictionaryRepresentation().keys)
+        let platformKeys = Set(UserDefaults.ephemeral("ConfigurationSyncTests").dictionaryRepresentation().keys)
         for key in device.standardDefaults.dictionaryRepresentation().keys where !platformKeys.contains(key) {
             XCTAssertFalse(key.lowercased().contains("sync"), "Sync state must not land in UserDefaults: \(key)")
         }

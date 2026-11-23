@@ -37,6 +37,8 @@ case "$component" in
     node scripts/check-ui-rules.mjs --config scripts/test-rules.json
     python3 scripts/test-check-hosted-runners.py
     python3 scripts/check-hosted-runners.py
+    python3 scripts/test-check-ephemeral-defaults.py
+    python3 scripts/check-ephemeral-defaults.py
     python3 scripts/test-ci-concurrency.py
     python3 scripts/test-main-ci-failure.py
     python3 scripts/test-stamp-release.py

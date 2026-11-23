@@ -9,10 +9,7 @@ final class FeedbackComposerTests: XCTestCase {
     private let metadata = FeedbackClient(appVersion: "1.2 (3)", osVersion: "27.0", deviceModel: "iPhone99,1")
 
     private func defaults() -> UserDefaults {
-        let name = "FeedbackComposerTests.\(UUID())"
-        let defaults = UserDefaults(suiteName: name)!
-        addTeardownBlock { UserDefaults(suiteName: name)?.removePersistentDomain(forName: name) }
-        return defaults
+        .ephemeral("FeedbackComposerTests")
     }
 
     private func fill(_ model: FeedbackComposer) {

@@ -155,7 +155,7 @@ final class AppIntentAskTalariaTests: XCTestCase {
     }
 
     func testReplyContinuesTheLastChatAndWithoutOneAsksInANewChat() async throws {
-        let memory = AskFixture.memory(in: self)
+        let memory = AskFixture.memory()
         let fixture = AskFixture(frames: [AskFixture.doneFrame(finalAnswer: "Done.")])
         AskTalariaIntent.makeAskSession = { fixture.session(memory: memory) }
         let reply = ReplyToTalariaIntent()

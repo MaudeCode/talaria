@@ -216,20 +216,15 @@ final class SessionIdentityTests: XCTestCase {
 }
 
 final class SessionSidebarDisclosureSettingsTests: XCTestCase {
-    private var suiteName: String!
     private var defaults: UserDefaults!
 
     override func setUp() {
         super.setUp()
-        suiteName = "SessionSidebarDisclosureSettingsTests-\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suiteName)
-        defaults.removePersistentDomain(forName: suiteName)
+        defaults = .ephemeral("SessionSidebarDisclosureSettingsTests")
     }
 
     override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
-        suiteName = nil
         super.tearDown()
     }
 
@@ -256,20 +251,15 @@ final class SessionSidebarDisclosureSettingsTests: XCTestCase {
 }
 
 final class SessionRowDisplaySettingsTests: XCTestCase {
-    private var suiteName: String!
     private var defaults: UserDefaults!
 
     override func setUp() {
         super.setUp()
-        suiteName = "SessionRowDisplaySettingsTests-\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suiteName)
-        defaults.removePersistentDomain(forName: suiteName)
+        defaults = .ephemeral("SessionRowDisplaySettingsTests")
     }
 
     override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
-        suiteName = nil
         super.tearDown()
     }
 
@@ -380,7 +370,6 @@ final class AvatarServerSwitcherModelTests: XCTestCase {
 }
 
 final class SectionVisibilitySettingsTests: XCTestCase {
-    private var suiteName: String!
     private var defaults: UserDefaults!
 
     private let allKeys = [
@@ -395,15 +384,11 @@ final class SectionVisibilitySettingsTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        suiteName = "SectionVisibilitySettingsTests-\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suiteName)
-        defaults.removePersistentDomain(forName: suiteName)
+        defaults = .ephemeral("SectionVisibilitySettingsTests")
     }
 
     override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
-        suiteName = nil
         super.tearDown()
     }
 

@@ -555,9 +555,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
 
     func testSwitchProfileBuildsExpectedBodyAndDecodesResponse() async throws {
         let persistenceCount = OSAllocatedUnfairLock(initialState: 0)
-        let suite = "APIClientConfigurationTests.\(UUID().uuidString)"
-        let widgetDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { widgetDefaults.removePersistentDomain(forName: suite) }
+        let widgetDefaults = UserDefaults.ephemeral("APIClientConfigurationTests")
         widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
         let ownerResets = OSAllocatedUnfairLock(initialState: 0)
         let client = makeClient(
@@ -600,9 +598,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
 
     func testRejectedProfileSwitchKeepsWidgetSnapshot() async throws {
         let persistenceCount = OSAllocatedUnfairLock(initialState: 0)
-        let suite = "APIClientConfigurationTests.\(UUID().uuidString)"
-        let widgetDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { widgetDefaults.removePersistentDomain(forName: suite) }
+        let widgetDefaults = UserDefaults.ephemeral("APIClientConfigurationTests")
         widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
         let ownerResets = OSAllocatedUnfairLock(initialState: 0)
         let client = makeClient(
@@ -623,9 +619,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
 
     func testSwitchProfileSurfacesFailureToForgetProfileOwner() async throws {
         struct OwnerForgetFailure: Error {}
-        let suite = "APIClientConfigurationTests.\(UUID().uuidString)"
-        let widgetDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { widgetDefaults.removePersistentDomain(forName: suite) }
+        let widgetDefaults = UserDefaults.ephemeral("APIClientConfigurationTests")
         widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
         let client = makeClient(
             cookiePersistence: {},
@@ -771,9 +765,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertEqual(saved, loaded)
 
         // The last read is cached for read-only offline display.
-        let suite = "QuotaThresholdsCache.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("QuotaThresholdsCache")
         XCTAssertNil(ProviderQuotaThresholds.cached(defaults: defaults))
         loaded.cache(defaults: defaults)
         XCTAssertEqual(ProviderQuotaThresholds.cached(defaults: defaults), loaded)

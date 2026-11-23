@@ -106,6 +106,9 @@ SCRIPTS = {
     "check-releases": {"tooling"},
     "check-hosted-runners.py": {"tooling"},
     "test-check-hosted-runners.py": {"tooling"},
+    # TalariaKit tests open UserDefaults suites only through UserDefaults.ephemeral (TAL-2711).
+    "check-ephemeral-defaults.py": {"tooling"},
+    "test-check-ephemeral-defaults.py": {"tooling"},
     "main-ci-failure.py": {"tooling"},
     "test-main-ci-failure.py": {"tooling"},
     "test-ci-concurrency.py": {"tooling"},

@@ -162,9 +162,7 @@ final class ModelsSettingsViewModelTests: XCTestCase {
         }
     }
     private func picker(favorites: [ModelFavoriteKey] = [], live: Bool = true, _ handler: @escaping (DeferredMockURLProtocol) -> Void) -> SettingsModelPickerViewModel {
-        let name = "SettingsModelPickerTests.\(UUID())"
-        let defaults = UserDefaults(suiteName: name)!
-        addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
+        let defaults = UserDefaults.ephemeral("SettingsModelPickerTests")
         defaults.set(try! JSONEncoder().encode(favorites), forKey: "stars")
         let store = ModelFavoritesStore(defaults: defaults, storageKey: "stars")
         return SettingsModelPickerViewModel(client: client(handler), favorites: store, live: live)

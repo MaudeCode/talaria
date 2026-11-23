@@ -85,6 +85,10 @@ jobs:
       - name: Reject test defects a diff can show
         run: node ../scripts/check-ui-rules.mjs --config ../scripts/test-rules.json
 
+      # Always runs: a TalariaKit test change does not select the tooling suite (TAL-2711).
+      - name: Reject UserDefaults suites that leave a plist behind
+        run: python3 ../scripts/check-ephemeral-defaults.py
+
       - name: Validate release fragments
         env:
           CHANGE_BASE: ${{ github.event.before }}

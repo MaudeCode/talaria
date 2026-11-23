@@ -21,7 +21,7 @@ extension ChatViewModelSendTests {
         userDefaults: UserDefaults? = nil,
         protocolClasses: [AnyClass] = [MockURLProtocol.self]
     ) throws -> ChatViewModel {
-        try makeViewModel(streamClient: streamClient, userDefaults: userDefaults ?? makeEphemeralUserDefaults(), protocolClasses: protocolClasses) { request in
+        try makeViewModel(streamClient: streamClient, userDefaults: userDefaults ?? .ephemeral("ChatViewModelSendTests"), protocolClasses: protocolClasses) { request in
             let path = request.url?.path ?? ""
             if let data = apiTestBodyData(from: request), let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 log.bodies[path, default: []].append(body)
@@ -318,7 +318,7 @@ extension ChatViewModelSendTests {
     }
 
     func testARelaunchShowsEachPendingSteerOnceAndStillKnowsThisDevicesOwn() async throws {
-        let defaults = try makeEphemeralUserDefaults()
+        let defaults = UserDefaults.ephemeral("ChatViewModelSendTests")
         let firstStream = SpySSEStreamingClient()
         let log = RequestLog()
         let first = try runningViewModel(log, streamClient: firstStream, userDefaults: defaults)

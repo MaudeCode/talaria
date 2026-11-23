@@ -480,6 +480,7 @@
 		3854E37D17F49343D1D698AC /* TestImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543BD4B23D127FA731D1BED2 /* TestImages.swift */; };
 		5AD2DA41EECDD63EC017BB0C /* ScriptedSSEStreamFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F275FE32E5EF30F106B16A7 /* ScriptedSSEStreamFixture.swift */; };
 		252C20DFA79EF2546C8CE749 /* KanbanFeatureStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BF84FA6670BA8E2F295830B /* KanbanFeatureStateTests.swift */; };
+		2711E0000000000000000002 /* EphemeralDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2711E0000000000000000001 /* EphemeralDefaults.swift */; };
 		AC7D8D40DE8FDF034F4AF1B1 /* OIDCWebAuthenticationPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1802698531BE592793E1EF9 /* OIDCWebAuthenticationPresenter.swift */; };
 		3D4F1093C37475450D78C02A /* AppIconChoice+Current.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F9EB4168ADAD8328E21CCDF /* AppIconChoice+Current.swift */; };
 		73701D8B13BB6F8E3CD6CF2E /* PlatformBridges.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B991E0F7EBDCC6AF82339A /* PlatformBridges.swift */; };
@@ -956,6 +957,7 @@
 		543BD4B23D127FA731D1BED2 /* TestImages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TestImages.swift; path = "../TalariaKit/Tests/TalariaKitTests/Support/TestImages.swift"; sourceTree = "<group>"; };
 		1F275FE32E5EF30F106B16A7 /* ScriptedSSEStreamFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ScriptedSSEStreamFixture.swift; path = "../TalariaKit/Tests/TalariaKitTests/Support/ScriptedSSEStreamFixture.swift"; sourceTree = "<group>"; };
 		6BF84FA6670BA8E2F295830B /* KanbanFeatureStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = KanbanFeatureStateTests.swift; path = "../TalariaKit/Tests/TalariaKitTests/Support/KanbanFeatureStateTests.swift"; sourceTree = "<group>"; };
+		2711E0000000000000000001 /* EphemeralDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EphemeralDefaults.swift; path = "../TalariaKit/Tests/TalariaKitTests/Support/EphemeralDefaults.swift"; sourceTree = "<group>"; };
 		C1802698531BE592793E1EF9 /* OIDCWebAuthenticationPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OIDCWebAuthenticationPresenter.swift; sourceTree = "<group>"; };
 		4F9EB4168ADAD8328E21CCDF /* AppIconChoice+Current.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppIconChoice+Current.swift"; sourceTree = "<group>"; };
 		03B991E0F7EBDCC6AF82339A /* PlatformBridges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformBridges.swift; sourceTree = "<group>"; };
@@ -1066,6 +1068,7 @@
 			isa = PBXGroup;
 			children = (
 				6BF84FA6670BA8E2F295830B /* KanbanFeatureStateTests.swift */,
+				2711E0000000000000000001 /* EphemeralDefaults.swift */,
 				1F275FE32E5EF30F106B16A7 /* ScriptedSSEStreamFixture.swift */,
 				543BD4B23D127FA731D1BED2 /* TestImages.swift */,
 				BC003779138F2D96721F2A82 /* ChatViewModelSendTests+Support.swift */,
@@ -2214,6 +2217,7 @@
 			files = (
 				6C03FE55FB0C79E5642739A5 /* CustomHeaderAPIClientInjectionTests.swift in Sources */,
 				252C20DFA79EF2546C8CE749 /* KanbanFeatureStateTests.swift in Sources */,
+				2711E0000000000000000002 /* EphemeralDefaults.swift in Sources */,
 				5AD2DA41EECDD63EC017BB0C /* ScriptedSSEStreamFixture.swift in Sources */,
 				3854E37D17F49343D1D698AC /* TestImages.swift in Sources */,
 				1DCA640D41674C1510CBA1C2 /* ChatViewModelSendTests+Support.swift in Sources */,

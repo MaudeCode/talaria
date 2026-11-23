@@ -192,6 +192,7 @@ class RoutingTests(unittest.TestCase):
             (["app/ci/package-coverage"], {"app", "tooling"}),
             (["app/ci/wait_for_job_test.sh"], {"tooling"}),
             (["scripts/check-hosted-runners.py", "scripts/test-check-hosted-runners.py"], {"tooling"}),
+            (["scripts/check-ephemeral-defaults.py", "scripts/test-check-ephemeral-defaults.py"], {"tooling"}),
             (["scripts/changed-components.py"], {"tooling"}),
             (["scripts/new-unknown-tool.py"], ALL),
             (["new-component/runtime.rs"], ALL),

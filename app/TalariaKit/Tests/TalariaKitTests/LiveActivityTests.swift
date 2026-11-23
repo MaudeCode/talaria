@@ -34,9 +34,8 @@ final class LiveActivityTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LiveActivityURLProtocol.self]
         let session = URLSession(configuration: configuration)
-        let suite = "completion-inbox-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite); session.invalidateAndCancel() }
+        let defaults = UserDefaults.ephemeral("completion-inbox")
+        defer { session.invalidateAndCancel() }
         var credentials: TalariaRelayCredentials? = TalariaRelayCredentials(
             baseURL: try XCTUnwrap(URL(string: "https://relay.example")), deviceID: "device", userID: "user",
             appleUserID: "apple-user", sessionToken: "synthetic-token", expiresAt: .distantFuture
@@ -115,9 +114,8 @@ final class LiveActivityTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LiveActivityURLProtocol.self]
         let session = URLSession(configuration: configuration)
-        let suite = "viewed-completion-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite); session.invalidateAndCancel() }
+        let defaults = UserDefaults.ephemeral("viewed-completion")
+        defer { session.invalidateAndCancel() }
         let credentials = TalariaRelayCredentials(
             baseURL: URL(string: "https://relay.example")!, deviceID: "device", userID: "user",
             appleUserID: "apple", sessionToken: "synthetic-token", expiresAt: .distantFuture
@@ -293,11 +291,9 @@ final class LiveActivityTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DeferredMockURLProtocol.self]
         let session = URLSession(configuration: configuration)
-        let suite = "completion-race-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let defaults = UserDefaults.ephemeral("completion-race")
         defer {
             DeferredMockURLProtocol.setOnRequest(nil, forHost: host)
-            defaults.removePersistentDomain(forName: suite)
             session.invalidateAndCancel()
         }
         let credentials = TalariaRelayCredentials(
@@ -551,9 +547,7 @@ final class LiveActivityTests: XCTestCase {
 
     func testRelayOwnsCompletionAlertsOnlyForPairedOperationalServer() throws {
         let keychain = InMemoryKeychainStore()
-        let suite = "relay-alert-owner-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("relay-alert-owner")
         defaults.set("push-token", forKey: TalariaRelayNotifications.pushTokenKey)
         let previousMode = UserDefaults.standard.string(forKey: TalariaLiveActivityMode.storageKey)
         UserDefaults.standard.set(TalariaLiveActivityMode.perSession.rawValue, forKey: TalariaLiveActivityMode.storageKey)
@@ -1521,9 +1515,7 @@ final class LiveActivityTests: XCTestCase {
 
     // TAL-192: run-1 running -> completed -> run-2 starting keeps one card per publisher and session.
     func testNextRunRestartsTheRetainedCompletionOfItsSession() {
-        let suite = "LiveActivityTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("LiveActivityTests")
         let retained = Candidate(id: "card", sessionID: "session-abc", streamID: "run-1", isFinal: true, relayPublisherID: Self.publisher)
 
         XCTAssertEqual(reusableActivityID([retained], streamID: "run-2"), "card")
@@ -1545,9 +1537,7 @@ final class LiveActivityTests: XCTestCase {
     }
 
     func testStreamBindingOwnsAReusedCardWhileLegacyCardsKeepTheirAttributeStream() {
-        let suite = "LiveActivityTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("LiveActivityTests")
         func stream(_ id: String) -> String? {
             AgentLiveActivityReusePolicy.effectiveStreamID(activityID: id, attributeStreamID: "run-1", defaults: defaults)
         }

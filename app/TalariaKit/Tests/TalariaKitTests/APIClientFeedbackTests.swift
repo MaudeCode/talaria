@@ -42,9 +42,7 @@ final class APIClientFeedbackTests: APIClientTestCase {
             configuration.protocolClasses = [MockURLProtocol.self]
             configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: scope]
         }
-        let suite = "FeedbackHeaderTests.\(UUID())"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("FeedbackHeaderTests")
         let server = URL(string: "https://feedback-\(UUID().uuidString.lowercased()).example.test")!
         CustomHeaderStore.shared.replace(with: [CustomHeader(name: "Authorization", value: "Bearer server-a")])
         let model = FeedbackComposer(server: server, defaults: defaults,

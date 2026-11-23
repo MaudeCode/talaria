@@ -191,9 +191,7 @@ final class APIClientProvidersTests: APIClientTestCase {
     }
 
     func testWidgetSnapshotPersistsServerPaceAndStillLoadsALegacyV1Snapshot() throws {
-        let suite = "ProviderQuotaPaceSnapshot.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProviderQuotaPaceSnapshot")
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
 
         let response = try decodedQuotaFixture()
@@ -443,9 +441,7 @@ extension APIClientProvidersTests {
     /// TAL-272: older servers could return one source id twice; a snapshot cached from
     /// that response must load with one row per id so every by-id lookup stays valid.
     func testStoreLoadsOneRowPerSourceIDFromADuplicatedSnapshot() throws {
-        let suite = "ProviderQuotaWidgetDuplicates.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProviderQuotaWidgetDuplicates")
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         let first = makeQuotaWidgetSource(id: "qsrc_custom", account: "My LLM")
         let repeated = makeQuotaWidgetSource(id: "qsrc_custom", account: "my-llm")
@@ -460,9 +456,7 @@ extension APIClientProvidersTests {
     }
 
     func testStoreKeepsOnlyTheActiveServerProfileScope() throws {
-        let suite = "ProviderQuotaWidgetScopes.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProviderQuotaWidgetScopes")
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         let first = makeQuotaWidgetSource(id: "qsrc_a", account: "A", scopeID: "qscope_a")
         let second = makeQuotaWidgetSource(id: "qsrc_b", account: "B", scopeID: "qscope_b")
@@ -474,9 +468,7 @@ extension APIClientProvidersTests {
     }
 
     func testTargetedSavePreservesUnchangedSourceFreshness() throws {
-        let suite = "ProviderQuotaWidgetFreshness.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProviderQuotaWidgetFreshness")
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         let oldDate = Date(timeIntervalSince1970: 100)
         let newDate = Date(timeIntervalSince1970: 200)
@@ -678,9 +670,7 @@ extension APIClientProvidersTests {
     }
 
     func testWidgetRefreshUsesHeadersLiveCookiesSnakeCaseAndPersistsResponseCookies() async throws {
-        let suite = "ProviderQuotaRefresh.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProviderQuotaRefresh")
         let snapshotStore = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         let now = Date()
         let credentials = makeQuotaRefreshCredentials(now: now)
