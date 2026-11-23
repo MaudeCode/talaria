@@ -6,7 +6,6 @@ struct MessageBubbleView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @Environment(\.voiceNoteAction) private var voiceNoteAction
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
@@ -523,14 +522,7 @@ struct MessageBubbleView: View {
     @ViewBuilder
     private var collapseToggle: some View {
         if message.displayExcerpt != nil || (isUserMessage && message.collapsible), !isStreaming {
-            Button(isExpanded ? String(localized: "Show less") : String(localized: "Show more")) {
-                chatDisclosureToggled()
-                isExpanded.toggle()
-            }
-            .font(AppFont.body())
-            .buttonStyle(.borderless)
-            .accessibilityIdentifier("message-collapse-toggle")
-            .modifier(ChatMessageControlRegion())
+            ChatBodyCollapseToggle(isExpanded: $isExpanded).modifier(ChatMessageControlRegion())
         }
     }
 
@@ -652,5 +644,23 @@ extension EnvironmentValues {
     var voiceNoteAction: ChatEnvironmentAction<(String, VoiceNoteAction), Void> {
         get { self[VoiceNoteActionKey.self] }
         set { self[VoiceNoteActionKey.self] = newValue }
+    }
+}
+
+/// Show more / Show less under a body the server folded or excerpted (TAL-452, TAL-456): message bubbles and delivery
+/// notices share it, so its wording, font and identifier stay one.
+struct ChatBodyCollapseToggle: View {
+    @Binding var isExpanded: Bool
+
+    @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
+
+    var body: some View {
+        Button(isExpanded ? String(localized: "Show less") : String(localized: "Show more")) {
+            chatDisclosureToggled()
+            isExpanded.toggle()
+        }
+        .font(AppFont.body())
+        .buttonStyle(.borderless)
+        .accessibilityIdentifier("message-collapse-toggle")
     }
 }

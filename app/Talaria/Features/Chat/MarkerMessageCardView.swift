@@ -1,13 +1,16 @@
 import SwiftUI
 import TalariaKit
 
-/// A row the server marks as a compaction marker, preserved task list (TAL-305) or refused ask (TAL-2058), in place of a
-/// message bubble: one flat disclosure line on the `ReasoningBlockView` pattern, so it reads like the transcript's other
-/// activity rows (TAL-1566).
+/// A row the server marks as a compaction marker, preserved task list (TAL-305), refused ask (TAL-2058) or mirrored
+/// delivery (TAL-1003), in place of a message bubble: one flat disclosure line on the `ReasoningBlockView` pattern, so it
+/// reads like the transcript's other activity rows (TAL-1566).
 struct MarkerMessageCardView: View {
     let kind: ChatMarkerMessageKind?
     let content: String?
     let activity: TalariaActivity?
+    let delivery: MessageDelivery?
+    /// The server's excerpt of a long delivery's body (TAL-456), shown until the reader opens the whole body.
+    let deliveryExcerpt: String?
     let messageID: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -20,6 +23,18 @@ struct MarkerMessageCardView: View {
         self.kind = kind
         self.content = content
         self.activity = nil
+        self.delivery = nil
+        self.deliveryExcerpt = nil
+        self.messageID = nil
+        _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
+    }
+
+    init(delivery: MessageDelivery, excerpt: String?, stateID: String) {
+        self.kind = nil
+        self.content = delivery.body
+        self.activity = nil
+        self.delivery = delivery
+        self.deliveryExcerpt = excerpt
         self.messageID = nil
         _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
     }
@@ -28,6 +43,8 @@ struct MarkerMessageCardView: View {
         self.kind = nil
         self.content = activity.details
         self.activity = activity
+        self.delivery = nil
+        self.deliveryExcerpt = nil
         self.messageID = messageID
         _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
     }
@@ -38,7 +55,9 @@ struct MarkerMessageCardView: View {
     private var reviewID: String? { activity?.target?.kind == "decision_review" && openReview != nil ? activity?.target?.id : nil }
 
     var body: some View {
-        if case .contentRefused(let notice) = kind {
+        if let delivery {
+            deliveryNotice(delivery)
+        } else if case .contentRefused(let notice) = kind {
             refusedAsk(notice: notice)
         } else if kind == .failedTurn {
             failedTurnNotice
@@ -59,6 +78,25 @@ struct MarkerMessageCardView: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 24)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// TAL-1003: a webhook or cron delivery the Agent mirrored into a messaging chat, titled by its source with the
+    /// delivered text beneath as Markdown, or the server's excerpt of a long one until Show more; no message actions.
+    private func deliveryNotice(_ delivery: MessageDelivery) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            noticeLine(delivery.kind == .webhook
+                ? String(localized: "Webhook “\(delivery.name)” delivered")
+                : String(localized: "Scheduled job “\(delivery.name)” delivered"))
+            VStack(alignment: .leading, spacing: 6) {
+                MarkdownRenderer(content: isExpanded ? delivery.body : deliveryExcerpt ?? delivery.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if deliveryExcerpt != nil {
+                    ChatBodyCollapseToggle(isExpanded: $isExpanded)
+                }
+            }
+            .padding(.leading, 24)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -118,6 +156,11 @@ struct MarkerMessageCardView: View {
     }
 
     private var iconName: String {
+        switch delivery?.kind {
+        case .webhook: return "bolt.horizontal.circle"
+        case .cron: return "calendar.badge.clock"
+        case nil: break
+        }
         switch kind {
         case .contextCompaction:
             return "arrow.down.right.and.arrow.up.left"

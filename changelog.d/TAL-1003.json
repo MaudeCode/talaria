@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "A webhook or scheduled job delivered into a Telegram, Discord or Slack chat now shows as a delivery notice with its text, instead of a message from you.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

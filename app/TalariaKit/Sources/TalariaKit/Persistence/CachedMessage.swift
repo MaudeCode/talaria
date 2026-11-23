@@ -30,6 +30,7 @@ public final class CachedMessage {
     var displayBodyData: Data?
     var backgroundUpdateData: Data?
     var talariaActivityData: Data?
+    var deliveryData: Data?
     var backgroundSilent: Bool?
     var markerKind: String?
     var markerBody: String?
@@ -94,6 +95,7 @@ public final class CachedMessage {
         row.setJSON(\.displayBodyData, message.displayBody)
         row.setJSON(\.backgroundUpdateData, message.backgroundUpdate)
         row.setJSON(\.talariaActivityData, message.talariaActivity)
+        row.setJSON(\.deliveryData, message.delivery)
         row.set(\.backgroundSilent, message.backgroundSilent ? true : nil)
         row.set(\.markerKind, message.markerKind?.wireValue)
         row.set(\.markerBody, message.markerBody)

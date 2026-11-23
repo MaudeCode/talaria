@@ -755,19 +755,23 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertEqual(restored, message)
     }
 
-    func testCachedMessagesKeepTheBackgroundUpdate() throws {
+    func testCachedMessagesKeepTheBackgroundUpdateAndDelivery() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!
         let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
         let update = BackgroundUpdate(lines: [BackgroundLine(kind: .agent, status: .failed, label: "Audit", reviewState: .failed), BackgroundLine(kind: .command, status: .completed, label: "make", exitCode: 0, reviewState: .reviewed)], reviewState: .reviewed)
         let message = ChatMessage(role: "user", content: "[ASYNC DELEGATION BATCH COMPLETE]", timestamp: 1, messageId: "wake-1", backgroundUpdate: update)
         let silent = ChatMessage(role: "assistant", content: "[SILENT]", timestamp: 2, messageId: "wake-1-reply", backgroundSilent: true, display: .hidden)
-        try CacheStore.cacheMessages([message, silent], serverURL: serverURL, sessionID: "abc123", in: context, cachedAt: cachedAt)
+        let delivery = MessageDelivery(kind: .cron, name: "Morning Brief", body: "**Rain** until noon.")
+        let mirrored = ChatMessage(role: "user", content: "[Cron delivery: Morning Brief]\n**Rain** until noon.", timestamp: 3, messageId: "delivery-1", delivery: delivery)
+        try CacheStore.cacheMessages([message, silent, mirrored], serverURL: serverURL, sessionID: "abc123", in: context, cachedAt: cachedAt)
         let restored = try CacheStore.cachedMessages(serverURL: serverURL, sessionID: "abc123", in: context, now: cachedAt.addingTimeInterval(60))
         // A cache-first open shows the lines and hides a silent reply, as the server would (TAL-371, TAL-460).
         XCTAssertEqual(restored.first?.backgroundUpdate, update)
-        XCTAssertEqual(restored.map(\.backgroundSilent), [false, true])
-        XCTAssertEqual(restored.map(\.display), [nil, .hidden])
+        XCTAssertEqual(restored.map(\.backgroundSilent), [false, true, false])
+        XCTAssertEqual(restored.map(\.display), [nil, .hidden, nil])
+        // An offline open still shows a mirrored delivery as its notice (TAL-1003).
+        XCTAssertEqual(restored.map(\.delivery), [nil, nil, delivery])
     }
 
     /// TAL-186: a cache-first open renders the server's display text and media, as the live detail does.

@@ -594,6 +594,25 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertNotNil(row, "An older server's known failure must remain a warning, while its success proves no parent review")
     }
 
+    /// TAL-1003: a long delivery shows the server's excerpt of its body, not the whole body, until Show more opens it.
+    func testALongDeliveryShowsTheServersExcerptUntilShowMore() async throws {
+        let message = try DecisionReview.decoder.decode(ChatMessage.self, from: Data(#"""
+        {"role":"user","content":"[Cron delivery: Digest]\nThe whole digest.","message_id":"delivery-long",
+         "_display_truncated":true,"_display_excerpt":"The digest's excerpt…",
+         "_delivery":{"kind":"cron","name":"Digest","body":"The whole digest."}}
+        """#.utf8))
+        let delivery = try XCTUnwrap(message.delivery)
+        let excerpt = try XCTUnwrap(message.displayExcerpt)
+        let window = try hostWindow(
+            MarkerMessageCardView(delivery: delivery, excerpt: excerpt, stateID: message.id).padding(), size: HostedSize.phone
+        )
+        _ = try await requireElement(in: window, label: excerpt, "The collapsed delivery does not show the server's excerpt")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: delivery.body), "The collapsed delivery lays out its whole body")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Show more"))
+        _ = try await requireElement(in: window, label: delivery.body, "Show more does not open the whole body")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Show less"), "The open delivery offers no Show less")
+    }
+
     /// TAL-1962: a background result is the marker's disclosure row: as tall, its icons and titles on the marker's
     /// edges, quiet labels, one chevron centred on the lines that stays on screen past a long label, and a flat body
     /// on the title's edge when it opens.
