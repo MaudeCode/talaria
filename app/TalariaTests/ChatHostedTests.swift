@@ -2609,6 +2609,7 @@ final class ChatHostedTests: XCTestCase {
     }
 
     /// TAL-2323: an expanded read draws its path and numbered lines; a search its matches by file, each opening the file at its line.
+    /// TAL-2594: an archive read that wrapped its long lines says so; an unwrapped read does not.
     func testExpandedReadAndSearchCardsDrawTheirLinesAndOpenTheFile() async throws {
         func view(_ json: String) throws -> ToolResultView { try JSONDecoder().decode(ToolResultView.self, from: Data(json.utf8)) }
         let read = ToolCall(
@@ -2621,22 +2622,28 @@ final class ChatHostedTests: XCTestCase {
             resultView: try view(#"{"text": "{}", "matches": {"total": 6, "truncated": true, "files": [{"path": "src/a.ts", "focus_path": "src/a.ts", "matches": [{"line": 3, "text": "run()"}, {"line": 9, "text": "run(1)"}]}, {"path": "/elsewhere/b.ts", "count": 4, "matches": []}]}}"#),
             isCompleted: true
         )
+        let archive = ToolCall(
+            id: "read-archive", name: "read_file", preview: nil, args: nil, kind: .read, target: "call_1.json",
+            resultView: try view(#"{"text": "1|aaaa", "file_excerpt": {"path": "/home/u/.hermes/cache/tool_results/call_1.json", "language": null, "start_line": 1, "lines": [{"n": 1, "text": "aaaa"}, {"n": 2, "text": "aaaa"}], "total_lines": 2, "truncated": false, "wrapped_at": 120}}"#),
+            isCompleted: true
+        )
         let suite = "TalariaTests.tool-files.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: ChatTranscriptDisplaySettings.toolCardsStartExpandedKey)
         var opened: [WorkspaceFileLink] = []
         let window = try hostWindow(
-            ScrollView { VStack { ToolCallCardView(toolCall: read); ToolCallCardView(toolCall: search) }.padding() }
+            ScrollView { VStack { ToolCallCardView(toolCall: read); ToolCallCardView(toolCall: search); ToolCallCardView(toolCall: archive) }.padding() }
                 .defaultAppStorage(defaults)
                 .chatEnvironmentAction(\.chatOpenWorkspaceFile) { opened.append($0) }
         )
         let labels = { HostedAccessibility.elements(in: window).compactMap { $0.accessibilityLabel } }
-        let expected = ["Open src/app.ts at line 12", "Line 12", "Line 13", "Stopped at line 13 of 40", "Open src/a.ts at line 9", "Matches: 4", "More results not shown"]
+        let expected = ["Open src/app.ts at line 12", "Line 12", "Line 13", "Stopped at line 13 of 40", "Open src/a.ts at line 9", "Matches: 4", "More results not shown", "Long lines wrapped at 120 characters"]
         let drawn = await awaitCondition(timeout: 5) { expected.allSatisfy { label in labels().contains { $0.contains(label) } } }
         XCTAssertTrue(drawn, "\(labels())")
         XCTAssertFalse(labels().contains { $0.contains("12|") }, "\(labels())")
         XCTAssertFalse(labels().contains { $0.contains("Open /elsewhere/b.ts") }, "\(labels())")
+        XCTAssertEqual(labels().filter { $0.contains("wrapped") }.count, 1, "\(labels())")
         let match = try XCTUnwrap(HostedAccessibility.elements(in: window, labelContaining: "Open src/a.ts at line 9").first)
         XCTAssertTrue(match.accessibilityActivate())
         XCTAssertEqual(opened, [WorkspaceFileLink(path: "src/a.ts", line: 9)])
