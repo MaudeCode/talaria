@@ -683,6 +683,11 @@ extension UIView {
         }
         return nil
     }
+
+    /// Every view of `type` under this one, depth first.
+    func views<View: UIView>(ofType type: View.Type, where predicate: (View) -> Bool = { _ in true }) -> [View] {
+        ((self as? View).flatMap { predicate($0) ? [$0] : nil } ?? []) + subviews.flatMap { $0.views(ofType: type, where: predicate) }
+    }
 }
 
 extension UIViewController {
