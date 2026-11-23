@@ -193,7 +193,7 @@ extension ChatViewModelSendTests {
     func testListenPrefersServerTTSAndPlaysReturnedAudio() async throws {
         let audioSession = SpyListenAudioSession()
         let remoteControlCenter = SpyListenRemoteControlCenter()
-        let userDefaults = try makeEphemeralUserDefaults()
+        let userDefaults = UserDefaults.ephemeral("ChatViewModelSendTests")
         let player = SpyListenAudioPlayer()
         player.duration = 83
         var receivedAudioData: [Data] = []
@@ -376,7 +376,7 @@ extension ChatViewModelSendTests {
 
     @MainActor
     func testListenPlaybackSeekAndSpeedPersist() async throws {
-        let userDefaults = try makeEphemeralUserDefaults()
+        let userDefaults = UserDefaults.ephemeral("ChatViewModelSendTests")
         let player = SpyListenAudioPlayer()
         player.duration = 120
         let viewModel = try makeViewModel(

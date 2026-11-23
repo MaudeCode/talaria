@@ -127,9 +127,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
     @MainActor
     func testSnapshotRestoreDropsRemovedRowsFromOlderBuilds() throws {
-        let suite = "ProvidersViewModelSnapshotRestore.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProvidersViewModelSnapshotRestore")
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         let row = { (id: String, status: String) in
             ProviderQuotaWidgetSource(
@@ -222,9 +220,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
         let transitions: [(old: String?, new: String?)] = [("qscope_old", "qscope_new"), (nil, "qscope_new"), ("qscope_old", nil)]
         for transition in transitions {
             let context = "\(transition.old ?? "unscoped") -> \(transition.new ?? "unscoped")"
-            let suite = "ProvidersViewModelScopeChange.\(UUID().uuidString)"
-            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-            defer { defaults.removePersistentDomain(forName: suite) }
+            let defaults = UserDefaults.ephemeral("ProvidersViewModelScopeChange")
             let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
             var load = 0
             let client = makeClient { request in
@@ -393,9 +389,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
     @MainActor
     func testStableQuotaLoadPersistsSanitizedWidgetSnapshotAndReloadsTimeline() async throws {
-        let suite = "ProvidersViewModelWidgetSnapshot.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProvidersViewModelWidgetSnapshot")
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         var reloadCount = 0
         let client = makeClient { request in
@@ -431,9 +425,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
     @MainActor
     func testFailedQuotaRefreshKeepsCachedServerPaceAndAFreshModelSeedsIt() async throws {
-        let suite = "ProvidersViewModelPaceCache.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProvidersViewModelPaceCache")
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         var serverUp = true
         let client = makeScopedClient { request in
@@ -491,9 +483,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
     @MainActor
     func testQuotaAlertsEvaluateOnlyFreshServerSourcesAndTheCacheKeepsServerUrgency() async throws {
-        let suite = "ProvidersViewModelAlerts.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProvidersViewModelAlerts")
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         var serverUp = true
         let client = makeScopedClient { request in
@@ -562,9 +552,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     func testQuotaAlertPreferencesReadEachLevelIndependently() throws {
-        let suite = "ProviderQuotaAlertPreferences.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProviderQuotaAlertPreferences")
 
         XCTAssertEqual(
             ProviderQuotaAlertService.Preferences.stored(defaults: defaults),
@@ -618,9 +606,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
         }
         defer { DeferredMockURLProtocol.onRequest = nil }
 
-        let suite = "ProvidersViewModelCancelledWidgetSnapshot.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProvidersViewModelCancelledWidgetSnapshot")
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DeferredMockURLProtocol.self]
@@ -677,9 +663,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
     @MainActor
     func testQuotaRefreshLoopReconcilesLoadedButStaleSourcesImmediately() async throws {
-        let suite = "ProvidersViewModelStaleQuota.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ProvidersViewModelStaleQuota")
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         var requestedRefreshes: [Bool] = []
         let client = makeScopedClient { request in

@@ -60,13 +60,6 @@ extension ChatViewModelSendTests {
         }
     }
 
-    func makeEphemeralUserDefaults() throws -> UserDefaults {
-        let suiteName = "TalariaTests.\(UUID().uuidString)"
-        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        userDefaults.removePersistentDomain(forName: suiteName)
-        return userDefaults
-    }
-
     @MainActor
     func makeViewModel(
         streamClient: SSEStreamingClient? = nil,
@@ -131,7 +124,7 @@ extension ChatViewModelSendTests {
             serverTTSAudioPlayerFactory: serverTTSAudioPlayerFactory,
             draftAttachmentStore: draftAttachmentStore,
             // Test-owned state: a fresh suite unless the test passes its own.
-            userDefaults: try userDefaults ?? makeEphemeralUserDefaults(),
+            userDefaults: userDefaults ?? .ephemeral("ChatViewModelSendTests"),
             responseCache: responseCache,
             sessionListOwner: sessionListOwner
         )

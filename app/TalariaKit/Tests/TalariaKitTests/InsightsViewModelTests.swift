@@ -290,7 +290,7 @@ final class InsightsViewModelTests: XCTestCase {
 
     @MainActor
     func testANewerTimeframeLoadKeepsAnOlderRetryFromCommitting() async throws {
-        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: try isolatedDefaults())
+        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: UserDefaults.ephemeral("InsightsViewModelTests"))
         let sleeper = RecordingSleeper(holds: true)
         let client = ScriptedInsightsClient(results: [
             .failure(APIError.http(statusCode: 503, body: nil)),
@@ -317,7 +317,7 @@ final class InsightsViewModelTests: XCTestCase {
 
     @MainActor
     func testRefreshPersistsOnlyItsOwnServerAndTimeframe() async throws {
-        let defaults = try isolatedDefaults()
+        let defaults = UserDefaults.ephemeral("InsightsViewModelTests")
         let server = URL(string: "https://insights.test")!
         let cache = InsightsResponseCache(server: server, defaults: defaults)
         let otherServer = InsightsResponseCache(server: URL(string: "https://other.test")!, defaults: defaults)
@@ -337,15 +337,8 @@ final class InsightsViewModelTests: XCTestCase {
         try decodeInsights(#"{"period_days":\#(days),"total_sessions":1,"total_tokens":\#(tokens)}"#)
     }
 
-    private func isolatedDefaults() throws -> UserDefaults {
-        let suiteName = "InsightsViewModelTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
-        return defaults
-    }
-
     private func seededCache(tokens: Int) throws -> InsightsResponseCache {
-        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: try isolatedDefaults())
+        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: UserDefaults.ephemeral("InsightsViewModelTests"))
         cache.save(try insights(tokens: tokens), for: InsightsRequest(timeframe: .last30Days))
         return cache
     }
@@ -598,7 +591,7 @@ extension InsightsViewModelTests {
 
     @MainActor
     func testANewerRangeKeepsAnOlderRangesLateAnswerFromCommitting() async throws {
-        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: try isolatedDefaults())
+        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: UserDefaults.ephemeral("InsightsViewModelTests"))
         let client = ScriptedInsightsClient(results: [])
         let viewModel = InsightsViewModel(client: client, cache: cache, sleep: RecordingSleeper().sleep)
         let older = InsightsCustomRange(start: "2026-03-01", end: "2026-03-03")
@@ -625,7 +618,7 @@ extension InsightsViewModelTests {
     }
 
     func testCustomRangesCacheApartFromPresetsAndOtherServers() throws {
-        let defaults = try isolatedDefaults()
+        let defaults = UserDefaults.ephemeral("InsightsViewModelTests")
         // A preset entry as builds before custom ranges wrote it.
         defaults.set(Data(#"{"https://insights.test":{"last30Days":{"totalTokens":350}}}"#.utf8), forKey: InsightsResponseCache.storageKey)
         let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: defaults)
@@ -645,7 +638,7 @@ extension InsightsViewModelTests {
     @MainActor
     func testAFailedCustomRefreshKeepsShowingOnlyDataThatMatchesItsLabel() async throws {
         let custom = try InsightsRangeFixture.load().custom
-        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: try isolatedDefaults())
+        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: UserDefaults.ephemeral("InsightsViewModelTests"))
         let cached = InsightsRequest(timeframe: .custom, custom: InsightsCustomRange(start: custom.start, end: custom.end))
         cache.save(custom.response, for: cached)
         let client = ScriptedInsightsClient(results: [

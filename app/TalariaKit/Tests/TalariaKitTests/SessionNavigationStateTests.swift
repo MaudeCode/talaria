@@ -574,9 +574,7 @@ final class SessionNavigationStateTests: XCTestCase {
     }
 
     func testPersistenceUsesIndependentKeysPerServer() throws {
-        let suiteName = "SessionNavigationStateTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let defaults = UserDefaults.ephemeral("SessionNavigationStateTests")
         let firstServer = try XCTUnwrap(URL(string: "https://first.example.com"))
         let secondServer = try XCTUnwrap(URL(string: "https://second.example.com"))
 
@@ -596,9 +594,7 @@ final class SessionNavigationStateTests: XCTestCase {
     /// TAL-2387: each window restores its own chat; a window with no scene state takes the app's last chat only
     /// when it is the only window, so a new window beside another opens at New Chat.
     func testEachWindowRestoresItsOwnChatAndANewWindowBesideAnotherStartsAtNewChat() throws {
-        let suiteName = "SessionNavigationStateTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let defaults = UserDefaults.ephemeral("SessionNavigationStateTests")
         let server = try XCTUnwrap(URL(string: "https://first.example.com"))
         let otherServer = try XCTUnwrap(URL(string: "https://second.example.com"))
         SessionNavigationPersistence.save("last-chat", for: server, defaults: defaults)

@@ -38,9 +38,7 @@ final class AppLockTests: XCTestCase {
     private let otherWindow = "window-b"
 
     override func setUp() async throws {
-        let name = "AppLockTests.\(UUID())"
-        defaults = UserDefaults(suiteName: name)
-        addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
+        defaults = .ephemeral("AppLockTests")
     }
 
     private func coldLaunch(enabled: Bool = true) -> AppLockModel {

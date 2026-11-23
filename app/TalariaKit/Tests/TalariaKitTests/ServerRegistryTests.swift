@@ -467,16 +467,6 @@ final class ServerRegistryTests: XCTestCase {
     }
 }
 
-extension UserDefaults {
-    /// Test-only: an isolated, empty defaults suite for the global identity seed
-    /// values. Each call returns a fresh, cleared suite.
-    static func ephemeral(_ suiteName: String = "test.talaria.\(UUID().uuidString)") -> UserDefaults {
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        return defaults
-    }
-}
-
 extension ServerRegistry {
     /// Test-only: a registry backed by a throwaway in-memory Keychain + identity
     /// defaults, so it never touches the real Keychain or `.standard`.

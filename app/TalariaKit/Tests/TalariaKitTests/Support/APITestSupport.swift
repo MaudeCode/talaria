@@ -674,10 +674,8 @@ final class AskFixture {
     }
 
     /// Memory in a defaults suite the test owns.
-    static func memory(serverID: String = "https://ask.example.test", in test: XCTestCase) -> AskSession.Memory {
-        let name = "AskFixture.\(UUID())"
-        test.addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
-        return AskSession.Memory(serverID: serverID, defaults: UserDefaults(suiteName: name))
+    static func memory(serverID: String = "https://ask.example.test") -> AskSession.Memory {
+        AskSession.Memory(serverID: serverID, defaults: .ephemeral("AskFixture"))
     }
 
     /// The JSON body the server received at `path`, string fields only.

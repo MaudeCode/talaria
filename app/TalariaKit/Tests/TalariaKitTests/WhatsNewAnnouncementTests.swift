@@ -79,9 +79,7 @@ final class WhatsNewLaunchTests: XCTestCase {
     private var defaults: UserDefaults!
 
     override func setUp() {
-        let name = "WhatsNewLaunchTests.\(UUID())"
-        defaults = UserDefaults(suiteName: name)
-        addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
+        defaults = .ephemeral("WhatsNewLaunchTests")
     }
 
     /// A stamped build of `version` packaging one row per ticket in `tickets`, or `payload` verbatim when given.

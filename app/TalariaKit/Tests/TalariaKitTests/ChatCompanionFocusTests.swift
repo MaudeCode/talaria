@@ -152,9 +152,7 @@ final class ChatCompanionFocusTests: XCTestCase {
 
     /// TAL-1539: with Open the Agent's File Automatically off, a chat starts with its page hidden.
     func testTheAutoOpenSettingDecidesWhetherANewChatStartsHidden() throws {
-        let suite = "ChatCompanionFocusTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        addTeardownBlock { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let defaults = UserDefaults.ephemeral("ChatCompanionFocusTests")
         XCTAssertFalse(try makeChat(defaults: defaults, id: "on").companionFocus.isHidden, "The setting is on by default")
         defaults.set(false, forKey: ChatTranscriptDisplaySettings.opensCompanionPageKey)
         XCTAssertTrue(try makeChat(defaults: defaults, id: "off").companionFocus.isHidden)
@@ -181,7 +179,7 @@ final class ChatCompanionFocusTests: XCTestCase {
             session: summary,
             server: server,
             draftAttachmentStore: RecordingSendDraftAttachmentStore(),
-            userDefaults: try defaults ?? XCTUnwrap(UserDefaults(suiteName: "ChatCompanionFocusTests.\(UUID().uuidString)"))
+            userDefaults: defaults ?? .ephemeral("ChatCompanionFocusTests")
         )
     }
 

@@ -99,8 +99,7 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
     // MARK: - Cache
 
     func testSaveReportsChangeOnlyWhenTheSetMoves() throws {
-        let (cache, suite, defaults) = makeIsolatedCache()
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let cache = makeIsolatedCache()
 
         let dev = ProfileSummary(name: "dev", path: nil, isDefault: nil, isActive: nil,
                                  gatewayRunning: nil, model: nil, provider: nil, hasEnv: nil, skillCount: nil)
@@ -116,9 +115,7 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
 
     /// A `ProfileEntityCache` backed by a throwaway `UserDefaults` suite so tests never touch
     /// the real app-group cache.
-    private func makeIsolatedCache() -> (ProfileEntityCache, String, UserDefaults) {
-        let suite = "test.profileentitycache.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        return (ProfileEntityCache(defaults: defaults), suite, defaults)
+    private func makeIsolatedCache() -> ProfileEntityCache {
+        ProfileEntityCache(defaults: .ephemeral("test.profileentitycache"))
     }
 }
