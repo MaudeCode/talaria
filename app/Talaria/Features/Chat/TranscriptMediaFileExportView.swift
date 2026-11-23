@@ -51,6 +51,8 @@ struct TranscriptMediaFileExportView: View {
             } label: {
                 Image(systemName: "square.and.arrow.down")
                     .font(.system(size: 15, weight: .semibold))
+                    // A 44 pt touch target around the glyph that takes no row space, so the row keeps its height.
+                    .chatMinimumHitTarget(horizontalPadding: 15, verticalPadding: 14, in: Rectangle())
             }
             .buttonStyle(.chatTactile(.icon))
             .disabled(isExporting)
