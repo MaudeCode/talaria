@@ -471,6 +471,9 @@ extension XCTestCase {
     /// The chat composer's text view, once the chat has one. `timeout` counts the helper's own 50 ms polls, not
     /// wall-clock time: a loaded CI runner can keep the main actor on the screen's other work past any deadline, and the
     /// composer then mounts just after a wall-clock wait has given up on it (TAL-1665). `eachPoll` runs after each miss.
+    /// A clarification replaces the composer by identity, and the outgoing one stays in the window while the swap
+    /// animates, so the composer counts only once it is the region's sole editor: the first of two read the leaving
+    /// ordinary draft on CI (TAL-2714).
     @MainActor
     func composerTextView(
         in window: UIWindow,
@@ -478,16 +481,18 @@ extension XCTestCase {
         region: CGRect? = nil,
         eachPoll: @escaping () -> Void = {}
     ) async -> UITextView? {
-        for _ in 0..<Int(timeout / 0.05) {
-            if let text = window.firstView(ofType: UITextView.self, where: {
+        func soleEditor() -> UITextView? {
+            let editors = window.views(ofType: UITextView.self) {
                 $0.isEditable && (region?.intersects($0.convert($0.bounds, to: window)) ?? true)
-            }) { return text }
+            }
+            return editors.count == 1 ? editors[0] : nil
+        }
+        for _ in 0..<Int(timeout / 0.05) {
+            if let text = soleEditor() { return text }
             eachPoll()
             try? await Task.sleep(for: .milliseconds(50))
         }
-        return window.firstView(ofType: UITextView.self, where: {
-            $0.isEditable && (region?.intersects($0.convert($0.bounds, to: window)) ?? true)
-        })
+        return soleEditor()
     }
 
     /// Types `text` into the composer the way the keyboard does: through the text view's own input path, so the
