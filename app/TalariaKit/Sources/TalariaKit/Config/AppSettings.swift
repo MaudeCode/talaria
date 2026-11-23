@@ -80,6 +80,8 @@ public enum ChatTranscriptDisplaySettings {
     public static let toolCardsStartExpandedKey = "chatTranscript.toolCardsStartExpanded"
     public static let showsAssistantTurnTimestampsKey = "chatTranscript.showsAssistantTurnTimestamps"
     public static let showsResponseSpeedKey = "chatTranscript.showsResponseSpeed"
+    /// TAL-1077: whether a reply's header shows its own token usage; off by default, as Web's `show_token_usage`.
+    public static let showsTokenUsageKey = "chatTranscript.showsTokenUsage"
     public static let wrapsCodeBlockLinesKey = "chatTranscript.wrapsCodeBlockLines"
     /// TAL-1539: whether a chat's companion page opens on its own for the agent's file; off starts it hidden.
     public static let opensCompanionPageKey = "chatTranscript.opensCompanionPage"
@@ -151,10 +153,12 @@ public enum ChatTranscriptDisplaySettings {
         isEnabled: Bool,
         showsResponseSpeed: Bool = false,
         hasResponseSpeed: Bool = false,
+        showsTokenUsage: Bool = false,
+        hasTurnUsage: Bool = false,
         hasTurnSummary: Bool = false
     ) -> Bool {
         // TAL-2339: a reply whose turn changed something shows its summary in the header whatever the other settings.
-        (isEnabled || (showsResponseSpeed && hasResponseSpeed) || hasTurnSummary) &&
+        (isEnabled || (showsResponseSpeed && hasResponseSpeed) || (showsTokenUsage && hasTurnUsage) || hasTurnSummary) &&
             role == "assistant" &&
             hasTextContent
     }

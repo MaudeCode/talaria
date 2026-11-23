@@ -2625,8 +2625,7 @@ extension ChatViewModel {
             merged.reasoning = loadedMessage.reasoning ?? cachedMessage.reasoning
             merged.reasoningTitles = loadedMessage.reasoningTitles ?? cachedMessage.reasoningTitles
             merged.activityScene = loadedMessage.activityScene ?? cachedMessage.activityScene
-            merged.turnDuration = loadedMessage.turnDuration ?? cachedMessage.turnDuration
-            merged.turnTps = loadedMessage.turnTps ?? cachedMessage.turnTps
+            merged.fillTurnMetrics(from: cachedMessage)
             merged.turnId = loadedMessage.turnId ?? cachedMessage.turnId
             merged.steer = loadedMessage.steer ?? cachedMessage.steer
             return merged
@@ -2972,8 +2971,7 @@ extension ChatViewModel {
             merged.reasoningTitles = loadedAssistant.reasoningTitles ?? snapshotAssistant.reasoningTitles
             merged.activityScene = loadedAssistant.activityScene ?? snapshotAssistant.activityScene
             merged.attachments = loadedAssistant.attachments ?? snapshotAssistant.attachments
-            merged.turnDuration = loadedAssistant.turnDuration ?? snapshotAssistant.turnDuration
-            merged.turnTps = loadedAssistant.turnTps ?? snapshotAssistant.turnTps
+            merged.fillTurnMetrics(from: snapshotAssistant)
             merged.turnId = loadedAssistant.turnId ?? snapshotAssistant.turnId
             merged.steer = loadedAssistant.steer ?? snapshotAssistant.steer
             mergedMessages[assistantIndex] = merged

@@ -19,6 +19,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     case chatStreamedTextAnimation = "settings-chat-streamed-text-animation"
     case chatResponseTimestamps = "settings-chat-response-timestamps"
     case chatResponseSpeed = "settings-chat-response-speed"
+    case chatTokenUsage = "settings-chat-token-usage"
     case chatWrapCodeBlockLines = "settings-chat-wrap-code-block-lines"
     case chatToolCalls = "settings-chat-tool-calls"
     case toolCallsFormattedResults = "settings-tool-calls-formatted-results"
@@ -244,8 +245,9 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
         case .chatExpandThinkingByDefault: .init(category: .chats, section: "Transcript", title: "Expand Thinking by Default", scope: .synced)
         case .chatExpandToolsByDefault: .init(category: .chats, section: "Transcript", title: "Expand Tools by Default", scope: .synced)
         case .chatStreamedTextAnimation: .init(category: .chats, section: "Transcript", title: "Streamed Text Animation", scope: .synced)
-        case .chatResponseTimestamps: .init(category: .chats, section: "Transcript", title: "Response Timestamps", scope: .synced)
-        case .chatResponseSpeed: .init(category: .chats, section: "Transcript", title: "Response Speed", scope: .synced)
+        case .chatResponseTimestamps: .init(category: .chats, section: "Response Details", title: "Response Timestamps", scope: .synced)
+        case .chatResponseSpeed: .init(category: .chats, section: "Response Details", title: "Response Speed", scope: .synced)
+        case .chatTokenUsage: .init(category: .chats, section: "Response Details", title: "Token Usage", scope: .synced)
         case .chatWrapCodeBlockLines: .init(category: .chats, section: "Transcript", title: "Wrap Code Block Lines", scope: .synced)
         case .chatToolCalls: .init(category: .chats, section: "Transcript", title: "Tool Calls", scope: .interface)
         case .toolCallsFormattedResults: .init(category: .chats, section: "Tool Rows", title: "Formatted Results", scope: .interface)

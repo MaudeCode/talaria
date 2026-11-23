@@ -619,6 +619,15 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(message.turnTps, 31.5)
         XCTAssertEqual(message.timestamp, 1_700_000_001)
         XCTAssertEqual(message.reasoningTitles, ["Plan"])
+        // A Web from before TAL-1076 records no per-reply usage; the App then shows none.
+        guard let usage = raw["_turnUsage"] as? [String: Any] else { return XCTAssertNil(message.turnUsage) }
+        let decoded = try XCTUnwrap(message.turnUsage)
+        XCTAssertEqual(decoded.inputTokens, usage["input_tokens"] as? Int)
+        XCTAssertEqual(decoded.outputTokens, usage["output_tokens"] as? Int)
+        XCTAssertEqual(decoded.cacheReadTokens, usage["cache_read_tokens"] as? Int)
+        XCTAssertEqual(decoded.cacheWriteTokens, usage["cache_write_tokens"] as? Int)
+        XCTAssertEqual(decoded.estimatedCost, usage["estimated_cost"] as? Double)
+        XCTAssertEqual(decoded.cacheHitPercent, usage["cache_hit_percent"] as? Int)
     }
 
     func testSharedWebSessionShowsARunningTurnWithoutAJournalOpenAndLetsLiveRowsContinueIt() throws {

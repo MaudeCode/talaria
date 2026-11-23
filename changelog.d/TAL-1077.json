@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Turn on Token Usage in Settings to see each reply's input and output tokens, and tap them for its cache use and estimated cost, also when offline.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

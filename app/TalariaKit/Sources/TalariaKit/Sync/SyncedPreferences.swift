@@ -33,6 +33,7 @@ enum SyncedPreferenceAllowlist {
         .init(key: ChatTranscriptDisplaySettings.toolCardsStartExpandedKey, suite: .standard),
         .init(key: ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey, suite: .standard),
         .init(key: ChatTranscriptDisplaySettings.showsResponseSpeedKey, suite: .standard),
+        .init(key: ChatTranscriptDisplaySettings.showsTokenUsageKey, suite: .standard),
         .init(key: ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey, suite: .standard),
         .init(key: ChatTranscriptDisplaySettings.opensCompanionPageKey, suite: .standard),
         .init(key: ChatTranscriptDisplaySettings.rtlChatLayoutEnabledKey, suite: .standard),

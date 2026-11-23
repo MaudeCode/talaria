@@ -86,7 +86,8 @@ final class ChatViewModelMergeDedupTests: XCTestCase {
             contentParts: [.object(["type": .string("reasoning"), "text": .string("Cached reasoning")])],
             reasoning: "Cached reasoning",
             turnDuration: 12,
-            turnTps: 8
+            turnTps: 8,
+            turnUsage: TurnUsage(inputTokens: 40, outputTokens: 9, cacheReadTokens: 30, cacheWriteTokens: 0, estimatedCost: nil, cacheHitPercent: 75)
         )
         let loaded = ChatMessage(
             role: "assistant",
@@ -107,6 +108,7 @@ final class ChatViewModelMergeDedupTests: XCTestCase {
         XCTAssertEqual(merged.first?.reasoning, "Cached reasoning")
         XCTAssertEqual(merged.first?.turnDuration, 12)
         XCTAssertEqual(merged.first?.turnTps, 8)
+        XCTAssertEqual(merged.first?.turnUsage, cached.turnUsage)
     }
 
     /// TAL-1678: every load with a cache, a cache-first open and a finished run's reload merge the whole cached
