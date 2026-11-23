@@ -2402,26 +2402,14 @@ extension RegularSplitHostedTests {
         XCTAssertEqual(loads.count, 1, "The companion page reloaded the running chat")
     }
 
-    /// TAL-1539: the bar's Companion Page button hides the page and shows it again; neither a new file nor a fold
-    /// reopens a page the reader hid. While the page shows, the chat keeps the Duo's vertical bar, the button and the
-    /// page's own controls in it.
+    /// TAL-1539: the bar's Companion Page button hides the page and shows it again without reloading the chat. While
+    /// the page shows, the chat keeps the Duo's vertical bar, the button and the page's own controls in it.
     func testTheCompanionPageButtonHidesThePageUntilPressedAgain() async throws {
-        try requireArrangement()
-        let display = HostedDuoDisplay()
-        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInnerLandscape, display: display)
+        let window = try await openCompanionChatWithItsPageButton()
         let alpha = frame(await companionTitle("Alpha.swift", in: window))
-        XCTAssertFalse(alpha.isEmpty, "The companion page never showed the first file")
-        let ready = await awaitCondition { self.companionPageItem(in: window) != nil }
-        XCTAssertTrue(ready, "Detail items: \(barItemTitles(in: window))")
-        // The keyboard the send left up would fold the bar's items into its overflow menu.
-        window.endEditing(true)
-        try await assertTheChatKeepsTheBar(in: window, pageShows: true, "the first file")
 
         let answeredBeforeHiding = UITestFixtureURLProtocol.answeredPaths.withLock { $0.count }
-        try await pressCompanionPageButton(in: window)
-        // The page fades out before it leaves, its controls with it.
-        let hidden = await awaitCondition { self.companionPage(in: window) == nil && !self.isBarButtonDrawn("Follow", in: window) }
-        XCTAssertTrue(hidden, "The button did not hide the page")
+        try await hideTheCompanionPage(in: window, "The button did not hide the page")
         let prompt = frame(await transcriptText("Write the demo files", in: window))
         XCTAssertGreaterThan(prompt.maxX, alpha.minX + 50, "The chat did not fill the pane the page left")
         try await assertTheChatKeepsTheBar(in: window, pageShows: false, "hiding the page")
@@ -2435,9 +2423,14 @@ extension RegularSplitHostedTests {
         let reloads = UITestFixtureURLProtocol.answeredPaths.withLock { $0.dropFirst(answeredBeforeHiding).filter { $0 == "/api/session" } }
         XCTAssertEqual(reloads, [], "Hiding and showing the page reloaded the chat")
         attachHostedScreenshot(window, name: "duo-inner-landscape-companion-shown-again")
-        try await pressCompanionPageButton(in: window)
-        let hiddenAgain = await awaitCondition { self.companionPage(in: window) == nil && !self.isBarButtonDrawn("Follow", in: window) }
-        XCTAssertTrue(hiddenAgain, "The button did not hide the page a second time")
+        try await hideTheCompanionPage(in: window, "The button did not hide the page a second time")
+    }
+
+    /// TAL-1539: neither a new file nor a fold reopens a page the reader hid; the button still shows it after both.
+    func testAHiddenCompanionPageStaysHiddenThroughANewFileAndAFold() async throws {
+        let display = HostedDuoDisplay()
+        let window = try await openCompanionChatWithItsPageButton(display: display)
+        try await hideTheCompanionPage(in: window, "The button did not hide the page")
 
         UITestFixtureURLProtocol.advanceCompanionRun()
         _ = try await requireElement(in: window, "The run stopped") { $0.accessibilityLabel?.contains("Writing Beta.swift.") == true }
@@ -2454,6 +2447,29 @@ extension RegularSplitHostedTests {
         let beta = await companionTitle("Beta.swift", in: window)
         XCTAssertNotNil(beta, "Pressing the button again did not show the page")
         try await assertTheChatKeepsTheBar(in: window, pageShows: true, "showing the page after a fold")
+    }
+
+    /// The companion chat on the Duo's inner landscape with the page showing the first file and the chat's bar holding
+    /// its Companion Page button.
+    private func openCompanionChatWithItsPageButton(display: HostedDuoDisplay? = nil) async throws -> UIWindow {
+        try requireArrangement()
+        let window = try await openCompanionChat(["--ui-test-chat-companion"], size: HostedSize.duoInnerLandscape, display: display)
+        let alpha = frame(await companionTitle("Alpha.swift", in: window))
+        XCTAssertFalse(alpha.isEmpty, "The companion page never showed the first file")
+        let ready = await awaitCondition { self.companionPageItem(in: window) != nil }
+        XCTAssertTrue(ready, "Detail items: \(barItemTitles(in: window))")
+        // The keyboard the send left up would fold the bar's items into its overflow menu.
+        window.endEditing(true)
+        try await assertTheChatKeepsTheBar(in: window, pageShows: true, "the first file")
+        return window
+    }
+
+    /// Presses Companion Page and waits for the page to fade out, its controls with it.
+    private func hideTheCompanionPage(in window: UIWindow, _ failure: String,
+                                      file: StaticString = #filePath, line: UInt = #line) async throws {
+        try await pressCompanionPageButton(in: window)
+        let hidden = await awaitCondition { self.companionPage(in: window) == nil && !self.isBarButtonDrawn("Follow", in: window) }
+        XCTAssertTrue(hidden, failure, file: file, line: line)
     }
 
     /// The chat's bar is the one drawn, its Companion Page button reading whether the page shows, with the page's Follow
