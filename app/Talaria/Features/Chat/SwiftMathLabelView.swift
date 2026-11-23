@@ -2,6 +2,9 @@ import SwiftMath
 import SwiftUI
 import UIKit
 
+/// Wraps SwiftMath's `MTMathUILabel` (a UIKit view) for use in SwiftUI.
+/// Sized to its intrinsic content so long equations scroll horizontally in the
+/// surrounding `ScrollView` instead of clipping.
 struct SwiftMathLabelView: UIViewRepresentable {
     let latex: String
     let fontSize: CGFloat

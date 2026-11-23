@@ -6,6 +6,61 @@ import XCTest
 
 // The members of MarkdownMathRendererTests that need the App host; the rest run in TalariaKitTests (TAL-399).
 final class MarkdownMathRendererTests: XCTestCase {
+    /// TAL-971: a streaming reply's 30 token appends draw its expression once; every later update reuses the image.
+    @MainActor
+    func testStreamingAppendsDrawAnExpressionOnce() async throws {
+        InlineMathImages.removeAll()
+        let latex = #"\Phi_{S}\Phi^*"#
+        let reply = StreamingReply(content: "The field $\(latex)$ couples")
+        let window = try hostWindow(StreamingReplyView(reply: reply))
+        let drawn = await awaitCondition { InlineMathImages.drawCounts[latex] == 1 }
+        XCTAssertTrue(drawn, "The expression was never drawn")
+        let scene = try XCTUnwrap(window.windowScene)
+
+        for token in 0..<30 {
+            reply.content += " token\(token)"
+            await awaitDisplayUpdates(2, in: scene)
+        }
+
+        let settled = await awaitCondition {
+            HostedAccessibility.labels(in: window).contains { $0.contains("token29") }
+        }
+        XCTAssertTrue(settled, "The last token never rendered")
+        XCTAssertEqual(InlineMathImages.drawCounts, [latex: 1])
+    }
+
+    /// TAL-971: inline math draws as an image inside its line, in a paragraph, a list item and emphasis, read aloud as
+    /// its LaTeX between the words around it.
+    @MainActor
+    func testInlineMathDrawsInsideItsLine() async throws {
+        InlineMathImages.removeAll()
+        let markdown = """
+        Mass $M_S$ here.
+
+        - Item with $\\Phi\\Phi^*$ inline
+
+        **Bold $M_I = M_S^*$ text** and *after*.
+
+        ### Heading $h_1$
+
+        | Point |
+        |---|
+        | $(4,-2)$ |
+        """
+        let window = try hostWindow(MarkdownRenderer(content: markdown))
+
+        // A heading and a table cell draw through MarkdownUI's image providers, and read the same way.
+        let expected = [
+            "Mass M_S here.", #"Item with \Phi\Phi^* inline"#, "Bold M_I = M_S^* text and after.", "Heading h_1", "(4,-2)",
+        ]
+        let drawn = await awaitCondition {
+            let labels = HostedAccessibility.labels(in: window)
+            return expected.allSatisfy(labels.contains)
+        }
+        XCTAssertTrue(drawn, "Lines read \(HostedAccessibility.labels(in: window))")
+        XCTAssertEqual(Set(InlineMathImages.drawCounts.keys), ["M_S", #"\Phi\Phi^*"#, "M_I = M_S^*", "h_1", "(4,-2)"])
+    }
+
     @MainActor
     func testMarkdownCodeHighlighterRendersLightModeSwiftForegroundColors() async {
         let result = await MarkdownCodeHighlighter.highlightedCode(
@@ -47,6 +102,21 @@ final class MarkdownMathRendererTests: XCTestCase {
 
         let colors = foregroundColorSignatures(in: highlightedCode, userInterfaceStyle: .light)
         XCTAssertGreaterThan(colors.count, 1)
+    }
+}
+
+@MainActor
+@Observable
+private final class StreamingReply {
+    var content: String
+    init(content: String) { self.content = content }
+}
+
+private struct StreamingReplyView: View {
+    let reply: StreamingReply
+
+    var body: some View {
+        MarkdownRenderer(content: reply.content, isStreaming: true)
     }
 }
 

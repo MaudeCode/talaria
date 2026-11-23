@@ -59,6 +59,9 @@ struct TranscriptMediaImageProvider: ImageProvider {
                 )
                 .forcedLeftToRight()
             }
+        } else if let latex = InlineMathReference.latex(from: url) {
+            // A table cell holding only math; a paragraph draws its own (`InlineMathParagraphText`).
+            MarkdownMainActorBlock { InlineMathImageView(latex: latex) }
         } else if let url {
             MarkdownMainActorBlock { ChatMarkdownImage(url: url) }
         }
@@ -70,12 +73,18 @@ struct TranscriptMediaImageProvider: ImageProvider {
 /// `ChatMarkdownView` installs it, since MarkdownUI's innermost provider wins.
 struct TranscriptMediaInlineImageProvider: InlineImageProvider {
     let media: TranscriptMediaParagraphImages?
+    /// Inline math in a heading or table cell; a paragraph draws its own (`InlineMathParagraphText`).
+    let mathStyle: InlineMathImageStyle
 
     static let maxSize = CGSize(width: 210, height: 132)
     /// One transparent point: an empty `UIImage` draws a placeholder glyph in a line of text.
     private static let blank = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
 
     func image(with url: URL, label: String) async throws -> Image {
+        if let latex = InlineMathReference.latex(from: url) {
+            let drawing = await InlineMathImages.draw(latex, style: mathStyle)
+            return Image(drawing.image, scale: drawing.scale, label: Text(verbatim: latex))
+        }
         guard let media, let reference = media.display.image(for: url) else {
             // An image that does not load is left out; a throw would drop the paragraph's other images with it.
             guard let image = await ChatMarkdownImageLoader.image(from: url)?.cgImage else { return Image(uiImage: Self.blank) }

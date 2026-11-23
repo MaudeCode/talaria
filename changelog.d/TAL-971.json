@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Inline math in replies is typeset like display math, so subscripts such as M_S, Greek capitals such as Φ, and points such as (4,-2) show correctly.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

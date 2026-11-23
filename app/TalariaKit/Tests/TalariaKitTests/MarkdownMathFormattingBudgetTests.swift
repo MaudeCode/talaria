@@ -45,7 +45,7 @@ final class MarkdownMathFormattingBudgetTests: XCTestCase {
         let stray = String(repeating: #"\( a "#, count: 512)
         TranscriptProbeRecorder.reset()
 
-        let formatted = MarkdownMathFormatter.replacingInlineMath(in: stray + "$x^2$\n" + #"\(y^2\)"#)
+        let formatted = approximatingInlineMath(stray + "$x^2$\n" + #"\(y^2\)"#)
 
         XCTAssertEqual(formatted, stray + "x²\ny²")
         XCTAssertEqual(TranscriptProbeRecorder.counts["mathInlineCloserSearch"], 3)

@@ -100,8 +100,21 @@ struct ChatMarkdownLinkTrackedText<Label: View>: View {
         }
     }
 
+    /// TAL-971: an inline-math image reads as an object placeholder, so text holding one reads its LaTeX instead.
+    /// Selectable text ignores a label on the `Text` itself, so the label replaces the element.
     @ViewBuilder
     private var tracked: some View {
+        if let spoken = InlineMathReference.spokenText(plainText: content.renderPlainText(), markdown: content.renderMarkdown()) {
+            trackedLinks
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: spoken))
+        } else {
+            trackedLinks
+        }
+    }
+
+    @ViewBuilder
+    private var trackedLinks: some View {
         if tracksLinks, let store, case let links = self.links, !links.isEmpty {
             label
                 .textRenderer(
@@ -172,11 +185,14 @@ struct ChatMarkdownParagraph: View {
     }
 
     /// TAL-2024: MarkdownUI's label is one `Text` `+` per inline, which overflows the phone's stack on a long paragraph;
-    /// such a paragraph draws as one `Text` instead.
+    /// such a paragraph draws as one `Text` instead. A paragraph with inline math draws its expressions in the line of
+    /// text, which MarkdownUI does only after loading its images (TAL-971).
     @ViewBuilder
     private var label: some View {
         let markdown = configuration.content.renderMarkdown()
-        if MarkdownContentRenderingPolicy.hasTooManyInlineElements(markdown) {
+        if InlineMathReference.occurs(in: markdown) {
+            InlineMathParagraphText(markdown: markdown, plainText: configuration.content.renderPlainText())
+        } else if MarkdownContentRenderingPolicy.hasTooManyInlineElements(markdown) {
             Text(
                 ChatMarkdownInlineStyle.flatParagraph(
                     markdown: markdown,

@@ -34,7 +34,7 @@ final class MarkdownMathRendererTests: XCTestCase {
     func testInlineMathReplacesCommonLatexCommands() {
         let input = #"Inline: the quadratic formula $x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}$ works."#
 
-        let rendered = MarkdownMathFormatter.replacingInlineMath(in: input)
+        let rendered = approximatingInlineMath(input)
 
         XCTAssertFalse(rendered.contains("$"))
         XCTAssertFalse(rendered.contains(#"\frac"#))
@@ -47,7 +47,7 @@ final class MarkdownMathRendererTests: XCTestCase {
     func testSingleTokenInlineMathAndEscapedDollars() {
         let input = #"Where $m$ is count, $y$ is label, and \$not math\$ stays literal."#
 
-        let rendered = MarkdownMathFormatter.replacingInlineMath(in: input)
+        let rendered = approximatingInlineMath(input)
 
         XCTAssertTrue(rendered.contains("Where m is count"))
         XCTAssertTrue(rendered.contains("y is label"))
@@ -57,7 +57,7 @@ final class MarkdownMathRendererTests: XCTestCase {
     func testInlineScreenshotCommandsDoNotLeakRawLatex() {
         let input = #"Probability: $P(A \mid B) = \frac{P(B \mid A)P(A)}{P(B)}$ and norm $\Vert x \rVert_2 = \sqrt{\sum_{i=1}^n x_i^2}$."#
 
-        let rendered = MarkdownMathFormatter.replacingInlineMath(in: input)
+        let rendered = approximatingInlineMath(input)
 
         XCTAssertFalse(rendered.contains(#"\mid"#))
         XCTAssertFalse(rendered.contains(#"\Vert"#))
@@ -71,7 +71,7 @@ final class MarkdownMathRendererTests: XCTestCase {
     func testLongerCommandsWinBeforeShorterCommandPrefixes() {
         let input = #"Attention: $\mathrm{softmax}(QK^\top/\sqrt{d_k})V$ and $a \leftarrow b \to c$."#
 
-        let rendered = MarkdownMathFormatter.replacingInlineMath(in: input)
+        let rendered = approximatingInlineMath(input)
 
         XCTAssertTrue(rendered.contains("QK^⊤/√dₖ"))
         XCTAssertTrue(rendered.contains("a ← b → c"))
@@ -110,7 +110,7 @@ final class MarkdownMathRendererTests: XCTestCase {
         But $x^2$ changes.
         """#
 
-        let rendered = MarkdownMathFormatter.replacingInlineMath(in: input)
+        let rendered = approximatingInlineMath(input)
 
         XCTAssertTrue(rendered.contains(#"`$x = \frac{1}{2}$`"#))
         XCTAssertTrue(rendered.contains(#"$$\\frac{1}{2}$$"#))
@@ -143,7 +143,7 @@ final class MarkdownMathRendererTests: XCTestCase {
     func testInlineParenDelimitersRenderBeforeMarkdownEscapesThem() {
         let input = #"Inline: \(e^{i\pi}+1=0\)"#
 
-        let rendered = MarkdownMathFormatter.replacingInlineMath(in: input)
+        let rendered = approximatingInlineMath(input)
 
         XCTAssertEqual(rendered, "Inline: eⁱπ+1=0")
         XCTAssertFalse(rendered.contains(#"\("#))
@@ -669,7 +669,7 @@ final class MarkdownMathRendererTests: XCTestCase {
         ]
 
         for (input, expected) in cases {
-            XCTAssertEqual(MarkdownMathFormatter.replacingInlineMath(in: input), expected, input)
+            XCTAssertEqual(approximatingInlineMath(input), expected, input)
         }
     }
 
@@ -711,7 +711,7 @@ final class MarkdownMathRendererTests: XCTestCase {
     func testRejectedClosingDollarDoesNotPairWithALaterSpan() {
         XCTAssertEqual(
             MarkdownMathFormatter.replacingInlineMath(in: "Loose $x^2 $ and then $y^2$ renders."),
-            "Loose $x^2 $ and then y² renders."
+            "Loose $x^2 $ and then \(mathImage("y^2")) renders."
         )
     }
 
@@ -728,15 +728,35 @@ final class MarkdownMathRendererTests: XCTestCase {
 
     func testRealMathStillRendersAlongsideShellVariableRules() {
         let cases: [(input: String, expected: String)] = [
-            ("Take $x^2$ here.", "Take x² here."),
-            (#"Take $\alpha$ here."#, "Take α here."),
-            ("Take $M_S$ here.", "Take MS here."),
+            ("Take $x^2$ here.", "Take \(mathImage("x^2")) here."),
+            (#"Take $\alpha$ here."#, "Take \(mathImage(#"\alpha"#)) here."),
         ]
         for (input, expected) in cases {
             XCTAssertEqual(MarkdownMathLayoutCache.uncachedLayout(for: input), .plain(expected), input)
         }
         for (input, latex) in [("$$42$$", "42"), ("$$ 42 $$", "42"), ("$$\n42\n$$", "42"), ("$$ (a, b) $$", "(a, b)")] {
             XCTAssertEqual(MarkdownMathSegmenter.segments(in: input), [.displayMath(latex)], input)
+        }
+    }
+
+    /// TAL-971: inline math reaches MarkdownUI as an image SwiftMath draws, carrying its LaTeX source, so tuples,
+    /// uppercase subscripts and Greek capitals are typeset instead of approximated or left literal.
+    func testInlineMathBecomesSwiftMathImages() {
+        let cases: [(input: String, expected: String)] = [
+            ("Contrast $(4,-2)$ against $(4,4)$.", "Contrast \(mathImage("(4,-2)")) against \(mathImage("(4,4)"))."),
+            ("Take $M_S$ here.", "Take \(mathImage("M_S")) here."),
+            (#"Take $\Phi\Phi^*$ here."#, "Take \(mathImage(#"\Phi\Phi^*"#)) here."),
+            ("So $M_I = M_S^*$.", "So \(mathImage("M_I = M_S^*"))."),
+            (#"Inline: \( e^{i\pi} \)"#, "Inline: \(mathImage(#"e^{i\pi}"#))"),
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(MarkdownMathLayoutCache.uncachedLayout(for: input), .plain(expected), input)
+        }
+    }
+
+    func testPricesEscapesCodeAndUnfinishedMathStayLiteral() {
+        for input in ["Cost $5 today and $7 tomorrow.", #"\$M_S\$"#, "`$M_S$`", #"Unfinished $\Phi"#, "$$partial"] {
+            XCTAssertEqual(MarkdownMathLayoutCache.uncachedLayout(for: input), .plain(input), input)
         }
     }
 
@@ -753,7 +773,7 @@ final class MarkdownMathRendererTests: XCTestCase {
         But $E=[4,-2]$ renders.
         """#
 
-        let rendered = MarkdownMathFormatter.replacingInlineMath(in: input)
+        let rendered = approximatingInlineMath(input)
 
         XCTAssertTrue(rendered.contains(#"\$E=[4,-2]\$"#))
         XCTAssertTrue(rendered.contains(#"`$E=[4,-2]$`"#))
@@ -866,4 +886,25 @@ final class MarkdownDiffLineKindTests: XCTestCase {
             XCTAssertEqual(kinds[index], expected, "line \(index): \(text.debugDescription)", file: file, line: line)
         }
     }
+}
+
+/// The Markdown image an inline expression becomes: its LaTeX, base64url-encoded, under the `talaria-math` scheme.
+private func mathImage(_ latex: String) -> String {
+    let encoded = Data(latex.utf8).base64EncodedString()
+        .replacingOccurrences(of: "+", with: "-")
+        .replacingOccurrences(of: "/", with: "_")
+    return "![\u{FFFC}](talaria-math:///\(encoded))"
+}
+
+/// The inline Markdown with each math image replaced by the text approximation the App draws when SwiftMath cannot.
+func approximatingInlineMath(_ markdown: String) -> String {
+    let formatted = MarkdownMathFormatter.replacingInlineMath(in: markdown)
+    let expression = try! NSRegularExpression(pattern: "!\\[\u{FFFC}\\]\\((talaria-math:///[A-Za-z0-9_=-]+)\\)")
+    var result = formatted
+    for match in expression.matches(in: formatted, range: NSRange(formatted.startIndex..., in: formatted)).reversed() {
+        let url = URL(string: String(formatted[Range(match.range(at: 1), in: formatted)!]))
+        let latex = InlineMathReference.latex(from: url) ?? ""
+        result.replaceSubrange(Range(match.range, in: result)!, with: MarkdownMathFormatter.renderedText(for: latex))
+    }
+    return result
 }
