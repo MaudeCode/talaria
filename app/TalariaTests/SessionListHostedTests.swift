@@ -2671,6 +2671,9 @@ extension RegularSplitHostedTests {
              min(window.bounds.maxX, presented(pageView())?.minX ?? window.bounds.maxX)]
         }
         let showedColumn = split.displayMode == .oneBesideSecondary
+        // The first frame is each panel's start: a page still easing into place would read as a slide.
+        let still = await awaitQuiet(edges)
+        XCTAssertNotNil(still, "The panels never came to rest before the Sidebar press")
         try await sampleCommittedLayouts(in: window) {
             let edges = edges()
             motion.samples.append(.init(column: edges[0], page: edges[1], chat: self.transcriptScrollView(in: window)?.bounds.width))
