@@ -14,34 +14,47 @@ struct GitDiffView: View {
     @State private var collapsedHunks: Set<Int> = []
     @Environment(\.dismiss) private var dismiss
 
-    init(session: SessionSummary, server: URL, file: GitFile, onAPIError: @escaping (Error) -> Void) {
+    /// TAL-1478: on the companion page the diff opens in place, under the page's own heading and controls, its lines
+    /// wrapping as the page's own edits do.
+    private let isOnPage: Bool
+
+    init(session: SessionSummary, server: URL, file: GitFile, isOnPage: Bool = false, onAPIError: @escaping (Error) -> Void) {
         self.session = session
         self.file = file
         self.apiClient = APIClient(baseURL: server)
+        self.isOnPage = isOnPage
         self.onAPIError = onAPIError
     }
 
     var body: some View {
-        NavigationStack {
-            content
-                .adaptiveReadableScrollContent(maxWidth: AdaptiveReadableContentWidth.workspace)
-                .navigationTitle(file.displayPath)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
-                        .overflowPriority(.done)
-                }
-                .task {
-                    guard !hasLoaded else { return }
-                    hasLoaded = true
-                    await load()
-                }
-                .refreshesLive(on: .runEnded, showsStatus: diff != nil) {
-                    await load()
-                }
+        if isOnPage {
+            loadedContent
+        } else {
+            NavigationStack {
+                loadedContent
+                    .adaptiveReadableScrollContent(maxWidth: AdaptiveReadableContentWidth.workspace)
+                    .navigationTitle(file.displayPath)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+                            .overflowPriority(.done)
+                    }
+            }
+            .presentationDetents([.medium, .large])
+            .adaptivePagePresentation()
         }
-        .presentationDetents([.medium, .large])
-        .adaptivePagePresentation()
+    }
+
+    private var loadedContent: some View {
+        content
+            .task {
+                guard !hasLoaded else { return }
+                hasLoaded = true
+                await load()
+            }
+            .refreshesLive(on: .runEnded, showsStatus: diff != nil) {
+                await load()
+            }
     }
 
     @ViewBuilder
@@ -73,6 +86,11 @@ struct GitDiffView: View {
             let hunks = diff.hunks
             if hunks.isEmpty {
                 ContentUnavailableView("No Changes", systemImage: "checkmark.circle")
+            } else if isOnPage {
+                ScrollView {
+                    DiffHunkRows(hunks: hunks)
+                        .padding()
+                }
             } else {
                 VStack(spacing: 0) {
                     summary(diff: diff, hunks: hunks)

@@ -436,6 +436,9 @@ public final class ChatViewModel {
     public func pinCompanionFile(_ path: String) { companionFocus.pin(path, runID: activeStreamID) }
     public func followCompanionFocus() { companionFocus.resumeFollowing() }
     public func showCompanionBrowser(at path: String?) { companionFocus.browserPath = path }
+    /// TAL-1478: a tool card's result or the turn's changes on the page, pinning it until Follow or the next run.
+    public func showOnCompanionPage(_ shown: ChatCompanionFocus.Shown) { companionFocus.show(shown, runID: activeStreamID) }
+    public func companionPageBack() { companionFocus.back() }
     public func setCompanionPageHidden(_ isHidden: Bool) { companionFocus.isHidden = isHidden }
     /// The cached link paints with the cached transcript; a failed read shows none.
     private func restoreCachedBranchedFrom(sessionID: String, modelContext: ModelContext) {

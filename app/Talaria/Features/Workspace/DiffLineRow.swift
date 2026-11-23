@@ -30,20 +30,7 @@ struct EditDiffHunks: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(editDiff.hunks) { hunk in
-                    Text(hunk.displayLabel)
-                        .font(AppFont.mono(style: .caption))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(.tertiarySystemBackground))
-                    ForEach(hunk.lines) { DiffLineRow(line: $0) }
-                }
-            }
-            .textSelection(.enabled)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            DiffHunkRows(hunks: editDiff.hunks)
 
             if editDiff.truncated {
                 Text("Diff truncated")
@@ -51,5 +38,28 @@ struct EditDiffHunks: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// Hunks under their `@@` labels with long lines wrapping: an edit's change, and a turn's file diff on the companion page
+/// (TAL-1478), whose page is too narrow to scroll sideways.
+struct DiffHunkRows: View {
+    let hunks: [DiffHunk]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(hunks) { hunk in
+                Text(hunk.displayLabel)
+                    .font(AppFont.mono(style: .caption))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.tertiarySystemBackground))
+                ForEach(hunk.lines) { DiffLineRow(line: $0) }
+            }
+        }
+        .textSelection(.enabled)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }

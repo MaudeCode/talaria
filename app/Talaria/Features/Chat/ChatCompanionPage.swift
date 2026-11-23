@@ -7,6 +7,9 @@ import TalariaKit
 /// TAL-1539: the page keeps no bar of its own. Its controls join the chat's bar, so on the iPhone Duo the chat keeps the
 /// vertical bar: a page with its own navigation bar took that bar over and hid every chat item. Its file name heads the
 /// page instead, and its browser opens in place.
+///
+/// TAL-1478: a tool card tapped in the chat shows its whole result here, and the turn's Changes its changed files, each
+/// opening its diff in place. Back steps out to the file; Follow returns to the agent's file.
 struct ChatCompanionPage: View {
     let viewModel: ChatViewModel
     let session: SessionSummary
@@ -16,11 +19,15 @@ struct ChatCompanionPage: View {
     @Bindable var preview: CompanionPagePreview
     /// A copy sliding with the sidebar column leaves the bar to the page beside the chat (TAL-1540).
     var showsControls = true
+    /// A tool result's whole-output fetch is the page's read: closing the page cancels it.
+    @State private var reads = ScreenReads()
 
     var body: some View {
         let focus = viewModel.companionFocus
         VStack(alignment: .leading, spacing: 0) {
-            if let browserPath = focus.browserPath {
+            if let shown = focus.shown {
+                shownContent(shown)
+            } else if let browserPath = focus.browserPath {
                 TextField("Search files", text: Bindable(preview.browserSearch).searchText)
                     .textFieldStyle(.roundedBorder)
                     .padding([.horizontal, .top])
@@ -37,12 +44,7 @@ struct ChatCompanionPage: View {
                     }
                 )
             } else if let path = focus.path {
-                Text(Self.name(of: path))
-                    .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .padding([.horizontal, .top])
-                    .accessibilityAddTraits(.isHeader)
+                heading(Self.name(of: path))
                 if preview.showsChanges, let editDiff = focus.shownEditDiff {
                     ScrollView {
                         EditDiffHunks(editDiff: editDiff)
@@ -64,7 +66,17 @@ struct ChatCompanionPage: View {
         .toolbar {
             if showsControls {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    if focus.browserPath != nil {
+                    if focus.shown != nil {
+                        Button {
+                            viewModel.companionPageBack()
+                        } label: {
+                            Label("Back", systemImage: "chevron.backward")
+                        }
+                        Toggle(isOn: following(focus)) {
+                            Label("Follow", systemImage: "scope")
+                        }
+                        .toggleStyle(.button)
+                    } else if focus.browserPath != nil {
                         Button {
                             viewModel.showCompanionBrowser(at: nil)
                         } label: {
@@ -90,6 +102,40 @@ struct ChatCompanionPage: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func shownContent(_ shown: ChatCompanionFocus.Shown) -> some View {
+        switch shown {
+        case .toolResult(let call):
+            ScrollView {
+                ToolCallCardView(toolCall: call, isOnPage: true)
+                    .padding()
+            }
+            .environment(\.chatTranscriptRowState, preview.toolState)
+            .environment(\.chatScreenReads, reads)
+            .ownsReads(reads)
+            .chatEnvironmentAction(\.chatFullToolResultLoader) { toolCallID in
+                { try await viewModel.fullToolResult(toolCallID: toolCallID) }
+            }
+        case .turnChanges(let files, opened: let opened):
+            heading(opened?.displayPath ?? GitTurnFilesList.title(for: files))
+            if let opened {
+                GitDiffView(session: session, server: server, file: opened, isOnPage: true, onAPIError: onAPIError)
+                    .id(opened.id)
+            } else {
+                GitTurnFilesList(files: files) { viewModel.showOnCompanionPage(.turnChanges(files, opened: $0)) }
+            }
+        }
+    }
+
+    private func heading(_ title: String) -> some View {
+        Text(title)
+            .font(.headline)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .padding([.horizontal, .top])
+            .accessibilityAddTraits(.isHeader)
     }
 
     /// On follows the agent's file; off pins the one shown.
@@ -123,6 +169,8 @@ final class CompanionPagePreview {
     @ObservationIgnored private var scrollOffsets: [String: CGPoint] = [:]
     var showsChanges = false
     let browserSearch = FilesInspectorContent.Coordinator()
+    /// TAL-1478: the shown tool result's fetched output and raw view, kept as the page moves.
+    let toolState = ChatTranscriptRowState()
 
     func scrollOffset(for id: String) -> Binding<CGPoint> {
         Binding(get: { self.scrollOffsets[id] ?? .zero }, set: { self.scrollOffsets = [id: $0] })

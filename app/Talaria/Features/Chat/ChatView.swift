@@ -1784,7 +1784,18 @@ struct ChatView: View {
     private func presentTurnDiff(for summary: TurnFileChangeSummary?) {
         let files = summary?.diffFiles ?? []
         guard !files.isEmpty else { return }
-        turnDiffPresentation = .turnFiles(files)
+        presentTurnDiff(.turnFiles(files))
+    }
+
+    /// TAL-1478: the turn's changes open on the companion page while it shows beside the chat, in the sheet otherwise.
+    private func presentTurnDiff(_ presentation: TurnDiffPresentation) {
+        guard companionPageIsBeside else { return turnDiffPresentation = presentation }
+        switch presentation {
+        case .turnFiles(let files):
+            viewModel.showOnCompanionPage(.turnChanges(files, opened: nil))
+        case .file(let file):
+            viewModel.showOnCompanionPage(.turnChanges(turnChangesRecapSummary?.diffFiles ?? [file], opened: file))
+        }
     }
 
     @MainActor
@@ -2232,6 +2243,8 @@ struct ChatView: View {
         let viewModel: ChatViewModel
         /// A tool row's whole-result fetch is the screen's read (TAL-2338): leaving the chat cancels it, recycling a row does not.
         @State private var reads = ScreenReads()
+        /// TAL-1478: a tool card's details opening on the companion page, one instance for every pass.
+        @State private var showBeside = ChatEnvironmentAction<ToolCall, Void> { _ in }
 #if DEBUG
         @Environment(\.chatBodyEvaluation) private var recordBodyEvaluation
 #endif
@@ -2365,7 +2378,7 @@ struct ChatView: View {
                     chat.presentTurnDiff(for: chat.turnChangesRecapSummary)
                 },
                 onOpenTurnFileDiff: { file in
-                    chat.turnDiffPresentation = .file(file)
+                    chat.presentTurnDiff(.file(file))
                 },
                 retainedRowCache: chat.retained?.rows,
                 retainedChat: chat.retained,
@@ -2383,6 +2396,7 @@ struct ChatView: View {
             .chatEnvironmentAction(\.chatFullToolResultLoader) { toolCallID in
                 { try await viewModel.fullToolResult(toolCallID: toolCallID) }
             }
+            .environment(\.chatCompanionPresentation, companionPresentation)
             .environment(\.chatScreenReads, reads)
             .environment(\.chatProcessOutputTails, viewModel.processOutputTails)
             .ownsReads(reads)
@@ -2441,6 +2455,14 @@ struct ChatView: View {
                 chat.appendReturnedComposerText(returned)
                 chat.composerIsFocused = true
             }
+        }
+
+        /// TAL-1478: tool cards open their details on the companion page while it shows beside the chat.
+        private var companionPresentation: ChatCompanionPresentation? {
+            guard chat.companionPageIsBeside else { return nil }
+            let viewModel = viewModel
+            showBeside.handler = { viewModel.showOnCompanionPage(.toolResult($0)) }
+            return ChatCompanionPresentation(shownToolCallID: viewModel.companionFocus.shownToolCallID, action: showBeside)
         }
     }
 

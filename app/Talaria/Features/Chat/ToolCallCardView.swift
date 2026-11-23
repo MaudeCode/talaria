@@ -3,6 +3,9 @@ import TalariaKit
 
 struct ToolCallCardView: View {
     let toolCall: ToolCall
+    /// TAL-1478: the card on the companion page, open with its whole result.
+    var isOnPage = false
+    @Environment(\.chatCompanionPresentation) private var companionPresentation
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @Environment(\.chatFullToolResultLoader) private var loadFullToolResult
@@ -19,8 +22,9 @@ struct ToolCallCardView: View {
     @ChatRetainedState("tool-raw") private var showsRaw: Bool? = nil
     @State private var copyConfirmation = ChatCodeBlock.CopyConfirmation()
 
-    init(toolCall: ToolCall) {
+    init(toolCall: ToolCall, isOnPage: Bool = false) {
         self.toolCall = toolCall
+        self.isOnPage = isOnPage
         _userToggledExpansion = ChatRetainedState(wrappedValue: nil, "tool:\(toolCall.id):expanded")
         _fullResult = ChatRetainedState(wrappedValue: nil, "tool:\(toolCall.id):result")
         _isLoadingFullResult = ChatRetainedState(wrappedValue: false, "tool:\(toolCall.id):loading")
@@ -28,8 +32,14 @@ struct ToolCallCardView: View {
         _showsRaw = ChatRetainedState(wrappedValue: nil, "tool:\(toolCall.id):raw")
     }
 
+    /// The page beside the chat shows this card's details in place of opening them inline (TAL-1478).
+    private var opensBeside: Bool { companionPresentation != nil && !isOnPage }
+    private var isShownBeside: Bool { opensBeside && companionPresentation?.shownToolCallID == toolCall.id }
+
     private var isExpanded: Bool {
-        ChatTranscriptDisplaySettings.isCardExpanded(
+        if isOnPage { return true }
+        if opensBeside { return false }
+        return ChatTranscriptDisplaySettings.isCardExpanded(
             userToggled: userToggledExpansion,
             startsExpanded: startsExpanded
         )
@@ -39,17 +49,30 @@ struct ToolCallCardView: View {
         let statusDisplay = ToolCallStatusDisplay(toolCall: toolCall)
 
         VStack(alignment: .leading, spacing: isExpanded ? 8 : 0) {
-            Button {
-                chatDisclosureToggled()
-                withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
-                    userToggledExpansion = !isExpanded
-                }
-            } label: {
+            if isOnPage {
                 header
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.accessibilityDetailText))
+                    .accessibilityAddTraits(.isHeader)
+            } else {
+                Button {
+                    if let companionPresentation {
+                        companionPresentation.show(toolCall)
+                        return
+                    }
+                    chatDisclosureToggled()
+                    withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
+                        userToggledExpansion = !isExpanded
+                    }
+                } label: {
+                    header
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.accessibilityDetailText))
+                .accessibilityValue(isShownBeside ? String(localized: "Shown beside") : "")
+                .accessibilityHint(opensBeside ? "Double tap to show details beside the chat."
+                                   : isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.accessibilityDetailText))
-            .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
 
             // TAL-2340: the latest output line of the background process the call started, while it runs.
             if let processID = toolCall.processID, let tail = processOutputTails[processID] {
@@ -109,6 +132,13 @@ struct ToolCallCardView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // The page shows the whole result at once; a running call's page follows its card.
+        .task(id: isOnPage ? toolCall.id : nil) {
+            if isOnPage, toolCall.resultTruncated, fullResult == nil, !fullResultFailed { startFullResult() }
+        }
+        .onChange(of: toolCall) { _, call in
+            if isShownBeside { companionPresentation?.show(call) }
+        }
     }
 
     /// TAL-2027: a card call's rows, shown under its row and not repeated when it opens; a clipped exchange's whole rows once
@@ -243,7 +273,11 @@ struct ToolCallCardView: View {
                 }
             }
 
-            if hasExpandableContent {
+            if isShownBeside {
+                Image(systemName: "sidebar.trailing")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tint)
+            } else if hasExpandableContent, !isOnPage {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -637,6 +671,25 @@ extension EnvironmentValues {
         get { self[ChatOpenBackgroundTaskKey.self] }
         set { self[ChatOpenBackgroundTaskKey.self] = newValue }
     }
+}
+
+/// TAL-1478: while the companion page shows beside the chat, a tool card's details open there instead of inline, and the
+/// turn's changes with them. nil where the page is not beside the chat: compact width, the outer display, portrait.
+struct ChatCompanionPresentation: Equatable {
+    /// The call whose result the page shows, whose card reads "Shown beside".
+    let shownToolCallID: String?
+    /// The chat's one action instance, so a new pass does not re-run every card.
+    let action: ChatEnvironmentAction<ToolCall, Void>
+
+    func show(_ toolCall: ToolCall) { action(toolCall) }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.shownToolCallID == rhs.shownToolCallID && lhs.action === rhs.action
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var chatCompanionPresentation: ChatCompanionPresentation? = nil
 }
 
 /// TAL-331: fetches the whole result of a tool call the server clipped; the chat screen supplies it for its session.

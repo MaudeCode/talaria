@@ -2,7 +2,16 @@ import Foundation
 
 /// TAL-1458: the file a chat's companion page shows beside it. The server names each file call's `focus_path`; this is
 /// the device-local state over it: which one the page follows, a file the user pinned, and the page's open browser.
+/// TAL-1478: a tool call's result or a turn's changes the reader opened on the page, over that file.
 public struct ChatCompanionFocus: Equatable, Sendable {
+    /// What the page shows over its file.
+    public enum Shown: Equatable, Sendable {
+        /// The call as its card last saw it, so a running call's result fills in.
+        case toolResult(ToolCall)
+        /// The turn's changed files, and the one whose diff is open.
+        case turnChanges([GitFile], opened: GitFile?)
+    }
+
     /// The latest file a tool frame named, seeded by the session's `focus_path`.
     public private(set) var followedPath: String?
     /// The followed file's change, while the latest frame naming it carries one.
@@ -19,6 +28,8 @@ public struct ChatCompanionFocus: Equatable, Sendable {
     private var latestCallID: String?
     /// The directory the page's file browser shows; nil when the page shows its file.
     public var browserPath: String?
+    /// TAL-1478: a tool result or a turn's changes over the file; nil shows the file.
+    public private(set) var shown: Shown?
     /// TAL-1539: the reader hid the page. New files and runs leave it hidden until the reader shows it again.
     public internal(set) var isHidden = false
 
@@ -28,7 +39,12 @@ public struct ChatCompanionFocus: Equatable, Sendable {
 
     /// The file the page shows.
     public var path: String? { pinnedPath ?? followedPath }
-    public var isFollowing: Bool { pinnedPath == nil }
+    public var isFollowing: Bool { pinnedPath == nil && shown == nil }
+    /// The tool call whose result the page shows, if any.
+    public var shownToolCallID: String? {
+        guard case .toolResult(let call) = shown else { return nil }
+        return call.id
+    }
     /// The shown file's latest change; a pinned file shows none.
     public var shownEditDiff: ToolEditDiff? { isFollowing ? editDiff : nil }
 
@@ -64,20 +80,45 @@ public struct ChatCompanionFocus: Equatable, Sendable {
         latestCallID = nil
     }
 
+    /// A chosen file replaces a tool result or turn's changes the page showed.
     public mutating func pin(_ path: String, runID: String?) {
         pinnedPath = path
         pinnedRunID = runID
         browserPath = nil
+        shown = nil
     }
 
     public mutating func resumeFollowing() {
         pinnedPath = nil
         pinnedRunID = nil
+        shown = nil
+    }
+
+    /// TAL-1478: a tool result or a turn's changes pin the page as a chosen file does. The call the page already shows
+    /// only takes its newer state, so its card's updates keep the page current without re-pinning it.
+    public mutating func show(_ shown: Shown, runID: String?) {
+        if case .toolResult(let call) = shown, call.id == shownToolCallID {
+            self.shown = shown
+            return
+        }
+        if self.shown == nil, pinnedPath == nil { pinnedRunID = runID }
+        self.shown = shown
+        browserPath = nil
+    }
+
+    /// One step back: from a changed file's diff to the turn's list, from a tool result or the list to the file.
+    public mutating func back() {
+        if case .turnChanges(let files, opened: .some) = shown {
+            shown = .turnChanges(files, opened: nil)
+            return
+        }
+        shown = nil
+        if pinnedPath == nil { pinnedRunID = nil }
     }
 
     /// A run other than the pin's resumes following.
     mutating func runStarted(_ runID: String?) {
-        guard pinnedPath != nil, let runID, runID != pinnedRunID else { return }
+        guard !isFollowing, let runID, runID != pinnedRunID else { return }
         resumeFollowing()
     }
 }
