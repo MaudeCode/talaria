@@ -28,5 +28,6 @@
   "category_groups": [
     { "category": "a", "names": ["a/one"] },
     { "category": "b", "names": ["b/two"] }
-  ]
+  ],
+  "profile": "default"
 }

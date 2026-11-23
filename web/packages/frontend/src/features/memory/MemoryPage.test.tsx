@@ -6,13 +6,15 @@ import { ApiError } from '../../contracts/common'
 
 vi.mock('../../api/endpoints', () => ({ fetchMemory: vi.fn(), writeMemory: vi.fn(), previewMemoryCompaction: vi.fn(), applyMemoryCompaction: vi.fn(), fetchPendingWrites: vi.fn(() => Promise.resolve({ kind: 'memory', visible: false, enabled: false, items: [] })) }))
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ toolbar, children }: { toolbar: React.ReactNode; children: React.ReactNode }) => <div>{toolbar}{children}</div> }))
+vi.mock('../../app/bootstrap', async (original) => ({ ...await original<typeof import('../../app/bootstrap')>(), loadBootstrap: vi.fn(() => Promise.resolve()) }))
 import * as api from '../../api/endpoints'
 import { teardownAll } from '../../stream/connection'
 import { MemoryPage } from './MemoryPage'
+import { loadBootstrap } from '../../app/bootstrap'
 // Loaded up front, so the read view's lazy renderer chunk resolves within a query's timeout.
 import '../chat/render/MarkdownRenderer'
 
-const memory = (text: string, revision: string) => ({ memory: text, user: '', soul: '', memory_path: '/h/memories/MEMORY.md', user_path: '/h/memories/USER.md', soul_path: '/h/SOUL.md', memory_name: 'MEMORY.md', user_name: 'USER.md', soul_name: 'SOUL.md', memory_revision: revision, user_revision: 'u1', soul_revision: 's1', project_context_detail: null })
+const memory = (text: string, revision: string) => ({ memory: text, user: '', soul: '', memory_path: '/h/memories/MEMORY.md', user_path: '/h/memories/USER.md', soul_path: '/h/SOUL.md', memory_name: 'MEMORY.md', user_name: 'USER.md', soul_name: 'SOUL.md', memory_revision: revision, user_revision: 'u1', soul_revision: 's1', project_context_detail: null, profile: 'default' })
 const CONFLICT = 'MEMORY.md changed after you opened it. Not saved.'
 
 beforeEach(() => {
@@ -118,7 +120,7 @@ describe('Memory page (TAL-784)', () => {
     let refuse!: (e: unknown) => void
     vi.mocked(api.writeMemory).mockReturnValue(new Promise((_, reject) => { refuse = reject }))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(api.writeMemory).toHaveBeenCalledWith({ section: 'memory', content: 'Entry A\n§\nEntry C', revision: 'r1' })
+    expect(api.writeMemory).toHaveBeenCalledWith({ section: 'memory', content: 'Entry A\n§\nEntry C', revision: 'r1', profile: 'default' })
     // Save returns to the read view showing the saved text before the server answers.
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.getByText(/Entry C/)).toBeInTheDocument()
@@ -130,6 +132,22 @@ describe('Memory page (TAL-784)', () => {
     await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())
     expect(screen.getByText(/Entry B/)).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  // TAL-2717: another tab switched the shared profile; the page reloads onto it and the typed text stays.
+  it('keeps the typed text after a save refused with profile_changed, and reloads onto the active profile', async () => {
+    const refused = 'The active profile changed to beta in another tab. Nothing was saved.'
+    renderPage()
+    await userEvent.type(await edit(), '!')
+    vi.mocked(api.writeMemory).mockRejectedValue(new ApiError({ kind: 'http', status: 409, path: '/api/memory/write', message: refused, body: { error: refused, condition: 'profile_changed' } }))
+    vi.mocked(api.fetchMemory).mockResolvedValue({ ...memory('Beta entry', 'b1'), profile: 'beta' })
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(api.writeMemory).toHaveBeenCalledWith({ section: 'memory', content: 'Entry A!', revision: 'r1', profile: 'default' })
+    expect(await screen.findByRole('alert')).toHaveTextContent(refused)
+    await waitFor(() => expect(api.fetchMemory).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('textbox', { name: 'Memory' })).toHaveValue('Entry A!')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(loadBootstrap).toHaveBeenCalledTimes(1)
   })
 
   it('starts an edit reopened during a save from the revision the save produced', async () => {
@@ -145,7 +163,7 @@ describe('Memory page (TAL-784)', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
     expect(screen.getByRole('textbox', { name: 'Memory' })).toHaveValue('Entry A!?')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(api.writeMemory).toHaveBeenLastCalledWith({ section: 'memory', content: 'Entry A!?', revision: 'r2' }))
+    await waitFor(() => expect(api.writeMemory).toHaveBeenLastCalledWith({ section: 'memory', content: 'Entry A!?', revision: 'r2', profile: 'default' }))
   })
 
   it('keeps showing the saved text when the refetch after a save fails', async () => {

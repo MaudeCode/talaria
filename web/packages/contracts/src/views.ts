@@ -1625,7 +1625,8 @@ export const GitInfoSchema = z.looseObject({ git: GitBadgeSchema.nullable().opti
 
 export const SkillSchema = z.looseObject({ ...SkillCatalogIdentitySchema.shape, name: z.string(), description: NullableString.optional(), category: NullableString.optional(), disabled: z.boolean().optional(), locked: z.boolean().nullable().optional() })
 /** TAL-2480: `skills` are the rows `q` and `category` matched; `total` counts every row and `categories` lists every row's category, sorted. */
-export const SkillsSchema = z.looseObject({ skills: z.array(SkillSchema), total: z.number().int(), categories: z.array(z.string()), category_groups: z.array(z.object({ category: z.string().nullable(), names: z.array(z.string()) })).optional() })
+export const SkillsSchema = z.looseObject({ skills: z.array(SkillSchema), total: z.number().int(), categories: z.array(z.string()), category_groups: z.array(z.object({ category: z.string().nullable(), names: z.array(z.string()) })).optional(),
+  profile: z.string().describe('TAL-2717: the active profile these rows belong to; a write from this list sends it back as `profile`.') })
 /**
  * `linked_files` groups the skill directory's files by folder (`references`, `templates`, ...); open one with `?file=`.
  * A linked file that is not UTF-8 text carries `binary: true` and its `size` instead of `content`.
@@ -1698,6 +1699,7 @@ export const MemorySchema = z.looseObject({
    */
   memory_name: z.string().optional(), user_name: z.string().optional(), soul_name: z.string().optional(),
   memory_entries: z.array(z.string()).optional(), user_entries: z.array(z.string()).optional(),
+  profile: z.string().describe('TAL-2717: the active profile these files belong to; a save sends it back as `profile`.'),
 })
 export type Memory = z.infer<typeof MemorySchema>
 export const PromptSchema = z.looseObject({ id: z.string().optional(), name: z.string().optional(), title: z.string().optional(), label: z.string().optional(), text: z.string().optional(), content: z.string().optional(), created_at: z.number().optional() })

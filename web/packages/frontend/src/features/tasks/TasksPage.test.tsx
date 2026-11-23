@@ -101,7 +101,7 @@ describe('TasksPage', () => {
     vi.mocked(api.fetchCronRun).mockReset().mockResolvedValue({ content: '# Not markdown\n| literal |', snippet: 'literal', response: '# Not markdown\n| literal |', usage: { input_tokens: 1000, output_tokens: 50 } })
     vi.mocked(api.cronAction).mockReset().mockResolvedValue({ ok: true, job: full })
     vi.mocked(api.fetchCronDeliveryOptions).mockResolvedValue({ platforms: [{ value: 'local', label: 'Local' }, { value: 'telegram', label: 'Telegram' }] })
-    vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'inbox' }], total: 1, categories: [] })
+    vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'inbox' }], total: 1, categories: [], profile: 'default' })
     vi.mocked(api.fetchProfiles).mockResolvedValue({ profiles: [{ name: 'work' }, { name: 'personal' }], active: 'work' })
     vi.mocked(api.fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-5.6-sol', provider_id: 'openai-codex', bare_id: 'gpt-5.6-sol' }, { id: '@openai-codex:gpt-6-astra', provider_id: 'openai-codex', bare_id: 'gpt-6-astra' }] }] })
   })

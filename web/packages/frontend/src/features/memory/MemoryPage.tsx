@@ -18,11 +18,12 @@ import { isApiError, isDefiniteRefusal } from '../../contracts/common'
 import { useResourceEffects, useResourceMutation, withEffect } from '../sessions/useResourceMutation'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { PendingWritesPanel, TextDiffReview } from '../pending-writes/PendingWritesPanel'
+import { isProfileChanged, useProfileChangedReset } from '../../app/queries'
 
 type Section = 'memory' | 'user' | 'soul' | 'project_context'
 type Writable = Exclude<Section, 'project_context'>
-/** An edit and the file revision it started from, which the save sends back (TAL-784). */
-interface Draft { text: string; revision: string }
+/** An edit and the file revision and profile it started from, which the save sends back (TAL-784, TAL-2717). */
+interface Draft { text: string; revision: string; profile: string }
 const without = <T,>(record: Record<string, T>, key: string): Record<string, T> => Object.fromEntries(Object.entries(record).filter(([k]) => k !== key))
 const SECTIONS: { id: Section; label: () => string; writable: boolean }[] = [
   { id: 'memory', label: () => m.memory_section_memory(), writable: true },
@@ -33,6 +34,7 @@ const SECTIONS: { id: Section; label: () => string; writable: boolean }[] = [
 
 export function MemoryPage() {
   const qc = useQueryClient()
+  const profileChanged = useProfileChangedReset()
   const memory = useQuery({ queryKey: keys.memory, queryFn: () => api.fetchMemory(), staleTime: 15_000 })
   const [section, setSection] = useState<Section>('memory')
   // An open editor per tab; a tab without one shows the file rendered (device-local, kept across tab switches).
@@ -77,7 +79,7 @@ export function MemoryPage() {
   const write = useMutation({
     // Save closes the editor and shows the saved text at once; a refetch then brings the revision the next edit starts from.
     mutationFn: async ({ target, draft: d }: { target: Writable; draft: Draft }) => {
-      try { await api.writeMemory({ section: target, content: d.text, revision: d.revision }) } catch (error) {
+      try { await api.writeMemory({ section: target, content: d.text, revision: d.revision, profile: d.profile }) } catch (error) {
         if (isDefiniteRefusal(error)) throw error
         // Read the authoritative outcome; never replay a write after a missing acknowledgment.
         const current = await api.fetchMemory().catch(() => null)
@@ -96,11 +98,13 @@ export function MemoryPage() {
         qc.setQueryData<MemoryData>(keys.memory, (old) => old && { ...old, [vars.target]: vars.draft.text, [`${vars.target}_entries`]: undefined })
       }
     },
-    // A refused save rolls the read view back and reopens the editor with the user's text.
+    // A refused save rolls the read view back and reopens the editor with the user's text. Another tab's profile switch
+    // reads like a conflict: the page reloads onto the active profile and the text stays until Reload or Cancel drops it.
     onError: (e, vars) => {
       setDraft((d) => d[vars.target] ? d : { ...d, [vars.target]: vars.draft })
-      if (isApiError(e) && e.code === 'memory_conflict') setConflict((c) => ({ ...c, [vars.target]: e.message }))
+      if (isApiError(e) && (e.code === 'memory_conflict' || isProfileChanged(e))) setConflict((c) => ({ ...c, [vars.target]: e.message }))
       else showErrorToast(e)
+      profileChanged(e)
     },
     onSettled: (_result, _error, vars) => setSaving((s) => without(s, vars.target)),
   })
@@ -156,7 +160,7 @@ export function MemoryPage() {
             <div data-memory-header="">
               <SectionHeader
                 detail={mtime ? `${m.logs_updated()} ${formatDate(mtime)}` : undefined}
-                action={current?.writable && !editing ? <Button variant="ghost" disabled={!!effects['memory-compaction']} onClick={() => setDraft((d) => ({ ...d, [section]: { text: shown, revision: section === 'project_context' ? '' : data[`${section}_revision`] } }))}>{m.edit()}</Button> : undefined}
+                action={current?.writable && !editing ? <Button variant="ghost" disabled={!!effects['memory-compaction']} onClick={() => setDraft((d) => ({ ...d, [section]: { text: shown, revision: section === 'project_context' ? '' : data[`${section}_revision`], profile: data.profile } }))}>{m.edit()}</Button> : undefined}
               ><span title={path || undefined}>{name}</span></SectionHeader>
             </div>
           } />
@@ -164,7 +168,7 @@ export function MemoryPage() {
             <textarea
               value={text}
               readOnly={!!effects['memory-compaction']}
-              onChange={(e) => { const value = e.target.value; setDraft((d) => ({ ...d, [section]: { text: value, revision: d[section]?.revision ?? (section === 'project_context' ? '' : data[`${section}_revision`]) } })) }}
+              onChange={(e) => { const value = e.target.value; setDraft((d) => ({ ...d, [section]: { text: value, revision: d[section]?.revision ?? (section === 'project_context' ? '' : data[`${section}_revision`]), profile: d[section]?.profile ?? data.profile } })) }}
               rows={22}
               spellCheck={false}
               aria-label={current?.label()}

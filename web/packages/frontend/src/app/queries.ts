@@ -11,6 +11,7 @@ import { useResourceEffects, useResourceMutation } from '../features/sessions/us
 import { showErrorToast } from '../features/toast/errorToast'
 import { showToast } from '../features/toast/toast'
 import { m } from '../paraglide/messages.js'
+import { isApiError } from '../contracts/common'
 
 export { useSettingsQuery, useSetting, useSaveSettings, partialSetting } from './settings'
 
@@ -178,6 +179,16 @@ export function useSwitchProfile() {
     },
     onError: toastError,
   })
+}
+
+/** TAL-2717: the server refused a write because another tab switched profile; every cached resource is the previous profile's. */
+export const isProfileChanged = (error: unknown): boolean => isApiError(error) && (error.body as { condition?: unknown } | null)?.condition === 'profile_changed'
+
+/** Reloads the bootstrap and every query after a `profile_changed` refusal, as an in-tab switch does, so the page shows the active profile. */
+export function useProfileChangedReset() {
+  const qc = useQueryClient()
+  // A failed reload shows where it failed: the shell's bootstrap state and each page's query.
+  return (error: unknown): void => { if (isProfileChanged(error)) Promise.all([loadBootstrap(), qc.resetQueries()]).catch(() => undefined) }
 }
 
 export function useToolsetsCatalogQuery(value: string[] | null, sessionId: string | undefined, q: string) {

@@ -18,6 +18,7 @@ import { useResourceEffects, useResourceMutation, withEffects } from '../session
 import { SkillRow } from './SkillRow'
 import { PendingWritesPanel, TextDiffReview } from '../pending-writes/PendingWritesPanel'
 import { useStreamContext } from '../../stream/connection'
+import { useProfileChangedReset } from '../../app/queries'
 
 /** TAL-2326: `initialSkill` opens that skill's detail first, as a tool row's link asks. */
 export function SkillsPage({ initialSkill }: { initialSkill?: string | undefined } = {}) {
@@ -30,11 +31,14 @@ export function SkillsPage({ initialSkill }: { initialSkill?: string | undefined
   const usage = useQuery({ queryKey: keys.skills.usage, queryFn: api.fetchSkillsUsage, staleTime: 60_000 })
   const effects = useResourceEffects<boolean>()
   const list = withEffects(skills.data?.skills ?? [], (s) => `skill:${s.name}`, effects)
+  const profile = skills.data?.profile
+  const profileChanged = useProfileChangedReset()
+  const onError = (e: unknown) => { showErrorToast(e); profileChanged(e) }
   const categories = skills.data?.category_groups?.flatMap(({ category }) => category === null ? [] : [category]) ?? skills.data?.categories ?? []
-  const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showErrorToast(e) })
-  const lock = useResourceMutation({ resource: ({ name }: { name: string; locked: boolean }) => `skill-lock:${name}`, effect: ({ locked }) => ({ value: locked }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: ({ name, locked }: { name: string; locked: boolean }) => api.lockSkill(name, locked), onError: (e) => showErrorToast(e) })
+  const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled, profile), onError })
+  const lock = useResourceMutation({ resource: ({ name }: { name: string; locked: boolean }) => `skill-lock:${name}`, effect: ({ locked }) => ({ value: locked }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: ({ name, locked }: { name: string; locked: boolean }) => api.lockSkill(name, locked, profile), onError })
 
-  if (selected) return <SkillDetail key={selected} name={selected} onBack={() => setSelected(null)} />
+  if (selected) return <SkillDetail key={selected} name={selected} profile={profile} onError={onError} onBack={() => setSelected(null)} />
   return (
     <HubPage
       title={m.tab_skills()}
@@ -71,7 +75,7 @@ function SkillSearch({ initialQuery, onSearch }: { initialQuery: string; onSearc
   )
 }
 
-function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
+function SkillDetail({ name, profile, onError, onBack }: { name: string; profile: string | undefined; onError: (e: unknown) => void; onBack: () => void }) {
   const content = useQuery({ queryKey: keys.skills.content(name), queryFn: () => api.fetchSkillContent(name) })
   const [draft, setDraft] = useState<string | null>(null)
   const [confirm, setConfirm] = useState(false)
@@ -82,11 +86,11 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
   const save = useResourceMutation({
     resource: () => `skill-content:${name}`, queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.content(name), exact: true }],
     effect: (text: string) => ({ value: text }),
-    mutationFn: (text) => api.saveSkill(name, text),
+    mutationFn: (text) => api.saveSkill(name, text, profile),
     onSuccess: (_, text) => { showToast(m.skill_saved()); setDraft((d) => d === text ? null : d) },
-    onError: (e) => showErrorToast(e),
+    onError,
   })
-  const del = useResourceMutation({ resource: () => `skill:${name}`, effect: () => ({ remove: true }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: () => api.deleteSkill(name), onError: (e) => showErrorToast(e) })
+  const del = useResourceMutation({ resource: () => `skill:${name}`, effect: () => ({ remove: true }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: () => api.deleteSkill(name, profile), onError })
   const text = draft ?? content.data?.content ?? ''
   const linked = Object.entries(content.data?.linked_files ?? {})
   if (file) return <SkillFile name={name} file={file} onBack={() => setFile(null)} />
