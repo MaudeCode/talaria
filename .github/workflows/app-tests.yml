@@ -346,7 +346,7 @@ jobs:
     # The test step's own limit ends the tests, and this one only backs it up: setup takes up to about 15 minutes
     # before that step, and a loaded runner took 9 minutes over a single report after it (TAL-670). A focused
     # diagnostic's many attempts keep the longer limits.
-    timeout-minutes: ${{ inputs.diagnostic && 75 || 55 }}
+    timeout-minutes: ${{ inputs.diagnostic && 75 || 65 }}
     permissions:
       contents: read
       # Reads this run's job list to wait for the build.
@@ -511,12 +511,16 @@ jobs:
       # and the memory log and the job fails rather than being cancelled, which the failure alert sees (TAL-670).
       # Within it, XCTest's per-test limit fails a hung test by name, with a spindump, and the run goes on: one minute,
       # the shortest XCTest allows and the nearest to the 30 s run-time budget, not its default ten (TAL-2544). The
-      # step's limit sits above the slowest measured shard: 10 to 13 minutes at four shards (main run 44328773116), 18
-      # to 19.5 minutes at a release's two (release run 44252691504), plus at most about 6 minutes of the render
-      # server's settle wait before the first launch (TAL-2705).
+      # step's limit sits above the slowest measured shard with the one launch recovery the step performs: 14 minutes
+      # of testing at three shards beside the native Duo shard (main run 45094036482), 18 to 19.5 minutes at a
+      # release's two (release run 44252691504), up to about 6 minutes of the render server's settle wait before the
+      # first launch (TAL-2705; 11 on the native Duo shard, whose tests take 10), and about 13 minutes of a recovered
+      # launch: the faulted launch's 2 to 4 minutes of connect and preparation limits, 4 minutes to reboot and prepare
+      # the simulator, and 5 minutes of a starved relaunch before its first test. A shard that recovered once ran out
+      # of 30 minutes with 34 of its 273 tests left (main run 45113702525, TAL-2708).
       - name: Test without building
         if: env.DUO_SKIPPED != '1'
-        timeout-minutes: ${{ inputs.diagnostic && 45 || 30 }}
+        timeout-minutes: ${{ inputs.diagnostic && 45 || 40 }}
         env:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
           GH_TOKEN: ${{ github.token }}
@@ -554,13 +558,20 @@ jobs:
           # one (run 45068210315), since the runtime deletion before the boot (TAL-2385) lets the tests start sooner
           # after it. So the tests start once the burst came and went, or 450 s after the boot, past the latest onset
           # seen in 21 shards of seven runs (407 s) (TAL-2705). The shard's test time leaves this wait out.
+          # The native Duo shard waits out the Duo's second burst instead, which only one seen by the wait ends: it
+          # stalled the host 7 to 15.3 minutes after the boot in four of six Duo shards, and the first burst had
+          # already come before each of them launched (main runs 45084666213 to 45113702525, TAL-2708).
           # shellcheck disable=SC2329 # scripts/xctest-launch calls it.
           xctest_ready() {
             ci/background wait simulator-prepare || return
-            local now settle
+            local now settle after=450 fresh=""
+            if [[ "$(jq -r '.duo // false' "${RUNNER_TEMP}/shard.json")" == true ]]; then
+              after=960 fresh=fresh
+            fi
             now=$(date +%s)
-            settle=$(( SIMULATOR_BOOTED_AT + 450 - now ))
-            ci/memory-sampler settle $(( settle > 0 ? settle : 0 ))
+            settle=$(( SIMULATOR_BOOTED_AT + after - now ))
+            # shellcheck disable=SC2086 # fresh is one word or none.
+            ci/memory-sampler settle $(( settle > 0 ? settle : 0 )) ${fresh}
             start_seconds=$(( start_seconds + $(date +%s) - now ))
           }
           # shellcheck disable=SC2329 # scripts/xctest-launch calls it.

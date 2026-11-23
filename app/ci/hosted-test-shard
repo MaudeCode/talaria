@@ -66,7 +66,7 @@ WITHIN = 1.10  # The fewest shards predicted to finish within 10% of the fastest
 # fixed 90 s hosted budget gave the median repeated test one attempt: over the pull request runs of 2026-11-18 to 22,
 # 422 of 507 repeated tests got fewer than ten (TAL-2517), since a selection whose one pass takes over 45 s ran once. The
 # hosted budget is ten passes of the selection, at most 300 s, which leaves the repeat job's ~110 s of simulator overhead
-# well inside the 30-minute step limit (TAL-2544). The package budget of 100 s gives the slowest observed attempt (10 s,
+# well inside the 40-minute step limit (TAL-2544). The package budget of 100 s gives the slowest observed attempt (10 s,
 # 6 attempts in 60 s) ten. Replayed against 64 green pull request runs with repeats, this adds a median 0 s and a p90
 # 210 s to push-to-green, since the repeat job mostly finishes beside the lane's slowest App job.
 REPEAT_ATTEMPTS = 50

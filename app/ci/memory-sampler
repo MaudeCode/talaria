@@ -4,7 +4,7 @@
 #   ci/memory-sampler watch LOG XCODEBUILD_LOG   appends a sample every MEMORY_SAMPLE_SECONDS (15) until killed
 #   ci/memory-sampler sample LOG XCODEBUILD_LOG  appends one sample
 #   ci/memory-sampler summary LOG                prints the peak swap and SimRenderServer footprint, with their tests
-#   ci/memory-sampler settle CAP_SECONDS         returns once a freshly booted simulator's render server has settled
+#   ci/memory-sampler settle CAP_SECONDS [fresh] returns once a freshly booted simulator's render server has settled
 # A sample holds swap use, the free-memory percentage, compressor and swap counters, the eight largest processes by
 # footprint (top's MEM, which counts the GPU and IOSurface memory ps's RSS leaves out), SimRenderServer's
 # footprint and lifetime peak, and the test xcodebuild last started. The peak (footprint's phys_footprint_peak) keeps
@@ -78,13 +78,23 @@ summary() {
 # lifetime peak shows the burst came (over 1 GB) and its footprint is back under 400 MB, or after CAP_SECONDS. The
 # hosted test shards call it before their first launch, since a burst that lands mid-shard stalls the tests it
 # overlaps (TAL-2705).
+# The iPhone Duo's render server bursts twice: once before its shard's first launch, and again 7 to 15 minutes after
+# the boot, which stalled the host for about three minutes and two tests that take 10 to 16 s took 44 to 48 s (main
+# runs 45084666213 and 45113702525, TAL-2708). With `fresh`, only a burst this wait sees counts: its footprint over
+# 1 GB, or its lifetime peak 512 MB past the one the wait began with.
 settle() {
-  local cap=$1 start=${SECONDS} processes current=0 peak=0
+  local cap=$1 fresh=${2:-} start=${SECONDS} processes current=0 peak=0 baseline=-1 burst=0
   while true; do
     processes=$(processes)
     current=$(megabytes "$(awk '$2 == "SimRenderServer" { print $3; exit }' <<< "${processes}")")
     peak=$(( $(render_server_peak_bytes "${processes}") / 1048576 ))
-    if (( peak > 1024 && current < 400 )); then
+    if [[ -z "${fresh}" ]]; then
+      (( peak <= 1024 )) || burst=1
+    else
+      (( baseline >= 0 )) || baseline=${peak}
+      (( current <= 1024 && peak <= baseline + 512 )) || burst=1
+    fi
+    if (( burst && current < 400 )); then
       echo "SimRenderServer settled after $((SECONDS - start)) s: ${current} MB, lifetime peak ${peak} MB"
       return 0
     fi
@@ -100,6 +110,6 @@ case "${1:-}" in
   sample) sample "$2" "$3" ;;
   watch) while true; do sample "$2" "$3" || true; sleep "${MEMORY_SAMPLE_SECONDS:-15}"; done ;;
   summary) summary "$2" ;;
-  settle) settle "$2" ;;
-  *) echo "usage: ci/memory-sampler watch|sample LOG XCODEBUILD_LOG | summary LOG | settle CAP_SECONDS" >&2; exit 2 ;;
+  settle) settle "$2" "${3:-}" ;;
+  *) echo "usage: ci/memory-sampler watch|sample LOG XCODEBUILD_LOG | summary LOG | settle CAP_SECONDS [fresh]" >&2; exit 2 ;;
 esac
