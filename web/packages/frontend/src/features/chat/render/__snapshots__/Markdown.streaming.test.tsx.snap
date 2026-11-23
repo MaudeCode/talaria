@@ -330,3 +330,16 @@ exports[`converges to the static DOM and snapshot for tables 1`] = `
   },
 ]
 `;
+
+exports[`converges to the static DOM and snapshot for unknownTag 1`] = `
+[
+  {
+    "tag": "P",
+    "text": "Intro.",
+  },
+  {
+    "tag": "P",
+    "text": "Run git checkout <branch-name>",
+  },
+]
+`;

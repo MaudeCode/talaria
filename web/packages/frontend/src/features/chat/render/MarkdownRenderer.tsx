@@ -5,7 +5,7 @@
  * elsewhere and are never passed through here as HTML.
  */
 import { use, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Streamdown, defaultRehypePlugins, parseMarkdownIntoBlocks, type AnimateOptions, type LinkSafetyConfig, type LinkSafetyModalProps, type StreamdownProps } from 'streamdown'
+import { Streamdown, defaultRehypePlugins, defaultRemarkPlugins, parseMarkdownIntoBlocks, type AnimateOptions, type LinkSafetyConfig, type LinkSafetyModalProps, type StreamdownProps } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
 import { appUrl } from '../../../lib/appRoot'
 import { CodeBlock, LineEndedContext } from './CodeBlock'
@@ -61,6 +61,19 @@ const REHYPE_PLUGINS = Object.entries(defaultRehypePlugins).map(([name, plugin])
   name === 'harden' ? [harden, { ...hardenOptions, defaultOrigin: window.location.origin, allowedImagePrefixes: ['/'] }]
   : name === 'sanitize' ? [sanitize, { ...sanitizeSchema, clobberPrefix: CONTENT_ID_PREFIX }]
   : plugin) as NonNullable<StreamdownProps['rehypePlugins']>
+
+/**
+ * TAL-2715: raw HTML the sanitizer would drop (`<branch-name>`, `<stdin>`, a comment) stays visible as its literal text,
+ * so a reply or share page never loses words. HTML the sanitizer keeps (`<details>`, `<kbd>`) still renders.
+ */
+const ALLOWED_TAGS = new Set((sanitizeSchema as { tagNames: string[] }).tagNames)
+const keepsWords = (html: string) => !/<[!?]/.test(html) && [...html.matchAll(/<\/?([a-z][a-z0-9-]*)/gi)].every(([, tag = '']) => ALLOWED_TAGS.has(tag.toLowerCase()))
+interface MdNode { type: string, value?: string, children?: MdNode[] }
+const showDroppedHtmlAsText = () => function visit(node: MdNode): void {
+  if (node.type === 'html' && !keepsWords(node.value ?? '')) node.type = 'text'
+  node.children?.forEach(visit)
+}
+const REMARK_PLUGINS = [...Object.values(defaultRemarkPlugins), showDroppedHtmlAsText]
 
 /** An in-document link (`#heading`, a footnote) scrolls to its prefixed target within the same reply. */
 function jumpWithin(reply: HTMLElement | null, fragment: string): void {
@@ -145,6 +158,7 @@ export default function MarkdownRenderer({ text, streaming = false, fade = false
       controls={CONTROLS}
       lineNumbers={false}
       linkSafety={linkSafety}
+      remarkPlugins={REMARK_PLUGINS}
       rehypePlugins={REHYPE_PLUGINS}
       urlTransform={urlTransform}
     >

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Text in angle brackets, such as `git checkout <branch-name>`, and HTML comments now show in chat replies and shared pages in Talaria Web instead of disappearing.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
