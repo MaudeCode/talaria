@@ -1452,6 +1452,7 @@ struct SessionListView: View {
                 chatDropIsEnabled: canSplitChats,
                 retained: retained
             )
+            .equatable()
             .id(session.id)
             .environment(\.appearedNavigationRoot, rootHasAppeared ? retained : nil)
         case .newChat(let route):
@@ -2685,9 +2686,10 @@ struct SessionListView: View {
 }
 
 /// The existing-session sibling of PendingNewChatView; it has no session-creation lifecycle.
-/// Explicit inputs keep list-only updates from constructing the retained chat again.
+/// Explicit inputs keep list-only updates from constructing the retained chat again, and equality keeps a
+/// list-only refresh that re-runs the conversation root from evaluating the open chat's body.
 @MainActor
-private struct SessionChatDestination: View {
+private struct SessionChatDestination: View, Equatable {
     let session: SessionSummary
     let server: URL
     let authManager: AuthManager
@@ -2720,6 +2722,22 @@ private struct SessionChatDestination: View {
             draftStore: draftStore, sessionListOwner: viewModel,
             splitFilesInspector: inspector, retained: retained
         )
+    }
+
+    /// Every stored input must appear here, or a change to it never reaches the chat. Objects compare by identity; a
+    /// secondary chat is an opaque view, so either side having one rebuilds. SwiftUI compares views on the main actor.
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        MainActor.assumeIsolated {
+            lhs.session == rhs.session && lhs.server == rhs.server
+                && lhs.authManager === rhs.authManager && lhs.draftStore === rhs.draftStore
+                && lhs.viewModel === rhs.viewModel && lhs.context === rhs.context && lhs.retained === rhs.retained
+                && lhs.inspectorFits == rhs.inspectorFits && lhs.offersCompanionPage == rhs.offersCompanionPage
+                && lhs.widensForCompanionPage == rhs.widensForCompanionPage
+                && lhs.companionPageIsSuspended == rhs.companionPageIsSuspended
+                && lhs.sidebarColumnIsShown == rhs.sidebarColumnIsShown
+                && lhs.secondaryChat == nil && rhs.secondaryChat == nil
+                && lhs.chatUsesFoldRegions == rhs.chatUsesFoldRegions && lhs.chatDropIsEnabled == rhs.chatDropIsEnabled
+        }
     }
 }
 

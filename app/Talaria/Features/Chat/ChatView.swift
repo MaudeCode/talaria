@@ -663,7 +663,7 @@ struct ChatView: View {
 
                     listenPlaybackBar
 
-                    ChatMessageListView(chat: self, viewModel: viewModel)
+                    ChatMessageListView(chat: self, viewModel: viewModel, companionPageIsBeside: companionPageIsBeside)
                         // Scope RTL to the chat transcript only (#259): the offline
                         // banner above stays in the app's default direction.
                         .environment(\.layoutDirection, chatLayoutDirection)
@@ -2243,6 +2243,9 @@ struct ChatView: View {
     private struct ChatMessageListView: View {
         let chat: ChatView
         let viewModel: ChatViewModel
+        /// An input of its own: the chat's state behind it changes without `chat` comparing unequal, so a page that comes
+        /// beside after the transcript drew would otherwise leave tool cards opening inline (TAL-1979).
+        let companionPageIsBeside: Bool
         /// A tool row's whole-result fetch is the screen's read (TAL-2338): leaving the chat cancels it, recycling a row does not.
         @State private var reads = ScreenReads()
         /// TAL-1478: a tool card's details opening on the companion page, one instance for every pass.
@@ -2429,7 +2432,7 @@ struct ChatView: View {
 
         /// TAL-1478: tool cards open their details on the companion page while it shows beside the chat.
         private var companionPresentation: ChatCompanionPresentation? {
-            guard chat.companionPageIsBeside else { return nil }
+            guard companionPageIsBeside else { return nil }
             let viewModel = viewModel
             showBeside.handler = { viewModel.showOnCompanionPage(.toolResult($0)) }
             return ChatCompanionPresentation(shownToolCallID: viewModel.companionFocus.shownToolCallID, action: showBeside)
