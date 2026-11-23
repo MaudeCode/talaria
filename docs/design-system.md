@@ -486,11 +486,11 @@ recording is the visual check. A ticket in the last column is an open gap.
 
 | Case | Owner tests | Open gaps |
 | --- | --- | --- |
-| Cold linked launch | `SessionListHostedTests.testColdLinkedLaunchShowsTheLinkedChatLoadingUntilItsRowsArrive` (per committed frame), `testDeepLinkedChatKeepsNavigationStackAndToolbarMounted`, `testRelaunchShowsTheLastChatsBeforeTheServerAnswers` | |
+| Cold linked launch | `SessionListHostedTests.testColdLinkedLaunchShowsTheLinkedChatLoadingUntilItsRowsArrive` (per committed frame), `testDeepLinkedChatKeepsNavigationStackAndToolbarMountedOnPhone` and `…OnPad`, `testRelaunchShowsTheLastChatsBeforeTheServerAnswers` | |
 | Foreground return | `ChatHostedTests.testForegroundReturnRealizesZeroUnchangedTranscriptRows`, `SessionListHostedTests.testForegroundReturnPreservesTheSettledColumnChoice` | |
 | Duo outer ↔ inner | `ChatHostedTests.testBookFoldMovesComposerAndUnfoldingRetainsItsEditorAndDraft`, `DuoFoldHostedTests` | TAL-2565 |
 | Rotation | TalariaKit `ComposerCardSizingTests`, `SessionListHostedTests.testResizingAnOpenOverlayIntoTilingConsumesDrawerIntentAndRotationCollapsesTheColumn` | TAL-2569 |
-| Chat A → B → A | TalariaKit `ChatDraftStoreTests`, `SessionListHostedTests.testDeepLinkedChatKeepsNavigationStackAndToolbarMounted` (per committed frame), `DuoFoldHostedTests.testRevisitingAChatBesideTheListReopensTheReadersRow` and `testRevisitingAChatFromTheDrawerReopensTheReadersRow` (per committed frame) | |
+| Chat A → B → A | TalariaKit `ChatDraftStoreTests`, `SessionListHostedTests.testDeepLinkedChatKeepsNavigationStackAndToolbarMountedOnPhone` and `…OnPad` (per committed frame), `DuoFoldHostedTests.testRevisitingAChatBesideTheListReopensTheReadersRow` and `testRevisitingAChatFromTheDrawerReopensTheReadersRow` (per committed frame) | |
 | Sidebar interruption and cancel | `SidebarEdgePanGestureTests`, `SessionListHostedTests.testAnOpeningDragDrawsTheSettledSidebarToolbarBeforeRelease` and `testACancelledOpeningDragLeavesTheDrawerClosedWithoutTakingFocus`, TalariaKit `SessionNavigationStateTests.testSidebarGestureLeavesEdgeSwipeToAStackThatCanPop` | TAL-2567 |
 | Settings push and return | `SessionListHostedTests.testSidebarSectionIsARootAndSettingsIsAModalOverIt`, TalariaKit `SessionNavigationStateTests.testSettingsRoutingLeavesTheUnderlyingRootAndPagesUnchanged` | |
 
