@@ -13,7 +13,11 @@ cat > "$work/bin/sampler" <<'EOF'
 #!/usr/bin/env bash
 unset SECONDS # Disable Bash's automatic updates.
 SECONDS=0
-sleep() { SECONDS=$((SECONDS + $1)); }
+# With MEMORY_SAMPLER_TEST_STEPS set, each poll's sleep moves the fakes to the next sample's fixture.
+sleep() {
+  SECONDS=$((SECONDS + $1))
+  [[ -z "${MEMORY_SAMPLER_TEST_STEPS:-}" ]] || echo $(( $(cat "$MEMORY_SAMPLER_TEST_STEPS") + 1 )) > "$MEMORY_SAMPLER_TEST_STEPS"
+}
 source "$MEMORY_SAMPLER_TEST_SOURCE" "$@"
 EOF
 script="$work/bin/sampler"
@@ -88,4 +92,17 @@ fixture 5 0.00M 300M 734003200
 [ "$(MEMORY_SETTLE_POLL_SECONDS=0 "$script" settle 0)" = "SimRenderServer had not settled after 0 s: 300 MB, lifetime peak 700 MB" ]
 printf 'PID    COMMAND          MEM\n1  launchd  12M\n' > "$work/top.5"
 [ "$(MEMORY_SETTLE_POLL_SECONDS=0 "$script" settle 0)" = "SimRenderServer had not settled after 0 s: 0 MB, lifetime peak 0 MB" ]
+# With `fresh`, a burst that came and went before the wait does not count: the Duo's render server bursts again 7 to
+# 15 minutes after its boot (TAL-2708). A burst the wait sees does, by its footprint or by its peak's rise.
+fixture 5 0.00M 300M 3221225472
+echo 5 > "$work/n"
+[ "$(MEMORY_SETTLE_POLL_SECONDS=10 "$script" settle 20 fresh)" = "SimRenderServer had not settled after 20 s: 300 MB, lifetime peak 3072 MB" ]
+fixture 6 0.00M 300M 2516582400
+fixture 7 0.00M 2800M 3145728000
+fixture 8 0.00M 300M 3145728000
+echo 6 > "$work/n"
+[ "$(MEMORY_SETTLE_POLL_SECONDS=10 MEMORY_SAMPLER_TEST_STEPS="$work/n" "$script" settle 600 fresh)" = "SimRenderServer settled after 20 s: 300 MB, lifetime peak 3000 MB" ]
+fixture 7 0.00M 300M 3145728000
+echo 6 > "$work/n"
+[ "$(MEMORY_SETTLE_POLL_SECONDS=10 MEMORY_SAMPLER_TEST_STEPS="$work/n" "$script" settle 600 fresh)" = "SimRenderServer settled after 10 s: 300 MB, lifetime peak 3000 MB" ]
 echo "memory-sampler tests passed"

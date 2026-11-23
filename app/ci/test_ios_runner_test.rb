@@ -51,9 +51,9 @@ class TestIOSRunnerTest < Minitest::Test
     # A failed run keeps CoreSimulator's log beside its result bundle, for what shut a simulator down (TAL-869).
     assert_includes(test["run"], '[[ "${status}" == 0 ]] || cp "${HOME}/Library/Logs/CoreSimulator/CoreSimulator.log" CoreSimulator.log || true')
     assert_includes(shard["steps"].find { |step| step["name"] == "Upload test results on failure" }["with"]["path"], "app/CoreSimulator.log")
-    # Sized from measured shard test steps of up to 19.5 minutes (a release's two shards); a focused diagnostic's many
-    # attempts keep longer limits (TAL-2544).
-    assert_equal(["${{ inputs.diagnostic && 45 || 30 }}", "${{ inputs.diagnostic && 75 || 55 }}"],
+    # Sized from measured shard test steps of up to 19.5 minutes (a release's two shards), the settle wait and one
+    # launch recovery (TAL-2708); a focused diagnostic's many attempts keep longer limits (TAL-2544).
+    assert_equal(["${{ inputs.diagnostic && 45 || 40 }}", "${{ inputs.diagnostic && 75 || 65 }}"],
                  [test["timeout-minutes"], shard["timeout-minutes"]])
     after = shard["steps"][(shard["steps"].index(test) + 1)..].take_while { |step| step["name"] }
     assert_equal("Upload test results on failure", after.first["name"])
@@ -220,10 +220,13 @@ class TestIOSRunnerTest < Minitest::Test
                  shard["steps"][boot + 1, 4].map { |step| step["name"] })
     # The guarded launch collects the preparation, so a simulator it could not ready gets the launch's one recovery
     # and, failing that, the runner-fault status, never a test failure (TAL-2469).
-    # It also waits out the render server's post-boot burst, at most until 450 s after the boot (TAL-2705).
-    ready = shard["steps"][boot + 4]["run"][/^ *xctest_ready\(\) \{\n.*?^ *\}$/m].lines.map(&:strip)
-    assert_equal(["xctest_ready() {", "ci/background wait simulator-prepare || return", "local now settle", "now=$(date +%s)",
-                  "settle=$(( SIMULATOR_BOOTED_AT + 450 - now ))", "ci/memory-sampler settle $(( settle > 0 ? settle : 0 ))",
+    # It also waits out the render server's post-boot burst, at most until 450 s after the boot (TAL-2705), and on
+    # the native Duo shard a burst the wait sees itself, at most until 960 s after the boot (TAL-2708).
+    ready = shard["steps"][boot + 4]["run"][/^ *xctest_ready\(\) \{\n.*?^ *\}$/m].lines.map(&:strip).reject { |line| line.start_with?("#") }
+    assert_equal(["xctest_ready() {", "ci/background wait simulator-prepare || return", 'local now settle after=450 fresh=""',
+                  %q(if [[ "$(jq -r '.duo // false' "${RUNNER_TEMP}/shard.json")" == true ]]; then), "after=960 fresh=fresh", "fi",
+                  "now=$(date +%s)", "settle=$(( SIMULATOR_BOOTED_AT + after - now ))",
+                  "ci/memory-sampler settle $(( settle > 0 ? settle : 0 )) ${fresh}",
                   "start_seconds=$(( start_seconds + $(date +%s) - now ))", "}"],
                  ready)
     assert_equal("true", shard["steps"][boot]["with"]["wait_for_boot"].to_s)
