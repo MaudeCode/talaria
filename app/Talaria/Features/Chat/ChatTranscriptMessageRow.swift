@@ -48,7 +48,7 @@ struct ChatTranscriptMessageRow: View {
         } else if let markerKind = message.markerKind {
             MarkerMessageCardView(kind: markerKind, content: message.markerBody ?? message.content, stateID: message.messageId ?? "index:\(visibleIndex)")
         } else if let delivery = message.delivery {
-            MarkerMessageCardView(delivery: delivery)
+            MarkerMessageCardView(delivery: delivery, excerpt: message.displayExcerpt, stateID: message.messageId ?? "index:\(visibleIndex)")
         } else if let actionContext {
             // The actions hang off the transcript's long press rather than a
             // bubble `contextMenu`: a press over a link opens the link's own

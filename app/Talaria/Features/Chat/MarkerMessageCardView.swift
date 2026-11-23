@@ -9,6 +9,8 @@ struct MarkerMessageCardView: View {
     let content: String?
     let activity: TalariaActivity?
     let delivery: MessageDelivery?
+    /// The server's excerpt of a long delivery's body (TAL-456), shown until the reader opens the whole body.
+    let deliveryExcerpt: String?
     let messageID: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -22,16 +24,19 @@ struct MarkerMessageCardView: View {
         self.content = content
         self.activity = nil
         self.delivery = nil
+        self.deliveryExcerpt = nil
         self.messageID = nil
         _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
     }
 
-    init(delivery: MessageDelivery) {
+    init(delivery: MessageDelivery, excerpt: String?, stateID: String) {
         self.kind = nil
         self.content = delivery.body
         self.activity = nil
         self.delivery = delivery
+        self.deliveryExcerpt = excerpt
         self.messageID = nil
+        _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
     }
 
     init(activity: TalariaActivity, stateID: String, messageID: String? = nil) {
@@ -39,6 +44,7 @@ struct MarkerMessageCardView: View {
         self.content = activity.details
         self.activity = activity
         self.delivery = nil
+        self.deliveryExcerpt = nil
         self.messageID = messageID
         _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
     }
@@ -77,15 +83,20 @@ struct MarkerMessageCardView: View {
     }
 
     /// TAL-1003: a webhook or cron delivery the Agent mirrored into a messaging chat, titled by its source with the
-    /// delivered text beneath as Markdown; nothing to open and no actions.
+    /// delivered text beneath as Markdown, or the server's excerpt of a long one until Show more; no message actions.
     private func deliveryNotice(_ delivery: MessageDelivery) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             noticeLine(delivery.kind == .webhook
                 ? String(localized: "Webhook “\(delivery.name)” delivered")
                 : String(localized: "Scheduled job “\(delivery.name)” delivered"))
-            MarkdownRenderer(content: delivery.body)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 24)
+            VStack(alignment: .leading, spacing: 6) {
+                MarkdownRenderer(content: isExpanded ? delivery.body : deliveryExcerpt ?? delivery.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if deliveryExcerpt != nil {
+                    ChatBodyCollapseToggle(isExpanded: $isExpanded)
+                }
+            }
+            .padding(.leading, 24)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
