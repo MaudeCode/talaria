@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An open chat no longer redraws when the chat list refreshes for an unrelated chat.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
