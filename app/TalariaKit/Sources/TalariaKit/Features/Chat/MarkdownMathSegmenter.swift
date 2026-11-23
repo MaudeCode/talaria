@@ -47,10 +47,9 @@ struct MarkdownMathSegmenter {
                 continue
             }
             let latex = String(characters[(index + delimiter.openLength)..<closeIndex])
-            // `$$` is also the shell's PID: `$$ and $$` is prose, `$$42$$` is math.
+            // `$$` is also the shell's PID: `$$ and $$` is prose, `$$ 42 $$` is math.
             // A rejected pair stays literal, and its closer never opens a later span.
-            if delimiter == .dollars, latex.contains(where: \.isWhitespace),
-               !MarkdownMathFormatter.looksLikeMath(latex) {
+            if delimiter == .dollars, isShellProse(latex) {
                 index = closeIndex + delimiter.closeLength
                 continue
             }
@@ -63,6 +62,14 @@ struct MarkdownMathSegmenter {
 
         appendMarkdown(String(characters[cursor...]), to: &segments)
         return segments.isEmpty ? [.markdown(MarkdownMathFormatter.replacingInlineMath(in: content))] : segments
+    }
+
+    /// A spaced body with no number or group that does not read as math, such as ` and ` between two `$$`.
+    /// A number or group keeps blocks such as `$$ 42 $$` and `$$ (a, b) $$` as display math.
+    private static func isShellProse(_ latex: String) -> Bool {
+        latex.contains(where: \.isWhitespace)
+            && !latex.contains(where: { $0.isNumber || "([{".contains($0) })
+            && !MarkdownMathFormatter.looksLikeMath(latex)
     }
 
     private static func closingDisplayDelimiter(

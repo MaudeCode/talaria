@@ -735,7 +735,9 @@ final class MarkdownMathRendererTests: XCTestCase {
         for (input, expected) in cases {
             XCTAssertEqual(MarkdownMathLayoutCache.uncachedLayout(for: input), .plain(expected), input)
         }
-        XCTAssertEqual(MarkdownMathSegmenter.segments(in: "$$42$$"), [.displayMath("42")])
+        for (input, latex) in [("$$42$$", "42"), ("$$ 42 $$", "42"), ("$$\n42\n$$", "42"), ("$$ (a, b) $$", "(a, b)")] {
+            XCTAssertEqual(MarkdownMathSegmenter.segments(in: input), [.displayMath(latex)], input)
+        }
     }
 
     func testGroupedAssignmentsRespectEscapesAndCodeProtection() {
