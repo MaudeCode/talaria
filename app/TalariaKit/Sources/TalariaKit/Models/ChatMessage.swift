@@ -90,8 +90,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
     public internal(set) var talariaActivity: TalariaActivity?
     /// The server marked this row part of a background reply that is only a silence marker (TAL-460): it is not shown.
     public internal(set) var backgroundSilent: Bool
-    /// The server marked this row a compaction marker (TAL-305) or refused ask (TAL-2058): render its card, never a message
-    /// bubble, and offer no message actions.
+    /// The server marked this row a compaction marker (TAL-305), refused ask (TAL-2058) or failed-turn notice (TAL-984):
+    /// render its card, never a message bubble, and offer no message actions.
     public internal(set) var markerKind: ChatMarkerMessageKind?
     /// The server's card body for a marker whose text is not the body as written (a preserved task list).
     public internal(set) var markerBody: String?
@@ -200,6 +200,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         case markerKind = "_markerKind"
         case markerBody = "_markerBody"
         case refusedNotice = "_refusedNotice"
+        case noticeKind = "_noticeKind"
         case display = "_display"
     }
 
@@ -243,7 +244,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         markerKind = ChatMarkerMessageKind(
             wireValue: container.decodeLossyStringIfPresent(forKey: .markerKind),
             refusedNotice: container.decodeLossyStringIfPresent(forKey: .refusedNotice)
-        )
+        ) ?? ChatMarkerMessageKind(noticeWireValue: container.decodeLossyStringIfPresent(forKey: .noticeKind))
         markerBody = markerKind == nil ? nil : container.decodeLossyStringIfPresent(forKey: .markerBody)
         display = container.decodeLossyStringIfPresent(forKey: .display).flatMap(Display.init(rawValue:))
     }

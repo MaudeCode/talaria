@@ -869,6 +869,24 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(rows.last?.assistantSegments.count, 1)
     }
 
+    /// TAL-984: the server's `failed_turn` notice is a row of its own after the failed turn, never part of its reply.
+    func testSharedWebSessionShowsTheFailedTurnNoticeOutsideItsTurn() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-815 has no such example.
+        guard let example = object["notice_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(withJSONObject: example["messages"] ?? []))
+        XCTAssertEqual(messages.map(\.markerKind), [nil, nil, nil, nil, .failedTurn, nil, nil, nil])
+        let unknown = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"assistant","content":"x","_notice_kind":"future_kind"}"#.utf8))
+        XCTAssertNil(unknown.markerKind)
+
+        let rows = ChatViewModel.transcriptMessages(from: messages)
+        XCTAssertEqual(rows.map { $0.message.messageId }, ["notice-prompt", "notice-call", "notice-failed-turn", "notice-deploy", "notice-retry"])
+        XCTAssertEqual(rows[1].assistantSegments.map(\.message.messageId), ["notice-call"])
+        XCTAssertTrue(rows[2].assistantSegments.isEmpty)
+    }
+
     /// TAL-2058: each `content_refused` row decodes as that marker with the server's notice, and opens no turn.
     func testSharedWebSessionDecodesTheRefusedAskWithItsNotice() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
