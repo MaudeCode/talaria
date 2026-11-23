@@ -693,6 +693,28 @@ final class MarkdownMathRendererTests: XCTestCase {
         }
     }
 
+    func testCurrencyAmountsStayLiteral() {
+        let cases = [
+            // Hyphenated prose between two amounts passes the operator heuristic.
+            "It costs $5 pay-in-arrears and $10 tomorrow.",
+            "**$5** pay-in-arrears **$10**",
+            "That makes it $550 over May-Aug = 11 visits at $50 a week.",
+            // Whitespace after the opener reads as prose.
+            "Spaced $ a-b$ stays literal.",
+        ]
+
+        for input in cases {
+            XCTAssertEqual(MarkdownMathFormatter.replacingInlineMath(in: input), input, input)
+        }
+    }
+
+    func testRejectedClosingDollarDoesNotPairWithALaterSpan() {
+        XCTAssertEqual(
+            MarkdownMathFormatter.replacingInlineMath(in: "Loose $x^2 $ and then $y^2$ renders."),
+            "Loose $x^2 $ and then y² renders."
+        )
+    }
+
     func testGroupedAssignmentsRespectEscapesAndCodeProtection() {
         let input = #"""
         Escaped \$E=[4,-2]\$ stays.
