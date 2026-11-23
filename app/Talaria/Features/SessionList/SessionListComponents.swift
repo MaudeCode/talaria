@@ -151,6 +151,7 @@ enum SessionListMotion {
 /// it applies the change, and it applies it on a turn after SwiftUI's update, not in it. Animations stay off until the
 /// native column reports the new visibility, and come back once that turn has committed.
 @MainActor final class NativeColumnJump {
+    // Each restore holds this strongly and runs once: animations come back even after the owning view is gone.
     private var pending: (target: NavigationSplitViewVisibility, animates: Bool, generation: Int)?
     private var generation = 0
 
@@ -164,7 +165,7 @@ enum SessionListMotion {
         pending = (target, animates, generation)
         if changes {
             // ponytail: 1 s bound for a report that never comes; nothing UIKit draws is meant to wait that long.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.restore(generation) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.restore(generation) }
         } else {
             restoreAfterCommit(generation)
         }
@@ -179,7 +180,7 @@ enum SessionListMotion {
     private func restoreAfterCommit(_ generation: Int) {
         let observer = CFRunLoopObserverCreateWithHandler(
             nil, CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.exit.rawValue, false, .max
-        ) { [weak self] _, _ in MainActor.assumeIsolated { self?.restore(generation) } }
+        ) { _, _ in MainActor.assumeIsolated { self.restore(generation) } }
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
     }
 
