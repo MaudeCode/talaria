@@ -1,11 +1,5 @@
 {
-  "counts": {
-    "hosted-layout-loop": {
-      "app/TalariaTests/ChatHostedTests.swift": 2,
-      "app/TalariaTests/ChatViewModelSendTests.swift": 1,
-      "app/TalariaTests/SessionListHostedTests.swift": 6
-    }
-  },
+  "counts": {},
   "exceptions": [
     {
       "rule": "clock-sleep",

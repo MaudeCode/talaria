@@ -423,7 +423,8 @@ final class ComposerToolsetsHostedTests: APIClientTestCase {
     func testComposerOpensToolsetsAndAppliesToggleWithoutClosingSheet() async throws {
         let fixture = try FixtureApp(for: self)
         let summary = SessionSummary(sessionId: "ui-fixture-session", title: "Toolset selection")
-        let model = ChatViewModel(session: summary, server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        let model = ChatViewModel(session: summary, server: UITestFixtureEnvironment.serverURL, client: fixture.client,
+                                  liveActivityManager: SpyChatLiveActivityManager())
         defer { model.cleanupPollingTasks() }
         await model.loadMessages()
         let window = try hostWindow(NavigationStack {

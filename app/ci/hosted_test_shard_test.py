@@ -344,7 +344,7 @@ class RepeatTests(unittest.TestCase):
 
 class FocusTests(unittest.TestCase):
     def test_a_focused_request_is_validated_against_the_checkout(self):
-        method = "TalariaTests/SessionListHostedTests/testDeepLinkedChatKeepsNavigationStackAndToolbarMounted"
+        method = "TalariaTests/SessionListHostedTests/testDeepLinkedChatKeepsNavigationStackAndToolbarMountedOnPhone"
         result = shard.focus("5", [method])
         self.assertEqual((result["target"], result["repetitions"], result["lanes"]["TalariaTests"]["identifiers"]),
                          ("TalariaTests", 5, [method]))
