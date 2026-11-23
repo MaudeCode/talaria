@@ -1113,3 +1113,43 @@ describe('authenticated stream budget', () => {
     }
   })
 })
+
+describe('storage full (TAL-2716)', () => {
+  const STORAGE_FULL = { error: 'Storage on the server is full. Free up space on the server, then try again.', condition: 'storage_full' }
+  const osError = (code: string): Error => Object.assign(new Error(`${code}: synthetic write failure`), { code })
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it.each([
+    ['ENOSPC', osError('ENOSPC')],
+    ['EDQUOT', osError('EDQUOT')],
+    ['ENOSPC as a cause', new Error('session save failed', { cause: osError('ENOSPC') })],
+  ])('a procedure whose write fails with %s answers 507', async (_name, failure) => {
+    vi.spyOn(s.deps.sessionStore, 'newSession').mockRejectedValueOnce(failure)
+    const res = await post(s, '/api/session/new', {})
+    expect({ status: res.status, body: await json(res) }).toEqual({ status: 507, body: STORAGE_FULL })
+  })
+
+  it('a raw route whose handler fails with ENOSPC answers 507', async () => {
+    vi.spyOn(s.deps.screens, 'handle').mockRejectedValueOnce(osError('ENOSPC'))
+    const res = await s.get('/api/screen/ws')
+    expect({ status: res.status, body: await json(res) }).toEqual({ status: 507, body: STORAGE_FULL })
+  })
+
+  it('a groups procedure that fails with ENOSPC answers 507, not 503', async () => {
+    vi.spyOn(s.deps.groups, 'catalog').mockRejectedValueOnce(osError('ENOSPC'))
+    const res = await s.get('/api/groups')
+    expect({ status: res.status, body: await json(res) }).toEqual({ status: 507, body: STORAGE_FULL })
+  })
+
+  it('a git procedure that fails with ENOSPC answers 507, not 500', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = await s.deps.sessionStore.get(sid)
+    Object.assign(session, { worktree_path: join(s.state, 'wt-full') })
+    await s.deps.sessionStore.save(session)
+    vi.spyOn(s.deps.git, 'removeWorktreeExclusive').mockRejectedValueOnce(osError('ENOSPC'))
+    const res = await post(s, '/api/session/worktree/remove', { session_id: sid })
+    expect({ status: res.status, body: await json(res) }).toEqual({ status: 507, body: STORAGE_FULL })
+  })
+})

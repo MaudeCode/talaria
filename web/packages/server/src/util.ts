@@ -47,6 +47,18 @@ const PY_STRERROR: Record<string, string> = {
   EBUSY: 'Resource busy', ETXTBSY: 'Text file busy', EXDEV: 'Cross-device link',
 }
 
+/** TAL-2716: the answer, HTTP 507, to a write that failed because the server's disk or quota is full. */
+export const STORAGE_FULL = { error: 'Storage on the server is full. Free up space on the server, then try again.', condition: 'storage_full' } as const
+
+/** True when the error, or any error in its `cause` chain, is `ENOSPC` or `EDQUOT`. */
+export function storageFull(error: unknown): boolean {
+  for (let e = error, depth = 0; e && typeof e === 'object' && depth < 16; e = (e as { cause?: unknown }).cause, depth += 1) {
+    const code = (e as { code?: unknown }).code
+    if (code === 'ENOSPC' || code === 'EDQUOT') return true
+  }
+  return false
+}
+
 /** The C library's text for an errno error (`Permission denied`), else its message. */
 export function osErrorText(error: unknown): string {
   const e = error as NodeJS.ErrnoException

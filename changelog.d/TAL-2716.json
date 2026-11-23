@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When the server's disk or quota is full, Talaria Web says storage on the server is full and to free up space, instead of \"Internal server error\".",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
