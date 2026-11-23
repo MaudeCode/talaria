@@ -197,6 +197,27 @@ final class HostedTestBundle: NSObject, XCTestObservation {
                         _ = await warmer.awaitElement(in: window, timeout: 60, where: FixtureApp.isLoadedTranscriptRow)
                     }
                 }
+                // The companion page beside a chat drew for the first time inside whichever companion test came first on the
+                // native Duo shard, about 2 s on a runner, which put a 20 s test over its target (TAL-2712). The settled
+                // turn shows it without a send.
+                if #available(iOS 27.1, *),
+                   let fixture = try? FixtureApp(["--ui-test-chat-companion", UITestFixtureEnvironment.companionFocusArgument,
+                                                  UITestFixtureEnvironment.companionTurnArgument], for: warmer),
+                   let window = try? warmer.hostWindow(fixture.sessionList(), size: HostedSize.duoInnerLandscape, traits: {
+                       $0.horizontalSizeClass = .regular
+                       $0.verticalSizeClass = .regular
+                   }) {
+                    windows.append(window)
+                    try? await warmer.openSidebar(in: window)
+                    if let row = await warmer.awaitElement(in: window, timeout: 60, where: {
+                        $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+                    }), HostedAccessibility.activate(row) {
+                        let files = Set(UITestFixtureURLProtocol.companionFiles.map { ($0 as NSString).lastPathComponent })
+                        _ = await warmer.awaitElement(in: window, timeout: 60, where: {
+                            files.contains($0.accessibilityLabel ?? "") && $0.accessibilityTraits.contains(.header)
+                        })
+                    }
+                }
                 if let fixture = try? FixtureApp(for: warmer), let session = try? await fixture.session() {
                     var pushed = false
                     let chat = fixture.chat(session, asNavigationDestination: false)
