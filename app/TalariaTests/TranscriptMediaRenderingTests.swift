@@ -65,6 +65,19 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(button.accessibilityFrame.width.rounded(), 44)
         XCTAssertGreaterThanOrEqual(button.accessibilityFrame.height.rounded(), 44)
     }
+
+    /// TAL-2693: the file row's download button keeps the same 44 pt minimum touch target around its 15 pt glyph.
+    func testFileDownloadButtonHasAMinimumTouchTarget() async throws {
+        let file = TranscriptMediaReference(url: "./api/media?path=%2Ftmp%2Freport.pdf&session_id=s1", name: "report.pdf", mime: "application/pdf", mediaKind: .unsupported)
+        let window = try hostInOwnWindow(
+            TranscriptMediaFileExportView(reference: file, loadMediaData: { nil }),
+            size: CGSize(width: 360, height: 200)
+        )
+
+        let button = try await requireElement(in: window, label: "Download report.pdf")
+        XCTAssertGreaterThanOrEqual(button.accessibilityFrame.width.rounded(), 44)
+        XCTAssertGreaterThanOrEqual(button.accessibilityFrame.height.rounded(), 44)
+    }
 }
 
 /// TAL-2582: a streaming reply is raw Markdown the server has not rewritten yet. A remote image in it never loads by
