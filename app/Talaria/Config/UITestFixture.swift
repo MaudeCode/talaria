@@ -115,6 +115,11 @@ struct UITestFixtureEnvironment {
     nonisolated static var hasCompanionFocus: Bool {
         ProcessInfo.processInfo.arguments.contains(companionFocusArgument)
     }
+    /// TAL-1478: the fixture chat holds a settled turn with a clipped tool row and two changed files in a dirty repository.
+    nonisolated static let companionTurnArgument = "--ui-test-companion-turn"
+    nonisolated static var hasCompanionTurn: Bool {
+        ProcessInfo.processInfo.arguments.contains(companionTurnArgument)
+    }
     nonisolated static var hasSessionNotices: Bool {
         ProcessInfo.processInfo.arguments.contains(sessionNoticesArgument)
     }
@@ -864,6 +869,16 @@ final class UITestFixtureURLProtocol: URLProtocol {
         case "/api/background/dismiss" where UITestFixtureEnvironment.hasBackgroundUpdates:
             Self.backgroundDismissed.withLock { $0 = true }
             return json(["ok": true, "task": Self.backgroundTasks()[1]])
+        case "/api/session/tool-result" where UITestFixtureEnvironment.hasCompanionTurn:
+            // TAL-1478: a read's whole result, whose file the companion page opens.
+            return json([
+                "tool_call_id": "ui-fixture-tool",
+                "result": "fixture result, in full",
+                "result_view": ["text": "fixture result, in full", "file_excerpt": [
+                    "path": Self.companionFiles[1], "focus_path": Self.companionFiles[1], "language": "swift", "start_line": 1,
+                    "lines": [["n": 1, "text": "fixture result, in full"]], "total_lines": 1, "truncated": false
+                ]]
+            ])
         case "/api/session/tool-result":
             return json([
                 "tool_call_id": "ui-fixture-tool",
@@ -1069,6 +1084,16 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return json(["commands": []])
         case "/api/goal" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.goalArgument):
             return json(["ok": true, "action": "status", "goal": ["goal": "Ship the release notes", "status": "active"]])
+        case "/api/git-info" where UITestFixtureEnvironment.hasCompanionTurn:
+            return json(["git": ["is_git": true, "branch": "main", "dirty": Self.companionTurnFiles.count, "ahead": 0, "behind": 0]])
+        case "/api/git/status" where UITestFixtureEnvironment.hasCompanionTurn:
+            return json(["git": ["is_git": true, "branch": "main", "ahead": 0, "behind": 0, "truncated": false,
+                                 "files": Self.companionTurnFiles.map {
+                                     ["path": $0, "status": "M", "change_kind": "modified", "diff_kind": "unstaged", "unstaged": true,
+                                      "additions": 1, "deletions": 0]
+                                 }]])
+        case "/api/git/diff" where UITestFixtureEnvironment.hasCompanionTurn:
+            return companionDiffResponse(url)
         case "/api/git-info" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.gitRepositoryArgument):
             return json(["git": ["is_git": true, "branch": "main", "dirty": 0, "ahead": 0, "behind": 0]])
         case "/api/git/status" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.gitRepositoryArgument):
@@ -1772,6 +1797,34 @@ final class UITestFixtureURLProtocol: URLProtocol {
                     ]
                 ]
             ])
+        } else if UITestFixtureEnvironment.hasCompanionTurn {
+            // TAL-1478: a settled turn, its clipped tool row the page opens whole and its two changed files.
+            messages.append(["role": "user", "content": "Write the demo files", "message_id": "ui-fixture-user", "_ts": 2_000_000_100])
+            messages.append([
+                "role": "assistant",
+                "content": "Wrote the demo files.",
+                "message_id": "ui-fixture-companion-turn",
+                "_ts": 2_000_000_101,
+                "_anchor_activity_scene": [
+                    "version": "activity_scene_v1",
+                    "final_answer": "Wrote the demo files.",
+                    "expanded_by_default": true,
+                    "file_changes": companionTurnFiles.map { ["path": $0, "action": "edited"] },
+                    "activity_rows": [
+                        ["row_id": "prose-1", "order_index": 0, "role": "prose", "text": "Checking the demo files."],
+                        [
+                            "row_id": "tool:ui-fixture-tool",
+                            "order_index": 1,
+                            "role": "tool",
+                            "tool": [
+                                "id": "ui-fixture-tool", "name": "fixture_tool", "kind": "unknown", "target": "",
+                                "preview": "fixture result", "result": "fixture result", "done": true, "is_error": false,
+                                "result_truncated": true, "result_chars": 26
+                            ]
+                        ]
+                    ]
+                ]
+            ])
         } else if state.cancelled, UITestChatScenario.current == .controls {
             // As the server settles a stopped turn: the partial work, the steer it took, and the cancelled outcome.
             messages.append([
@@ -1826,6 +1879,20 @@ final class UITestFixtureURLProtocol: URLProtocol {
         let content = "// \(path)\n\(body)struct \((name as NSString).deletingPathExtension) {}\n"
         return json(["path": path, "name": name, "language": "swift", "lines": content.split(separator: "\n").count,
                      "content": content])
+    }
+
+    /// TAL-1478: the files the settled companion turn changed, each with a one-line diff naming its type.
+    static let companionTurnFiles = [companionFiles[0], companionFiles[1]]
+
+    private static func companionDiffResponse(_ url: URL) -> Data {
+        let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "path" }?.value ?? ""
+        let line = "struct \(((path as NSString).lastPathComponent as NSString).deletingPathExtension)Changed {}"
+        return json(["diff": [
+            "path": path, "kind": "unstaged", "binary": false, "too_large": false, "additions": 1, "deletions": 0,
+            "diff": "+\(line)",
+            "hunks": [["header": "@@ -0,0 +1 @@", "old_start": 0, "new_start": 1, "new_end": 1, "additions": 1, "deletions": 0,
+                       "lines": [["kind": "addition", "text": line, "old_line": NSNull(), "new_line": 1]]]]
+        ]])
     }
 
     private static func companionListResponse() -> Data {

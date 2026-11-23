@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On the iPhone Duo's open display and iPad in landscape, tapping a tool call shows its whole output on the companion page beside the chat, and a finished turn's Changes list its changed files there, each opening its diff.",
+      "highlight": true,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "icon": "appearance",
+        "title": "A better companion page",
+        "description": "The Duo companion page sits beside chat, resizes by dragging, and shows a tool call's full output."
+      }
+    }
+  ]
+}

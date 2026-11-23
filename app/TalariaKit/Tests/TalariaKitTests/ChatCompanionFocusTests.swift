@@ -50,6 +50,62 @@ final class ChatCompanionFocusTests: XCTestCase {
         XCTAssertEqual(focus.path, "a.swift", "A pin made while idle held into the next run")
     }
 
+    /// TAL-1478: a tool result pins the page over its file; Back and Follow return to the file, a new run follows again, and
+    /// the shown call's later state replaces it without re-pinning.
+    func testAToolResultPinsThePageUntilBackFollowOrTheNextRun() {
+        var focus = ChatCompanionFocus()
+        focus.follow("a.swift")
+        let call = ToolCall(id: "call", name: "terminal", preview: nil, args: nil)
+        focus.show(.toolResult(call), runID: nil)
+        XCTAssertEqual(focus.shownToolCallID, "call")
+        XCTAssertFalse(focus.isFollowing)
+        var finished = call
+        finished.isCompleted = true
+        focus.show(.toolResult(finished), runID: "run-2")
+        XCTAssertEqual(focus.shown, .toolResult(finished))
+        focus.back()
+        XCTAssertNil(focus.shown)
+        XCTAssertTrue(focus.isFollowing, "Back left the page pinned")
+
+        focus.show(.toolResult(call), runID: "run-1")
+        focus.runStarted("run-1")
+        XCTAssertNotNil(focus.shown, "A reconnect to the result's run dropped it")
+        focus.runStarted("run-2")
+        XCTAssertNil(focus.shown)
+        XCTAssertEqual(focus.path, "a.swift")
+
+        focus.show(.toolResult(call), runID: nil)
+        focus.pin("b.swift", runID: nil)
+        XCTAssertNil(focus.shown, "A chosen file stayed under the tool result")
+        XCTAssertEqual(focus.path, "b.swift")
+    }
+
+    /// TAL-1478: a running call shown on the page takes its completion from the stream, whether or not its card is drawn.
+    func testTheShownToolResultTakesItsCallsCompletionWithoutItsCard() throws {
+        let chat = try makeChat(id: "-shown")
+        chat.streamCoordinatorAppendToolCall(try frame("tool_a"))
+        chat.showOnCompanionPage(.toolResult(try XCTUnwrap(chat.liveToolCalls.last)))
+        chat.streamCoordinatorCompleteToolCall(try toolEvent(#"{"id": "call-alpha", "name": "write_file", "edit_diff": \#(editDiffJSON)}"#))
+        guard case .toolResult(let shown) = chat.companionFocus.shown else { return XCTFail("The page lost its tool result") }
+        XCTAssertTrue(shown.isCompleted, "The page kept the running call")
+        XCTAssertEqual(shown.editDiff?.added, 1)
+    }
+
+    /// TAL-1478: Back steps from a changed file's diff to the turn's list, then to the pinned file under it.
+    func testBackStepsFromAChangedFileToTheListThenToThePinnedFile() throws {
+        var focus = ChatCompanionFocus()
+        focus.follow("a.swift")
+        focus.pin("b.swift", runID: nil)
+        let file = try JSONDecoder().decode(GitFile.self, from: Data(#"{"path": "a.swift", "diffKind": "unstaged"}"#.utf8))
+        focus.show(.turnChanges([file], opened: file), runID: nil)
+        focus.back()
+        XCTAssertEqual(focus.shown, .turnChanges([file], opened: nil))
+        focus.back()
+        XCTAssertNil(focus.shown)
+        XCTAssertEqual(focus.path, "b.swift")
+        XCTAssertFalse(focus.isFollowing, "Back dropped the reader's pin")
+    }
+
     func testAnEarlierCallsCompletionDoesNotTurnThePageBack() {
         var focus = ChatCompanionFocus()
         focus.follow("a.swift", callID: "a")

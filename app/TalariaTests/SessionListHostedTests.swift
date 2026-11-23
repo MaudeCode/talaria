@@ -2973,6 +2973,122 @@ extension RegularSplitHostedTests {
         let sent = await transcriptText("Keep going", in: window)
         XCTAssertNotNil(sent, "Typing beside the companion page did not send")
     }
+
+    /// TAL-1478: the fixture chat's settled turn, with a clipped tool row and two changed files, the page showing the
+    /// session's last file.
+    private func openSettledCompanionTurn(size: CGSize, display: HostedDuoDisplay? = nil) async throws -> UIWindow {
+        let window = try await openCompanionChat(["--ui-test-chat-companion", UITestFixtureEnvironment.companionFocusArgument,
+                                                  UITestFixtureEnvironment.companionTurnArgument],
+                                                 size: size, writes: false, display: display)
+        _ = try await requireElement(in: window, "The settled turn never showed") { $0.accessibilityLabel?.contains("Wrote the demo files.") == true }
+        return window
+    }
+
+    /// The settled turn's clipped tool row.
+    private func clippedToolRow(in window: UIWindow) async throws -> NSObject {
+        try await requireElement(in: window, "The settled turn has no tool row") {
+            $0.accessibilityLabel?.contains("Called a tool, Completed") == true
+        }
+    }
+
+    /// An element labelled `label` on the companion page, right of the chat; a row's label starts with its name.
+    private func onPage(_ label: String, in window: UIWindow, timeout: TimeInterval = 10) async -> NSObject? {
+        var found: NSObject?
+        _ = await awaitCondition(timeout: timeout) {
+            found = self.elements(in: window).first {
+                ($0.accessibilityLabel == label || $0.accessibilityLabel?.hasPrefix("\(label), ") == true)
+                    && $0.accessibilityFrame.minX > window.bounds.width / 3
+            }
+            return found != nil
+        }
+        return found
+    }
+
+    func testATappedToolCardShowsItsWholeResultOnTheCompanionPage() async throws {
+        try requireArrangement()
+        let window = try await openSettledCompanionTurn(size: HostedSize.duoInnerLandscape)
+        let gamma = await companionTitle("Gamma.swift", in: window)
+        XCTAssertNotNil(gamma, "The page did not show the session's last file")
+
+        HostedAccessibility.activate(try await clippedToolRow(in: window))
+        let whole = await onPage("fixture result, in full", in: window)
+        XCTAssertNotNil(whole, "The page did not show the tool's whole result")
+        let shownBeside = await awaitCondition { self.clippedToolRowValue(in: window) == "Shown beside" }
+        XCTAssertTrue(shownBeside, "The card does not read Shown beside")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Show full output"), "The card expanded inline")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-tool-result")
+
+        let follow = await drawnBarButton("Follow", in: window)
+        press(try XCTUnwrap(follow, "The page offers no Follow"))
+        let followed = await companionTitle("Gamma.swift", in: window)
+        XCTAssertNotNil(followed, "Follow did not return to the file")
+        let left = await awaitNoElement(in: window) { $0.accessibilityLabel == "fixture result, in full" }
+        XCTAssertTrue(left, "Follow left the tool result on the page")
+    }
+
+    private func clippedToolRowValue(in window: UIWindow) -> String? {
+        HostedAccessibility.elements(in: window).first { $0.accessibilityLabel?.contains("Called a tool, Completed") == true }?.accessibilityValue
+    }
+
+    func testTheTurnsChangesOpenOnTheCompanionPage() async throws {
+        try requireArrangement()
+        let window = try await openSettledCompanionTurn(size: HostedSize.duoInnerLandscape)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Open diff", "The turn shows no Changes"))
+        let list = await onPage("2 files changed", in: window)
+        XCTAssertNotNil(list, "The page did not list the turn's changes")
+        XCTAssertNil(window.rootViewController?.presentedViewController, "Changes opened a sheet beside the page")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-turn-changes")
+
+        let alpha = await onPage("Alpha.swift", in: window)
+        HostedAccessibility.activate(try XCTUnwrap(alpha, "The page lists no Alpha.swift"))
+        let diff = await onPage("struct AlphaChanged {}", in: window)
+        XCTAssertNotNil(diff, "Alpha.swift's diff did not open on the page")
+        attachHostedScreenshot(window, name: "duo-inner-landscape-companion-turn-diff")
+
+        let back = await drawnBarButton("Back", in: window)
+        press(try XCTUnwrap(back, "The page offers no Back"))
+        let listAgain = await onPage("2 files changed", in: window)
+        XCTAssertNotNil(listAgain, "Back did not return to the list")
+    }
+
+    func testFoldingKeepsTheCompanionPagesToolResult() async throws {
+        try requireArrangement()
+        let display = HostedDuoDisplay()
+        let window = try await openSettledCompanionTurn(size: HostedSize.duoInnerLandscape, display: display)
+        HostedAccessibility.activate(try await clippedToolRow(in: window))
+        let whole = await onPage("fixture result, in full", in: window)
+        XCTAssertNotNil(whole, "The page did not show the tool's whole result")
+
+        foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: true)
+        foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: false)
+        let restored = await onPage("fixture result, in full", in: window)
+        XCTAssertNotNil(restored, "Reopening the Duo lost the page's tool result")
+    }
+
+    /// The page's tool result opens its file as the transcript's would: on the page.
+    func testAFileInTheCompanionPagesToolResultOpensOnThePage() async throws {
+        try requireArrangement()
+        let window = try await openSettledCompanionTurn(size: HostedSize.duoInnerLandscape)
+        HostedAccessibility.activate(try await clippedToolRow(in: window))
+        let open = try await requireElement(in: window, "The page's result offers no way to open its file") {
+            $0.accessibilityLabel?.hasPrefix("Open Sources/Demo/Beta.swift") == true && $0.accessibilityFrame.minX > window.bounds.width / 3
+        }
+        HostedAccessibility.activate(open)
+        let beta = await companionTitle("Beta.swift", in: window)
+        XCTAssertNotNil(beta, "Opening the result's file did not show it on the page")
+    }
+
+    /// Portrait has no page beside the chat: the card opens inline and Changes opens its sheet, as on a phone.
+    func testDuoInnerPortraitOpensToolDetailsInlineAndChangesInASheet() async throws {
+        try requireArrangement()
+        let window = try await openSettledCompanionTurn(size: HostedSize.duoInner)
+        HostedAccessibility.activate(try await clippedToolRow(in: window))
+        _ = try await requireElement(in: window, label: "Show full output", "The card did not expand inline")
+
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Open diff", "The turn shows no Changes"))
+        let sheet = await presentedController(in: window)
+        XCTAssertNotNil(sheet, "Changes did not open its sheet")
+    }
 }
 
 

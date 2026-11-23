@@ -10,16 +10,10 @@ struct GitTurnDiffSheet: View {
     @State private var selectedFile: GitFile?
     @Environment(\.dismiss) private var dismiss
 
-    private var title: String {
-        files.count == 1
-            ? String(localized: "1 file changed")
-            : String(localized: "\(files.count) files changed")
-    }
-
     var body: some View {
         NavigationStack {
-            content
-                .navigationTitle(title)
+            GitTurnFilesList(files: files) { selectedFile = $0 }
+                .navigationTitle(GitTurnFilesList.title(for: files))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
@@ -32,9 +26,20 @@ struct GitTurnDiffSheet: View {
             GitDiffView(session: session, server: server, file: file, onAPIError: onAPIError)
         }
     }
+}
 
-    @ViewBuilder
-    private var content: some View {
+/// A turn's changed files, each opening its diff: the turn diff sheet's list, and the companion page's (TAL-1478).
+struct GitTurnFilesList: View {
+    let files: [GitFile]
+    let onSelect: (GitFile) -> Void
+
+    static func title(for files: [GitFile]) -> String {
+        files.count == 1
+            ? String(localized: "1 file changed")
+            : String(localized: "\(files.count) files changed")
+    }
+
+    var body: some View {
         if files.isEmpty {
             ContentUnavailableView(
                 "No File Diffs",
@@ -46,7 +51,7 @@ struct GitTurnDiffSheet: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(files) { file in
                         Button {
-                            selectedFile = file
+                            onSelect(file)
                         } label: {
                             GitFileCard(file: file)
                         }
