@@ -242,12 +242,12 @@ final class TranscriptHostedTests: XCTestCase {
             window.layoutIfNeeded()
             scroll.contentOffset.y = top
         }
-        // The transcript can hold the reader at the latest message briefly after startup.
-        for _ in 0..<250 where interleave != nil {
+        // The transcript can hold the reader at the latest message briefly after startup, so each look moves it again.
+        let reachedTop = await awaitCondition {
             scroll.contentOffset.y = top
-            try await Task.sleep(for: .milliseconds(20))
+            return interleave == nil
         }
-        XCTAssertNil(interleave, "The reader never reached the top")
+        XCTAssertTrue(reachedTop, "The reader never reached the top")
         let loaded = await awaitCondition(timeout: 2) { requests > 0 }
         XCTAssertTrue(loaded, "A reader resting at the top must load older history after a check saw them away")
     }
@@ -308,31 +308,31 @@ final class TranscriptHostedTests: XCTestCase {
         }
         finishCompletion?()
         finishCompletion = nil
-        try await Task.sleep(for: .milliseconds(200))
-        let after = try await requireElement(in: window, label: label).accessibilityFrame.minY
+        let after = try await settledReaderY(in: window, scroll: scroll, label: label)
         XCTAssertEqual(after, before, accuracy: 2, "Finishing the loader must not move the reader")
     }
 
+    /// The reader row's top once it shows in the viewport and its frame, the offset and the content height have held
+    /// still for five looks in a row.
     private func settledReaderY(in window: UIWindow, scroll: UIScrollView, label: String) async throws -> CGFloat {
         var previous: [CGFloat] = []
-        var stableTurns = 0
-        for _ in 0..<100 {
-            let row = try await requireElement(in: window, label: label)
-            let viewport = window.convert(scroll.bounds, from: scroll).intersection(window.bounds)
-            guard viewport.intersects(window.convert(row.accessibilityFrame, from: nil)) else {
-                stableTurns = 0
-                try await Task.sleep(for: .milliseconds(20))
-                continue
+        var stableLooks = 0
+        let settled = await awaitCondition {
+            guard let row = HostedAccessibility.element(in: window, label: label),
+                  window.convert(scroll.bounds, from: scroll).intersection(window.bounds)
+                    .intersects(window.convert(row.accessibilityFrame, from: nil)) else {
+                stableLooks = 0
+                previous = []
+                return false
             }
             let current = [row.accessibilityFrame.minY, scroll.contentOffset.y, scroll.contentSize.height]
-            if previous.count == current.count, zip(current, previous).allSatisfy({ abs($0 - $1) < 0.1 }) {
-                stableTurns += 1
-                if stableTurns >= 5 { return current[0] }
-            } else { stableTurns = 0 }
+            let still = previous.count == current.count && zip(current, previous).allSatisfy { abs($0 - $1) < 0.1 }
+            stableLooks = still ? stableLooks + 1 : 0
             previous = current
-            try await Task.sleep(for: .milliseconds(20))
+            return stableLooks >= 5
         }
-        return try XCTUnwrap(nil as CGFloat?, "The reader must settle before the held response is released")
+        XCTAssertTrue(settled, "The reader must settle before the held response is released")
+        return try XCTUnwrap(previous.first, "The reader \(label) never showed")
     }
 
     func testScrollingNearTheTopLoadsHistoryWithoutATap() async throws {
@@ -419,12 +419,14 @@ final class TranscriptHostedTests: XCTestCase {
             release()
             let committed = await awaitCondition { insertedStart == max(0, start - pageSize) && scroll.contentSize.height != oldHeight }
             XCTAssertTrue(committed)
-            try await Task.sleep(for: .milliseconds(100))
-            let afterElement = await awaitElement(in: window, label: label)
-            let after = try XCTUnwrap(afterElement, "Reader \(label), anchor \(beforeAnchor ?? "nil"); offset \(beforeOffset) → \(scroll.contentOffset.y); height \(oldHeight) → \(scroll.contentSize.height); cursors \(requested)").accessibilityFrame.minY
-            XCTAssertEqual(after, before, accuracy: 2, "Prepending a page moved the reader at offset \(start); anchor \(beforeAnchor ?? "nil")")
-            // A programmatic jump has no pan event to advance an active prepend baseline.
-            try await Task.sleep(for: .milliseconds(1_050))
+            let after = try await settledReaderY(in: window, scroll: scroll, label: label)
+            XCTAssertEqual(after, before, accuracy: 2, "Prepending a page moved the reader at offset \(start); anchor \(beforeAnchor ?? "nil"); offset \(beforeOffset) → \(scroll.contentOffset.y); height \(oldHeight) → \(scroll.contentSize.height); cursors \(requested)")
+            // A programmatic jump has no pan event to advance an active prepend baseline: let the one-second
+            // measurement window end on its own before the next jump.
+            let windowEnded = await awaitCondition {
+                self.historyObserver(in: window)?.coordinator?.scrollPositionController?.isPreservingPosition == false
+            }
+            XCTAssertTrue(windowEnded, "The prepend's measurement window must end")
             XCTAssertEqual(requested, Array(pages.prefix(requested.count)), "Every cursor must remain ordered and unique")
             let settled = try await requireElement(in: window, label: label).accessibilityFrame.minY
             XCTAssertEqual(settled, before, accuracy: 2)

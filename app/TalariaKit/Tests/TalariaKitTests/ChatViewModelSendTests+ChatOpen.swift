@@ -16,7 +16,7 @@ extension ChatViewModelSendTests {
         viewModel.prefetchInitialMessages()
         let beforeAppearance = await trips.nextRoundTrip()
         beforeAppearance.forEach(Self.answerChatOpen)
-        try? await Task.sleep(for: .milliseconds(100))
+        _ = try? await viewModel.initialTranscriptPrefetchForTesting?.value
         XCTAssertTrue(viewModel.messages.isEmpty, "The transcript must not apply before the chat has appeared")
 
         let isReady = LockedTestValue(false)

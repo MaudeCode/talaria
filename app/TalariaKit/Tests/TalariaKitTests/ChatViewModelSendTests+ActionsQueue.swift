@@ -1760,8 +1760,8 @@ extension ChatViewModelSendTests {
         streamClient.emit(.done(DoneStreamEvent(session: nil)))
         streamClient.emit(.streamEnd)
         try await waitUntil { viewModel.activeStreamID == nil }
-        // A drain would send right after the stream ends; give it time to show.
-        try await Task.sleep(nanoseconds: 200_000_000)
+        // The stream's end decides the drain in the same main-actor turn, so a drain would already hold the queue.
+        XCTAssertFalse(viewModel.isSendingQueuedMessageForTesting, "Nothing drains the server's steer")
         XCTAssertEqual(log.startedTexts, ["Initial request"])
     }
 
@@ -2009,23 +2009,9 @@ extension ChatViewModelSendTests {
         streamClient.emit(.streamEnd)
         XCTAssertNil(viewModel.activeStreamID)
 
-        // 4. Wait for the drained send itself, then let any retry loop quiesce. MockURLProtocol
-        //    resolves synchronously, so once the attempt count is stable across several short polls
-        //    no further sends are in flight. Without the first wait, a starved drain could look
-        //    quiescent before it sent anything.
-        try await waitUntil { startChatAttempts > attemptsBeforeDrain }
-        var lastSeen = startChatAttempts
-        var stablePolls = 0
-        for _ in 0..<80 {
-            try await Task.sleep(nanoseconds: 50_000_000)
-            if startChatAttempts == lastSeen {
-                stablePolls += 1
-                if stablePolls >= 3 { break }
-            } else {
-                stablePolls = 0
-                lastSeen = startChatAttempts
-            }
-        }
+        // 4. Wait for the drained send to finish. A drain that re-fires after a failed send claims the queue again in
+        //    the same main-actor turn that released it, so a retry loop never shows the queue idle.
+        try await waitUntil { startChatAttempts > attemptsBeforeDrain && !viewModel.isSendingQueuedMessageForTesting }
 
         let drainedAttempts = startChatAttempts - attemptsBeforeDrain
 

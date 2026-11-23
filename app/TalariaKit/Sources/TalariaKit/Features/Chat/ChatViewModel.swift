@@ -1165,6 +1165,16 @@ extension ChatViewModel {
     }
 
     var pendingStreamingContentFlushTaskForTesting: Task<Void, Never>? { pendingStreamingContentFlushTask }
+
+    /// True while a queued message's send holds the queue, so a test sees whether a drain started.
+    var isSendingQueuedMessageForTesting: Bool { isSendingQueuedMessage }
+
+    /// Nil once the background card's polling has stopped, so a test sees that nothing polls again.
+    var backgroundPollTaskForTesting: Task<Void, Never>? { backgroundPollTask }
+
+    var isPollingConnectionOperationForTesting: Bool { pendingActionCoordinator.connectionPollingTaskForTesting != nil }
+
+    var initialTranscriptPrefetchForTesting: Task<SessionResponse, Error>? { initialTranscriptPrefetch?.task }
 #endif
 
     /// One coalesced flush tick: shows all buffered complete words (reasoning

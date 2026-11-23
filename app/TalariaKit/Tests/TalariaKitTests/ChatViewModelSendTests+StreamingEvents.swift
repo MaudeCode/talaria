@@ -361,10 +361,7 @@ extension ChatViewModelSendTests {
 
         XCTAssertEqual(viewModel.messages.filter { $0.role == "assistant" }.count, 1)
         XCTAssertEqual(viewModel.messages.last?.content, "From server.")
-
-        try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(viewModel.messages.filter { $0.role == "assistant" }.count, 1)
-        XCTAssertEqual(viewModel.messages.last?.content, "From server.")
+        XCTAssertNil(viewModel.pendingStreamingContentFlushTaskForTesting, "No buffered token is left to trickle in")
     }
 
     @MainActor

@@ -175,8 +175,8 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(viewModel.queuedMessagePreviews.isEmpty)
         streamClient.emit(.streamEnd)
         try await waitUntil { viewModel.activeStreamID == nil }
-        // A queue left behind would start its drain's send here.
-        try await Task.sleep(for: .milliseconds(200))
+        // The stream's end decides the drain in the same main-actor turn, so a queue left behind would hold it now.
+        XCTAssertFalse(viewModel.isSendingQueuedMessageForTesting, "Nothing sends until the user taps Send")
         XCTAssertEqual(chatStartCount, 1, "Nothing sends until the user taps Send")
     }
 

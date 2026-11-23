@@ -202,12 +202,9 @@ final class SessionNavigationStateTests: XCTestCase {
         await SessionListLoad.initial(
             resolvePendingDeepLink: {
                 await recorder.record(.deepLinkStarted)
-                // Finish only once the refresh has started, or after a deadline a serial load would hit. A fixed
+                // Finish only once the refresh has started; a serial load never starts it and fails the wait. A fixed
                 // 50 ms deep link could finish before a starved concurrent refresh began.
-                let deadline = ContinuousClock.now + .seconds(10)
-                while await !recorder.snapshot().contains(.refreshStarted), ContinuousClock.now < deadline {
-                    try? await Task.sleep(for: .milliseconds(5))
-                }
+                try? await pollUntil { await recorder.snapshot().contains(.refreshStarted) }
                 await recorder.record(.deepLinkFinished)
             },
             refreshSessionsAndActiveProfile: {
@@ -236,12 +233,12 @@ final class SessionNavigationStateTests: XCTestCase {
             isViewingCachedData: { false },
             loadProjects: {
                 await recorder.record(.projectsStarted)
-                await recorder.waitFor(.profileStarted)
+                try? await pollUntil { await recorder.snapshot().contains(.profileStarted) }
                 await recorder.record(.projectsFinished)
             },
             loadActiveProfile: {
                 await recorder.record(.profileStarted)
-                await recorder.waitFor(.projectsStarted)
+                try? await pollUntil { await recorder.snapshot().contains(.projectsStarted) }
                 await recorder.record(.profileFinished)
             }
         )
@@ -664,14 +661,6 @@ private actor SessionInitialLoadEventRecorder {
 
     func snapshot() -> [Event] {
         events
-    }
-
-    /// Returns once `event` is recorded, or after a deadline a serial load would hit.
-    func waitFor(_ event: Event) async {
-        let deadline = ContinuousClock.now + .seconds(2)
-        while !events.contains(event), ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
     }
 }
 

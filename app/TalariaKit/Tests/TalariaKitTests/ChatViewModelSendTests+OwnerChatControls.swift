@@ -486,17 +486,23 @@ extension ChatViewModelSendTests {
         let log = OwnerRequestLog()
         let unknown = try Self.ownerAttachmentJSON("unknown")
         let normal = try Self.ownerAttachmentJSON("normal")
+        let reached = LockedTestValue(false)
+        let release = DispatchSemaphore(value: 0)
         let viewModel = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: unknown) }) { path, request in
             guard path == "/api/chat/owner-action" else { return nil }
-            Thread.sleep(forTimeInterval: 0.2)
+            reached.value = true
+            _ = release.wait(timeout: .now() + 15)
             return apiTestJSONResponse(#"{"ok":true,"session":\#(Self.ownerSessionObject(attachment: normal))}"#, for: request)
         }
         await viewModel.loadMessages()
         let admission = try XCTUnwrap(viewModel.ownerAttachment?.admissions.first)
 
-        async let first: Void = viewModel.performOwnerAction(.discard, on: admission)
-        async let second: Void = viewModel.performOwnerAction(.discard, on: admission)
-        _ = await (first, second)
+        let first = Task { await viewModel.performOwnerAction(.discard, on: admission) }
+        try await waitUntil { reached.value }
+        // The second tap lands while the first action's answer is held at the server.
+        await viewModel.performOwnerAction(.discard, on: admission)
+        release.signal()
+        await first.value
 
         XCTAssertEqual(log.bodies["/api/chat/owner-action"]?.count, 1, "The duplicate tap never reaches the server")
         XCTAssertNil(viewModel.sendErrorMessage)

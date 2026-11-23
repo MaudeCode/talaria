@@ -12,6 +12,8 @@ extension ChatViewModelSendTests {
             let host = "toolsets-send-\(status).test"
             let heldWrites = DeferredRequests()
             let starts = DeferredRequests()
+            let writeAnswered = LockedTestValue(false)
+            let startsBeforeAnswer = LockedCounter()
             DeferredMockURLProtocol.setOnRequest({ request in
                 switch request.request.url?.path {
                 case "/api/session":
@@ -19,6 +21,7 @@ extension ChatViewModelSendTests {
                 case "/api/session/toolsets":
                     _ = heldWrites.append(request)
                 case "/api/chat/start":
+                    if !writeAnswered.value { _ = startsBeforeAnswer.increment() }
                     _ = starts.append(request)
                     request.complete(withJSON: #"{"session_id":"session-abc","stream_id":"stream-toolsets"}"#)
                 default:
@@ -35,9 +38,7 @@ extension ChatViewModelSendTests {
             try await waitUntil { heldWrites.count == 1 }
             let send = Task { await model.sendMessage("Use the chosen tools") }
             try await waitUntil { model.messages.contains { $0.content == "Use the chosen tools" } }
-            // The transport remains free to start requests; only the toolset response is held.
-            try await Task.sleep(for: .milliseconds(200))
-            XCTAssertEqual(starts.count, 0, "Chat must not start against the previous persisted toolsets")
+            writeAnswered.value = true
             heldWrites.request(at: 0).complete(withJSON: status == 200
                 ? #"{"ok":true,"enabled_toolsets":["file"]}"# : #"{"error":"toolset save failed"}"#, statusCode: status)
             let saved = await save.value
@@ -45,6 +46,8 @@ extension ChatViewModelSendTests {
             XCTAssertEqual(saved, status == 200)
             XCTAssertEqual(sent, status == 200, "A rejected configuration aborts the dependent send")
             XCTAssertEqual(starts.count, status == 200 ? 1 : 0)
+            // The transport stays free to start requests while only the toolset response is held.
+            XCTAssertEqual(startsBeforeAnswer.count, 0, "Chat must not start against the previous persisted toolsets")
         }
     }
 

@@ -504,7 +504,8 @@ extension XCTestCase {
         let input = try XCTUnwrap(found, "The chat has no composer text view (shell activated: \(activatedShell))")
         input.becomeFirstResponder()
         input.insertText(text)
-        try? await Task.sleep(for: .milliseconds(100))
+        // The draft reaches the composer's state through SwiftUI: wait for the display to commit what typing queued.
+        if let scene = window.windowScene { await awaitDisplayUpdates(2, in: scene) }
     }
 
     /// Makes `change` and reports whether the software keyboard then posted `notification`.

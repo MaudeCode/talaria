@@ -525,9 +525,11 @@ extension ChatViewModelSendTests {
     func testAReadFromBeforeALostAnswerCannotDecideIt() async throws {
         var intervals = ChatPollingIntervals.connectionHeld
         let firstPoll = FirstPollRelease()
+        let sleeps = LockedCounter()
         intervals.sleep = { _ in
+            _ = sleeps.increment()
             if firstPoll.take() { return }
-            try await Task.sleep(for: .seconds(3600))
+            try await parkUntilCancelled()
         }
         let (coordinator, delegate, requests) = heldConnection(host: "stale-read.test", pollingIntervals: intervals)
         _ = delegate
@@ -541,7 +543,8 @@ extension ChatViewModelSendTests {
         try await waitUntil { requests.count == 3 }
 
         requests.request(at: 0).complete(withJSON: try Self.viewJSON())
-        try await Task.sleep(for: .milliseconds(100))
+        // The loop sleeps again only once it has handled the older read.
+        try await waitUntil { sleeps.count == 2 }
         func row(_ name: String) -> ConnectorOperationView.Target? { coordinator.connectionOperation?.targets.first { $0.name == name } }
         XCTAssertEqual(row("gmail")?.state, "skipped", "The older read does not roll the choice back")
         XCTAssertEqual(row("notion")?.actions, [], "Nothing is answerable until a read from after the answer")
@@ -558,15 +561,17 @@ extension ChatViewModelSendTests {
         let held = Held()
         let normal = try Self.ownerAttachmentJSON("normal")
         let stale = Self.ownerSessionObject(attachment: String(normal.dropLast()) + #","connection":null}"#)
+        let reached = LockedTestValue(false)
         let viewModel = try connectionViewModel(log, respond: { path, request in
             guard path == "/api/session", held.isHeld else { return nil }
+            reached.value = true
             _ = release.wait(timeout: .now() + 15)
             return apiTestJSONResponse(#"{"session":\#(stale)}"#, for: request)
         })
         await viewModel.loadMessages()
         held.isHeld = true
         let load = Task { await viewModel.loadMessages() }
-        try await Task.sleep(for: .milliseconds(50))
+        try await waitUntil { reached.value }
         viewModel.streamCoordinatorApplyConnectionOperation(try XCTUnwrap(Self.decodedFrame(Self.viewJSON())))
         release.signal()
         await load.value
@@ -630,9 +635,7 @@ extension ChatViewModelSendTests {
         }
 
         try await waitUntil { viewModel.connectionOperation?.settled == true }
-        let finalCount = reads.count
-        try await Task.sleep(for: .milliseconds(50))
-        XCTAssertEqual(reads.count, finalCount, "A settled operation is not read again")
+        XCTAssertFalse(viewModel.isPollingConnectionOperationForTesting, "A settled operation is not read again")
         XCTAssertNil(log.bodies[Self.operationPath], "A read never answers the operation")
     }
 
@@ -682,7 +685,7 @@ private extension ChatPollingIntervals {
     /// Holds the operation's read loop, so each test decides when a read happens.
     static var connectionHeld: ChatPollingIntervals {
         var intervals = ChatPollingIntervals.standard
-        intervals.sleep = { _ in try await Task.sleep(for: .seconds(3600)) }
+        intervals.sleep = { _ in try await parkUntilCancelled() }
         return intervals
     }
 

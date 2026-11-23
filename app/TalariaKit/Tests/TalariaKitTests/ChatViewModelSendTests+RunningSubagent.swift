@@ -53,9 +53,9 @@ extension ChatViewModelSendTests {
         await viewModel.loadMessages()
         let waiting = expectation(description: "waiting on the server's delay")
         let loop = Task {
-            await viewModel.followServerRefresh { duration in
+            await viewModel.followServerRefresh { _ in
                 waiting.fulfill()
-                try await Task.sleep(for: duration * 1_000)
+                try await parkUntilCancelled()
             }
         }
         await fulfillment(of: [waiting], timeout: 5)

@@ -77,10 +77,8 @@ extension ChatViewModelSendTests {
         _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "background")), args: "audit tests")
         // The start's refresh and the card's poll each read the 404, and the poll stops; any other route fails below.
         try await waitUntil { log.notFound >= 2 || Set(log.paths).count > 2 }
-        await drainMainActor()
-        let reads = log.paths.count
-        try await Task.sleep(nanoseconds: 20_000_000)
-        XCTAssertEqual(log.paths.count, reads, "Nothing polls after the 404")
+        try await waitUntil { viewModel.backgroundPollTaskForTesting == nil }
+        XCTAssertEqual(log.notFound, 2, "Nothing polls after the 404")
         XCTAssertEqual(Set(log.paths), ["/api/background", "/api/background/tasks"])
         XCTAssertEqual(viewModel.pinnedBackgroundTasks.map(\.taskId), ["d1"])
         XCTAssertEqual(viewModel.messages.count, before)
@@ -115,9 +113,8 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.pinnedBackgroundTasks.first?.status, .unknown)
         log.tasks = #"{"session_id":"session-abc","agent_available":true,"tasks":[{"task_id":"d1","kind":"delegation","status":"completed","title":"Fix CI","pinned":false,"dismissible":false}]}"#
         try await waitUntil { viewModel.backgroundTasks.first?.status == .completed }
-        let reads = log.taskReads
-        try await Task.sleep(nanoseconds: 20_000_000)
-        XCTAssertEqual(log.taskReads, reads, "Nothing running: the card stops refreshing")
+        // Nothing running: the card stops refreshing.
+        try await waitUntil { viewModel.backgroundPollTaskForTesting == nil }
         XCTAssertTrue(viewModel.pinnedBackgroundTasks.isEmpty)
     }
 }

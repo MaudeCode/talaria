@@ -83,6 +83,9 @@ public struct NeedsYouSnapshotStore {
         client: APIClient, serverURL: URL, since generation: Int = Self.generation,
         at date: @autoclosure () -> Date = Date()
     ) async -> Bool {
+        #if DEBUG
+        defer { Self.finishedRefreshesForTesting += 1 }
+        #endif
         guard Self.generation == generation,
               let summary = try? await client.activitySummary(),
               Self.generation == generation,
@@ -106,3 +109,10 @@ public struct NeedsYouSnapshotStore {
         WidgetCenter.shared.reloadTimelines(ofKind: Self.widgetKind)
     }
 }
+
+#if DEBUG
+extension NeedsYouSnapshotStore {
+    /// Counts finished refreshes, so a test can wait for the list's fire-and-forget refresh instead of a fixed delay.
+    @MainActor static var finishedRefreshesForTesting = 0
+}
+#endif

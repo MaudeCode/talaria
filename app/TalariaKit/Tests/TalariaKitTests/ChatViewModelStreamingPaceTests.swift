@@ -94,11 +94,11 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
         let didStart = await viewModel.sendMessage("Stream a reply")
         XCTAssertTrue(didStart)
         streamClient.emit(.token("alpha "))
-        _ = try await observeAssistantContent(viewModel, until: "alpha ")
+        try await observeAssistantContent(viewModel, until: "alpha ")
         let recomputeCount = viewModel.displayedTranscriptRecomputeCount
 
         streamClient.emit(.token("beta"))
-        _ = try await observeAssistantContent(viewModel, until: "alpha beta")
+        try await observeAssistantContent(viewModel, until: "alpha beta")
 
         XCTAssertEqual(viewModel.displayedTranscriptRecomputeCount, recomputeCount)
         XCTAssertEqual(viewModel.displayedTranscriptMessages.last?.message.content, "alpha beta")
@@ -121,9 +121,9 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
         let didStart = await viewModel.sendMessage("Question 1")
         XCTAssertTrue(didStart)
         streamClient.emit(.token("alpha "))
-        _ = try await observeAssistantContent(viewModel, until: "alpha ")
+        try await observeAssistantContent(viewModel, until: "alpha ")
         streamClient.emit(.token("beta"))
-        _ = try await observeAssistantContent(viewModel, until: "alpha beta")
+        try await observeAssistantContent(viewModel, until: "alpha beta")
         XCTAssertEqual(viewModel.displayedReasoningGroupsUpdateCount, loadedUpdates,
                        "A send and its stream ticks leave the reasoning cards alone")
 
@@ -179,15 +179,12 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
         XCTAssertTrue(didStart)
 
         streamClient.emit(.token("alpha beta gamma"))
-        _ = try await observeAssistantContent(viewModel, until: "alpha beta ")
+        try await observeAssistantContent(viewModel, until: "alpha beta ")
         XCTAssertEqual(assistantContent(of: viewModel), "alpha beta ")
 
         streamClient.emit(.done(DoneStreamEvent()))
         XCTAssertEqual(assistantContent(of: viewModel), "alpha beta gamma")
-
-        // Nothing may trickle in after completion.
-        try await Task.sleep(nanoseconds: 150_000_000)
-        XCTAssertEqual(assistantContent(of: viewModel), "alpha beta gamma")
+        XCTAssertNil(viewModel.pendingStreamingContentFlushTaskForTesting, "Nothing is left to trickle in after completion")
     }
 
     @MainActor
@@ -273,14 +270,12 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
         XCTAssertTrue(didStart)
 
         streamClient.emit(.token("alpha beta gamma"))
-        _ = try await observeAssistantContent(viewModel, until: "alpha beta ")
+        try await observeAssistantContent(viewModel, until: "alpha beta ")
         XCTAssertEqual(assistantContent(of: viewModel), "alpha beta ")
 
         streamClient.emit(.cancelled)
         XCTAssertEqual(assistantContent(of: viewModel), "alpha beta gamma")
-
-        try await Task.sleep(nanoseconds: 150_000_000)
-        XCTAssertEqual(assistantContent(of: viewModel), "alpha beta gamma")
+        XCTAssertNil(viewModel.pendingStreamingContentFlushTaskForTesting, "Nothing is left to trickle in after cancelling")
     }
 
     @MainActor
@@ -308,7 +303,7 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
         }
 
         let target = chunks.joined()
-        _ = try await observeAssistantContent(viewModel, until: target)
+        try await observeAssistantContent(viewModel, until: target)
         let content = try XCTUnwrap(assistantContent(of: viewModel))
         XCTAssertEqual(
             Array(content.utf8),
@@ -408,38 +403,22 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
         viewModel.messages.last(where: { $0.role == "assistant" })?.content
     }
 
-    /// Polls assistant content every 5ms until it equals `target` (or times out),
-    /// returning every distinct non-empty value observed in order.
+    /// Waits until the assistant content equals `target`; a miss names every distinct value it showed on the way.
     @MainActor
     private func observeAssistantContent(
         _ viewModel: ChatViewModel,
         until target: String,
-        timeoutNanoseconds: UInt64 = 4_000_000_000,
         file: StaticString = #filePath,
         line: UInt = #line
-    ) async throws -> [String] {
-        let pollNanoseconds: UInt64 = 5_000_000
+    ) async throws {
         var observed: [String] = []
-        var elapsed: UInt64 = 0
-        while elapsed <= timeoutNanoseconds {
-            if let content = assistantContent(of: viewModel), !content.isEmpty,
-               observed.last != content {
+        try await pollUntil(file: file, line: line) {
+            if let content = assistantContent(of: viewModel), !content.isEmpty, observed.last != content {
                 observed.append(content)
             }
-            if observed.last == target {
-                return observed
-            }
-
-            try await Task.sleep(nanoseconds: pollNanoseconds)
-            elapsed += pollNanoseconds
+            return observed.last == target
         }
-
-        XCTFail(
-            "timed out waiting for \(target); observed: \(observed)",
-            file: file,
-            line: line
-        )
-        return observed
+        if observed.last != target { XCTFail("Observed \(observed) instead of \(target)", file: file, line: line) }
     }
 }
 

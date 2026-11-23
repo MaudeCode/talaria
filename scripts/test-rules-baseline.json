@@ -1,42 +1,5 @@
 {
   "counts": {
-    "clock-elapsed": {
-      "app/TalariaTests/ChatViewModelSendTests.swift": 1
-    },
-    "clock-sleep": {
-      "app/TalariaKit/Tests/TalariaKitTests/ApprovalNotificationTests.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatStreamCoordinatorTests.swift": 7,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelQueuedMessagePreviewTests.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ActionsQueue.swift": 2,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+BackgroundWork.swift": 2,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ChatOpen.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ClearConversation.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ComposerConfig.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ConnectionOperation.swift": 6,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+DelegationStatus.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+OwnerBackgroundWork.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+OwnerChatControls.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+RunningSubagent.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+SendApproval.swift": 2,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+StreamingEvents.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelStreamingPaceTests.swift": 3,
-      "app/TalariaKit/Tests/TalariaKitTests/ConfigurationSyncTests.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/FeedbackVideoEncoderTests.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/KanbanLiveUpdateTests.swift": 4,
-      "app/TalariaKit/Tests/TalariaKitTests/NeedsYouSnapshotTests.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/SSEClientTests.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/SessionNavigationStateTests.swift": 2,
-      "app/TalariaKit/Tests/TalariaKitTests/SessionRunMonitorTests.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/StreamReconnectContractTests.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/Support/APITestSupport.swift": 3,
-      "app/TalariaKit/Tests/TalariaKitTests/Support/ChatViewModelSendTests+Support.swift": 1,
-      "app/TalariaKit/Tests/TalariaKitTests/UntrustedInputFuzzTests.swift": 1,
-      "app/TalariaTests/ChatHostedTests.swift": 5,
-      "app/TalariaTests/FixtureApp.swift": 4,
-      "app/TalariaTests/HostedViewTests.swift": 2,
-      "app/TalariaTests/SessionListHostedTests.swift": 1,
-      "app/TalariaTests/TranscriptHostedTests.swift": 6
-    },
     "hosted-layout-loop": {
       "app/TalariaTests/ChatHostedTests.swift": 2,
       "app/TalariaTests/ChatViewModelSendTests.swift": 1,
@@ -331,6 +294,72 @@
       "file": "app/TalariaTests/HostedView.swift",
       "count": 1,
       "reason": "attachWindowImage draws a window only for an attachment someone keeps: a failed test's screenshot, or a TALARIA_TEST_SCREENSHOTS run."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "app/TalariaKit/Tests/TalariaKitTests/ApprovalNotificationTests.swift",
+      "count": 1,
+      "reason": "blockUntilRequestsFinish polls URLSession.allTasks under a 10 s ceiling from a detached task while the main actor stays blocked; URLSession announces no idle state, so the sleep is the poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ConnectionOperation.swift",
+      "count": 1,
+      "reason": "connectionFast replaces the operation's real 2 s read interval with 5 ms, so a test watches the read loop run until the server settles the operation."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+SendApproval.swift",
+      "count": 1,
+      "reason": "PollingLoopHold gives the clarification loop a 1 ms interval until its stream fails and it starts reading HTTP, then parks it; the interval is the fake's stand-in for the real 1.5 s one."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "app/TalariaKit/Tests/TalariaKitTests/KanbanLiveUpdateTests.swift",
+      "count": 3,
+      "reason": "makeState hands the board the real sleep with 5 ms coalescing and reconnect delays, and PollingIntervalHold passes those delays through and lets the first polling interval elapse before it parks the loop; tests wait on the board's effects, never on these durations."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "app/TalariaKit/Tests/TalariaKitTests/SSEClientTests.swift",
+      "count": 1,
+      "reason": "The stub protocol spaces its SSE chunks by each chunk's delay to simulate a network that delivers a stream in pieces."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "app/TalariaKit/Tests/TalariaKitTests/Support/APITestSupport.swift",
+      "count": 4,
+      "reason": "The suites' shared helpers: pollUntil's poll interval under its 10 s ceiling, parkUntilCancelled's stand-in for a reply that never comes, HeldRoundTrips' poll that groups requests starting together (nothing announces a round trip's end), and MockAuthAPIClient's optional authStatusDelay latency fake."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "app/TalariaKit/Tests/TalariaKitTests/UntrustedInputFuzzTests.swift",
+      "count": 1,
+      "reason": "The watchdog's own test hands it work that deliberately outlives its 0.2 s budget, to prove the hang detector reports it."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "app/TalariaTests/ChatHostedTests.swift",
+      "count": 1,
+      "reason": "The native-drag variants, run only by scripts/test-history-drag, sample committed frames for 3 s while an external driver moves the simulator's real touch; no in-process event marks the end of that gesture."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "app/TalariaTests/FixtureApp.swift",
+      "count": 3,
+      "reason": "awaitElement, awaitCondition and composerTextView are the hosted suites' shared waits; each polls the screen every 50 ms under its 10 s ceiling, since a hosted screen announces no change to its accessibility tree or text views."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "app/TalariaTests/HostedViewTests.swift",
+      "count": 2,
+      "reason": "The typing helper's own tests simulate the loads it must survive: an editor that mounts 2.4 s late and a main actor blocked for 10.5 s, past the helper's former ceiling."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "app/TalariaTests/SessionListHostedTests.swift",
+      "count": 1,
+      "reason": "A repeating timer blocks the main run loop for 10 ms at a time to simulate a busy runner, so an immediate archive response lands between SwiftUI frames."
     }
   ]
 }
