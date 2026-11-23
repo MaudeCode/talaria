@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long iPhone and iPad replies with unclosed math delimiters no longer slow down every streaming update.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
