@@ -2426,26 +2426,32 @@ extension RegularSplitHostedTests {
         try await hideTheCompanionPage(in: window, "The button did not hide the page a second time")
     }
 
-    /// TAL-1539: neither a new file nor a fold reopens a page the reader hid; the button still shows it after both.
-    func testAHiddenCompanionPageStaysHiddenThroughANewFileAndAFold() async throws {
-        let display = HostedDuoDisplay()
-        let window = try await openCompanionChatWithItsPageButton(display: display)
+    /// TAL-1539: a new file from the run does not reopen a page the reader hid.
+    func testANewFileLeavesAHiddenCompanionPageHidden() async throws {
+        let window = try await openCompanionChatWithItsPageButton()
         try await hideTheCompanionPage(in: window, "The button did not hide the page")
 
         UITestFixtureURLProtocol.advanceCompanionRun()
         _ = try await requireElement(in: window, "The run stopped") { $0.accessibilityLabel?.contains("Writing Beta.swift.") == true }
         settle(0.5)
         XCTAssertNil(companionPage(in: window), "A new file reopened the hidden page")
+    }
+
+    /// TAL-1539: folding and opening the Duo does not reopen a page the reader hid; the button still shows it after.
+    func testAFoldLeavesAHiddenCompanionPageHidden() async throws {
+        let display = HostedDuoDisplay()
+        let window = try await openCompanionChatWithItsPageButton(display: display)
+        try await hideTheCompanionPage(in: window, "The button did not hide the page")
 
         foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: true)
         foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: false)
-        _ = try await requireElement(in: window, "Opening the Duo lost the chat") { $0.accessibilityLabel?.contains("Writing Beta.swift.") == true }
+        _ = try await requireElement(in: window, "Opening the Duo lost the chat") { $0.accessibilityLabel?.contains("Writing Alpha.swift.") == true }
         settle(0.5)
         XCTAssertNil(companionPage(in: window), "Folding reopened the hidden page")
 
         try await pressCompanionPageButton(in: window)
-        let beta = await companionTitle("Beta.swift", in: window)
-        XCTAssertNotNil(beta, "Pressing the button again did not show the page")
+        let alpha = await companionTitle("Alpha.swift", in: window)
+        XCTAssertNotNil(alpha, "Pressing the button again did not show the page")
         try await assertTheChatKeepsTheBar(in: window, pageShows: true, "showing the page after a fold")
     }
 
