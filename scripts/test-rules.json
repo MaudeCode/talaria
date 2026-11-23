@@ -49,6 +49,17 @@
       ],
       "message": "test-audit snapshot: sample a per-frame check right after each display commit (sampleCommittedLayouts(in:), UIUpdateLink .afterCATransactionCommit), never from a run-loop observer (docs/testing.md)"
     },
+    "clock-day-seconds": {
+      "paths": [
+        "app/TalariaTests/",
+        "app/TalariaKit/Tests/"
+      ],
+      "patterns": [
+        "(?:\\bDate\\(\\)|\\bDate\\.now)\\s*\\.addingTimeInterval\\([^)]*(?:24\\s*\\*\\s*60\\s*\\*\\s*60|24\\s*\\*\\s*3600|86_?400)",
+        "\\bDate\\(timeIntervalSinceNow:[^)]*(?:24\\s*\\*\\s*60\\s*\\*\\s*60|24\\s*\\*\\s*3600|86_?400)"
+      ],
+      "message": "test-audit clock: anchor a date days before now in calendar units (Calendar.date(byAdding: .day, ...)), never as seconds, which drift across a DST change (docs/testing.md)"
+    },
     "unheld-clock": {
       "paths": [
         ""

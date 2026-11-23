@@ -268,9 +268,12 @@ final class AppScreenVisualReferenceTests: XCTestCase {
 
     /// Decoding matches how the app builds summaries, and the relative-date
     /// label, which reads the server's `sort_ts`, is anchored to a whole number
-    /// of days before the render so it reads the same on every run.
+    /// of calendar days before the render so it reads the same on every run.
+    /// Calendar days, not 72 hours: on the day DST ends, 72 hours back is
+    /// 2 days 23 hours by the calendar and the row would read "2d ago".
     private func makeSession() throws -> SessionSummary {
-        let sortTs = Date().addingTimeInterval(-3 * 24 * 60 * 60).timeIntervalSince1970
+        let lastMessageAt = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: -3, to: Date()))
+        let sortTs = lastMessageAt.timeIntervalSince1970
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(
