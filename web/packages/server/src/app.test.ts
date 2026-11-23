@@ -1150,13 +1150,11 @@ describe('storage full (TAL-2716)', () => {
     headers: { 'content-type': 'multipart/form-data; boundary=b' },
   })
 
-  it.each([
-    ['/api/upload', 'notes.txt', 'store'],
-    ['/api/upload/extract', 'bundle.zip', 'extract'],
-  ] as const)('%s that fails with ENOSPC answers 507, not 500', async (path, filename, method) => {
+  // `file-save.test.ts` fails the real destination create for `/api/upload`; extraction has no such seam.
+  it('/api/upload/extract that fails with ENOSPC answers 507, not 500', async () => {
     const sid = await newSession()
-    vi.spyOn(s.deps.uploads, method).mockRejectedValueOnce(osError('ENOSPC'))
-    const res = await upload(path, sid, filename)
+    vi.spyOn(s.deps.uploads, 'extract').mockRejectedValueOnce(osError('ENOSPC'))
+    const res = await upload('/api/upload/extract', sid, 'bundle.zip')
     expect({ status: res.status, body: await json(res) }).toEqual({ status: 507, body: STORAGE_FULL })
   })
 

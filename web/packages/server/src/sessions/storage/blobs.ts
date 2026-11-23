@@ -10,6 +10,7 @@ import type { Readable } from 'node:stream'
 import { writeFully } from '../../fs/atomic.js'
 import { isWithin, resolvePathLikePython } from '../../workspace/paths.js'
 import { FileExistsError, openAnchoredCreateFd, openAnchoredFd, rmtreeAnchored, unlinkAnchored } from '../../workspace/fs.js'
+import { storageFull } from '../../util.js'
 
 export interface BlobStat {
   size: number
@@ -182,6 +183,7 @@ export class LocalBlobStore implements BlobStore {
       fd = openAnchoredCreateFd(anchor, path)
     } catch (error) {
       if (error instanceof FileExistsError) throw new BlobExists(key)
+      if (storageFull(error)) throw error
       throw new BlobKeyRejected(`Blob destination rejected: ${key}`)
     }
     try {
