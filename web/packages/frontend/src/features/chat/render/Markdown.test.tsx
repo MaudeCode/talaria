@@ -115,6 +115,26 @@ describe('content ids (TAL-2217)', () => {
   })
 })
 
+describe('angle-bracket text (TAL-2715)', () => {
+  it.each(['Run git checkout <branch-name> now', 'File "<stdin>", line 1, in <module>', 'before <!-- note --> after'])('shows %j in full', (text) => {
+    render(<Markdown text={text} />)
+    expect(screen.getByText(text, { selector: 'p' })).toBeInTheDocument()
+  })
+
+  it('keeps HTML the sanitizer allows as elements', () => {
+    const { container } = render(<Markdown text={'<details><summary>s</summary>inner</details>\n\nPress <kbd>Ctrl</kbd>.'} />)
+    expect(container.querySelector('details > summary')).toHaveTextContent('s')
+    expect(container.querySelector('details')).toHaveTextContent('inner')
+    expect(container.querySelector('kbd')).toHaveTextContent('Ctrl')
+  })
+
+  it('shows an HTML block mixing an allowed and an unknown tag as text, making neither an element', () => {
+    const { container } = render(<Markdown text={'<details><branch-name></details>'} />)
+    expect(container.querySelector('details, branch-name')).toBeNull()
+    expect(container).toHaveTextContent('<details><branch-name></details>')
+  })
+})
+
 describe('svg code blocks (TAL-2678)', () => {
   const fence = (source: string) => `\`\`\`svg\n${source}\n\`\`\``
   const drawing = '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>'
