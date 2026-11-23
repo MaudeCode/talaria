@@ -275,9 +275,6 @@ struct SessionListView: View {
                 sectionViewModels = SectionViewModels(server: server)
             }
             .modifier(hingeReader)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if hasWaitingSharedImport { waitingSharedImportBanner }
-            }
             .sheet(isPresented: $isPresentingSettings, onDismiss: settingsDidDismiss) {
                 settingsNavigationStack
                     .presentationDetents([.large])
@@ -601,7 +598,8 @@ struct SessionListView: View {
             onPresentationChange: appSidebarPresentationChanged,
             onChatDrop: sidebarChatDropHandler,
             onChatDropHover: sidebarChatDropHovered,
-            onHingeChange: hingeReader.admit
+            onHingeChange: hingeReader.admit,
+            topAccessory: hasWaitingSharedImport ? AnyView(waitingSharedImportBanner) : nil
         ) { presented in
             if sidebarPresentation.toggleTarget == .drawer {
                 sharedSidebar(isPresented: presented, isDrawer: true)

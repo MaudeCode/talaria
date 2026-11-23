@@ -761,6 +761,54 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertEqual(UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/chat/start" }.count }, 0)
     }
 
+    func testWaitingImportBannerSitsAboveTheChatNavigationBarOnPhone() async throws {
+        try await assertWaitingImportBannerSitsAboveTheChatNavigationBar(size: HostedSize.phone)
+    }
+
+    func testWaitingImportBannerSitsAboveTheChatNavigationBarOnPad() async throws {
+        try await assertWaitingImportBannerSitsAboveTheChatNavigationBar(size: HostedSize.padLandscape)
+    }
+
+    /// A SwiftUI top inset around the UIKit-hosted navigation stacks does not move their bars (TAL-919): every visible
+    /// bar starts below the banner, and Open Next still reaches the import queue.
+    private func assertWaitingImportBannerSitsAboveTheChatNavigationBar(size: CGSize) async throws {
+        let fixture = try FixtureApp(for: self)
+        var openedNext = 0
+        let window = try hostWindow(fixture.sessionList(hasWaitingSharedImport: true, openNextSharedImport: { openedNext += 1 }),
+                                    size: size) {
+            $0.horizontalSizeClass = size == HostedSize.phone ? .compact : .regular
+        }
+        let banner = try await requireElement(in: window, label: "Another shared item is waiting")
+        _ = try await requireElement(in: window, label: "Select model")
+        func visibleBars() -> [CGRect] {
+            window.navigationStacks.map(\.navigationBar)
+                .filter { $0.window === window && !$0.isHidden && $0.alpha > 0 }
+                .map { $0.convert($0.bounds, to: window) }
+                .filter { $0.intersects(window.bounds) && $0.height > 0 }
+        }
+        let laidOut = await awaitCondition { !visibleBars().isEmpty }
+        XCTAssertTrue(laidOut, "\(size): no visible navigation bar")
+        let bannerBottom = window.convert(banner.accessibilityFrame, from: window.screen.coordinateSpace).maxY
+        attachHostedScreenshot(window, name: "waiting-import-banner-\(Int(size.width))")
+        for bar in visibleBars() {
+            XCTAssertGreaterThanOrEqual(bar.minY, bannerBottom,
+                                        "\(size): bar \(bar) starts above the banner text's bottom \(bannerBottom)")
+        }
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Open Next"))
+        XCTAssertEqual(openedNext, 1)
+        if size == HostedSize.phone {
+            let closedMinX = window.convert(banner.accessibilityFrame, from: window.screen.coordinateSpace).minX
+            try await openSidebar(in: window)
+            let slid = await awaitCondition {
+                window.convert(banner.accessibilityFrame, from: window.screen.coordinateSpace).minX > closedMinX + 100
+            }
+            XCTAssertTrue(slid, "The banner must slide aside with the chat when the drawer opens")
+            attachHostedScreenshot(window, name: "waiting-import-banner-drawer-open")
+        }
+        window.isHidden = true
+        window.rootViewController = nil
+    }
+
     func testSectionPushedChatKeepsNotificationsOnPhone() async throws {
         try await assertSectionPushedChatKeepsNotifications(size: HostedSize.phone)
     }

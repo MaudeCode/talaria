@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The \"Another shared item is waiting\" banner no longer covers the chat's top bar and slides with the chat when you open the sidebar.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

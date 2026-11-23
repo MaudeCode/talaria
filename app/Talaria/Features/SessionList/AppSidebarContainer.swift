@@ -35,7 +35,9 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
     private let onHingeChange: (SessionRunMonitor.HingeStatus?) -> Void
     private let sidebar: (Bool) -> Sidebar
     private let content: Content
+    private let topAccessory: AnyView?
 
+    /// `topAccessory` sits at the top of the screen and slides with it; the screen's navigation bars start below it.
     init(
         presentation: AppSidebarPresentation,
         fillsSafeArea: Bool = false,
@@ -46,6 +48,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
         onChatDrop: (([NSItemProvider]) -> Bool)? = nil,
         onChatDropHover: @escaping (Bool) -> Void = { _ in },
         onHingeChange: @escaping (SessionRunMonitor.HingeStatus?) -> Void = { _ in },
+        topAccessory: AnyView? = nil,
         @ViewBuilder sidebar: @escaping (_ isPresented: Bool) -> Sidebar,
         @ViewBuilder content: () -> Content
     ) {
@@ -60,6 +63,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
         self.onHingeChange = onHingeChange
         self.sidebar = sidebar
         self.content = content()
+        self.topAccessory = topAccessory
     }
 
     var body: some View {
@@ -77,6 +81,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
                     if isPresented { transaction.disablesAnimations = true }
                 }
             }),
+            topAccessory: topAccessory,
             onPresentationChange: onPresentationChange,
             onChatDrop: onChatDrop,
             onChatDropHover: onChatDropHover,
@@ -104,6 +109,7 @@ private struct AppSidebarHost: UIViewControllerRepresentable {
     let collapsesNativeSidebar: Bool
     let sidebar: AnyView
     let content: AnyView
+    let topAccessory: AnyView?
     let onPresentationChange: (Bool) -> Void
     let onChatDrop: (([NSItemProvider]) -> Bool)?
     let onChatDropHover: (Bool) -> Void
@@ -130,7 +136,8 @@ private struct AppSidebarHost: UIViewControllerRepresentable {
         withTransaction(context.transaction) {
             controller.setRoots(
                 sidebar: AnyView(sidebar.environment(\.self, environment)),
-                content: AnyView(content.environment(\.self, environment))
+                content: AnyView(content.environment(\.self, environment)),
+                topAccessory: topAccessory.map { AnyView($0.environment(\.self, environment)) }
             )
         }
     }
@@ -194,6 +201,11 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
     private let presentation: AppSidebarPresentation
     private let sidebarHost = UIHostingController(rootView: AnyView(EmptyView()))
     private let contentHost = UIHostingController(rootView: AnyView(EmptyView()))
+    /// The screen's top accessory. A SwiftUI inset around this controller cannot move the UIKit navigation bars inside
+    /// `contentHost`; its height goes into that host's safe area instead, which UIKit hands to every nested bar (TAL-919).
+    private let accessoryHost = UIHostingController(rootView: AnyView(EmptyView()))
+    private var hasAccessory = false
+    private var accessoryHeight: CGFloat = 0
     /// Carries the screen's slide and its shadow; the clipped screen sits inside it.
     private let surface = UIView()
     private let clip = UIView()
@@ -219,9 +231,20 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
         fatalError("init(coder:) is unavailable")
     }
 
-    func setRoots(sidebar: AnyView, content: AnyView) {
+    func setRoots(sidebar: AnyView, content: AnyView, topAccessory: AnyView? = nil) {
         sidebarHost.rootView = sidebar
         contentHost.rootView = content
+        accessoryHost.rootView = topAccessory ?? AnyView(EmptyView())
+        if hasAccessory != (topAccessory != nil) {
+            hasAccessory = topAccessory != nil
+            if isViewLoaded { view.setNeedsLayout() }
+        }
+    }
+
+    /// The accessory's height follows its text size and content.
+    override func preferredContentSizeDidChange(forChildContentContainer container: any UIContentContainer) {
+        super.preferredContentSizeDidChange(forChildContentContainer: container)
+        if container === accessoryHost { view.setNeedsLayout() }
     }
 
     override func viewDidLoad() {
@@ -237,6 +260,9 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
         clip.layer.cornerCurve = .continuous
         surface.addSubview(clip)
         embed(contentHost, in: clip)
+        accessoryHost.sizingOptions = .preferredContentSize
+        accessoryHost.view.backgroundColor = .clear
+        embed(accessoryHost, in: clip)
 
         tint.backgroundColor = UIColor { traits in
             (traits.userInterfaceStyle == .dark ? UIColor.white : .black).withAlphaComponent(0.12)
@@ -352,6 +378,15 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
         surface.frame = bounds
         clip.frame = surface.bounds
         contentHost.view.frame = clip.bounds
+        // The host spans the status bar so the accessory's background can, and lays its content out below it. Its
+        // fitting size counts the safe area it currently has, which the content host already reserves.
+        let hostInsets = accessoryHost.view.safeAreaInsets
+        let fitted = accessoryHost.sizeThatFits(in: CGSize(width: clip.bounds.width, height: .greatestFiniteMagnitude))
+        accessoryHeight = hasAccessory ? ceil(max(0, fitted.height - hostInsets.top - hostInsets.bottom)) : 0
+        accessoryHost.view.isHidden = !hasAccessory
+        accessoryHost.view.frame = CGRect(
+            x: 0, y: 0, width: clip.bounds.width, height: view.safeAreaInsets.top + accessoryHeight
+        )
         tint.frame = clip.bounds
         surface.layer.shadowPath = UIBezierPath(
             roundedRect: surface.bounds,
@@ -434,11 +469,16 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
         // leading edge would drop its leading inset and lay it out again. Hand back what the slide
         // took. The sidebar's own transform leaves its safe area alone.
         let restored = min(leadingInset, surfaceOffset)
-        let additional = isRightToLeft
+        let horizontal = isRightToLeft
             ? UIEdgeInsets(top: 0, left: 0, bottom: 0, right: restored)
             : UIEdgeInsets(top: 0, left: restored, bottom: 0, right: 0)
+        var additional = horizontal
+        additional.top = accessoryHeight
         if contentHost.additionalSafeAreaInsets != additional {
             contentHost.additionalSafeAreaInsets = additional
+        }
+        if accessoryHost.additionalSafeAreaInsets != horizontal {
+            accessoryHost.additionalSafeAreaInsets = horizontal
         }
         // The screen only lifts off as a card when it slides aside.
         let pushed = slide.presentsOver ? 0 : progress
@@ -453,6 +493,7 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
     private func reflect(isPresented: Bool) {
         tint.isUserInteractionEnabled = isPresented
         contentHost.view.accessibilityElementsHidden = isPresented
+        accessoryHost.view.accessibilityElementsHidden = isPresented
         // The closed sidebar sits under the screen; VoiceOver must not reach it there.
         sidebarHost.view.accessibilityElementsHidden = !isPresented
         edgePanArbiter.isSidebarPresented = isPresented
