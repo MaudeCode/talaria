@@ -147,6 +147,13 @@ public struct MarkdownMathFormatter: Sendable {
                 return index
             }
 
+            // A live `$` that cannot close ends the candidate: scanning past it would pair
+            // with a later `$` and swallow the prose between, as with `$5 … and $10`.
+            if delimiter == .dollar, characters[index] == "$", !protected[index],
+               !MarkdownMathProtection.isEscaped(characters, at: index) {
+                return nil
+            }
+
             index += 1
         }
         return nil
@@ -244,6 +251,10 @@ private enum InlineDelimiter: CaseIterable {
             guard matches("$", in: characters, at: index, protected: protected) else { return false }
             if index > 0, characters[index - 1] == "$" { return false }
             if index + 1 < characters.count, characters[index + 1] == "$" { return false }
+            // A digit or whitespace after `$` is currency or prose, such as `$250` or `$ 5`.
+            if index + 1 < characters.count, characters[index + 1].isNumber || characters[index + 1].isWhitespace {
+                return false
+            }
             return !MarkdownMathProtection.isEscaped(characters, at: index)
         case .parens:
             return matches(#"\("#, in: characters, at: index, protected: protected)
@@ -257,6 +268,8 @@ private enum InlineDelimiter: CaseIterable {
             guard matches("$", in: characters, at: index, protected: protected) else { return false }
             if index > 0, characters[index - 1] == "$" { return false }
             if index + 1 < characters.count, characters[index + 1] == "$" { return false }
+            // Whitespace before `$` is a prose boundary, as in KaTeX auto-render.
+            if index > 0, characters[index - 1].isWhitespace { return false }
             return !MarkdownMathProtection.isEscaped(characters, at: index)
         case .parens:
             return matches(#"\)"#, in: characters, at: index, protected: protected)

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Replies that mention two prices on one line, such as $5 and $10, keep their dollar signs and spacing instead of turning the text between them into math.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
