@@ -40,6 +40,8 @@ struct MarkerMessageCardView: View {
     var body: some View {
         if case .contentRefused(let notice) = kind {
             refusedAsk(notice: notice)
+        } else if kind == .failedTurn {
+            failedTurnNotice
         } else {
             disclosure
         }
@@ -49,14 +51,7 @@ struct MarkerMessageCardView: View {
     private func refusedAsk(notice: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if !notice.isEmpty {
-                TranscriptDisclosureRow(
-                    isExpanded: .constant(false), isInteractive: false, showsChevron: false,
-                    accessibilityLabel: notice, identifier: "transcript-marker"
-                ) {
-                    Image(systemName: iconName).resizable().scaledToFit()
-                        .foregroundStyle(.secondary).frame(width: 16, height: 16)
-                    Text(verbatim: notice).font(AppFont.callout()).foregroundStyle(.secondary)
-                }
+                noticeLine(notice)
             }
             Text(verbatim: content ?? "")
                 .font(AppFont.body())
@@ -66,6 +61,23 @@ struct MarkerMessageCardView: View {
                 .padding(.leading, 24)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// TAL-984: the server's failed-turn notice, one quiet line in its place; nothing to open and no actions.
+    private var failedTurnNotice: some View {
+        noticeLine(hasDetails ? content ?? "" : title).frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A static line with the kind's glyph and quiet text: nothing to open.
+    private func noticeLine(_ text: String) -> some View {
+        TranscriptDisclosureRow(
+            isExpanded: .constant(false), isInteractive: false, showsChevron: false,
+            accessibilityLabel: text, identifier: "transcript-marker"
+        ) {
+            Image(systemName: iconName).resizable().scaledToFit()
+                .foregroundStyle(.secondary).frame(width: 16, height: 16)
+            Text(verbatim: text).font(AppFont.callout()).foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder private var disclosure: some View {
@@ -113,6 +125,8 @@ struct MarkerMessageCardView: View {
             return "checklist"
         case .contentRefused:
             return "xmark.shield"
+        case .failedTurn:
+            return "exclamationmark.triangle"
         case nil:
             return "info.circle"
         }

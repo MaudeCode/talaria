@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A turn that did not complete now shows the Agent's notice as one line in the chat instead of an assistant reply.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
