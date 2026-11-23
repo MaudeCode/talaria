@@ -12,16 +12,26 @@ public struct MarkdownMathFormatter: Sendable {
         let protected = MarkdownMathProtection.mask(for: characters)
         var result = ""
         var index = 0
+        // A failed `\(` search covers every later `\(` on its line. A failed `$` search can stop early at another
+        // `$`, so it is never remembered.
+        var exhaustedParensOnLine = false
 
         while index < characters.count {
+            if characters[index] == "\n" { exhaustedParensOnLine = false }
             guard let delimiter = inlineDelimiter(in: characters, at: index, protected: protected),
-                  let closeIndex = closingInlineDelimiter(
-                    in: characters,
-                    from: index + delimiter.openLength,
-                    protected: protected,
-                    delimiter: delimiter
-                  )
+                  !(delimiter == .parens && exhaustedParensOnLine)
             else {
+                result.append(characters[index])
+                index += 1
+                continue
+            }
+            guard let closeIndex = closingInlineDelimiter(
+                in: characters,
+                from: index + delimiter.openLength,
+                protected: protected,
+                delimiter: delimiter
+            ) else {
+                if delimiter == .parens { exhaustedParensOnLine = true }
                 result.append(characters[index])
                 index += 1
                 continue
@@ -139,6 +149,9 @@ public struct MarkdownMathFormatter: Sendable {
         protected: [Bool],
         delimiter: InlineDelimiter
     ) -> Int? {
+        #if DEBUG
+        TranscriptProbeRecorder.record("mathInlineCloserSearch")
+        #endif
         var index = startIndex
         while index < characters.count {
             if characters[index] == "\n" {
@@ -250,7 +263,9 @@ private enum InlineDelimiter: CaseIterable {
     func isOpen(in characters: [Character], at index: Int, protected: [Bool]) -> Bool {
         switch self {
         case .dollar:
-            guard matches("$", in: characters, at: index, protected: protected) else { return false }
+            guard MarkdownMathProtection.matches("$", nil, in: characters, at: index, protected: protected) else {
+                return false
+            }
             if index > 0, characters[index - 1] == "$" { return false }
             if index + 1 < characters.count, characters[index + 1] == "$" { return false }
             // A digit or whitespace after `$` is currency or prose, such as `$250` or `$ 5`.
@@ -259,7 +274,7 @@ private enum InlineDelimiter: CaseIterable {
             }
             return !MarkdownMathProtection.isEscaped(characters, at: index)
         case .parens:
-            return matches(#"\("#, in: characters, at: index, protected: protected)
+            return MarkdownMathProtection.matches("\\", "(", in: characters, at: index, protected: protected)
                 && !MarkdownMathProtection.isEscaped(characters, at: index)
         }
     }
@@ -267,29 +282,17 @@ private enum InlineDelimiter: CaseIterable {
     func isClose(in characters: [Character], at index: Int, protected: [Bool]) -> Bool {
         switch self {
         case .dollar:
-            guard matches("$", in: characters, at: index, protected: protected) else { return false }
+            guard MarkdownMathProtection.matches("$", nil, in: characters, at: index, protected: protected) else {
+                return false
+            }
             if index > 0, characters[index - 1] == "$" { return false }
             if index + 1 < characters.count, characters[index + 1] == "$" { return false }
             // Whitespace before `$` is a prose boundary, as in KaTeX auto-render.
             if index > 0, characters[index - 1].isWhitespace { return false }
             return !MarkdownMathProtection.isEscaped(characters, at: index)
         case .parens:
-            return matches(#"\)"#, in: characters, at: index, protected: protected)
+            return MarkdownMathProtection.matches("\\", ")", in: characters, at: index, protected: protected)
                 && !MarkdownMathProtection.isEscaped(characters, at: index)
         }
-    }
-
-    private func matches(
-        _ token: String,
-        in characters: [Character],
-        at index: Int,
-        protected: [Bool]
-    ) -> Bool {
-        let tokenCharacters = Array(token)
-        guard index >= 0, index + tokenCharacters.count <= characters.count else { return false }
-        for offset in 0..<tokenCharacters.count where protected[index + offset] {
-            return false
-        }
-        return Array(characters[index..<(index + tokenCharacters.count)]) == tokenCharacters
     }
 }
