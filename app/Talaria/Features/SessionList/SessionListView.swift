@@ -94,6 +94,7 @@ struct SessionListView: View {
     @State private var detailHasInspectorRoom = false
     @State private var filesInspectorOpeningIsLandscape: Bool?
     @State private var nativeColumnVisibility = NavigationSplitViewVisibility.detailOnly
+    @State private var nativeColumnJump = NativeColumnJump()
     @State private var targetChatWidth: CGFloat?
     @State private var measuredSidebarWidth: CGFloat?
     @State private var columnFoldWidth: CGFloat?
@@ -1047,6 +1048,7 @@ struct SessionListView: View {
         Binding {
             sidebarPresentation.tiled ? nativeColumnVisibility : .detailOnly
         } set: { visibility in
+            nativeColumnJump.columnReported(visibility)
             if sidebarPresentation.tiled { updateSidebarColumn(observedVisibility: visibility) }
             else { reconcileSidebarColumn() }
         }
@@ -1108,12 +1110,8 @@ struct SessionListView: View {
             guard columnUpdateRevision == revision, scenePhase == .active, !isResumingSidebarLayout else { return }
             var transition = Transaction(animation: reduceMotion ? nil : SessionListMotion.foldAnimation(reduceMotion: false))
             transition.disablesAnimations = reduceMotion
-            // UIKit slides the native column on its own unless its animations are off for the turn (TAL-1540).
-            if reduceMotion {
-                let animates = UIView.areAnimationsEnabled
-                UIView.setAnimationsEnabled(false)
-                DispatchQueue.main.async { UIView.setAnimationsEnabled(animates) }
-            }
+            // UIKit slides the native column on its own unless its animations are off as it moves it (TAL-1540).
+            if reduceMotion { nativeColumnJump.begin(target: visibility, changes: nativeColumnVisibility != visibility) }
             withTransaction(transition) {
                 if let storedChoice, !presentation.columnIsForced {
                     let stored = storedChoice ? "all" : "detailOnly"

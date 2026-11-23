@@ -147,6 +147,50 @@ enum SessionListMotion {
     }
 }
 
+/// Under Reduce Motion the native sidebar column jumps: UIKit slides it on its own whenever its animations are on as
+/// it applies the change, and it applies it on a turn after SwiftUI's update, not in it. Animations stay off until the
+/// native column reports the new visibility, and come back once that turn has committed.
+@MainActor final class NativeColumnJump {
+    // Each restore holds this strongly and runs once: animations come back even after the owning view is gone.
+    private var pending: (target: NavigationSplitViewVisibility, animates: Bool, generation: Int)?
+    private var generation = 0
+
+    /// Turns animations off for a change to `target` the column is about to make; `changes` is false when it shows
+    /// `target` already, so there is no report to wait for.
+    func begin(target: NavigationSplitViewVisibility, changes: Bool) {
+        let animates = pending?.animates ?? UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        generation += 1
+        let generation = generation
+        pending = (target, animates, generation)
+        if changes {
+            // ponytail: 1 s bound for a report that never comes; nothing UIKit draws is meant to wait that long.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.restore(generation) }
+        } else {
+            restoreAfterCommit(generation)
+        }
+    }
+
+    /// The native column now shows `visibility`.
+    func columnReported(_ visibility: NavigationSplitViewVisibility) {
+        guard let pending, pending.target == visibility else { return }
+        restoreAfterCommit(pending.generation)
+    }
+
+    private func restoreAfterCommit(_ generation: Int) {
+        let observer = CFRunLoopObserverCreateWithHandler(
+            nil, CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.exit.rawValue, false, .max
+        ) { _, _ in MainActor.assumeIsolated { self.restore(generation) } }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+    }
+
+    private func restore(_ generation: Int) {
+        guard let pending, pending.generation == generation else { return }
+        self.pending = nil
+        UIView.setAnimationsEnabled(pending.animates)
+    }
+}
+
 /// Offers to undo the latest chat archive (TAL-443), worded like the Kanban
 /// archive-undo banner. A failed undo stays with Try Again until it succeeds or
 /// is dismissed.

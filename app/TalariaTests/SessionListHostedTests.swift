@@ -2165,26 +2165,16 @@ extension RegularSplitHostedTests {
         let window = split.window
         try await typeIntoComposer("Primary draft", in: window)
         window.endEditing(true)
-        let conversation = CGPoint(x: window.bounds.width * 0.7, y: window.bounds.height * 0.3)
-        // Over two chats the native Sidebar item opens the drawer, as `testSidebarOverTwoChatsStillShowsItsRows` does.
-        func openDrawerOverTheSplit() throws {
-            let sidebar = try XCTUnwrap(HostedAccessibility.toolbarItem("Sidebar", in: window), "Two chats keep the native Sidebar item")
-            XCTAssertTrue(HostedAccessibility.activate(sidebar))
-        }
-        func secondaryReplyShows(_ title: String) -> Bool {
-            HostedAccessibility.elements(in: window).contains {
-                $0.accessibilityLabel == "\(title) reply" && $0.accessibilityFrame.midX > window.bounds.midX
-            }
-        }
 
         // The first split: the dragged chat shows beside the primary while the finger is still down.
-        func composerCount() -> Int { HostedAccessibility.elements(in: window).filter { $0.accessibilityLabel == "Send" }.count }
         func transcriptLoads() -> Int {
             UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/session" }.count }
         }
-        var drag = try await liftSidebarChat("Fixture Session 01", in: window)
-        XCTAssertEqual(drag.hover(at: conversation), .copy, "A chat drag needs a drop destination over the conversation")
-        let previewed = await awaitCondition { secondaryReplyShows("Fixture Session 01") && composerCount() == 2 }
+        let drag = try await liftSidebarChat("Fixture Session 01", in: window)
+        XCTAssertEqual(drag.hover(at: conversationPoint(in: window)), .copy, "A chat drag needs a drop destination over the conversation")
+        let previewed = await awaitCondition {
+            self.secondaryReplyShows("Fixture Session 01", in: window) && self.composerCount(in: window) == 2
+        }
         XCTAssertTrue(previewed, "The dragged chat must appear beside the primary before the drop")
         guard previewed else { return drag.cancel() }
         attachHostedScreenshot(window, name: "drag-first-split-before-drop")
@@ -2197,27 +2187,38 @@ extension RegularSplitHostedTests {
         XCTAssertEqual(drag.hover(at: inside), .copy, "The shown chat's own composer must not take the chat drag (\(drag.targetDescription))")
         settle(0.3)
         XCTAssertEqual(transcriptLoads(), shownLoads, "Hovering inside the shown chat must not load it again")
-        XCTAssertTrue(secondaryReplyShows("Fixture Session 01"))
+        XCTAssertTrue(secondaryReplyShows("Fixture Session 01", in: window))
         drag.drop()
         _ = try await requireSplitAction("Make Primary", in: window)
         let committedLoads = await awaitQuiet(transcriptLoads)
         XCTAssertEqual(committedLoads, shownLoads, "The drop must keep the shown chat instead of loading it again")
-        XCTAssertEqual(composerCount(), 2)
+        XCTAssertEqual(composerCount(in: window), 2)
         XCTAssertEqual(splitComposers(in: window).first?.text, "Primary draft")
+    }
 
-        // A replacement starts in the drawer over the split. Leaving shows the original secondary again with its draft.
+    /// A replacement starts in the drawer over the split. Leaving shows the original secondary again with its draft.
+    func testDraggingASidebarChatOverASplitReplacesTheSecondaryOnlyOnDrop() async throws {
+        try requireArrangement()
+        let split = try await openChat(size: HostedSize.padLandscape)
+        let window = split.window
+        try await typeIntoComposer("Primary draft", in: window)
+        try await openSecondChat(in: window)
+        _ = try await requireSplitAction("Make Primary", in: window)
         try await typeIntoComposer("Secondary draft", in: window,
             region: window.bounds.divided(atDistance: window.bounds.width / 2, from: .maxXEdge).slice)
         window.endEditing(true)
-        try openDrawerOverTheSplit()
-        drag = try await liftSidebarChat("Fixture Session 02", in: window)
-        XCTAssertEqual(drag.hover(at: conversation), .copy)
-        let replaced = await awaitCondition { secondaryReplyShows("Fixture Session 02") && !secondaryReplyShows("Fixture Session 01") }
+        try openDrawerOverTheSplit(in: window)
+        var drag = try await liftSidebarChat("Fixture Session 02", in: window)
+        XCTAssertEqual(drag.hover(at: conversationPoint(in: window)), .copy)
+        let replaced = await awaitCondition {
+            self.secondaryReplyShows("Fixture Session 02", in: window) && !self.secondaryReplyShows("Fixture Session 01", in: window)
+        }
         XCTAssertTrue(replaced, "Hovering a split must show the dragged chat in the secondary pane before the drop")
         attachHostedScreenshot(window, name: "drag-replacement-before-drop")
         drag.cancel()
         let restored = await awaitCondition {
-            secondaryReplyShows("Fixture Session 01") && self.splitComposers(in: window).map(\.text) == ["Primary draft", "Secondary draft"]
+            self.secondaryReplyShows("Fixture Session 01", in: window)
+                && self.splitComposers(in: window).map(\.text) == ["Primary draft", "Secondary draft"]
         }
         XCTAssertTrue(restored, "A cancelled drag must restore the open secondary chat and its draft")
         // Capture the settled restore, not the composer's fade from its shell to the restored draft.
@@ -2226,15 +2227,37 @@ extension RegularSplitHostedTests {
         settle(window: window)
         attachHostedScreenshot(window, name: "drag-cancelled-restores-secondary")
 
-        try openDrawerOverTheSplit()
+        try openDrawerOverTheSplit(in: window)
         drag = try await liftSidebarChat("Fixture Session 02", in: window)
-        XCTAssertEqual(drag.hover(at: conversation), .copy)
-        let shown = await awaitCondition { secondaryReplyShows("Fixture Session 02") }
+        XCTAssertEqual(drag.hover(at: conversationPoint(in: window)), .copy)
+        let shown = await awaitCondition { self.secondaryReplyShows("Fixture Session 02", in: window) }
         XCTAssertTrue(shown, "The replacement must show before the drop")
         drag.drop()
-        let committed = await awaitQuiet { secondaryReplyShows("Fixture Session 02") && composerCount() == 2 }
+        let committed = await awaitQuiet {
+            self.secondaryReplyShows("Fixture Session 02", in: window) && self.composerCount(in: window) == 2
+        }
         XCTAssertEqual(committed, true, "The dropped chat must stay open beside the primary")
         XCTAssertEqual(splitComposers(in: window).first?.text, "Primary draft")
+    }
+
+    private func conversationPoint(in window: UIWindow) -> CGPoint {
+        CGPoint(x: window.bounds.width * 0.7, y: window.bounds.height * 0.3)
+    }
+
+    // Over two chats the native Sidebar item opens the drawer, as `testSidebarOverTwoChatsStillShowsItsRows` does.
+    private func openDrawerOverTheSplit(in window: UIWindow) throws {
+        let sidebar = try XCTUnwrap(HostedAccessibility.toolbarItem("Sidebar", in: window), "Two chats keep the native Sidebar item")
+        XCTAssertTrue(HostedAccessibility.activate(sidebar))
+    }
+
+    private func secondaryReplyShows(_ title: String, in window: UIWindow) -> Bool {
+        HostedAccessibility.elements(in: window).contains {
+            $0.accessibilityLabel == "\(title) reply" && $0.accessibilityFrame.midX > window.bounds.midX
+        }
+    }
+
+    private func composerCount(in window: UIWindow) -> Int {
+        HostedAccessibility.elements(in: window).filter { $0.accessibilityLabel == "Send" }.count
     }
 
     /// A drag of the sidebar row titled `title`, begun through the row's own drag source.
@@ -2719,6 +2742,9 @@ extension RegularSplitHostedTests {
              min(window.bounds.maxX, presented(pageView())?.minX ?? window.bounds.maxX)]
         }
         let showedColumn = split.displayMode == .oneBesideSecondary
+        // The first frame is each panel's start: a page still easing into place would read as a slide.
+        let still = await awaitQuiet(edges)
+        XCTAssertNotNil(still, "The panels never came to rest before the Sidebar press")
         try await sampleCommittedLayouts(in: window) {
             let edges = edges()
             motion.samples.append(.init(column: edges[0], page: edges[1], chat: self.transcriptScrollView(in: window)?.bounds.width))

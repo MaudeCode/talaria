@@ -33,6 +33,8 @@ struct ChatTranscriptView: View {
     @State private var pinnedRowIDs = Set<String>()
     @State private var isAdmittingHistory = false
     @State private var isHistoryNearTop = false
+    @State private var historyCheckWasRefused = false
+    @State private var historyRecheckRevision = 0
     @State private var historyLayoutRevision = 0
     /// Owns the transcript's message long press: one handler for every row,
     /// which is what lets a press be resolved against link geometry first.
@@ -469,7 +471,8 @@ struct ChatTranscriptView: View {
         viewportFrame: CGRect
     ) -> some View {
         TranscriptHistorySentinel(isAvailable: hasOlderMessages, isLoading: isLoadingOlderMessages,
-                                  isNearTop: isHistoryNearTop, pageRevision: historyLayoutRevision,
+                                  isNearTop: isHistoryNearTop, recheckRevision: historyRecheckRevision,
+                                  pageRevision: historyLayoutRevision,
                                   canPrefetch: canPrefetchHistory,
                                   onLoad: { await loadOlderMessagesPreservingPosition(proxy: proxy) }) { historyIndicator in
             VStack(spacing: transcriptMessageSpacing) {
@@ -518,7 +521,12 @@ struct ChatTranscriptView: View {
                             }
                         }
                     ) { metrics in
-                        isHistoryNearTop = scrollPositionController.shouldPrefetchHistory()
+                        let nearTop = scrollPositionController.shouldPrefetchHistory()
+                        if nearTop && historyCheckWasRefused {
+                            historyCheckWasRefused = false
+                            historyRecheckRevision += 1
+                        }
+                        isHistoryNearTop = nearTop
                         updateRowViewport(height: viewportFrame.height)
                         var reported = metrics
                         // Initial anchoring, reader navigation and width compensation are not a return to the live edge.
@@ -684,10 +692,11 @@ struct ChatTranscriptView: View {
 
     /// The history sentinel's live check. A refusal means the near-top report it acted on is stale. If
     /// the reader returns before the next coalesced scroll report, that report repeats "near top" and
-    /// fires no load; clearing the report makes the return a fresh edge.
+    /// fires no load, so the next near-top report after a refusal asks the sentinel to check again. A
+    /// count, not a cleared flag: a loaded runner can drop the render that showed the flag cleared.
     private func canPrefetchHistory() -> Bool {
         let canPrefetch = scrollPositionController.shouldPrefetchHistory()
-        if !canPrefetch { isHistoryNearTop = false }
+        if !canPrefetch { historyCheckWasRefused = true }
         return canPrefetch
     }
 

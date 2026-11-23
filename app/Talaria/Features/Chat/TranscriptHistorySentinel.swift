@@ -5,6 +5,8 @@ struct TranscriptHistorySentinel<Content: View>: View {
     let isAvailable: Bool
     let isLoading: Bool
     let isNearTop: Bool
+    /// Advances when a near-top report follows a refused live check, so the reader's return loads.
+    let recheckRevision: Int
     let pageRevision: Int
     let canPrefetch: @MainActor () -> Bool
     let onLoad: () async -> Bool
@@ -41,6 +43,9 @@ struct TranscriptHistorySentinel<Content: View>: View {
                 armed = true
                 request()
             }
+        }
+        .onChange(of: recheckRevision) { _, _ in
+            if isNearTop { request() }
         }
         .onChange(of: isNearTop) { _, nearTop in
             latestNearTop = nearTop

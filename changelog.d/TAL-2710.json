@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With Reduce Motion on, the sidebar column on iPhone Duo and iPad now always jumps open or closed instead of sometimes sliding.",
+      "highlight": false
+    },
+    {
+      "category": "Fixed",
+      "summary": "Older messages keep loading when you return to the top of a long chat while it is still catching up.",
+      "highlight": false
+    }
+  ]
+}
