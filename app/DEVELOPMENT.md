@@ -253,9 +253,9 @@ To investigate a flaky test, repeat it alone with the identifier a failure
 names:
 
 ```zsh
-scripts/test-ios --repeat 20 TalariaTests/SessionListHostedTests/testDeepLinkedChatKeepsNavigationStackAndToolbarMounted
+scripts/test-ios --repeat 20 TalariaTests/SessionListHostedTests/testDeepLinkedChatKeepsNavigationStackAndToolbarMountedOnPhone
 scripts/test-ios --repeat 20 TalariaKitTests/SharedContractTests/testToolsetCatalogDecodesServerPolicy
-scripts/test-ios --remote --sha "$(git rev-parse HEAD)" --repeat 20 TalariaTests/SessionListHostedTests/testDeepLinkedChatKeepsNavigationStackAndToolbarMounted
+scripts/test-ios --remote --sha "$(git rev-parse HEAD)" --repeat 20 TalariaTests/SessionListHostedTests/testDeepLinkedChatKeepsNavigationStackAndToolbarMountedOnPhone
 ```
 
 Hosted identifiers build once and run on one simulator with

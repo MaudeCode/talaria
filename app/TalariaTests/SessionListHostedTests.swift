@@ -36,26 +36,32 @@ final class ToolbarPriorityHostedTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Files", in: window)).visibilityPriority, .standard)
     }
 
-    func testHorizontalBarsUseTheApprovedActionPriorities() async throws {
+    func testHorizontalBarsUseTheApprovedActionPrioritiesOnPhone() async throws {
+        try await assertHorizontalBarsUseTheApprovedActionPriorities(size: HostedSize.phone)
+    }
+
+    func testHorizontalBarsUseTheApprovedActionPrioritiesOnPad() async throws {
+        try await assertHorizontalBarsUseTheApprovedActionPriorities(size: HostedSize.padLandscape)
+    }
+
+    private func assertHorizontalBarsUseTheApprovedActionPriorities(size: CGSize) async throws {
         guard #available(iOS 27.1, *) else { throw XCTSkip("Requires bar-item visibility priorities") }
         let scene = try HostedScene.current()
         try XCTSkipIf(scene.traitCollection.verticalBarEdge != .unspecified, "Covered by native vertical-bar tests")
-        for size in [HostedSize.phone, HostedSize.padLandscape] {
-            let fixture = try FixtureApp(for: self)
-            let window = try hostWindow(fixture.sessionList(), size: size) {
-                $0.horizontalSizeClass = size == HostedSize.phone ? .compact : .regular
-            }
-            try await openSidebar(in: window)
-            for title in ["New Chat", "Search", "Settings"] {
-                _ = try await requireElement(in: window, label: title)
-                XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem(title, in: window)).visibilityPriority,
-                    ["New Chat", "Search"].contains(title) ? .init(higherThan: .high) : .high, title)
-            }
-            XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Filters", in: window)).visibilityPriority, .standard)
-            XCTAssertNil(HostedAccessibility.toolbarItem("Select Chats", in: window))
-            window.isHidden = true
-            window.rootViewController = nil
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: size) {
+            $0.horizontalSizeClass = size == HostedSize.phone ? .compact : .regular
         }
+        try await openSidebar(in: window)
+        for title in ["New Chat", "Search", "Settings"] {
+            _ = try await requireElement(in: window, label: title)
+            XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem(title, in: window)).visibilityPriority,
+                ["New Chat", "Search"].contains(title) ? .init(higherThan: .high) : .high, title)
+        }
+        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Filters", in: window)).visibilityPriority, .standard)
+        XCTAssertNil(HostedAccessibility.toolbarItem("Select Chats", in: window))
+        window.isHidden = true
+        window.rootViewController = nil
     }
 
     private func landscapeScene() async throws -> UIWindowScene {
@@ -412,33 +418,39 @@ final class SessionListHostedTests: XCTestCase {
     }
 
     /// The drawer stays open under the sheet, so dismissing it shows no close-and-reopen slide (TAL-2250).
-    func testSidebarFeedbackOpensTheSharedFormOverTheOpenSidebar() async throws {
+    func testSidebarFeedbackOpensTheSharedFormOverTheOpenSidebarOnPhone() async throws {
+        try await assertSidebarFeedbackOpensTheSharedFormOverTheOpenSidebar(name: "phone", size: HostedSize.phone)
+    }
+
+    func testSidebarFeedbackOpensTheSharedFormOverTheOpenSidebarOnDuoInner() async throws {
+        try await assertSidebarFeedbackOpensTheSharedFormOverTheOpenSidebar(name: "duo-inner", size: HostedSize.duoInner)
+    }
+
+    private func assertSidebarFeedbackOpensTheSharedFormOverTheOpenSidebar(name: String, size: CGSize) async throws {
         defer { UserDefaults.standard.removeObject(forKey: SectionVisibilitySettings.sidebarFeedbackKey) }
-        for (name, size) in [("phone", HostedSize.phone), ("duo-inner", HostedSize.duoInner)] {
-            let fixture = try FixtureApp(for: self)
-            UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.sidebarFeedbackKey)
-            let window = try hostWindow(fixture.sessionList(), size: size)
-            try await openSidebar(in: window)
-            let feedback = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
-            let button = try XCTUnwrap(feedback, "An open sidebar must offer Send Feedback beside Settings")
-            let drawer = try XCTUnwrap(window.rootViewController?.firstDescendant(ofType: AppSidebarController.self))
-            // The drawer hides its sidebar from VoiceOver exactly while it is closed; a tiled column disables it.
-            let drawerOpen = { drawer.isEnabled && drawer.children[0].view.accessibilityElementsHidden == false }
-            let opened = drawerOpen()
-            if name == "phone" { XCTAssertTrue(opened, "The phone's sidebar must be the open overlay drawer") }
-            attachHostedScreenshot(window, name: "sidebar-feedback-\(name)")
-            HostedAccessibility.activate(button)
-            _ = try await requireElement(in: window, label: "Include Diagnostics")
-            settle(0.1)
-            XCTAssertEqual(drawerOpen(), opened, "Presenting feedback must leave the drawer open under the sheet")
-            XCTAssertNotNil(HostedAccessibility.toolbarItem("Send", in: window))
-            XCTAssertNil(HostedAccessibility.element(in: window, identifier: "settings-user-profile"))
-            HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarItem("Cancel", in: window)))
-            _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
-            XCTAssertEqual(drawerOpen(), opened, "Dismissing feedback must return straight to the open sidebar")
-            window.isHidden = true
-            window.rootViewController = nil
-        }
+        let fixture = try FixtureApp(for: self)
+        UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.sidebarFeedbackKey)
+        let window = try hostWindow(fixture.sessionList(), size: size)
+        try await openSidebar(in: window)
+        let feedback = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
+        let button = try XCTUnwrap(feedback, "An open sidebar must offer Send Feedback beside Settings")
+        let drawer = try XCTUnwrap(window.rootViewController?.firstDescendant(ofType: AppSidebarController.self))
+        // The drawer hides its sidebar from VoiceOver exactly while it is closed; a tiled column disables it.
+        let drawerOpen = { drawer.isEnabled && drawer.children[0].view.accessibilityElementsHidden == false }
+        let opened = drawerOpen()
+        if name == "phone" { XCTAssertTrue(opened, "The phone's sidebar must be the open overlay drawer") }
+        attachHostedScreenshot(window, name: "sidebar-feedback-\(name)")
+        HostedAccessibility.activate(button)
+        _ = try await requireElement(in: window, label: "Include Diagnostics")
+        settle(0.1)
+        XCTAssertEqual(drawerOpen(), opened, "Presenting feedback must leave the drawer open under the sheet")
+        XCTAssertNotNil(HostedAccessibility.toolbarItem("Send", in: window))
+        XCTAssertNil(HostedAccessibility.element(in: window, identifier: "settings-user-profile"))
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarItem("Cancel", in: window)))
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
+        XCTAssertEqual(drawerOpen(), opened, "Dismissing feedback must return straight to the open sidebar")
+        window.isHidden = true
+        window.rootViewController = nil
     }
 
     func testSidebarFeedbackIsOptInAndControlledByTheNavigationToggle() async throws {
@@ -749,42 +761,48 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertEqual(UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/chat/start" }.count }, 0)
     }
 
-    func testSectionPushedChatKeepsNotificationsAtBothWidths() async throws {
-        for size in [HostedSize.phone, HostedSize.padLandscape] {
-            let fixture = try FixtureApp(["--ui-test-scheduled-sessions", UITestFixtureEnvironment.forkSessionArgument], for: self)
-            let window = try hostWindow(fixture.sessionList(), size: size) {
-                $0.horizontalSizeClass = size == HostedSize.phone ? .compact : .regular
-            }
-            let rootDepth = 1
-            let rootBell = await awaitCondition { HostedAccessibility.toolbarItem("Notifications", in: window) != nil }
-            XCTAssertTrue(rootBell, "The root must have its notifications toolbar button")
-            try await openSidebar(in: window)
-            HostedAccessibility.activate(try await requireElement(in: window, label: "Expand scheduled sessions"))
-            HostedAccessibility.activate(try await requireElement(in: window, label: "View all"))
-            if size == HostedSize.phone {
-                _ = try await requireElement(in: window, label: "Open navigation")
-            } else {
-                let sidebar = try XCTUnwrap(HostedAccessibility.toolbarItem("Sidebar", in: window))
-                XCTAssertTrue(HostedAccessibility.activate(sidebar))
-            }
-            HostedAccessibility.activate(try await requireElement(in: window, where: isFixtureRow))
-            _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
-            let pushedBell = await awaitCondition { HostedAccessibility.toolbarItem("Notifications", in: window) != nil }
-            XCTAssertTrue(pushedBell, "The section-pushed chat must keep its notifications toolbar button")
-            XCTAssertNil(HostedAccessibility.toolbarItem("New Chat", in: window))
-            XCTAssertNil(HostedAccessibility.toolbarItem("Settings", in: window))
-            let navigation = try XCTUnwrap(HostedAccessibility.titleMenuController(in: window)?.navigationController)
-            XCTAssertGreaterThan(navigation.viewControllers.count, rootDepth)
-            fixture.pendingSessionID = UITestFixtureURLProtocol.forkSessionID
-            let cleared = await awaitCondition {
-                navigation.viewControllers.count == rootDepth && fixture.pendingSessionID == nil
-            }
-            XCTAssertTrue(cleared, "Selecting a root must clear its section path: \(size), count \(navigation.viewControllers.count), root depth \(rootDepth)")
-            _ = try await requireElement(in: window, label: "Fork fixture reply")
-            XCTAssertTrue(HostedAccessibility.titleMenuController(in: window)?.navigationController === navigation)
-            window.isHidden = true
-            window.rootViewController = nil
+    func testSectionPushedChatKeepsNotificationsOnPhone() async throws {
+        try await assertSectionPushedChatKeepsNotifications(size: HostedSize.phone)
+    }
+
+    func testSectionPushedChatKeepsNotificationsOnPad() async throws {
+        try await assertSectionPushedChatKeepsNotifications(size: HostedSize.padLandscape)
+    }
+
+    private func assertSectionPushedChatKeepsNotifications(size: CGSize) async throws {
+        let fixture = try FixtureApp(["--ui-test-scheduled-sessions", UITestFixtureEnvironment.forkSessionArgument], for: self)
+        let window = try hostWindow(fixture.sessionList(), size: size) {
+            $0.horizontalSizeClass = size == HostedSize.phone ? .compact : .regular
         }
+        let rootDepth = 1
+        let rootBell = await awaitCondition { HostedAccessibility.toolbarItem("Notifications", in: window) != nil }
+        XCTAssertTrue(rootBell, "The root must have its notifications toolbar button")
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Expand scheduled sessions"))
+        HostedAccessibility.activate(try await requireElement(in: window, label: "View all"))
+        if size == HostedSize.phone {
+            _ = try await requireElement(in: window, label: "Open navigation")
+        } else {
+            let sidebar = try XCTUnwrap(HostedAccessibility.toolbarItem("Sidebar", in: window))
+            XCTAssertTrue(HostedAccessibility.activate(sidebar))
+        }
+        HostedAccessibility.activate(try await requireElement(in: window, where: isFixtureRow))
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        let pushedBell = await awaitCondition { HostedAccessibility.toolbarItem("Notifications", in: window) != nil }
+        XCTAssertTrue(pushedBell, "The section-pushed chat must keep its notifications toolbar button")
+        XCTAssertNil(HostedAccessibility.toolbarItem("New Chat", in: window))
+        XCTAssertNil(HostedAccessibility.toolbarItem("Settings", in: window))
+        let navigation = try XCTUnwrap(HostedAccessibility.titleMenuController(in: window)?.navigationController)
+        XCTAssertGreaterThan(navigation.viewControllers.count, rootDepth)
+        fixture.pendingSessionID = UITestFixtureURLProtocol.forkSessionID
+        let cleared = await awaitCondition {
+            navigation.viewControllers.count == rootDepth && fixture.pendingSessionID == nil
+        }
+        XCTAssertTrue(cleared, "Selecting a root must clear its section path: \(size), count \(navigation.viewControllers.count), root depth \(rootDepth)")
+        _ = try await requireElement(in: window, label: "Fork fixture reply")
+        XCTAssertTrue(HostedAccessibility.titleMenuController(in: window)?.navigationController === navigation)
+        window.isHidden = true
+        window.rootViewController = nil
     }
 
     func testSidebarSectionIsARootAndSettingsIsAModalOverIt() async throws {
@@ -813,29 +831,35 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertTrue(window.navigationStacks.allSatisfy { $0.viewControllers.count == 1 })
     }
 
-    func testSessionDeepLinkDismissesSettingsAndSettingsLinksRetargetItsModalAtBothWidths() async throws {
-        for size in [HostedSize.phone, HostedSize.padLandscape] {
-            let fixture = try FixtureApp(for: self)
-            let window = try hostWindow(fixture.sessionList(), size: size)
-            try await openSidebar(in: window)
-            HostedAccessibility.activate(try await requireElement(in: window, where: isSettingsAvatar))
-            _ = try await requireElement(in: window, label: "Close")
-            let presented = await presentedController(in: window)
-            let modal = try XCTUnwrap(presented)
-            fixture.opensQuotaWidgetSettings = true
-            let consumed = await awaitCondition { !fixture.opensQuotaWidgetSettings }
-            XCTAssertTrue(consumed)
-            _ = try await requireElement(in: window, label: "Close")
-            let retargeted = await presentedController(in: window)
-            XCTAssertTrue(retargeted === modal, "A Settings link must retarget the current modal")
-            fixture.pendingSessionID = UITestFixtureURLProtocol.sessionID
-            let dismissed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
-            XCTAssertTrue(dismissed, "A session route must not land behind Settings")
-            _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
-            XCTAssertNil(fixture.pendingSessionID)
-            window.isHidden = true
-            window.rootViewController = nil
-        }
+    func testSessionDeepLinkDismissesSettingsAndSettingsLinksRetargetItsModalOnPhone() async throws {
+        try await assertSessionDeepLinkDismissesSettingsAndSettingsLinksRetargetItsModal(size: HostedSize.phone)
+    }
+
+    func testSessionDeepLinkDismissesSettingsAndSettingsLinksRetargetItsModalOnPad() async throws {
+        try await assertSessionDeepLinkDismissesSettingsAndSettingsLinksRetargetItsModal(size: HostedSize.padLandscape)
+    }
+
+    private func assertSessionDeepLinkDismissesSettingsAndSettingsLinksRetargetItsModal(size: CGSize) async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: size)
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, where: isSettingsAvatar))
+        _ = try await requireElement(in: window, label: "Close")
+        let presented = await presentedController(in: window)
+        let modal = try XCTUnwrap(presented)
+        fixture.opensQuotaWidgetSettings = true
+        let consumed = await awaitCondition { !fixture.opensQuotaWidgetSettings }
+        XCTAssertTrue(consumed)
+        _ = try await requireElement(in: window, label: "Close")
+        let retargeted = await presentedController(in: window)
+        XCTAssertTrue(retargeted === modal, "A Settings link must retarget the current modal")
+        fixture.pendingSessionID = UITestFixtureURLProtocol.sessionID
+        let dismissed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(dismissed, "A session route must not land behind Settings")
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertNil(fixture.pendingSessionID)
+        window.isHidden = true
+        window.rootViewController = nil
     }
 
     func testInheritedVerticalAxisIsAvailableOnTheFirstChatBody() async throws {
@@ -860,80 +884,86 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertTrue(more, "The first inherited-axis presentation must install the chat's More action")
     }
 
-    func testDeepLinkedChatKeepsNavigationStackAndToolbarMounted() async throws {
-        for size in [HostedSize.phone, HostedSize.padLandscape] {
-            let fixture = try FixtureApp([UITestFixtureEnvironment.forkSessionArgument, UITestFixtureEnvironment.holdDeepLinkedForkArgument],
-                                         for: self)
-            let window = try await openChat(fixture, size: size)
-            let navigation = try XCTUnwrap(HostedAccessibility.titleMenuController(in: window)?.navigationController)
-            let ready = await awaitCondition {
-                HostedAccessibility.toolbarItem("Notifications", in: window) != nil
-                    && HostedAccessibility.toolbarItem("New Chat", in: window) != nil
-            }
-            XCTAssertTrue(ready)
-            attachHostedScreenshot(window, name: "deep-link-before-\(Int(size.width))")
-            var samples = 0
-            var gaps = Set<String>()
-            try await sampleCommittedLayouts(in: window) {
-                samples += 1
-                let current = HostedAccessibility.titleMenuController(in: window, filled: false)
-                if current?.navigationController !== navigation { gaps.insert("navigation controller") }
-                if self.composerDraftText(in: window) == nil { gaps.insert("composer") }
-                if current?.navigationItem.titleView == nil { gaps.insert("principal title") }
-                if current?.navigationItem.largeTitleDisplayMode != .never { gaps.insert("inline title") }
-                // The linked chat's bar commits with its content (TAL-2384).
-                if HostedAccessibility.element(in: window, identifier: "chat-detail:Fixture Session 01") != nil {
-                    if current?.navigationItem.title != "Fixture Session 01" { gaps.insert("new chat title") }
-                    if HostedAccessibility.titleMenuController(in: window) == nil { gaps.insert("title menu") }
-                    if HostedAccessibility.element(in: window, identifier: "chat-session-actions-title") == nil {
-                        gaps.insert("principal title content")
-                    }
-                }
-                for title in ["Notifications", "New Chat"] {
-                    if HostedAccessibility.toolbarItem(title, in: window) == nil { gaps.insert(title) }
-                }
-                let sidebar = size == HostedSize.phone ? "Open navigation" : "Sidebar"
-                if HostedAccessibility.toolbarItem(sidebar, in: window) == nil { gaps.insert(sidebar) }
-            } during: {
-                fixture.pendingSessionID = UITestFixtureURLProtocol.forkSessionID
-                // The chat swaps in from a reply that lands after its request, as on a real network.
-                let held = await awaitCondition { UITestFixtureHold.shared.pendingCount == 1 }
-                XCTAssertTrue(held, "The deep link must read the linked chat")
-                fixture.releaseHeldLoads()
-                _ = try await requireElement(in: window, label: "Fork fixture reply")
-                settle(0.2)
-            }
-            XCTAssertGreaterThan(samples, 0, "The transition must sample committed run-loop layouts")
-            XCTAssertTrue(gaps.isEmpty, "Root replacement lost: \(gaps.sorted())")
-            let titled = await awaitCondition {
-                HostedAccessibility.titleMenuController(in: window)?.navigationItem.title == "Fixture Session 01"
-            }
-            XCTAssertTrue(titled, "The linked chat must take the bar's title and title menu")
-            XCTAssertTrue(HostedAccessibility.titleMenuController(in: window)?.navigationController === navigation,
-                          "A deep link must replace the chat without rebuilding its NavigationStack")
-            XCTAssertNil(fixture.pendingSessionID)
-            attachHostedScreenshot(window, name: "deep-link-after-\(Int(size.width))")
-            if size == HostedSize.phone {
-                let files = try XCTUnwrap(HostedAccessibility.toolbarItem("Files", in: window) as NSObject?
-                    ?? HostedAccessibility.toolbarAction("Files", in: window))
-                HostedAccessibility.activate(files)
-                _ = try await requireElement(in: window, label: "Search files")
-                fixture.pendingSessionID = UITestFixtureURLProtocol.sessionID
-                _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
-                XCTAssertEqual(navigation.viewControllers.count, 1, "A root selection must also clear the chat's Files browser")
-                XCTAssertTrue(HostedAccessibility.titleMenuController(in: window)?.navigationController === navigation)
-            }
-            // Sidebar compose and the App Intent route share the same root replacement boundary.
-            HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarItem("New Chat", in: window)))
-            _ = try await requireElement(in: window, label: "Select model")
-            XCTAssertTrue(navigation.view.window === window, "New Chat must keep the captured detail stack mounted")
-            fixture.requestedNewChat = NewChatRequest()
-            let consumed = await awaitCondition { fixture.requestedNewChat == nil }
-            XCTAssertTrue(consumed)
-            XCTAssertTrue(navigation.view.window === window, "An App Intent must keep the captured detail stack mounted")
-            window.isHidden = true
-            window.rootViewController = nil
+    func testDeepLinkedChatKeepsNavigationStackAndToolbarMountedOnPhone() async throws {
+        try await assertDeepLinkedChatKeepsNavigationStackAndToolbarMounted(size: HostedSize.phone)
+    }
+
+    func testDeepLinkedChatKeepsNavigationStackAndToolbarMountedOnPad() async throws {
+        try await assertDeepLinkedChatKeepsNavigationStackAndToolbarMounted(size: HostedSize.padLandscape)
+    }
+
+    private func assertDeepLinkedChatKeepsNavigationStackAndToolbarMounted(size: CGSize) async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.forkSessionArgument, UITestFixtureEnvironment.holdDeepLinkedForkArgument],
+                                     for: self)
+        let window = try await openChat(fixture, size: size)
+        let navigation = try XCTUnwrap(HostedAccessibility.titleMenuController(in: window)?.navigationController)
+        let ready = await awaitCondition {
+            HostedAccessibility.toolbarItem("Notifications", in: window) != nil
+                && HostedAccessibility.toolbarItem("New Chat", in: window) != nil
         }
+        XCTAssertTrue(ready)
+        attachHostedScreenshot(window, name: "deep-link-before-\(Int(size.width))")
+        var samples = 0
+        var gaps = Set<String>()
+        try await sampleCommittedLayouts(in: window) {
+            samples += 1
+            let current = HostedAccessibility.titleMenuController(in: window, filled: false)
+            if current?.navigationController !== navigation { gaps.insert("navigation controller") }
+            if self.composerDraftText(in: window) == nil { gaps.insert("composer") }
+            if current?.navigationItem.titleView == nil { gaps.insert("principal title") }
+            if current?.navigationItem.largeTitleDisplayMode != .never { gaps.insert("inline title") }
+            // The linked chat's bar commits with its content (TAL-2384).
+            if HostedAccessibility.element(in: window, identifier: "chat-detail:Fixture Session 01") != nil {
+                if current?.navigationItem.title != "Fixture Session 01" { gaps.insert("new chat title") }
+                if HostedAccessibility.titleMenuController(in: window) == nil { gaps.insert("title menu") }
+                if HostedAccessibility.element(in: window, identifier: "chat-session-actions-title") == nil {
+                    gaps.insert("principal title content")
+                }
+            }
+            for title in ["Notifications", "New Chat"] {
+                if HostedAccessibility.toolbarItem(title, in: window) == nil { gaps.insert(title) }
+            }
+            let sidebar = size == HostedSize.phone ? "Open navigation" : "Sidebar"
+            if HostedAccessibility.toolbarItem(sidebar, in: window) == nil { gaps.insert(sidebar) }
+        } during: {
+            fixture.pendingSessionID = UITestFixtureURLProtocol.forkSessionID
+            // The chat swaps in from a reply that lands after its request, as on a real network.
+            let held = await awaitCondition { UITestFixtureHold.shared.pendingCount == 1 }
+            XCTAssertTrue(held, "The deep link must read the linked chat")
+            fixture.releaseHeldLoads()
+            _ = try await requireElement(in: window, label: "Fork fixture reply")
+            settle(0.2)
+        }
+        XCTAssertGreaterThan(samples, 0, "The transition must sample committed run-loop layouts")
+        XCTAssertTrue(gaps.isEmpty, "Root replacement lost: \(gaps.sorted())")
+        let titled = await awaitCondition {
+            HostedAccessibility.titleMenuController(in: window)?.navigationItem.title == "Fixture Session 01"
+        }
+        XCTAssertTrue(titled, "The linked chat must take the bar's title and title menu")
+        XCTAssertTrue(HostedAccessibility.titleMenuController(in: window)?.navigationController === navigation,
+                      "A deep link must replace the chat without rebuilding its NavigationStack")
+        XCTAssertNil(fixture.pendingSessionID)
+        attachHostedScreenshot(window, name: "deep-link-after-\(Int(size.width))")
+        if size == HostedSize.phone {
+            let files = try XCTUnwrap(HostedAccessibility.toolbarItem("Files", in: window) as NSObject?
+                ?? HostedAccessibility.toolbarAction("Files", in: window))
+            HostedAccessibility.activate(files)
+            _ = try await requireElement(in: window, label: "Search files")
+            fixture.pendingSessionID = UITestFixtureURLProtocol.sessionID
+            _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+            XCTAssertEqual(navigation.viewControllers.count, 1, "A root selection must also clear the chat's Files browser")
+            XCTAssertTrue(HostedAccessibility.titleMenuController(in: window)?.navigationController === navigation)
+        }
+        // Sidebar compose and the App Intent route share the same root replacement boundary.
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.toolbarItem("New Chat", in: window)))
+        _ = try await requireElement(in: window, label: "Select model")
+        XCTAssertTrue(navigation.view.window === window, "New Chat must keep the captured detail stack mounted")
+        fixture.requestedNewChat = NewChatRequest()
+        let consumed = await awaitCondition { fixture.requestedNewChat == nil }
+        XCTAssertTrue(consumed)
+        XCTAssertTrue(navigation.view.window === window, "An App Intent must keep the captured detail stack mounted")
+        window.isHidden = true
+        window.rootViewController = nil
     }
 
     /// TAL-2564: a cold launch into an uncached linked chat shows that chat loading in every committed frame, while the
@@ -1857,72 +1887,75 @@ final class RegularSplitHostedTests: XCTestCase {
         XCTAssertTrue(opened, "The layout update dropped the press")
     }
 
-    func testKanbanLoadingStaysInTheFoldPane() async throws {
-        try await assertSectionStateStaysInTheFoldPane("Kanban", UITestFixtureEnvironment.panelLoadingArgument, "Loading Kanban")
+    func testKanbanLoadingStaysInTheBookPane() async throws {
+        try await assertSectionStateStaysInTheFoldPane("Kanban", UITestFixtureEnvironment.panelLoadingArgument, "Loading Kanban", pose: "book")
     }
 
-    func testKanbanErrorStaysInTheFoldPane() async throws {
-        try await assertSectionStateStaysInTheFoldPane("Kanban", UITestFixtureEnvironment.panelUnavailableArgument, "The Kanban server is unavailable.")
+    func testKanbanLoadingStaysInTheTabletopPane() async throws {
+        try await assertSectionStateStaysInTheFoldPane("Kanban", UITestFixtureEnvironment.panelLoadingArgument, "Loading Kanban", pose: "tabletop")
+    }
+
+    func testKanbanErrorStaysInTheBookPane() async throws {
+        try await assertSectionStateStaysInTheFoldPane("Kanban", UITestFixtureEnvironment.panelUnavailableArgument, "The Kanban server is unavailable.", pose: "book")
+    }
+
+    func testKanbanErrorStaysInTheTabletopPane() async throws {
+        try await assertSectionStateStaysInTheFoldPane("Kanban", UITestFixtureEnvironment.panelUnavailableArgument, "The Kanban server is unavailable.", pose: "tabletop")
     }
 
     func testInsightsLoadingStaysInTheBookPane() async throws {
-        try await assertSectionStateStaysInTheFoldPane("Insights", UITestFixtureEnvironment.panelLoadingArgument,
-                                                       "Loading analytics…", poses: ["book"])
+        try await assertSectionStateStaysInTheFoldPane("Insights", UITestFixtureEnvironment.panelLoadingArgument, "Loading analytics…", pose: "book")
     }
 
     func testInsightsLoadingStaysInTheTabletopPane() async throws {
-        try await assertSectionStateStaysInTheFoldPane("Insights", UITestFixtureEnvironment.panelLoadingArgument,
-                                                       "Loading analytics…", poses: ["tabletop"])
+        try await assertSectionStateStaysInTheFoldPane("Insights", UITestFixtureEnvironment.panelLoadingArgument, "Loading analytics…", pose: "tabletop")
     }
 
-    func testInsightsErrorStaysInTheFoldPane() async throws {
-        try await assertSectionStateStaysInTheFoldPane("Insights", UITestFixtureEnvironment.panelUnavailableArgument, "Could Not Load Analytics")
+    func testInsightsErrorStaysInTheBookPane() async throws {
+        try await assertSectionStateStaysInTheFoldPane("Insights", UITestFixtureEnvironment.panelUnavailableArgument, "Could Not Load Analytics", pose: "book")
     }
 
-    private func assertSectionStateStaysInTheFoldPane(
-        _ section: String, _ flag: String, _ label: String, poses: Set<String> = ["book", "tabletop"]
-    ) async throws {
+    func testInsightsErrorStaysInTheTabletopPane() async throws {
+        try await assertSectionStateStaysInTheFoldPane("Insights", UITestFixtureEnvironment.panelUnavailableArgument, "Could Not Load Analytics", pose: "tabletop")
+    }
+
+    private func assertSectionStateStaysInTheFoldPane(_ section: String, _ flag: String, _ label: String, pose: String) async throws {
         let size = HostedSize.duoInnerLandscape
-        let folds = [
-            ("book", CGRect(x: 455, y: -100, width: 40, height: 2000)),
-            ("tabletop", CGRect(x: -100, y: 300, width: 2000, height: 40))
-        ]
-        for (pose, fold) in folds where poses.contains(pose) {
-            let fixture = try FixtureApp([flag], for: self)
-            let window = try hostWindow(fixture.sessionList()
-                .environment(\.chatDivisionFramesForTesting, [fold]).ignoresSafeArea(), size: size) {
-                $0.horizontalSizeClass = .regular
-                $0.verticalSizeClass = .regular
-            }
-            try await openSidebar(in: window)
-            HostedAccessibility.activate(try await requireElement(in: window, label: section))
-            // Insights opens on its Quotas tab; the analytics states live on Usage (TAL-1750).
-            if section == "Insights" {
-                HostedAccessibility.activate(try await requireElement(in: window, label: "Usage"))
-            }
-            // A native progress element may prepend its spoken state ("In progress, …").
-            let state = try await requireElement(in: window, "Missing \(label)") {
-                $0.accessibilityLabel == label || $0.accessibilityLabel?.hasSuffix(", \(label)") == true
-            }
-            let stateFrame = window.convert(state.accessibilityFrame, from: nil)
-            if pose == "book" {
-                XCTAssertGreaterThanOrEqual(stateFrame.minX, fold.maxX, "\(section) \(label) still crosses the book fold")
-            } else {
-                XCTAssertGreaterThanOrEqual(stateFrame.minY, fold.maxY, "\(section) \(label) still crosses the tabletop fold")
-            }
-            for control in HostedAccessibility.elements(in: window) where control.accessibilityTraits.contains(.button)
-                && ["Try Again", "Open provider quota settings", "Refresh all provider quotas"].contains(control.accessibilityLabel ?? "") {
-                let frame = window.convert(control.accessibilityFrame, from: nil)
-                guard !frame.isEmpty else { continue }
-                if pose == "book" { XCTAssertGreaterThanOrEqual(frame.minX, fold.maxX) }
-                else { XCTAssertGreaterThanOrEqual(frame.minY, fold.maxY) }
-            }
-            attachHostedScreenshot(window, name: "\(section.lowercased())-\(flag.hasSuffix("loading") ? "loading" : "error")-\(pose)")
-            window.isHidden = true
-            window.rootViewController = nil
-            fixture.releaseHeldLoads()
-            settle()
+        let fold = pose == "book" ? CGRect(x: 455, y: -100, width: 40, height: 2000) : CGRect(x: -100, y: 300, width: 2000, height: 40)
+        let fixture = try FixtureApp([flag], for: self)
+        let window = try hostWindow(fixture.sessionList()
+            .environment(\.chatDivisionFramesForTesting, [fold]).ignoresSafeArea(), size: size) {
+            $0.horizontalSizeClass = .regular
+            $0.verticalSizeClass = .regular
         }
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: section))
+        // Insights opens on its Quotas tab; the analytics states live on Usage (TAL-1750).
+        if section == "Insights" {
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Usage"))
+        }
+        // A native progress element may prepend its spoken state ("In progress, …").
+        let state = try await requireElement(in: window, "Missing \(label)") {
+            $0.accessibilityLabel == label || $0.accessibilityLabel?.hasSuffix(", \(label)") == true
+        }
+        let stateFrame = window.convert(state.accessibilityFrame, from: nil)
+        if pose == "book" {
+            XCTAssertGreaterThanOrEqual(stateFrame.minX, fold.maxX, "\(section) \(label) still crosses the book fold")
+        } else {
+            XCTAssertGreaterThanOrEqual(stateFrame.minY, fold.maxY, "\(section) \(label) still crosses the tabletop fold")
+        }
+        for control in HostedAccessibility.elements(in: window) where control.accessibilityTraits.contains(.button)
+            && ["Try Again", "Open provider quota settings", "Refresh all provider quotas"].contains(control.accessibilityLabel ?? "") {
+            let frame = window.convert(control.accessibilityFrame, from: nil)
+            guard !frame.isEmpty else { continue }
+            if pose == "book" { XCTAssertGreaterThanOrEqual(frame.minX, fold.maxX) }
+            else { XCTAssertGreaterThanOrEqual(frame.minY, fold.maxY) }
+        }
+        attachHostedScreenshot(window, name: "\(section.lowercased())-\(flag.hasSuffix("loading") ? "loading" : "error")-\(pose)")
+        window.isHidden = true
+        window.rootViewController = nil
+        fixture.releaseHeldLoads()
+        settle()
     }
 
     /// Every element in the window, including the bar buttons and inspector each split-view column keeps out of the
