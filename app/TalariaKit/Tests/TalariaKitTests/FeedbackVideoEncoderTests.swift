@@ -65,6 +65,7 @@ final class FeedbackVideoEncoderTests: XCTestCase {
 
 /// A synthetic camera clip: moving H.264 frames, a silent AAC track and a QuickTime location, all test-owned.
 enum SyntheticClip {
+    @MainActor
     static func write(to url: URL, width: Int, height: Int, seconds: Int, fps: Int32 = 30) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         let location = AVMutableMetadataItem()
@@ -87,12 +88,12 @@ enum SyntheticClip {
         XCTAssertTrue(writer.startWriting())
         writer.startSession(atSourceTime: .zero)
 
-        try await waitUntilReady(audio)
+        try await pollUntil { audio.isReadyForMoreMediaData }
         XCTAssertTrue(audio.append(try silence(seconds: seconds)))
         audio.markAsFinished()
 
         for frame in 0..<(Int(fps) * seconds) {
-            try await waitUntilReady(video)
+            try await pollUntil { video.isReadyForMoreMediaData }
             let pool = try XCTUnwrap(adaptor.pixelBufferPool)
             var buffer: CVPixelBuffer?
             CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
@@ -103,13 +104,6 @@ enum SyntheticClip {
         video.markAsFinished()
         await writer.finishWriting()
         XCTAssertEqual(writer.status, .completed, "\(String(describing: writer.error))")
-    }
-
-    private static func waitUntilReady(_ input: AVAssetWriterInput) async throws {
-        for _ in 0..<1_000 where !input.isReadyForMoreMediaData {
-            try await Task.sleep(for: .milliseconds(5))
-        }
-        XCTAssertTrue(input.isReadyForMoreMediaData)
     }
 
     /// A moving bar over a gradient, so the encoder has real motion to compress.

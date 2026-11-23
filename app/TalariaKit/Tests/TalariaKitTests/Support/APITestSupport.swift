@@ -11,6 +11,41 @@ extension XCTestCase {
     }
 }
 
+/// The test suites' one poll (TAL-2406): checks `condition` on the main actor every 10 ms until it holds, under the
+/// shared 10 s ceiling, because a loaded CI runner can starve the main actor for seconds. A condition that already
+/// holds returns at once. Wait on an event the subject reports instead whenever one exists.
+@MainActor
+func pollUntil(
+    timeout: Duration = .seconds(10),
+    file: StaticString = #filePath,
+    line: UInt = #line,
+    _ condition: @MainActor () async -> Bool
+) async throws {
+    let deadline = ContinuousClock.now + timeout
+    while await !condition() {
+        guard ContinuousClock.now < deadline else {
+            return XCTFail("Condition was not met within \(timeout)", file: file, line: line)
+        }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+}
+
+/// `pollUntil` under the package suites' name; the hosted suites' own `XCTestCase.waitUntil` shadows it there.
+@MainActor
+func waitUntil(
+    timeout: Duration = .seconds(10),
+    file: StaticString = #filePath,
+    line: UInt = #line,
+    _ condition: @MainActor () async -> Bool
+) async throws {
+    try await pollUntil(timeout: timeout, file: file, line: line, condition)
+}
+
+/// Suspends until the calling task is cancelled: a fake's stand-in for a reply, load or interval that never comes.
+func parkUntilCancelled() async throws {
+    try await Task.sleep(for: .seconds(3600))
+}
+
 class APIClientTestCase: XCTestCase {
     static let defaultServerURL = URL(string: "https://example.test")!
 
@@ -391,7 +426,7 @@ final class MockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
         case .hang:
             // Block until the caller's timeout cancels this task, mimicking a
             // server that accepts the connection but never responds.
-            try await Task.sleep(for: .seconds(3600))
+            try await parkUntilCancelled()
             return LoginResponse(ok: true, message: nil, error: nil)
         }
     }

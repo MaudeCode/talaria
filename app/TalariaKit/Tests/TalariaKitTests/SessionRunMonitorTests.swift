@@ -84,7 +84,7 @@ final class SessionRunMonitorTests: APIClientTestCase {
         let session = try XCTUnwrap(viewModel.sessions.first)
 
         let stop = Task { await viewModel.stopRun(session) }
-        try await waitFor { cancelURL != nil }
+        try await waitUntil { cancelURL != nil }
         XCTAssertEqual(viewModel.sessions.first?.isStreaming, false, "The row must show the run stopped before the server answers")
         XCTAssertNil(SessionRunMonitor.runStatus(for: try XCTUnwrap(viewModel.sessions.first)))
         XCTAssertEqual(URLComponents(url: try XCTUnwrap(cancelURL), resolvingAgainstBaseURL: false)?.queryItems?.first?.value, "stream-running")
@@ -141,13 +141,5 @@ final class SessionRunMonitorTests: APIClientTestCase {
         streaming
             ? #"{"session_id": "running", "title": "Run", "message_count": 2, "is_streaming": true, "active_stream_id": "stream-running"}"#
             : #"{"session_id": "running", "title": "Run", "message_count": 2, "is_streaming": false}"#
-    }
-
-    private func waitFor(_ condition: () -> Bool, timeout: TimeInterval = 5) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() {
-            guard Date() < deadline else { return XCTFail("Timed out") }
-            try await Task.sleep(for: .milliseconds(10))
-        }
     }
 }

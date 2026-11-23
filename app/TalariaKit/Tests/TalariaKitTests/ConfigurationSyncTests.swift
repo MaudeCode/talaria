@@ -1120,20 +1120,6 @@ final class ConfigurationSyncTests: XCTestCase {
             updatedAt: updatedAt
         )
     }
-
-    private func waitUntil(
-        timeout: Duration = .seconds(10),
-        _ condition: @MainActor () -> Bool
-    ) async throws {
-        let deadline = ContinuousClock.now + timeout
-        while !condition() {
-            guard ContinuousClock.now < deadline else {
-                XCTFail("Condition not met within \(timeout)")
-                return
-            }
-            try await Task.sleep(for: .milliseconds(5))
-        }
-    }
 }
 
 func XCTAssertThrowsErrorAsync(

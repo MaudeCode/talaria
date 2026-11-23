@@ -1547,7 +1547,7 @@ private final class PollingLoopHold {
         }
         parkedLoops += 1
         do {
-            try await Task.sleep(for: .seconds(3600))
+            try await parkUntilCancelled()
         } catch {
             cancelledLoops += 1
             throw error

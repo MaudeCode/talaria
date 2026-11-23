@@ -75,10 +75,11 @@ final class NeedsYouSnapshotTests: APIClientTestCase {
             return apiTestJSONResponse(#"{"sessions":[]}"#, for: request)
         }
         let viewModel = SessionListViewModel(server: server, client: client, needsYouStore: store)
+        let finished = NeedsYouSnapshotStore.finishedRefreshesForTesting
 
         let loaded = await viewModel.load()
         XCTAssertTrue(loaded)
-        for _ in 0..<50 where !summaryRead.value { try await Task.sleep(for: .milliseconds(10)) }
+        try await waitUntil { NeedsYouSnapshotStore.finishedRefreshesForTesting > finished }
 
         XCTAssertNil(store.load())
         XCTAssertFalse(summaryRead.value)

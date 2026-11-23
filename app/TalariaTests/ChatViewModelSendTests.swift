@@ -90,7 +90,8 @@ extension ChatViewModelSendTests {
         let waitingToHide = await awaitCondition { clock.nextDeadline != nil }
         XCTAssertTrue(waitingToHide)
         let holdDeadline = try XCTUnwrap(clock.nextDeadline)
-        XCTAssertEqual(holdDeadline.timeIntervalSince(showDeadline), DelayedStatusVisibility.minimumVisibleDuration,
+        XCTAssertEqual(holdDeadline.timeIntervalSinceReferenceDate,
+                       showDeadline.addingTimeInterval(DelayedStatusVisibility.minimumVisibleDuration).timeIntervalSinceReferenceDate,
                        accuracy: 0.0001)
         clock.advance(to: holdDeadline.addingTimeInterval(-0.01))
         settle(0.05)

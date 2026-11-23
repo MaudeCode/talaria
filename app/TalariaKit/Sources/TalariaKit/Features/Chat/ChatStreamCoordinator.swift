@@ -1239,3 +1239,10 @@ public final class ChatStreamCoordinator {
         lastEventID = delegate?.streamCoordinatorRestoreSnapshotIfAvailable(streamID: streamID) ?? lastEventID
     }
 }
+
+#if DEBUG
+extension ChatStreamCoordinator {
+    /// The pending cooldown retry, so a test can wait for a cancelled one to end instead of sleeping past its delay.
+    var reconnectRetryTaskForTesting: Task<Void, Never>? { reconnectRetryTask }
+}
+#endif

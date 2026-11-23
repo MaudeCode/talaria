@@ -1187,7 +1187,8 @@ final class ChatHostedTests: XCTestCase {
             let settled = await awaitCondition { !controller.isHoldingPosition }
             XCTAssertTrue(settled)
         }
-        try await Task.sleep(for: .milliseconds(200))
+        // Let the layout the navigation and disclosure queued commit before choosing the reader's point.
+        _ = await awaitRenderedQuiet(in: window) { [scroll.contentOffset.y, scroll.contentSize.height] }
         let reader: NSObject
         if boundaryTurn {
             reader = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Boundary work 0.") == true }
@@ -1350,7 +1351,11 @@ final class ChatHostedTests: XCTestCase {
             XCTAssertTrue(driverFinished, "The native driver must close before the simulator lease is released")
         } else {
             fixture.releaseHeldLoads()
-            try await Task.sleep(for: .milliseconds(1_500))
+            // Sample until the page has rendered and its one-second measurement window has ended.
+            let inserted = await awaitCondition {
+                scroll.contentSize.height > oldHeight + 500 && !controller.isPreservingPosition && !controller.isHoldingPosition
+            }
+            XCTAssertTrue(inserted, "The older page must render and its preservation window end")
         }
         XCTAssertGreaterThan(samples.count, 0, "The test must observe committed display frames")
         updateLink.isEnabled = false
@@ -1439,7 +1444,7 @@ final class ChatHostedTests: XCTestCase {
                 }
                 let secondHeld = await awaitCondition { self.hasHeldHistoryPage(before: previousStart) }
                 XCTAssertTrue(secondHeld, "Revisiting the prefix must request a second older page")
-                try await Task.sleep(for: .milliseconds(200))
+                _ = await awaitRenderedQuiet(in: window) { [scroll.contentOffset.y, scroll.contentSize.height] }
                 // A tall answer's first paragraph can be above the viewport;
                 // measure an actually visible piece of that same message.
                 let nextPoint = try XCTUnwrap(stride(from: viewport.minY + 80, to: viewport.maxY - 80, by: 10)
@@ -1447,9 +1452,13 @@ final class ChatHostedTests: XCTestCase {
                     .first { registry.hit(at: scroll.convert($0, from: window), in: scroll)?.content.messageID == nextReaderID })
                 let nextBefore = try XCTUnwrap(registry.hit(at: scroll.convert(nextPoint, from: window), in: scroll))
                 XCTAssertEqual(nextBefore.content.messageID, nextReaderID)
+                let secondOldHeight = scroll.contentSize.height
                 fixture.releaseHeldLoads()
-                try await Task.sleep(for: .milliseconds(1_500))
-                // On a busy runner the page's last layout can land after any fixed wait; a reader it moved stays moved.
+                let secondInserted = await awaitCondition {
+                    scroll.contentSize.height > secondOldHeight && !controller.isPreservingPosition && !controller.isHoldingPosition
+                }
+                XCTAssertTrue(secondInserted, "The second older page must render and its preservation window end")
+                // On a busy runner the page's last layout can land after the window; a reader it moved stays moved.
                 _ = await awaitCondition {
                     guard let hit = registry.hit(at: scroll.convert(nextPoint, from: window), in: scroll) else { return false }
                     return abs(hit.localPoint.y - nextBefore.localPoint.y) <= 2

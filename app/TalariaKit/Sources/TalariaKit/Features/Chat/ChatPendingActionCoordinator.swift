@@ -944,3 +944,10 @@ private struct PendingPromptMonitor {
         sessionID = nil
     }
 }
+
+#if DEBUG
+extension ChatPendingActionCoordinator {
+    /// Nil while nothing reads the operation, so a test sees that a settled operation is not read again.
+    var connectionPollingTaskForTesting: Task<Void, Never>? { connectionPollingTask }
+}
+#endif

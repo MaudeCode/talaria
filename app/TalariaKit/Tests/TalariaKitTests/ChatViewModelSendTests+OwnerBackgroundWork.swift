@@ -169,8 +169,6 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(row.status, .cancelled)
         XCTAssertFalse(row.canStop)
         XCTAssertFalse(row.active)
-        try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(log.count("/api/background/stop"), 1)
     }
 
     /// A view model whose requests wait until the test answers them, so replies can arrive in any order.

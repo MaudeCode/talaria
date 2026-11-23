@@ -27,21 +27,6 @@ class KanbanDefaultsTestCase: XCTestCase {
 final class KanbanFeatureStateTests: KanbanDefaultsTestCase {
 }
 
-/// A condition that already holds returns at once; the deadline is generous because a loaded CI runner can
-/// starve the main actor for seconds.
-func waitUntil(
-    timeout: Duration = .seconds(10),
-    condition: @escaping @Sendable () async -> Bool
-) async throws {
-    let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: timeout)
-    while clock.now < deadline {
-        if await condition() { return }
-        await Task.yield()
-    }
-    XCTFail("Condition was not met before timeout")
-}
-
 private enum KanbanEventsNotStubbed: Error { case unexpectedCall }
 
 extension KanbanDataClient {

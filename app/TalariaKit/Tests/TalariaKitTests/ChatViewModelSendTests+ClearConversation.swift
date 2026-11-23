@@ -220,8 +220,11 @@ extension ChatViewModelSendTests {
                 request.fail(with: error)
             }
         }
+        let clearAnswered = LockedTestValue(false)
+        let startsBeforeClear = LockedCounter()
         DeferredMockURLProtocol.setOnRequest({ request in
             _ = started.append(request)
+            if request.request.url?.path == "/api/chat/start", !clearAnswered.value { _ = startsBeforeClear.increment() }
             if request.request.url?.path == "/api/session/clear" { _ = heldClear.append(request) } else { answer(request) }
         }, forHost: host)
         defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
@@ -237,14 +240,13 @@ extension ChatViewModelSendTests {
         try await waitUntil { heldClear.count == 1 }
         let send = Task { await model.sendMessage("After the clear") }
         try await waitUntil { model.messages.contains { $0.content == "After the clear" } }
-        // Give a send that ignored the clear time to start its request.
-        try await Task.sleep(for: .milliseconds(200))
-        XCTAssertFalse(startedPaths().contains("/api/chat/start"), "The send must wait for the outstanding clear")
+        clearAnswered.value = true
         answer(heldClear.request(at: 0))
         let didStart = await send.value
         await confirm.value
 
         XCTAssertTrue(didStart)
+        XCTAssertEqual(startsBeforeClear.count, 0, "The send must wait for the outstanding clear")
         let paths = startedPaths()
         XCTAssertLessThan(try XCTUnwrap(paths.firstIndex(of: "/api/session/clear")), try XCTUnwrap(paths.firstIndex(of: "/api/chat/start")))
         XCTAssertTrue(model.messages.contains { $0.content == "After the clear" })

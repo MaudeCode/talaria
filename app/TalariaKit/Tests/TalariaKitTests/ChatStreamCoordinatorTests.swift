@@ -1030,11 +1030,10 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
 
         // The chat leaves the screen while its retry is pending.
         coordinator.suspendActiveStreamConnection()
-        networkPath.isSatisfied = false
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await coordinator.reconnectRetryTaskForTesting?.value
+        try await setNetwork(networkPath, satisfied: false)
         XCTAssertEqual(coordinator.recoveryState, .idle)
-        networkPath.isSatisfied = true
-        try await Task.sleep(nanoseconds: 400_000_000)
+        try await setNetwork(networkPath, satisfied: true)
 
         XCTAssertEqual(statusAttempts, 1)
         XCTAssertEqual(streamClient.startedURLs.count, 1)
@@ -1053,10 +1052,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             return apiTestJSONResponse(#"{"active": true}"#, for: request)
         }
 
-        networkPath.isSatisfied = false
-        try await Task.sleep(nanoseconds: 50_000_000)
-        networkPath.isSatisfied = true
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try await setNetwork(networkPath, satisfied: false)
+        try await setNetwork(networkPath, satisfied: true)
 
         XCTAssertEqual(coordinator.recoveryState, .idle)
         XCTAssertFalse(coordinator.isConnectionSuspended)
@@ -1464,7 +1461,6 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             statusRequestCount += 1
             return apiTestJSONResponse(#"{"active": true, "stream_id": "stream-123"}"#, for: request)
         }
-        delegate.onLoadMessages = { try? await Task.sleep(nanoseconds: 20_000_000) }
 
         coordinator.start(streamID: "stream-123")
         coordinator.suspendActiveStreamConnection()
@@ -1494,7 +1490,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         delegate.onLoadMessages = { [weak delegate] in
             guard delegate?.loadMessagesCount == 1 else { return }
             contextlessLoadStarted.fulfill()
-            try? await Task.sleep(for: .seconds(10))
+            try? await parkUntilCancelled()
         }
 
         coordinator.start(streamID: "stream-123")
@@ -1905,26 +1901,32 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         coordinator.attach(delegate: delegate)
         return coordinator
     }
-
-    private func waitUntil(
-        timeout: TimeInterval = 10,
-        condition: @escaping @MainActor @Sendable () -> Bool
-    ) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if await MainActor.run(body: condition) {
-                return
-            }
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        XCTFail("Timed out waiting for condition")
-    }
 }
 
 @MainActor
 @Observable
 private final class FakeNetworkPath: NetworkPathObserving {
-    var isSatisfied = true
+    private var satisfied = true
+    /// The coordinator reads the path again each time it handles a change, to keep observing it.
+    @ObservationIgnored private(set) var reads = 0
+
+    var isSatisfied: Bool {
+        get {
+            reads += 1
+            return satisfied
+        }
+        set { satisfied = newValue }
+    }
+}
+
+extension ChatStreamCoordinatorTests {
+    /// Changes the path and returns once the coordinator has handled the change.
+    @MainActor
+    fileprivate func setNetwork(_ path: FakeNetworkPath, satisfied: Bool) async throws {
+        let reads = path.reads
+        path.isSatisfied = satisfied
+        try await waitUntil { path.reads > reads }
+    }
 }
 
 @MainActor

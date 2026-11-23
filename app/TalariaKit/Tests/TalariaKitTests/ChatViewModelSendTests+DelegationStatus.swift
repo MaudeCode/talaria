@@ -86,9 +86,8 @@ extension ChatViewModelSendTests {
         log.tasks = try Self.delegationTasksAnswer(try Self.delegationStatusFixture("available_zero"))
         try await waitUntil { viewModel.backgroundDelegationSummary == nil }
         XCTAssertFalse(viewModel.showsBackgroundWorkEntry, "Delivered work with nothing pinned has no composer or toolbar entry")
-        let settled = log.taskReads
-        try await Task.sleep(for: .milliseconds(100))
-        XCTAssertEqual(log.taskReads, settled, "A settled summary keeps polling")
+        // A settled summary stops polling.
+        try await waitUntil { viewModel.backgroundPollTaskForTesting == nil }
 
         log.tasks = try Self.delegationTasksAnswer(try Self.delegationStatusFixture("hidden"))
         await viewModel.refreshBackgroundTasks()

@@ -596,18 +596,6 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
             frameID: String(cursor)
         )
     }
-
-    private func waitUntil(
-        timeout: TimeInterval = 10,
-        condition: @escaping @MainActor @Sendable () async -> Bool
-    ) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if await condition() { return }
-            try await Task.sleep(for: .milliseconds(5))
-        }
-        XCTFail("Timed out waiting for condition")
-    }
 }
 
 /// Sleeps normally, except that only the first polling interval elapses: later ones wait until the polling
@@ -624,7 +612,8 @@ private final class PollingIntervalHold {
     func sleep(_ duration: Duration) async throws {
         guard duration == pollingInterval else { return try await Task.sleep(for: duration) }
         elapsedPollingIntervals += 1
-        try await Task.sleep(for: elapsedPollingIntervals == 1 ? duration : .seconds(3600))
+        guard elapsedPollingIntervals == 1 else { return try await parkUntilCancelled() }
+        try await Task.sleep(for: duration)
     }
 }
 
