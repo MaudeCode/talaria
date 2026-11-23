@@ -1366,6 +1366,81 @@ extension TranscriptHostedTests {
     }
 }
 
+/// TAL-1077: a settled reply's header shows that turn's own token usage when the reader turned it on, and opens the
+/// server's cache and estimated-cost figures; a reply the server recorded no usage for shows no control.
+@MainActor
+extension TranscriptHostedTests {
+    /// An earlier turn with no recorded usage, then a settled turn whose reply carries `usage`.
+    private func usageTurns(_ usage: String) throws -> [ChatMessage] {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode([ChatMessage].self, from: Data("""
+        [{"role": "user", "content": "First question.", "message_id": "usage-q1", "_turn_id": "usage-run-1"},
+         {"role": "assistant", "content": "Earlier answer.", "message_id": "usage-a1", "_turn_id": "usage-run-1"},
+         {"role": "user", "content": "Check the build.", "message_id": "usage-q2", "_turn_id": "usage-run-2"},
+         {"role": "assistant", "content": "The build passes.", "message_id": "usage-a2", "_turn_id": "usage-run-2", "_turnUsage": \(usage),
+          "_anchor_activity_scene": {"version": "activity_scene_v1", "final_answer": "The build passes.", "terminal_state": "completed",
+           "activity_rows": [{"row_id": "tool:b", "order_index": 0, "role": "tool", "tool": {"id": "b", "name": "terminal", "preview": null, "done": true, "is_error": false, "duration": null, "cost_usd": null}}]}}]
+        """.utf8))
+    }
+
+    private func showingTokenUsage(_ shown: Bool) {
+        UserDefaults.standard.set(shown, forKey: ChatTranscriptDisplaySettings.showsTokenUsageKey)
+        addTeardownBlock { UserDefaults.standard.removeObject(forKey: ChatTranscriptDisplaySettings.showsTokenUsageKey) }
+    }
+
+    func testReplyHeaderShowsItsTurnsUsageAndOpensTheCacheAndCostDetails() async throws {
+        showingTokenUsage(true)
+        let messages = try usageTurns(#"{"input_tokens": 1200, "output_tokens": 134, "cache_read_tokens": 900, "cache_write_tokens": 12, "estimated_cost": 0.0042, "cache_hit_percent": 75}"#)
+        let window = try hostWindow(historyTranscript(messages: messages, hasOlderMessages: false) { _ in false })
+        let header = try await requireElement(in: window, label: "Assistant, 1,200 input tokens, 134 output tokens")
+        // Only the reply that recorded usage shows it.
+        XCTAssertEqual(HostedAccessibility.elements(in: window, labelContaining: "input tokens").count, 1)
+        attachHostedScreenshot(window, name: "turn-usage-header")
+
+        let details = try XCTUnwrap(header.accessibilityCustomActions?.first { $0.name == "Token Usage" }, "The header offers no usage details")
+        XCTAssertTrue(details.actionHandler?(details) ?? false)
+        for row in ["Input, 1,200 tokens", "Output, 134 tokens", "Cache read, 900 tokens", "Cache write, 12 tokens", "Cache hit, 75%", "Estimated cost, $0.0042"] {
+            _ = try await requireElement(in: window, label: row, "The usage details never read \(row)")
+        }
+        attachHostedScreenshot(window, name: "turn-usage-details")
+    }
+
+    func testReplyHeaderLeavesOutUsageTheServerCouldNotGiveOrTheReaderHid() async throws {
+        let unpriced = #"{"input_tokens": 1200, "output_tokens": 134, "cache_read_tokens": 0, "cache_write_tokens": 0, "estimated_cost": null, "cache_hit_percent": null}"#
+        showingTokenUsage(true)
+        let window = try hostWindow(historyTranscript(messages: try usageTurns(unpriced), hasOlderMessages: false) { _ in false })
+        let header = try await requireElement(in: window, label: "Assistant, 1,200 input tokens, 134 output tokens")
+        let details = try XCTUnwrap(header.accessibilityCustomActions?.first { $0.name == "Token Usage" })
+        XCTAssertTrue(details.actionHandler?(details) ?? false)
+        _ = try await requireElement(in: window, label: "Cache read, 0 tokens")
+        XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "Estimated cost").isEmpty, "An unpriced reply shows a cost")
+        XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "Cache hit").isEmpty, "A reply with no cache hit rate shows one")
+        window.isHidden = true
+
+        showingTokenUsage(false)
+        let hidden = try hostWindow(historyTranscript(messages: try usageTurns(unpriced), hasOlderMessages: false) { _ in false })
+        _ = try await requireElement(in: hidden, label: "The build passes.")
+        XCTAssertTrue(HostedAccessibility.elements(in: hidden, labelContaining: "input tokens").isEmpty, "Usage shows with the setting off")
+    }
+
+    func testReplyHeaderKeepsLongUsageOnOneLineAtLargeTextInBothAppearances() async throws {
+        showingTokenUsage(true)
+        let messages = try usageTurns(#"{"input_tokens": 98765432, "output_tokens": 1234567, "cache_read_tokens": 87654321, "cache_write_tokens": 1234, "estimated_cost": 1234.5678, "cache_hit_percent": 89}"#)
+        for (name, style, size) in [("light-narrow", UIUserInterfaceStyle.light, HostedSize.duoOuter), ("dark-wide", .dark, HostedSize.padLandscape)] {
+            let window = try hostWindow(historyTranscript(messages: messages, hasOlderMessages: false) { _ in false }
+                .dynamicTypeSize(.accessibility2), size: size) { $0.userInterfaceStyle = style }
+            let header = try await requireElement(in: window, label: "Assistant, 98,765,432 input tokens, 1,234,567 output tokens")
+            let frame = header.accessibilityFrame
+            let line = UIFont.preferredFont(forTextStyle: .footnote, compatibleWith: UITraitCollection(preferredContentSizeCategory: .accessibilityExtraLarge)).lineHeight
+            XCTAssertLessThan(frame.height, line * 1.8, "\(name): the header wrapped")
+            XCTAssertLessThanOrEqual(frame.maxX, window.bounds.maxX, "\(name): the header ran off the window")
+            attachHostedScreenshot(window, name: "turn-usage-long-\(name)")
+            window.isHidden = true
+        }
+    }
+}
+
 /// A code block wider than the reading column grows into the chat's margins before it scrolls (TAL-1487).
 @MainActor
 extension TranscriptHostedTests {

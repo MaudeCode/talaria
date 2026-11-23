@@ -14,5 +14,7 @@ struct ContextWindowInfoRow: View {
                 .font(.caption)
                 .fontWeight(.medium)
         }
+        // One element, so a label is read with its value.
+        .accessibilityElement(children: .combine)
     }
 }

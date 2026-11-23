@@ -193,7 +193,7 @@ final class CacheStoreIncrementalTests: XCTestCase {
                     \.cacheKey, \.serverURLString, \.sessionID, \.sortIndex, \.role, \.content,
                     \.timestamp, \.messageId, \.name, \.toolCallId, \.toolUseId, \.toolCallsData,
                     \.contentPartsData, \.reasoning, \.reasoningTitlesData, \.activitySceneData,
-                    \.attachmentsData, \.turnDuration, \.turnTps, \.turnId, \.steerData,
+                    \.attachmentsData, \.turnDuration, \.turnTps, \.turnUsageData, \.turnId, \.steerData,
                     \.displayExcerpt, \.collapsible, \.displayBodyData, \.backgroundUpdateData,
                     \.talariaActivityData, \.deliveryData, \.backgroundSilent, \.markerKind, \.markerBody, \.refusedNotice, \.display,
                     \.cachedAt, \.expiresAt,
@@ -237,6 +237,7 @@ final class CacheStoreIncrementalTests: XCTestCase {
               "role": "assistant", "content": "\(content)", "message_id": "message-\(index)", "timestamp": \(index),
               "tool_calls": [{"id": "call-\(index)", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}],
               "reasoning": "Thinking", "reasoning_titles": ["Reviewing"],
+              "_turnUsage": {"input_tokens": \(index), "output_tokens": 2, "cache_read_tokens": 0, "cache_write_tokens": 0, "estimated_cost": null, "cache_hit_percent": null},
               "_display_content": "![a.png](./api/media?path=%2Ftmp%2Fa.png&session_id=chat)", "_media": \(media),
               "_anchor_activity_scene": {
                 "version": "activity_scene_v1", "final_answer": "\(content)", "final_answer_media": \(media),

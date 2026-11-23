@@ -9,6 +9,7 @@ struct ChatsSettingsView: View {
     @AppStorage(ChatTranscriptDisplaySettings.toolCardsStartExpandedKey) private var toolCardsStartExpanded = false
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
+    @AppStorage(ChatTranscriptDisplaySettings.showsTokenUsageKey) private var showsTokenUsage = false
     @AppStorage(ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey) private var wrapsCodeBlockLines = false
     @AppStorage(ChatTranscriptDisplaySettings.rtlChatLayoutEnabledKey)
     private var rtlChatLayoutEnabled = ChatTranscriptDisplaySettings.rtlChatLayoutDefaultEnabled
@@ -108,6 +109,17 @@ struct ChatsSettingsView: View {
                 )
 
                 SettingsToggleRow(
+                    title: SettingsIndex.chatWrapCodeBlockLines.title,
+                    systemImage: "arrow.turn.down.left",
+                    isOn: $wrapsCodeBlockLines
+                )
+
+                ToolCallsSettingsLink()
+            }
+
+            // What each reply's header line shows beside its glyph (TAL-1077 split it from Transcript at nine rows).
+            SettingsSection(title: String(localized: "Response Details")) {
+                SettingsToggleRow(
                     title: SettingsIndex.chatResponseTimestamps.title,
                     systemImage: "clock",
                     isOn: $showsAssistantTurnTimestamps
@@ -120,12 +132,10 @@ struct ChatsSettingsView: View {
                 )
 
                 SettingsToggleRow(
-                    title: SettingsIndex.chatWrapCodeBlockLines.title,
-                    systemImage: "arrow.turn.down.left",
-                    isOn: $wrapsCodeBlockLines
+                    title: SettingsIndex.chatTokenUsage.title,
+                    systemImage: "number",
+                    isOn: $showsTokenUsage
                 )
-
-                ToolCallsSettingsLink()
             }
 
             SettingsSection(

@@ -22,6 +22,7 @@ public final class CachedMessage {
     var attachmentsData: Data?
     var turnDuration: Double?
     var turnTps: Double?
+    var turnUsageData: Data?
     var turnId: String?
     var steerData: Data?
     var displayExcerpt: String?
@@ -87,6 +88,7 @@ public final class CachedMessage {
         row.setJSON(\.activitySceneData, message.activityScene)
         row.set(\.turnDuration, message.turnDuration)
         row.set(\.turnTps, message.turnTps)
+        row.setJSON(\.turnUsageData, message.turnUsage)
         row.set(\.turnId, message.turnId)
         row.setJSON(\.steerData, message.steer)
         row.set(\.displayExcerpt, message.displayExcerpt)

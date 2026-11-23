@@ -9,6 +9,8 @@ struct MessageBubbleView: View {
     @Environment(\.voiceNoteAction) private var voiceNoteAction
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
+    @AppStorage(ChatTranscriptDisplaySettings.showsTokenUsageKey) private var showsTokenUsage = false
+    @State private var showsTurnUsageDetails = false
     /// Device-local disclosure for a body the server collapsed (TAL-456) or a prompt it folds (TAL-452).
     @ChatRetainedState("message-body") private var isExpanded = false
 
@@ -221,6 +223,20 @@ struct MessageBubbleView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // TAL-1077: the reply's own token figures; a tap opens its cache and estimated-cost details.
+            if let usage = shownTurnUsage {
+                Button { showsTurnUsageDetails = true } label: {
+                    Text(TurnUsageFormatter.compactText(usage))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showsTurnUsageDetails) {
+                    ChatFiguresPopover(title: SettingsIndex.chatTokenUsage.title, rows: TurnUsageFormatter.detailRows(usage))
+                        .presentationCompactAdaptation(.none)
+                        .presentationBackground(.clear)
+                }
+            }
+
             // TAL-2339: what the turn changed, after the time and speed on the same line, which cuts it first.
             if let summary = assistantTurnSummaryText {
                 Text(summary)
@@ -233,6 +249,11 @@ struct MessageBubbleView: View {
         .font(AppFont.footnote())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(assistantTurnHeaderAccessibilityLabel)
+        .accessibilityActions {
+            if shownTurnUsage != nil {
+                Button(SettingsIndex.chatTokenUsage.title) { showsTurnUsageDetails = true }
+            }
+        }
     }
 
     private var showsAssistantTurnHeaderForThisMessage: Bool {
@@ -242,6 +263,8 @@ struct MessageBubbleView: View {
             isEnabled: showsAssistantTurnTimestamps,
             showsResponseSpeed: showsResponseSpeed,
             hasResponseSpeed: assistantResponseSpeedText != nil,
+            showsTokenUsage: showsTokenUsage,
+            hasTurnUsage: shownTurnUsage != nil,
             hasTurnSummary: assistantTurnSummaryText != nil
         )
     }
@@ -264,6 +287,11 @@ struct MessageBubbleView: View {
         return ResponseSpeedFormatter.compactText(isStreaming ? liveTokensPerSecond : message.turnTps)
     }
 
+    /// The settled reply's own usage, when the reader shows it; a streaming reply has none yet.
+    private var shownTurnUsage: TurnUsage? {
+        showsTokenUsage && !isStreaming ? message.turnUsage : nil
+    }
+
     private var assistantTurnSummaryText: String? {
         AssistantTurnSummary.changes(message.turnSummary)
     }
@@ -272,6 +300,7 @@ struct MessageBubbleView: View {
         let details = [
             assistantTurnTimeText,
             assistantResponseSpeedAccessibilityText,
+            shownTurnUsage.map { TurnUsageFormatter.accessibilityText($0) },
             assistantTurnSummaryText
         ].compactMap { $0 }
         guard !details.isEmpty else { return String(localized: "Assistant") }

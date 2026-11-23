@@ -577,6 +577,7 @@ private extension ChatMessage {
             attachments: attachments,
             turnDuration: cachedMessage.turnDuration,
             turnTps: cachedMessage.turnTps,
+            turnUsage: cachedMessage.turnUsageData.flatMap { try? JSONDecoder().decode(TurnUsage.self, from: $0) },
             turnId: cachedMessage.turnId,
             steer: cachedMessage.steerData.flatMap { try? JSONDecoder().decode([String: JSONValue].self, from: $0) },
             displayExcerpt: cachedMessage.displayExcerpt,

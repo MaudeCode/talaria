@@ -71,6 +71,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
     public internal(set) var attachments: [MessageAttachment]?
     public internal(set) var turnDuration: Double?
     public internal(set) var turnTps: Double?
+    /// TAL-1076: the settled turn's own token, cache and cost figures, on its last assistant row; nil when the server sent none.
+    public internal(set) var turnUsage: TurnUsage?
     /// TAL-2339: what the settled turn changed, which its reply's header words; nil without one.
     public internal(set) var turnSummary: [TurnSummaryPart]?
     /// The server turn this row belongs to; turns are grouped by equality of this id.
@@ -128,6 +130,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         attachments: [MessageAttachment]? = nil,
         turnDuration: Double? = nil,
         turnTps: Double? = nil,
+        turnUsage: TurnUsage? = nil,
         turnSummary: [TurnSummaryPart]? = nil,
         turnId: String? = nil,
         steer: [String: JSONValue]? = nil,
@@ -158,6 +161,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         self.attachments = attachments
         self.turnDuration = turnDuration
         self.turnTps = turnTps
+        self.turnUsage = turnUsage
         self.turnSummary = turnSummary
         self.turnId = turnId
         self.steer = steer
@@ -189,6 +193,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         case attachments
         case turnDuration = "_turnDuration"
         case turnTps = "_turnTps"
+        case turnUsage = "_turnUsage"
         case turnId = "_turnId"
         case steer = "_steer"
         case underscoredTimestamp = "_ts"
@@ -231,6 +236,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
             ?? activityScene?.turnDuration
         turnTps = container.decodeLossyDoubleIfPresent(forKey: .turnTps)
+        turnUsage = try? container.decodeIfPresent(TurnUsage.self, forKey: .turnUsage)
         turnSummary = activityScene?.turnSummary
         turnId = container.decodeLossyStringIfPresent(forKey: .turnId)
         steer = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steer)
@@ -348,6 +354,60 @@ extension ChatMessage {
         message.turnDuration = duration ?? turnDuration
         message.turnTps = tokensPerSecond ?? turnTps
         return message
+    }
+
+    /// The turn figures only `other`, an earlier copy of this same row, carries: a reload keeps them instead of dropping them.
+    mutating func fillTurnMetrics(from other: ChatMessage) {
+        turnDuration = turnDuration ?? other.turnDuration
+        turnTps = turnTps ?? other.turnTps
+        turnUsage = turnUsage ?? other.turnUsage
+    }
+}
+
+/// TAL-1076: one turn's own usage (`_turnUsage`), as the server recorded it. The four counts are required, so a record
+/// missing one is dropped whole; a cost or cache-hit figure the server could not give stays nil and is not shown.
+public struct TurnUsage: Codable, Equatable, Sendable {
+    public let inputTokens: Int
+    public let outputTokens: Int
+    public let cacheReadTokens: Int
+    public let cacheWriteTokens: Int
+    public let estimatedCost: Double?
+    public let cacheHitPercent: Int?
+
+    public init(
+        inputTokens: Int,
+        outputTokens: Int,
+        cacheReadTokens: Int,
+        cacheWriteTokens: Int,
+        estimatedCost: Double?,
+        cacheHitPercent: Int?
+    ) {
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.cacheReadTokens = cacheReadTokens
+        self.cacheWriteTokens = cacheWriteTokens
+        self.estimatedCost = estimatedCost
+        self.cacheHitPercent = cacheHitPercent
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, estimatedCost, cacheHitPercent
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func count(_ key: CodingKeys) throws -> Int {
+            guard let value = container.decodeLossyIntIfPresent(forKey: key), value >= 0 else {
+                throw DecodingError.dataCorruptedError(forKey: key, in: container, debugDescription: "Missing or negative token count")
+            }
+            return value
+        }
+        inputTokens = try count(.inputTokens)
+        outputTokens = try count(.outputTokens)
+        cacheReadTokens = try count(.cacheReadTokens)
+        cacheWriteTokens = try count(.cacheWriteTokens)
+        estimatedCost = container.decodeLossyDoubleIfPresent(forKey: .estimatedCost).flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+        cacheHitPercent = container.decodeLossyIntIfPresent(forKey: .cacheHitPercent).flatMap { (0...100).contains($0) ? $0 : nil }
     }
 }
 

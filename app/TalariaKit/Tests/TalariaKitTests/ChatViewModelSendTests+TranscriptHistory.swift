@@ -116,7 +116,7 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    func testDoneUsageAppliesResponseSpeedToLastAssistantInCompletedToolTurn() async throws {
+    func testDoneSettlesResponseSpeedAndTurnUsageOnLastAssistantInCompletedToolTurn() async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
             XCTAssertEqual(request.url?.path, "/api/chat/start")
@@ -138,7 +138,7 @@ extension ChatViewModelSendTests {
             {"role":"user","content":"Run a tool"},
             {"role":"assistant","content":"I'll inspect that."},
             {"role":"tool","content":"Tool output"},
-            {"role":"assistant","content":"Finished."}
+            {"role":"assistant","content":"Finished.","_turnUsage":{"input_tokens":1200,"output_tokens":134,"cache_read_tokens":900,"cache_write_tokens":0,"estimated_cost":0.0042,"cache_hit_percent":75}}
           ]
         }
         """)
@@ -161,6 +161,8 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(assistantMessages.count, 2)
         XCTAssertNil(assistantMessages.first?.turnTps)
         XCTAssertEqual(assistantMessages.last?.turnTps, 20.5)
+        // The settled reply carries its own usage; the turn's earlier reply gets none (TAL-1077).
+        XCTAssertEqual(assistantMessages.map(\.turnUsage), [nil, TurnUsage(inputTokens: 1200, outputTokens: 134, cacheReadTokens: 900, cacheWriteTokens: 0, estimatedCost: 0.0042, cacheHitPercent: 75)])
         XCTAssertFalse(viewModel.responseCompletionNeedsTranscriptRefresh)
     }
 

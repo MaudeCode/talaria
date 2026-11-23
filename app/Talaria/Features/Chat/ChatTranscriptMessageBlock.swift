@@ -561,6 +561,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             attachments: includesAttachments ? message.attachments : nil,
             turnDuration: includesTurnMetrics ? message.turnDuration : nil,
             turnTps: includesTurnMetrics ? message.turnTps : nil,
+            turnUsage: includesTurnMetrics ? message.turnUsage : nil,
             turnSummary: includesTurnMetrics ? AssistantTurnSummary.shownParts(message.turnSummary, besideGitRecap: showsGitRecap) : nil,
             turnId: message.turnId,
             steer: message.steer,

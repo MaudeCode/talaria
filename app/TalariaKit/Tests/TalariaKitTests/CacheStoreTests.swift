@@ -690,6 +690,33 @@ final class CacheStoreTests: XCTestCase {
         )
     }
 
+    /// TAL-1077: a reply's own usage decodes as the server sent it and survives an offline open; a record missing a
+    /// count is dropped whole, and a cost or cache-hit figure the server could not give stays nil.
+    func testTurnUsageDecodesTolerantlyAndRoundTripsThroughCache() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode([ChatMessage].self, from: Data(#"""
+        [{"role":"assistant","content":"Priced","message_id":"m1","_turnUsage":{"input_tokens":1200,"output_tokens":134,"cache_read_tokens":900,"cache_write_tokens":12,"estimated_cost":0.0042,"cache_hit_percent":75}},
+         {"role":"assistant","content":"Legacy","message_id":"m2"},
+         {"role":"assistant","content":"Unpriced","message_id":"m3","_turnUsage":{"input_tokens":10,"output_tokens":2,"cache_read_tokens":0,"cache_write_tokens":0,"estimated_cost":null,"cache_hit_percent":null}},
+         {"role":"assistant","content":"Bad figures","message_id":"m4","_turnUsage":{"input_tokens":10,"output_tokens":2,"cache_read_tokens":0,"cache_write_tokens":0,"estimated_cost":"soon","cache_hit_percent":140}},
+         {"role":"assistant","content":"No count","message_id":"m5","_turnUsage":{"input_tokens":10,"cache_read_tokens":0,"cache_write_tokens":0,"estimated_cost":1,"cache_hit_percent":5}},
+         {"role":"assistant","content":"Not a record","message_id":"m6","_turnUsage":"1200 in"}]
+        """#.utf8))
+        let priced = TurnUsage(inputTokens: 1200, outputTokens: 134, cacheReadTokens: 900, cacheWriteTokens: 12, estimatedCost: 0.0042, cacheHitPercent: 75)
+        let unpriced = TurnUsage(inputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, estimatedCost: nil, cacheHitPercent: nil)
+        let expected: [TurnUsage?] = [priced, nil, unpriced, unpriced, nil, nil]
+        XCTAssertEqual(messages.map(\.turnUsage), expected)
+        XCTAssertEqual(messages.map(\.content), ["Priced", "Legacy", "Unpriced", "Bad figures", "No count", "Not a record"])
+
+        let context = try makeContext()
+        let serverURL = URL(string: "https://example.test")!
+        let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
+        try CacheStore.cacheMessages(messages, serverURL: serverURL, sessionID: "abc123", in: context, cachedAt: cachedAt)
+        let restored = try CacheStore.cachedMessages(serverURL: serverURL, sessionID: "abc123", in: context, now: cachedAt.addingTimeInterval(60))
+        XCTAssertEqual(restored.map(\.turnUsage), expected)
+    }
+
     func testCachedMessagesKeepTheServerCollapsedExcerpt() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!
