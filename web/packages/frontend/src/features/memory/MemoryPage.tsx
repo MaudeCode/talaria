@@ -18,7 +18,7 @@ import { isApiError, isDefiniteRefusal } from '../../contracts/common'
 import { useResourceEffects, useResourceMutation, withEffect } from '../sessions/useResourceMutation'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { PendingWritesPanel, TextDiffReview } from '../pending-writes/PendingWritesPanel'
-import { isProfileChanged, useProfileChangedReset } from '../../app/queries'
+import { isProfileChanged, useReloadActiveProfile } from '../../app/queries'
 
 type Section = 'memory' | 'user' | 'soul' | 'project_context'
 type Writable = Exclude<Section, 'project_context'>
@@ -34,7 +34,10 @@ const SECTIONS: { id: Section; label: () => string; writable: boolean }[] = [
 
 export function MemoryPage() {
   const qc = useQueryClient()
-  const profileChanged = useProfileChangedReset()
+  const reloadProfile = useReloadActiveProfile()
+  // TAL-2717: a save refused because another tab switched profile. The reload onto that profile remounts this page, so it
+  // waits until Reload or Cancel discards the text.
+  const [profileMoved, setProfileMoved] = useState(false)
   const memory = useQuery({ queryKey: keys.memory, queryFn: () => api.fetchMemory(), staleTime: 15_000 })
   const [section, setSection] = useState<Section>('memory')
   // An open editor per tab; a tab without one shows the file rendered (device-local, kept across tab switches).
@@ -99,12 +102,12 @@ export function MemoryPage() {
       }
     },
     // A refused save rolls the read view back and reopens the editor with the user's text. Another tab's profile switch
-    // reads like a conflict: the page reloads onto the active profile and the text stays until Reload or Cancel drops it.
+    // reads like a conflict.
     onError: (e, vars) => {
       setDraft((d) => d[vars.target] ? d : { ...d, [vars.target]: vars.draft })
       if (isApiError(e) && (e.code === 'memory_conflict' || isProfileChanged(e))) setConflict((c) => ({ ...c, [vars.target]: e.message }))
       else showErrorToast(e)
-      profileChanged(e)
+      if (isProfileChanged(e)) setProfileMoved(true)
     },
     onSettled: (_result, _error, vars) => setSaving((s) => without(s, vars.target)),
   })
@@ -115,7 +118,7 @@ export function MemoryPage() {
     setDraft((all) => without(all, target))
     write.mutate({ target, draft: d })
   }
-  const reload = (target: Section) => { setDraft((d) => without(d, target)); setConflict((c) => without(c, target)); void memory.refetch() }
+  const reload = (target: Section) => { setDraft((d) => without(d, target)); setConflict((c) => without(c, target)); if (profileMoved) reloadProfile(); else void memory.refetch() }
   const data = memory.data ? withEffect(memory.data, { fields: effects['memory-compaction']?.fields ?? {} }) : undefined
   const current = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const serverText = data ? (section === 'project_context' ? data.project_context ?? '' : data[section]) : ''
@@ -194,7 +197,7 @@ export function MemoryPage() {
               {(section === 'memory' || section === 'user') && <Button disabled={generate.isPending || draft[section] !== undefined || !!effects['memory-compaction'] || !path} onClick={() => { setCompactionError(''); generate.mutate({ context, section, revision: data[`${section}_revision`] }) }}>{generate.isPending ? m.memory_compaction_generating() : m.memory_compaction_action()}</Button>}
               {editing && section !== 'project_context' && <>
                 <Button variant="primary" disabled={conflict[section] !== undefined || write.isPending} onClick={() => save(section)}>{m.save()}</Button>
-                <Button variant="ghost" onClick={() => { setDraft((d) => without(d, section)); setConflict((c) => without(c, section)) }}>{m.cancel()}</Button>
+                <Button variant="ghost" onClick={() => { setDraft((d) => without(d, section)); setConflict((c) => without(c, section)); if (profileMoved) reloadProfile() }}>{m.cancel()}</Button>
               </>}
             </div>
           )}

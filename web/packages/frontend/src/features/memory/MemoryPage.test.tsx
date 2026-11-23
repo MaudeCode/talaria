@@ -134,19 +134,20 @@ describe('Memory page (TAL-784)', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  // TAL-2717: another tab switched the shared profile; the page reloads onto it and the typed text stays.
-  it('keeps the typed text after a save refused with profile_changed, and reloads onto the active profile', async () => {
+  // TAL-2717: another tab switched the shared profile. Reloading onto it remounts the page, so the typed text stays until the
+  // user discards it.
+  it('keeps the typed text after a save refused with profile_changed, and reloads onto the active profile on Reload', async () => {
     const refused = 'The active profile changed to beta in another tab. Nothing was saved.'
     renderPage()
     await userEvent.type(await edit(), '!')
     vi.mocked(api.writeMemory).mockRejectedValue(new ApiError({ kind: 'http', status: 409, path: '/api/memory/write', message: refused, body: { error: refused, condition: 'profile_changed' } }))
-    vi.mocked(api.fetchMemory).mockResolvedValue({ ...memory('Beta entry', 'b1'), profile: 'beta' })
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(api.writeMemory).toHaveBeenCalledWith({ section: 'memory', content: 'Entry A!', revision: 'r1', profile: 'default' })
     expect(await screen.findByRole('alert')).toHaveTextContent(refused)
-    await waitFor(() => expect(api.fetchMemory).toHaveBeenCalledTimes(2))
-    expect(await screen.findByRole('textbox', { name: 'Memory' })).toHaveValue('Entry A!')
+    expect(screen.getByRole('textbox', { name: 'Memory' })).toHaveValue('Entry A!')
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(loadBootstrap).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Reload' }))
     expect(loadBootstrap).toHaveBeenCalledTimes(1)
   })
 

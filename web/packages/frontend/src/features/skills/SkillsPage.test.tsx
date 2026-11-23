@@ -71,6 +71,22 @@ it('rolls a toggle refused with profile_changed back, shows the server error and
   expect(loadBootstrap).toHaveBeenCalledTimes(1)
 })
 
+it('keeps a skill edit refused with profile_changed, and reloads the profile once the editor is left', async () => {
+  const refused = 'The active profile changed to beta in another tab. Nothing was saved.'
+  vi.mocked(api.saveSkill).mockRejectedValue(new ApiError({ kind: 'http', status: 409, path: '/api/skills/save', message: refused, body: { error: refused, condition: 'profile_changed' } }))
+  renderSkills()
+  await userEvent.click(await screen.findByRole('button', { name: /^demo/ }))
+  const editor = await screen.findByRole('textbox')
+  await userEvent.type(editor, '!')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(api.saveSkill).toHaveBeenCalledWith('demo', 'Current editable content!', 'default')
+  await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith(refused, 4000, 'error'))
+  expect(editor).toHaveValue('Current editable content!')
+  expect(loadBootstrap).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: 'Back' }))
+  expect(loadBootstrap).toHaveBeenCalledTimes(1)
+})
+
 it('unlocks a locked skill from its row menu, the same action as the row control', async () => {
   lockRow(true)
   vi.mocked(api.lockSkill).mockResolvedValue({ ok: true, name: 'demo', locked: false })
