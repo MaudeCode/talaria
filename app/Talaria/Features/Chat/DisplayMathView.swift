@@ -106,11 +106,23 @@ enum InlineMathImages {
         let baseline: CGFloat
         let latex: String
 
+        /// Bytes the bitmap holds.
+        var cost: Int { image.bytesPerRow * image.height }
+
         /// The image as a Text attachment on the line's baseline, read aloud as its LaTeX.
         var text: Text {
             Text(Image(image, scale: scale, orientation: .up, label: Text(verbatim: latex))).baselineOffset(-baseline)
         }
     }
+
+    struct Key: Hashable {
+        let latex: String
+        let style: InlineMathImageStyle
+    }
+
+    /// A bitmap holds at most this many pixels; a larger expression draws at a lower scale, so a crafted reply cannot
+    /// make one image arbitrarily large.
+    static let maxPixels = 1 << 20
 
     private final class Box {
         let drawing: Drawing
@@ -151,7 +163,7 @@ enum InlineMathImages {
         if let cached = cached(latex, style: style) { return cached }
         let drawing = typeset(latex, style: style) ?? approximation(latex, style: style)
         drawCounts[latex, default: 0] += 1
-        storage.setObject(Box(drawing), forKey: key(latex, style), cost: drawing.image.bytesPerRow * drawing.image.height)
+        storage.setObject(Box(drawing), forKey: key(latex, style), cost: drawing.cost)
         return drawing
     }
 
@@ -163,11 +175,12 @@ enum InlineMathImages {
         UIColor.label.resolvedColor(with: UITraitCollection(userInterfaceStyle: style.colorScheme == .dark ? .dark : .light))
     }
 
-    private static func renderer(_ size: CGSize, _ style: InlineMathImageStyle) -> UIGraphicsImageRenderer {
+    /// A renderer at the display scale, or lower when that would pass `maxPixels`.
+    private static func renderer(_ size: CGSize, _ style: InlineMathImageStyle) -> (UIGraphicsImageRenderer, CGFloat) {
         let format = UIGraphicsImageRendererFormat()
-        format.scale = style.scale
+        format.scale = min(style.scale, (CGFloat(maxPixels) / max(1, size.width * size.height)).squareRoot())
         format.opaque = false
-        return UIGraphicsImageRenderer(size: size, format: format)
+        return (UIGraphicsImageRenderer(size: size, format: format), format.scale)
     }
 
     private static func typeset(_ latex: String, style: InlineMathImageStyle) -> Drawing? {
@@ -179,8 +192,9 @@ enum InlineMathImages {
         guard size.width > 0, size.height > 0 else { return nil }
         label.frame = CGRect(origin: .zero, size: size)
         label.layoutSubviews()
+        let (renderer, scale) = renderer(size, style)
         guard let display = label.displayList,
-              let image = renderer(size, style).image(actions: { context in
+              let image = renderer.image(actions: { context in
                   // SwiftMath draws with its origin at the bottom left.
                   context.cgContext.translateBy(x: 0, y: size.height)
                   context.cgContext.scaleBy(x: 1, y: -1)
@@ -190,7 +204,7 @@ enum InlineMathImages {
         // Where `MTMathUILabel` lays the baseline out: centred, for an expression shorter than half the font size.
         let height = max(display.ascent + display.descent, style.fontSize / 2)
         let baseline = (size.height - height) / 2 + display.descent
-        return Drawing(image: image, scale: style.scale, baseline: baseline, latex: latex)
+        return Drawing(image: image, scale: scale, baseline: baseline, latex: latex)
     }
 
     /// LaTeX SwiftMath cannot parse keeps the text approximation display math falls back to, drawn the same way.
@@ -200,8 +214,9 @@ enum InlineMathImages {
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color(style)]
         let measured = text.size(withAttributes: attributes)
         let size = CGSize(width: max(1, ceil(measured.width)), height: max(1, ceil(measured.height)))
-        let image = renderer(size, style).image { _ in text.draw(at: .zero, withAttributes: attributes) }
-        return Drawing(image: image.cgImage!, scale: style.scale, baseline: -font.descender, latex: latex)
+        let (renderer, scale) = renderer(size, style)
+        let image = renderer.image { _ in text.draw(at: .zero, withAttributes: attributes) }
+        return Drawing(image: image.cgImage!, scale: scale, baseline: -font.descender, latex: latex)
     }
 }
 
@@ -227,32 +242,44 @@ struct InlineMathParagraphText: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
-    @State private var drawn = 0
+    /// What this paragraph drew, so the cache evicting an image never sends it back to be drawn again.
+    @State private var drawn: [InlineMathImages.Key: InlineMathImages.Drawing] = [:]
 
     /// Each image adds to a chain of `Text` concatenations, which overflows the stack long before MarkdownUI's limit
     /// on inline elements (TAL-2024); a paragraph with more expressions keeps their approximations in one `Text`.
     static let maxImages = 100
+    /// Bytes of images one paragraph draws; expressions past it keep their approximations, so a crafted reply cannot
+    /// keep the main actor drawing or the paragraph holding memory without bound.
+    static let drawingBudget = 8 * 1024 * 1024
 
     var body: some View {
         let style = InlineMathImageStyle(colorScheme: colorScheme, scale: displayScale)
         let paragraph = ChatMarkdownInlineStyle.flatParagraph(markdown: markdown, plainText: plainText, colorScheme: colorScheme)
-        let composed = Self.compose(paragraph, style: style)
-        // Reading `drawn` re-evaluates the paragraph once its missing images are cached.
-        let _ = drawn
+        let composed = Self.compose(paragraph, style: style, drawn: drawn)
         composed.text
             .task(id: composed.missing) {
                 guard !composed.missing.isEmpty else { return }
-                for latex in composed.missing {
+                var drawings = drawn
+                var spent = composed.spent
+                for latex in composed.missing where spent < Self.drawingBudget {
                     await Task.yield()
                     if Task.isCancelled { return }
-                    InlineMathImages.draw(latex, style: style)
+                    let drawing = InlineMathImages.draw(latex, style: style)
+                    drawings[InlineMathImages.Key(latex: latex, style: style)] = drawing
+                    spent += drawing.cost
                 }
-                drawn += 1
+                drawn = drawings
             }
     }
 
-    /// The paragraph as one `Text`, and the expressions whose images are not cached yet.
-    static func compose(_ paragraph: AttributedString, style: InlineMathImageStyle) -> (text: Text, missing: [String]) {
+    /// The paragraph as one `Text`, the bytes of the images it uses, and the expressions it still needs drawn, in
+    /// order. Images are used in order, from what the paragraph drew or the cache, until they reach `drawingBudget`;
+    /// later expressions keep their approximations and are never drawn.
+    static func compose(
+        _ paragraph: AttributedString,
+        style: InlineMathImageStyle,
+        drawn: [InlineMathImages.Key: InlineMathImages.Drawing] = [:]
+    ) -> (text: Text, spent: Int, missing: [String]) {
         let expressions = paragraph.runs.compactMap { run in InlineMathReference.latex(from: run.imageURL).map { (run.range, $0) } }
         // Adjacent copies of one expression share a run, one character each, and each is its own attachment.
         let attachments = expressions.reduce(0) { $0 + paragraph[$1.0].characters.count }
@@ -261,23 +288,28 @@ struct InlineMathParagraphText: View {
             for (range, latex) in expressions.reversed() {
                 approximated.characters.replaceSubrange(range, with: MarkdownMathFormatter.renderedText(for: latex))
             }
-            return (Text(approximated), [])
+            return (Text(approximated), 0, [])
         }
         var text = Text(verbatim: "")
         var missing: [String] = []
+        var spent = 0
+        var used: Set<String> = []
         var cursor = paragraph.startIndex
         for (range, latex) in expressions {
             text = text + Text(AttributedString(paragraph[cursor..<range.lowerBound]))
-            if let drawing = InlineMathImages.cached(latex, style: style) {
+            let withinBudget = spent < drawingBudget || used.contains(latex)
+            if withinBudget,
+               let drawing = drawn[InlineMathImages.Key(latex: latex, style: style)] ?? InlineMathImages.cached(latex, style: style) {
+                if used.insert(latex).inserted { spent += drawing.cost }
                 for _ in paragraph[range].characters { text = text + drawing.text }
             } else {
-                if !missing.contains(latex) { missing.append(latex) }
+                if withinBudget, !missing.contains(latex) { missing.append(latex) }
                 var approximation = AttributedString(paragraph[range])
                 approximation.characters.replaceSubrange(approximation.startIndex..., with: MarkdownMathFormatter.renderedText(for: latex))
                 text = text + Text(approximation)
             }
             cursor = range.upperBound
         }
-        return (text + Text(AttributedString(paragraph[cursor...])), missing)
+        return (text + Text(AttributedString(paragraph[cursor...])), spent, missing)
     }
 }

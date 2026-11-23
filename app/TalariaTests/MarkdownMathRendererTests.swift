@@ -29,6 +29,34 @@ final class MarkdownMathRendererTests: XCTestCase {
         XCTAssertEqual(InlineMathImages.drawCounts, [latex: 1])
     }
 
+    /// TAL-971: a reply cannot keep the main actor drawing without bound. Each image stays under `maxPixels`, a
+    /// paragraph stops drawing once its images reach `drawingBudget`, and it then asks for nothing more.
+    @MainActor
+    func testHeavyParagraphStopsDrawingAtItsBudget() async throws {
+        InlineMathImages.removeAll()
+        let expressions = (0..<40).map { "x_{\($0)}" + String(repeating: #"+\sum_{i}^{n}"#, count: 30) }
+        let content = expressions.map { "$\($0)$" }.joined(separator: " ")
+        let window = try hostWindow(MarkdownRenderer(content: content))
+        let style = InlineMathImageStyle(colorScheme: .light, scale: window.traitCollection.displayScale)
+        let drawings = { InlineMathImages.drawCounts.keys.compactMap { InlineMathImages.cached($0, style: style) } }
+
+        let reached = await awaitCondition {
+            drawings().reduce(0) { $0 + $1.cost } >= InlineMathParagraphText.drawingBudget
+        }
+        XCTAssertTrue(reached, "The paragraph drew \(InlineMathImages.drawCounts.count) expressions")
+
+        XCTAssertLessThan(InlineMathImages.drawCounts.count, expressions.count)
+        XCTAssertEqual(Set(InlineMathImages.drawCounts.values), [1])
+        for drawing in drawings() {
+            XCTAssertLessThanOrEqual(drawing.image.width * drawing.image.height, InlineMathImages.maxPixels)
+        }
+        guard case .plain(let markdown) = MarkdownMathLayoutCache.uncachedLayout(for: content) else {
+            return XCTFail("Inline math must not segment")
+        }
+        let paragraph = ChatMarkdownInlineStyle.flatParagraph(markdown: markdown, plainText: markdown, colorScheme: .light)
+        XCTAssertEqual(InlineMathParagraphText.compose(paragraph, style: style).missing, [], "The settled paragraph asks for more")
+    }
+
     /// TAL-971: inline math draws as an image inside its line, in a paragraph, a list item and emphasis, read aloud as
     /// its LaTeX between the words around it.
     @MainActor
