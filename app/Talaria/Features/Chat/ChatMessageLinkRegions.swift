@@ -186,13 +186,15 @@ struct ChatMarkdownParagraph: View {
 
     /// TAL-2024: MarkdownUI's label is one `Text` `+` per inline, which overflows the phone's stack on a long paragraph;
     /// such a paragraph draws as one `Text` instead. A paragraph with inline math draws its expressions in the line of
-    /// text, which MarkdownUI does only after loading its images (TAL-971).
+    /// text, which MarkdownUI does only after loading its images (TAL-971). One that holds other images too keeps
+    /// MarkdownUI's label, whose providers load both.
     @ViewBuilder
     private var label: some View {
         let markdown = configuration.content.renderMarkdown()
-        if InlineMathReference.occurs(in: markdown) {
+        let tooManyInlines = MarkdownContentRenderingPolicy.hasTooManyInlineElements(markdown)
+        if InlineMathReference.occurs(in: markdown), tooManyInlines || !InlineMathReference.hasOtherImages(in: markdown) {
             InlineMathParagraphText(markdown: markdown, plainText: configuration.content.renderPlainText())
-        } else if MarkdownContentRenderingPolicy.hasTooManyInlineElements(markdown) {
+        } else if tooManyInlines {
             Text(
                 ChatMarkdownInlineStyle.flatParagraph(
                     markdown: markdown,

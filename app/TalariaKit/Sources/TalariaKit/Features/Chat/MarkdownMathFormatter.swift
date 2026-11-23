@@ -274,6 +274,12 @@ public enum InlineMathReference {
         markdown.contains("](\(scheme):")
     }
 
+    /// Whether Markdown holds an image other than inline math. Literal `![` text also counts, which only costs a
+    /// paragraph its synchronous math drawing.
+    public static func hasOtherImages(in markdown: String) -> Bool {
+        markdown.components(separatedBy: "![").count > markdown.components(separatedBy: "](\(scheme):").count
+    }
+
     /// Plain text with each expression's one-character alt replaced by its LaTeX, which VoiceOver reads (TAL-971).
     /// Nil when the Markdown holds no inline math.
     public static func spokenText(plainText: String, markdown: String) -> String? {

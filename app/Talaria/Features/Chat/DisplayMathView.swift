@@ -254,7 +254,9 @@ struct InlineMathParagraphText: View {
     /// The paragraph as one `Text`, and the expressions whose images are not cached yet.
     static func compose(_ paragraph: AttributedString, style: InlineMathImageStyle) -> (text: Text, missing: [String]) {
         let expressions = paragraph.runs.compactMap { run in InlineMathReference.latex(from: run.imageURL).map { (run.range, $0) } }
-        guard expressions.count <= maxImages else {
+        // Adjacent copies of one expression share a run, one character each, and each is its own attachment.
+        let attachments = expressions.reduce(0) { $0 + paragraph[$1.0].characters.count }
+        guard attachments <= maxImages else {
             var approximated = paragraph
             for (range, latex) in expressions.reversed() {
                 approximated.characters.replaceSubrange(range, with: MarkdownMathFormatter.renderedText(for: latex))
@@ -267,7 +269,6 @@ struct InlineMathParagraphText: View {
         for (range, latex) in expressions {
             text = text + Text(AttributedString(paragraph[cursor..<range.lowerBound]))
             if let drawing = InlineMathImages.cached(latex, style: style) {
-                // Adjacent copies of one expression share a run, one character each.
                 for _ in paragraph[range].characters { text = text + drawing.text }
             } else {
                 if !missing.contains(latex) { missing.append(latex) }
