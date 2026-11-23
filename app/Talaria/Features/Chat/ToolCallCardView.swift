@@ -20,7 +20,6 @@ struct ToolCallCardView: View {
     /// TAL-2338: the reader's choice of the open row's raw view; nil until they choose, so the row opens as the server says
     /// (TAL-2341 `opens_raw`, else formatted).
     @ChatRetainedState("tool-raw") private var showsRaw: Bool? = nil
-    @State private var copyConfirmation = ChatCodeBlock.CopyConfirmation()
 
     init(toolCall: ToolCall, isOnPage: Bool = false) {
         self.toolCall = toolCall
@@ -396,8 +395,6 @@ struct ToolCallCardView: View {
                 Button {
                     chatDisclosureToggled()
                     showsRaw = !isRaw
-                    // The checkmark confirmed the other view's copy.
-                    copyConfirmation.reset()
                     if isRaw, toolCall.resultTruncated, fullResult == nil {
                         startFullResult()
                     }
@@ -412,28 +409,14 @@ struct ToolCallCardView: View {
                 .accessibilityAddTraits(isRaw ? .isSelected : [])
                 .help(isRaw ? String(localized: "Show formatted") : String(localized: "Show raw"))
             }
-            Button {
-                PlatformHooks.copyText(copyText)
-                copyConfirmation.copied(at: .now)
-            } label: {
-                Image(systemName: copyConfirmation.isShowing ? "checkmark" : "doc.on.doc")
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-                    .contentTransition(.symbolEffect(.replace))
-            }
-            .disabled(copyText.isEmpty || copyBlocked)
-            .accessibilityLabel(copyConfirmation.isShowing ? String(localized: "Copied") : isRaw ? String(localized: "Copy raw") : String(localized: "Copy"))
-            .help(isRaw ? String(localized: "Copy raw") : String(localized: "Copy"))
+            ChatCopyButton(copyText, label: isRaw ? String(localized: "Copy raw") : String(localized: "Copy"))
+                .disabled(copyText.isEmpty || copyBlocked)
+                // A new button per view: the checkmark confirmed the other view's copy.
+                .id(isRaw)
         }
         .buttonStyle(.borderless)
         .font(AppFont.caption(weight: .semibold))
         .foregroundStyle(.secondary)
-        .task(id: copyConfirmation.expiresAt) {
-            guard let expiresAt = copyConfirmation.expiresAt else { return }
-            try? await Task.sleep(until: expiresAt, clock: .continuous)
-            guard !Task.isCancelled else { return }
-            copyConfirmation.expire(at: .now)
-        }
     }
 
     /// A section's label, carrying the row's tools at its end when it is the first section.

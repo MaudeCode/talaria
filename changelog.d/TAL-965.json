@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Copy a finished reply with the Copy button under it, without a long press.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Copy replies in one tap",
+        "description": "A Copy button under each finished reply puts its text on the clipboard.",
+        "icon": "chat"
+      }
+    }
+  ]
+}
