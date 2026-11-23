@@ -1041,7 +1041,9 @@ class GuideTests(unittest.TestCase):
                 "Do not look again after that round",
                 "a flake never authorizes a release, a deploy or replaying a partial publication",
                 "This is the owner-approved exception to the human gates in [AGENTS.md](../AGENTS.md)",
-                "It never reads any comment, reply or review text"):
+                "It never reads any comment, reply or review text",
+                "open it with `--label hosted-tests`",
+                "never close and reopen it to restart CI, push a commit instead"):
             self.assertIn(required, guide)
         # The exception the guide claims is the one the repository's rules record.
         rules = " ".join((Path(__file__).parent.parent / "AGENTS.md").read_text().split())
