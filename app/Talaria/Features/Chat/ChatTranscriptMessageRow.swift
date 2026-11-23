@@ -40,13 +40,15 @@ struct ChatTranscriptMessageRow: View {
 #if DEBUG
         let _ = isStreaming ? () : ChatBodyEvaluationRecorder.record("settledRow")
 #endif
-        // Rows the server marked as compaction markers render as collapsible
-        // lines (as on Web), never as user bubbles — and without bubble actions,
-        // which don't apply to system-emitted markers.
+        // Rows the server marked as compaction markers or mirrored deliveries
+        // render as their own lines (as on Web), never as user bubbles — and
+        // without bubble actions, which don't apply to system-emitted rows.
         if let activity = message.talariaActivity, message.backgroundUpdate == nil {
             MarkerMessageCardView(activity: activity, stateID: activity.id, messageID: message.messageId)
         } else if let markerKind = message.markerKind {
             MarkerMessageCardView(kind: markerKind, content: message.markerBody ?? message.content, stateID: message.messageId ?? "index:\(visibleIndex)")
+        } else if let delivery = message.delivery {
+            MarkerMessageCardView(delivery: delivery)
         } else if let actionContext {
             // The actions hang off the transcript's long press rather than a
             // bubble `contextMenu`: a press over a link opens the link's own

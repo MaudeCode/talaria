@@ -1,13 +1,14 @@
 import SwiftUI
 import TalariaKit
 
-/// A row the server marks as a compaction marker, preserved task list (TAL-305) or refused ask (TAL-2058), in place of a
-/// message bubble: one flat disclosure line on the `ReasoningBlockView` pattern, so it reads like the transcript's other
-/// activity rows (TAL-1566).
+/// A row the server marks as a compaction marker, preserved task list (TAL-305), refused ask (TAL-2058) or mirrored
+/// delivery (TAL-1003), in place of a message bubble: one flat disclosure line on the `ReasoningBlockView` pattern, so it
+/// reads like the transcript's other activity rows (TAL-1566).
 struct MarkerMessageCardView: View {
     let kind: ChatMarkerMessageKind?
     let content: String?
     let activity: TalariaActivity?
+    let delivery: MessageDelivery?
     let messageID: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -20,14 +21,24 @@ struct MarkerMessageCardView: View {
         self.kind = kind
         self.content = content
         self.activity = nil
+        self.delivery = nil
         self.messageID = nil
         _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
+    }
+
+    init(delivery: MessageDelivery) {
+        self.kind = nil
+        self.content = delivery.body
+        self.activity = nil
+        self.delivery = delivery
+        self.messageID = nil
     }
 
     init(activity: TalariaActivity, stateID: String, messageID: String? = nil) {
         self.kind = nil
         self.content = activity.details
         self.activity = activity
+        self.delivery = nil
         self.messageID = messageID
         _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
     }
@@ -38,7 +49,9 @@ struct MarkerMessageCardView: View {
     private var reviewID: String? { activity?.target?.kind == "decision_review" && openReview != nil ? activity?.target?.id : nil }
 
     var body: some View {
-        if case .contentRefused(let notice) = kind {
+        if let delivery {
+            deliveryNotice(delivery)
+        } else if case .contentRefused(let notice) = kind {
             refusedAsk(notice: notice)
         } else if kind == .failedTurn {
             failedTurnNotice
@@ -57,6 +70,20 @@ struct MarkerMessageCardView: View {
                 .font(AppFont.body())
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 24)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// TAL-1003: a webhook or cron delivery the Agent mirrored into a messaging chat, titled by its source with the
+    /// delivered text beneath as Markdown; nothing to open and no actions.
+    private func deliveryNotice(_ delivery: MessageDelivery) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            noticeLine(delivery.kind == .webhook
+                ? String(localized: "Webhook “\(delivery.name)” delivered")
+                : String(localized: "Scheduled job “\(delivery.name)” delivered"))
+            MarkdownRenderer(content: delivery.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 24)
         }
@@ -118,6 +145,11 @@ struct MarkerMessageCardView: View {
     }
 
     private var iconName: String {
+        switch delivery?.kind {
+        case .webhook: return "bolt.horizontal.circle"
+        case .cron: return "calendar.badge.clock"
+        case nil: break
+        }
         switch kind {
         case .contextCompaction:
             return "arrow.down.right.and.arrow.up.left"

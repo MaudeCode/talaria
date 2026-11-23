@@ -88,6 +88,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
     /// The server marked this row an automatic background wakeup (TAL-371): render its completion lines, not the user's bubble.
     public internal(set) var backgroundUpdate: BackgroundUpdate?
     public internal(set) var talariaActivity: TalariaActivity?
+    /// TAL-1003: a webhook or cron delivery the Agent mirrored into a messaging chat (TAL-816): a notice, never the user's bubble.
+    public internal(set) var delivery: MessageDelivery?
     /// The server marked this row part of a background reply that is only a silence marker (TAL-460): it is not shown.
     public internal(set) var backgroundSilent: Bool
     /// The server marked this row a compaction marker (TAL-305), refused ask (TAL-2058) or failed-turn notice (TAL-984):
@@ -138,7 +140,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         markerKind: ChatMarkerMessageKind? = nil,
         markerBody: String? = nil,
         display: Display? = nil,
-        talariaActivity: TalariaActivity? = nil
+        talariaActivity: TalariaActivity? = nil,
+        delivery: MessageDelivery? = nil
     ) {
         self.role = role
         self.content = content
@@ -168,6 +171,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         self.markerBody = markerBody
         self.display = display
         self.talariaActivity = talariaActivity
+        self.delivery = delivery
     }
 
     enum CodingKeys: String, CodingKey {
@@ -196,6 +200,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         case media = "_media"
         case backgroundUpdate = "_backgroundUpdate"
         case talariaActivity = "_talariaActivity"
+        case delivery = "_delivery"
         case backgroundSilent = "_backgroundSilent"
         case markerKind = "_markerKind"
         case markerBody = "_markerBody"
@@ -240,6 +245,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         )
         backgroundUpdate = try? container.decodeIfPresent(BackgroundUpdate.self, forKey: .backgroundUpdate)
         talariaActivity = try? container.decodeIfPresent(TalariaActivity.self, forKey: .talariaActivity)
+        delivery = try? container.decodeIfPresent(MessageDelivery.self, forKey: .delivery)
         backgroundSilent = (try? container.decodeIfPresent(Bool.self, forKey: .backgroundSilent)) == true
         markerKind = ChatMarkerMessageKind(
             wireValue: container.decodeLossyStringIfPresent(forKey: .markerKind),
@@ -342,6 +348,25 @@ extension ChatMessage {
         message.turnDuration = duration ?? turnDuration
         message.turnTps = tokensPerSecond ?? turnTps
         return message
+    }
+}
+
+/// TAL-1003: the server's `_delivery` stamp on a row the Agent's gateway mirrored from a webhook or cron job (TAL-816).
+public struct MessageDelivery: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable {
+        case webhook, cron
+    }
+
+    public let kind: Kind
+    /// The webhook route or scheduled job's name.
+    public let name: String
+    /// The delivered text, as Markdown, without the label line.
+    public let body: String
+
+    public init(kind: Kind, name: String, body: String) {
+        self.kind = kind
+        self.name = name
+        self.body = body
     }
 }
 

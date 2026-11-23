@@ -2459,6 +2459,48 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "content-refused-phone")
     }
 
+    /// TAL-1003: the shared contract's `delivery_session` shows each mirrored webhook and cron delivery as a notice
+    /// titled by its source, its text beneath and no message actions; the typed rows, and one that starts with the
+    /// same label but carries no `_delivery`, stay the user's bubbles.
+    func testMirroredDeliveriesShowAsNoticesAndTypedRowsStayBubbles() async throws {
+        let fixture = try FixtureApp(for: self)
+        let sessions = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("web-session")) as? [String: Any])
+        var rows = try XCTUnwrap((sessions["delivery_session"] as? [String: Any])?["messages"] as? [[String: Any]])
+        let deliveries = rows.compactMap { $0["_delivery"] as? [String: String] }
+        let typed = rows.filter { $0["role"] as? String == "user" && $0["_delivery"] == nil }.compactMap { $0["content"] as? String }
+        XCTAssertEqual(deliveries.map { $0["kind"] }, ["webhook", "cron"])
+        XCTAssertEqual(typed.count, 2)
+        let lookalike = "[Webhook delivery: \(deliveries[0]["name"] ?? "")]\nTyped by hand."
+        rows.append(["role": "user", "content": lookalike, "message_id": "delivery-lookalike", "_display": "row"])
+        var detail = UITestFixtureURLProtocol.session(id: UITestFixtureURLProtocol.sessionID, title: "Deliveries")
+        detail["messages"] = rows
+        let sessionBody = try JSONSerialization.data(withJSONObject: ["session": detail])
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = sessionBody }
+        let window = try hostWindow(fixture.chat(try await fixture.session()), size: HostedSize.phone)
+        defer { window.isHidden = true }
+
+        for delivery in deliveries {
+            let name = delivery["name"] ?? ""
+            let title = delivery["kind"] == "webhook" ? "Webhook “\(name)” delivered" : "Scheduled job “\(name)” delivered"
+            let notice = try await requireElement(in: window, label: title, "The \(delivery["kind"] ?? "") delivery is not a notice")
+            let hit = try messageMenuHit(at: notice, in: window)
+            XCTAssertNil(hit, "The \(title) notice offers message actions: \(hit?.content.actions.map(\.title) ?? [])")
+        }
+        let body = try await requireElement(in: window, label: deliveries[0]["body"] ?? "", "The webhook's text is not shown")
+        let webhook = try await requireElement(in: window, label: "Webhook “\(deliveries[0]["name"] ?? "")” delivered")
+        XCTAssertLessThan(webhook.accessibilityFrame.maxY, body.accessibilityFrame.minY + 1, "The text is not beneath its title")
+        let labels = HostedAccessibility.elements(in: window).compactMap(\.accessibilityLabel)
+        XCTAssertFalse(labels.contains { $0.contains("[Cron delivery:") }, "The cron delivery shows its raw label")
+        XCTAssertEqual(labels.filter { $0.contains("[Webhook delivery:") }, [lookalike], "Only the typed look-alike shows the label")
+        for text in typed + [lookalike] {
+            let bubble = try await requireElement(in: window, label: text)
+            let actions = try XCTUnwrap(try messageMenuHit(at: bubble, in: window), "\(text) is not a user bubble").content.actions
+            XCTAssertTrue(actions.contains { $0.title == "Edit Message" }, "\(text) lost Edit")
+        }
+        settle(0.3)
+        attachHostedScreenshot(window, name: "deliveries-phone")
+    }
+
     /// What the transcript's long press resolves to at `element`'s centre (TAL-485): the press handler's own registry
     /// and policy, read from the hosted transcript. The touch arbitration itself is the phone check's.
     private func messageMenuTarget(at element: NSObject, in window: UIWindow) throws -> ChatMessageMenuTarget? {
