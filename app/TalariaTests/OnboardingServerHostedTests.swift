@@ -161,7 +161,9 @@ final class OnboardingServerHostedTests: XCTestCase {
         XCTAssertTrue(HostedAccessibility.activate(button), "\(label) did not run", file: file, line: line)
     }
 
-    /// Types `text` into the field labelled `label` through the text field's own input path, as the keyboard does.
+    /// Fills the field labelled `label` through its text and editing-changed action, never by focusing it: a focused
+    /// password field that leaves the screen makes the keyboard offer to save the password, and that offer stays
+    /// presented in the keyboard's window, so a later test that waits for nothing to be presented waits forever.
     private func enter(_ text: String, intoField label: String, in window: UIWindow,
                        file: StaticString = #filePath, line: UInt = #line) async throws {
         // SwiftUI labels the field's accessibility element, not the text field under it, so the field is the one that
@@ -177,11 +179,10 @@ final class OnboardingServerHostedTests: XCTestCase {
         let fields = window.views(ofType: UITextField.self).map { "\($0.placeholder ?? "nil") \($0.accessibilityFrame)" }
         XCTAssertTrue(found, "Missing the \(label) field among \(fields)", file: file, line: line)
         let input = try XCTUnwrap(field(), file: file, line: line)
-        input.becomeFirstResponder()
-        input.insertText(text)
-        let entered = await awaitCondition { input.text == text }
-        XCTAssertTrue(entered, "The \(label) field reads \(input.text ?? "nil")", file: file, line: line)
-        input.resignFirstResponder()
+        input.text = text
+        input.sendActions(for: .editingChanged)
+        // The field's binding reaches SwiftUI's state on its next render.
+        if let scene = window.windowScene { await awaitDisplayUpdates(2, in: scene) }
     }
 
     /// Activates `button` on a server page, checks its alert's title, then answers it with `answer`.
