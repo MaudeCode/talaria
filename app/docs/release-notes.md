@@ -16,9 +16,12 @@ No release-time writing or LLM call is needed.
 
 ## Commits and PR descriptions
 
-Use `TAL-<number>: <concrete outcome>` for every tracked commit subject and PR
-title. For an approved batch, use `TAL-101, TAL-102: <shared outcome>` and add a
-fragment for each ticket. In the commit body, explain the triggering problem,
+Use `<type>: <concrete outcome> (TAL-<number>)` for every tracked commit subject
+and PR title, such as `fix(web): keep the draft when a chat is renamed (TAL-123)`.
+The `commit-messages` skill chooses the type, which release tooling reads to
+suggest the next version. For an approved batch, use
+`<type>: <shared outcome> (TAL-101, TAL-102)` and add a fragment for each ticket.
+In the commit body, explain the triggering problem,
 the resulting behavior, and the validation when the subject alone is insufficient.
 
 Use the PR template. Explain the user-visible outcome in **What changed**, report
