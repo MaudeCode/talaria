@@ -135,6 +135,10 @@ public final class SessionListViewModel {
     /// reloads below that follow a mutation — so exactly one owner serves them
     /// and no caller is left waiting on a reload nobody will run.
     private let refreshQueue = SessionListRefreshQueue()
+#if DEBUG
+    /// Calls that await the server and then may write the cache, from entry until they return (TAL-1097).
+    @ObservationIgnored private var cacheWorkCount = 0
+#endif
     /// The profile reload gets its own queue for the same reason: a trigger
     /// arriving mid-request is coalesced into a follow-up instead of being
     /// dropped, since the request in flight may predate the change it reacts to.
@@ -411,6 +415,10 @@ public final class SessionListViewModel {
     /// Warms the transcript cache for running chats this device has never opened (TAL-437), one
     /// bounded page each, so opening a run started elsewhere paints at once.
     public func prefetchRunningTranscripts(modelContext: ModelContext) async {
+        #if DEBUG
+        cacheWorkCount += 1
+        defer { cacheWorkCount -= 1 }
+        #endif
         let scope = resourceGeneration
         for session in sessions where session.isStreaming == true {
             guard scope == resourceGeneration else { return }
@@ -752,6 +760,10 @@ public final class SessionListViewModel {
         streamIDs rawStreamIDs: [String],
         modelContext: ModelContext? = nil
     ) async -> ActiveSessionStateRefreshResult {
+        #if DEBUG
+        cacheWorkCount += 1
+        defer { cacheWorkCount -= 1 }
+        #endif
         guard !isViewingCachedData, !isLoading else { return .unchanged }
 
         let streamIDs = Self.normalizedStreamIDs(rawStreamIDs)
@@ -778,6 +790,10 @@ public final class SessionListViewModel {
     }
 
     public func loadSessionForDeepLink(id rawSessionID: String, modelContext: ModelContext? = nil) async -> SessionSummary? {
+        #if DEBUG
+        cacheWorkCount += 1
+        defer { cacheWorkCount -= 1 }
+        #endif
         let sessionID = rawSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sessionID.isEmpty else { return nil }
 
@@ -845,6 +861,10 @@ public final class SessionListViewModel {
         for session: SessionSummary,
         modelContext: ModelContext? = nil
     ) async -> SessionSummary? {
+        #if DEBUG
+        cacheWorkCount += 1
+        defer { cacheWorkCount -= 1 }
+        #endif
         openGeneration += 1
         let generation = openGeneration
 
@@ -994,6 +1014,10 @@ public final class SessionListViewModel {
     /// A refusal rolls back with the server's error; an unknown outcome reloads the list, and rolls back only if the
     /// server still lists the run as live.
     public func stopRun(_ session: SessionSummary, modelContext: ModelContext? = nil) async {
+        #if DEBUG
+        cacheWorkCount += 1
+        defer { cacheWorkCount -= 1 }
+        #endif
         guard !isViewingCachedData, session.isStreaming == true, let streamID = Self.nonEmpty(session.activeStreamId),
               stoppedStreamIDs.insert(streamID).inserted else { return }
         actionErrorMessage = nil
@@ -1111,6 +1135,10 @@ public final class SessionListViewModel {
         modelContext: ModelContext? = nil,
         animation: Animation? = nil
     ) async -> [SessionSummary] {
+        #if DEBUG
+        cacheWorkCount += 1
+        defer { cacheWorkCount -= 1 }
+        #endif
         let sessionIDs = selectedSessionsByID.keys.filter { !mutatingSessionIDs.contains($0) && pendingChanges["session:\($0)"] == nil }.sorted()
         guard !sessionIDs.isEmpty, !isPerformingBulkAction, !isViewingCachedData, !isSwitchingActiveProfile else { return [] }
 
@@ -1227,6 +1255,10 @@ public final class SessionListViewModel {
     }
 
     public func duplicate(_ session: SessionSummary, modelContext: ModelContext? = nil) async -> SessionSummary? {
+        #if DEBUG
+        cacheWorkCount += 1
+        defer { cacheWorkCount -= 1 }
+        #endif
         guard SessionRowActionPolicy.canDuplicate(session) else {
             actionErrorMessage = String(localized: "This command is not available in the mobile app.")
             return nil
@@ -1515,6 +1547,10 @@ public final class SessionListViewModel {
         settings: ChatDraftSettings? = nil,
         enabledToolsets: [String]? = nil
     ) async -> ChatSessionStartResult {
+        #if DEBUG
+        cacheWorkCount += 1
+        defer { cacheWorkCount -= 1 }
+        #endif
         var didRequestCreation = false
         isCreatingSession = true
         actionErrorMessage = nil
@@ -1913,6 +1949,10 @@ public final class SessionListViewModel {
         confirmed: (Result) -> Void,
         reconcile: (Bool) async -> Bool
     ) async -> Bool {
+        #if DEBUG
+        cacheWorkCount += 1
+        defer { cacheWorkCount -= 1 }
+        #endif
         guard !isViewingCachedData, !isSwitchingActiveProfile, pendingChanges[key] == nil else { return false }
         let scope = resourceGeneration
         let change = PendingResourceChange(label: label, title: title, color: color, pinned: pinned, isMoving: isMoving, removing: removing)
@@ -2002,6 +2042,8 @@ public struct PendingResourceChange: Equatable, Sendable {
 
 #if DEBUG
 extension SessionListViewModel: UITestCacheOwner {
-    public var hasCacheWorkInFlight: Bool { refreshQueue.hasReloadInFlight || profileRefreshQueue.hasReloadInFlight }
+    public var hasCacheWorkInFlight: Bool {
+        cacheWorkCount > 0 || refreshQueue.hasReloadInFlight || profileRefreshQueue.hasReloadInFlight
+    }
 }
 #endif
