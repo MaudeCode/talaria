@@ -20,6 +20,10 @@ CATEGORIES = ("Added", "Changed", "Fixed", "Security")
 COMPONENTS = ("app", "web", "relay")
 VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
 FILENAME = re.compile(r"TAL-([1-9][0-9]*)\.json")
+TICKETS = r"TAL-[1-9][0-9]*(?:, TAL-[1-9][0-9]*)*"
+# A typed subject ends with its tickets in parentheses, before the pull request number GitHub adds to a squash;
+# a subject from before TAL-2722 starts with them.
+SUBJECT_TICKETS = re.compile(rf"^({TICKETS}):|\(({TICKETS})\)(?: \(#[0-9]+\))?$")
 # The What's New announcement contract, generated from web/packages/contracts (TAL-1616).
 ANNOUNCEMENT_SCHEMA = Path(__file__).resolve().parents[2] / "contracts/whats-new.schema.json"
 ANNOUNCED = ("app", "web")
@@ -34,6 +38,12 @@ def announcement_rules():
     row = rows["items"]["properties"]
     return {"icons": row["icon"]["enum"], "title": row["title"]["maxLength"],
             "description": row["description"]["maxLength"], "rows": rows["maxItems"]}
+
+
+def subject_tickets(subject):
+    """The tickets a commit subject names: `type: outcome (TAL-1, TAL-2)`, or the older `TAL-1, TAL-2: outcome`."""
+    match = SUBJECT_TICKETS.search(subject)
+    return set((match[1] or match[2]).split(", ")) if match else set()
 
 
 def git(*args, strip=True):
@@ -392,11 +402,7 @@ def validate(base=None, target=None):
             raise ValueError("app or unclassified changes require user-facing entries; skip is only for repository/docs/test work")
         # Subjects identify tickets only; release prose always comes from JSON.
         subjects = git("log", "--first-parent", "--no-merges", "--format=%s", f"{base}..{target or 'HEAD'}")
-        tickets = set()
-        for subject in subjects.splitlines():
-            prefix = subject.split(":", 1)[0]
-            if re.fullmatch(r"TAL-[1-9][0-9]*(?:, TAL-[1-9][0-9]*)*", prefix):
-                tickets.update(prefix.split(", "))
+        tickets = {ticket for subject in subjects.splitlines() for ticket in subject_tickets(subject)}
         missing = tickets - {Path(path).stem for path in selected}
         if missing:
             raise ValueError(f"missing release fragments for tracked commits: {', '.join(sorted(missing))}")

@@ -397,6 +397,23 @@ class ReleaseNotesTests(unittest.TestCase):
         self.commit("TAL-10: invalid metadata")
         self.generate(error="duplicate JSON key")
 
+    def test_each_ticket_a_subject_names_needs_its_fragment(self):
+        def skip(number):
+            self.write(f"changelog.d/TAL-{number}.json", '{"skip":"Documentation only"}')
+
+        def missing(ticket):
+            self.cli("validate", "--base", "v1.0.0", error=f"missing release fragments for tracked commits: {ticket}")
+
+        skip(2)
+        self.commit("feat(web)!: typed subject (TAL-2, TAL-3) (#12)")
+        missing("TAL-3")
+        skip(3)
+        self.commit("TAL-4: subject from before the typed format")
+        missing("TAL-4")
+        skip(4)
+        self.commit("docs: no ticket named")
+        self.cli("validate", "--base", "v1.0.0")
+
     def test_missing_metadata_and_repository_skip(self):
         self.write("README.md", "Documentation\n")
         self.write("NOTICE", "Repository metadata\n")

@@ -1,0 +1,1 @@
+{"skip": "Repository tooling and docs only: commit subjects carry a type, and the fragment check reads ticket keys from typed subjects; no app, Web, or Relay behavior changes."}
