@@ -37,6 +37,12 @@ public struct AssistantActivityRow: Identifiable, Equatable, Sendable {
     /// TAL-2332: a reasoning or tool row's server activity group, and that group's latest record; nil from an older server.
     public var groupID: String? = nil
     public var group: AssistantActivityGroup? = nil
+    /// TAL-1175: a reasoning row's segment name from the server, the same on its live events and its settled scene row.
+    public var disclosureKey: String? = nil
+
+    /// TAL-1176: the key a reasoning card keeps the reader's open or closed choice under: the server's segment name,
+    /// which the live card and its settled row share, or the row id for a row without one (inline thinking).
+    public var disclosureStateID: String { disclosureKey ?? id }
 
     var kind: String {
         switch content {
@@ -393,11 +399,12 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
         appendText(text, kind: "prose", id: id) { .prose($0) }
     }
 
-    mutating func appendReasoning(_ text: String, titles: [String] = [], id: String? = nil, groupID: String? = nil) {
+    mutating func appendReasoning(_ text: String, titles: [String] = [], id: String? = nil, groupID: String? = nil, disclosureKey: String? = nil) {
         let normalizedTitles = ReasoningTitleMetadata.normalize(titles)
         if let lastIndex = rows.indices.last,
            case .reasoning(var reasoning) = rows[lastIndex].content,
-           groupID == nil || rows[lastIndex].groupID == nil || rows[lastIndex].groupID == groupID {
+           groupID == nil || rows[lastIndex].groupID == nil || rows[lastIndex].groupID == groupID,
+           disclosureKey == nil || rows[lastIndex].disclosureKey == nil || rows[lastIndex].disclosureKey == disclosureKey {
             reasoning.text.append(contentsOf: text)
             if !normalizedTitles.isEmpty {
                 reasoning.titles = normalizedTitles
@@ -409,7 +416,8 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
         rows.append(AssistantActivityRow(
             id: id ?? "reasoning:\(rows.count)",
             content: .reasoning(AssistantActivityRow.Reasoning(text: text, titles: normalizedTitles)),
-            groupID: groupID
+            groupID: groupID,
+            disclosureKey: disclosureKey
         ))
     }
 
@@ -648,7 +656,7 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
                 }
             }
         case "reasoning":
-            if appendReasoningIfPresent(row.text, titles: row.titles ?? [], id: rowID, groupID: row.groupID) {
+            if appendReasoningIfPresent(row.text, titles: row.titles ?? [], id: rowID, groupID: row.groupID, disclosureKey: row.disclosureKey) {
                 rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
                 if let group = row.group { setGroup(group) }
             }
@@ -750,10 +758,11 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
         _ text: String?,
         titles: [String] = [],
         id: String,
-        groupID: String? = nil
+        groupID: String? = nil,
+        disclosureKey: String? = nil
     ) -> Bool {
         guard let text = Self.nonEmpty(text) else { return false }
-        appendReasoning(text, titles: titles, id: id, groupID: groupID)
+        appendReasoning(text, titles: titles, id: id, groupID: groupID, disclosureKey: disclosureKey)
         return true
     }
 

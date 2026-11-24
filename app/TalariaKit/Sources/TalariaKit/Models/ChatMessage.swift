@@ -698,8 +698,11 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
     /// TAL-2332: a tool row that heads a merged run of this many calls, or the row id of the merged row it folds into.
     public let mergedCount: Int?
     public let mergedInto: String?
+    /// TAL-1175: a reasoning row's segment name, the `disclosure_key` its live `reasoning` events carried; nil from an older server.
+    public let disclosureKey: String?
 
     enum CodingKeys: String, CodingKey {
+        case disclosureKey
         case groupID = "groupId"
         case group
         case mergedCount
@@ -734,6 +737,7 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
         group = AssistantActivityGroup(try? container.decodeIfPresent(JSONValue.self, forKey: .group))
         mergedCount = container.decodeLossyIntIfPresent(forKey: .mergedCount)
         mergedInto = container.decodeLossyStringIfPresent(forKey: .mergedInto)
+        disclosureKey = container.decodeLossyStringIfPresent(forKey: .disclosureKey)
     }
 
     /// A prose row's text as the server rewrote it for display, with its media (TAL-186).

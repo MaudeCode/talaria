@@ -424,7 +424,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                     text: reasoning.text,
                     titles: reasoning.titles,
                     isActive: isActive ?? (layout.isLive && index == activityRows.count - 1),
-                    stateID: row.id
+                    stateID: row.disclosureStateID,
+                    sharesStateAcrossRows: row.disclosureKey != nil
                 )
             }
         case .tools(let toolCalls):

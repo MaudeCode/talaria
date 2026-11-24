@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A thinking card you open while a reply is running stays open when the reply finishes.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

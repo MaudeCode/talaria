@@ -17,20 +17,29 @@ extension EnvironmentValues {
         get { self[ChatTranscriptRowStateKey.self] }
         set { self[ChatTranscriptRowStateKey.self] = newValue }
     }
+
+    /// TAL-1176: the transcript's state under keys unique across its rows; see `ChatTranscriptRowCache.transcriptState`.
+    @Entry var chatTranscriptState: ChatTranscriptRowState? = nil
 }
 
-/// Extends State with the row's retained storage; standalone cards keep normal State semantics.
+/// Extends State with the row's retained storage, or with the transcript's for a key unique across its rows;
+/// standalone cards keep normal State semantics.
 @MainActor
 @propertyWrapper
 struct ChatRetainedState<Value>: DynamicProperty {
-    @Environment(\.chatTranscriptRowState) private var store
+    @Environment(\.chatTranscriptRowState) private var rowStore
+    @Environment(\.chatTranscriptState) private var transcriptStore
     @State private var localValue: Value
     private let key: String
+    private let acrossRows: Bool
 
-    init(wrappedValue: Value, _ key: String) {
+    init(wrappedValue: Value, _ key: String, acrossRows: Bool = false) {
         self.key = key
+        self.acrossRows = acrossRows
         _localValue = State(initialValue: wrappedValue)
     }
+
+    private var store: ChatTranscriptRowState? { acrossRows ? transcriptStore : rowStore }
 
     var wrappedValue: Value {
         get { (store?.values[key] as? Value) ?? localValue }
@@ -70,6 +79,7 @@ struct ChatTranscriptRow<Content: View>: View {
             if realizesContent {
                 content()
                     .environment(\.chatTranscriptRowState, cache.state(for: rowID))
+                    .environment(\.chatTranscriptState, cache.transcriptState)
 #if DEBUG
                     .onAppear { cache.recordRealization() }
 #endif
@@ -125,6 +135,9 @@ final class ChatTranscriptRowCache {
     }
 
     @ObservationIgnored private var states: [String: ChatTranscriptRowState] = [:]
+    /// TAL-1176: state under a server identity unique in the transcript, such as a reasoning segment's `disclosure_key`.
+    /// It outlives the row it was set in: a just-sent turn moves to the server's turn row when it settles.
+    let transcriptState = ChatTranscriptRowState()
     @ObservationIgnored private var heights: [String: CGFloat] = [:]
     @ObservationIgnored private var orderedIDs: [String] = []
     @ObservationIgnored private var prefix: [CGFloat] = [0]
