@@ -50,7 +50,7 @@ struct ReasoningBlockView: View {
                             .frame(width: 16, height: 16)
 
                         RotatingActivityTitle(
-                            fallback: String(localized: "Thinking"),
+                            fallback: ReasoningTitleRotation.fallbackTitle(isActive: isActive),
                             titles: normalizedTitles,
                             isActive: isActive
                         )
@@ -69,7 +69,7 @@ struct ReasoningBlockView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(String(localized: "Thinking, \(normalizedTitles.last ?? String(localized: "Thinking"))"))
+                .accessibilityLabel(ReasoningTitleRotation.accessibilityLabel(titles: normalizedTitles, isActive: isActive))
                 .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
 
                 if isExpanded {

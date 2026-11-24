@@ -1837,6 +1837,7 @@
 	"theme_set": "主题：",
 	"theme_usage": "用法：/theme ",
 	"thinking": "思考过程",
+	"thought_label": "已思考",
 	"todos_chat_empty": "此聊天还没有任务列表。",
 	"todos_no_active": "此会话暂无活动任务列表。",
 	"todos_open_chat": "打开一个聊天以查看其任务列表。",

@@ -790,4 +790,12 @@ final class ReasoningBlockViewTests: XCTestCase {
         )
     }
 
+    // TAL-2026: a finished row no longer reads as if the agent were still working.
+    func testASettledRowSaysThoughtAndALiveRowSaysThinking() {
+        XCTAssertEqual(ReasoningTitleRotation.fallbackTitle(isActive: false), "Thought")
+        XCTAssertEqual(ReasoningTitleRotation.accessibilityLabel(titles: [], isActive: false), "Thought")
+        XCTAssertEqual(ReasoningTitleRotation.accessibilityLabel(titles: ["Plan"], isActive: false), "Thought, Plan")
+        XCTAssertEqual(ReasoningTitleRotation.fallbackTitle(isActive: true), "Thinking")
+        XCTAssertEqual(ReasoningTitleRotation.accessibilityLabel(titles: ["Plan"], isActive: true), "Thinking, Plan")
+    }
 }

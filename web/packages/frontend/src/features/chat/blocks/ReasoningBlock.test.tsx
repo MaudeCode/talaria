@@ -116,3 +116,14 @@ it('does no per-delta measurement while collapsed or settled, and rebuilds a liv
   view.rerender(<ReasoningBlock text="New live content" live disclosureKey="a" />)
   expect(body.scrollTop).toBe(740)
 })
+
+// TAL-2026: a finished card with no server title no longer reads as if the agent were still working.
+it('labels a settled untitled card Thought, a live one Thinking, and a titled one by its latest title', () => {
+  const view = render(<ReasoningBlock text="Done" />)
+  const label = () => view.container.querySelector('.thinking-card-label')?.textContent
+  expect(label()).toBe('Thought')
+  view.rerender(<ReasoningBlock text="Working" live />)
+  expect(label()).toBe('Thinking…')
+  view.rerender(<ReasoningBlock text="Done" titles={['Plan', 'Inspect']} />)
+  expect(label()).toBe('Inspect')
+})

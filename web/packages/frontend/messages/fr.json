@@ -1968,6 +1968,7 @@
 	"theme_set": "Thème : ",
 	"theme_usage": "Utilisation : /theme ",
 	"thinking": "Réflexion",
+	"thought_label": "A réfléchi",
 	"title_change_hint": "Utilisez `/title <nouveau nom>` pour renommer.",
 	"title_current": "Titre actuel",
 	"title_set": "Titre défini sur ",

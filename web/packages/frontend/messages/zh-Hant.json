@@ -1875,6 +1875,7 @@
 	"theme_set": "主題：",
 	"theme_usage": "用法：/theme ",
 	"thinking": "思考中",
+	"thought_label": "已思考",
 	"title_change_hint": "使用 `/title <new name>` 重新命名。",
 	"title_current": "目前標題",
 	"title_set": "標題已設定為",
