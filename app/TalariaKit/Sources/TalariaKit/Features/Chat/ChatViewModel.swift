@@ -138,6 +138,12 @@ public final class ChatViewModel {
     public private(set) var isConfirmingClear = false
     /// The server's clear marker from the last load; an unknown `/clear` outcome compares a reread with it.
     @ObservationIgnored private var loadedClearGeneration: String?
+    /// TAL-1484: the row the "New since you left" rule sits above, from this visit's first server read. Later reads never
+    /// move it, so a reply that arrives while the chat is open is not new; nil shows no rule.
+    public private(set) var unreadFromMessageID: String?
+    /// A server read applied this visit, so what the chat shows is the server's and can be reported viewed.
+    public private(set) var hasReadServerTranscript = false
+    @ObservationIgnored private var hasReportedViewed = false
     /// The outstanding `POST /api/session/clear`; sends and loads wait for it so it never overtakes newer input.
     @ObservationIgnored private var clearConversationTask: Task<ClearConversationOutcome, Never>?
     /// Counts `/clear`s; a history page read before the latest one carries rows it removed.
@@ -2085,6 +2091,22 @@ extension ChatViewModel {
         return prefetch.task
     }
 
+    /// TAL-1484: the reader has had the chat on screen for the dwell, so it counts as viewed through now and the next open
+    /// names only rows after this one. The server records a position only from these reports, so they run whether or not
+    /// this visit showed the rule.
+    public func reportViewed() {
+        guard hasReadServerTranscript, let sessionID else { return }
+        hasReportedViewed = true
+        let client = client
+        Task { _ = try? await client.markSessionViewed(id: sessionID) }
+    }
+
+    /// Leaving or backgrounding a chat already reported viewed: the rows that arrived while it was open were seen too.
+    public func reportViewedAgainIfReported() {
+        guard hasReportedViewed else { return }
+        reportViewed()
+    }
+
     static func requestSessionLoad(_ sessionID: String, client: APIClient) async throws -> SessionResponse {
         try await client.session(
             id: sessionID,
@@ -2265,6 +2287,10 @@ extension ChatViewModel {
             applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, connectionChangesAtFetch: connectionChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
             serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
             loadedClearGeneration = session?.clearGeneration
+            if !hasReadServerTranscript, let session {
+                hasReadServerTranscript = true
+                unreadFromMessageID = session.unreadFromMessageId
+            }
             applyBranchedFrom(from: session, modelContext: modelContext)
             // The live stream names newer files than a detail read mid-run, so the detail only seeds the page.
             companionFocus.seed(session?.focusPath)
@@ -7013,7 +7039,7 @@ extension ChatViewModel {
         let existingTranscriptMessage = displayedTranscriptMessages[transcriptIndex]
         let updatedSegments = existingTranscriptMessage.assistantSegments.map { segment in
             guard segment.message.messageId == message.messageId else { return segment }
-            return TranscriptAssistantSegment(anchorID: segment.anchorID, message: message)
+            return TranscriptAssistantSegment(anchorID: segment.anchorID, message: message, rowKey: segment.rowKey)
         }
         guard let lastSegment = updatedSegments.last else {
             recomputeDisplayedTranscriptMessages()
@@ -7025,7 +7051,8 @@ extension ChatViewModel {
             renderID: existingTranscriptMessage.renderID,
             anchorID: lastSegment.anchorID,
             message: lastSegment.message,
-            assistantSegments: updatedSegments
+            assistantSegments: updatedSegments,
+            rowKey: existingTranscriptMessage.rowKey
         )
 
         // A streamed update reaches the reasoning cards only through candidates anchored at this message: its own

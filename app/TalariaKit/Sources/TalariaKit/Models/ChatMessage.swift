@@ -60,6 +60,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
     public internal(set) var content: String?
     public internal(set) var timestamp: Double?
     public internal(set) var messageId: String?
+    /// The server row's own `id`, which names a row without `message_id` in its transcript row key (TAL-1484).
+    public internal(set) var serverRowID: String? = nil
     public internal(set) var name: String?
     public internal(set) var toolCallId: String?
     public internal(set) var toolUseId: String?
@@ -183,6 +185,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         case content
         case timestamp
         case messageId
+        case serverRowID = "id"
         case name
         case toolCallId
         case toolUseId
@@ -222,6 +225,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         timestamp = container.decodeLossyDoubleIfPresent(forKey: .underscoredTimestamp)
             ?? container.decodeLossyDoubleIfPresent(forKey: .timestamp)
         messageId = container.decodeLossyStringIfPresent(forKey: .messageId)
+        serverRowID = container.decodeLossyStringIfPresent(forKey: .serverRowID)
         name = container.decodeLossyStringIfPresent(forKey: .name)
         toolCallId = container.decodeLossyStringIfPresent(forKey: .toolCallId)
         toolUseId = container.decodeLossyStringIfPresent(forKey: .toolUseId)

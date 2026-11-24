@@ -123,6 +123,7 @@ public enum Endpoint: Sendable {
     case providerQuotas(sourceID: String? = nil, refresh: Bool = false)
     case settings
     case talariaRelayPair
+    case talariaViewed
     case updatesCheck
     case updatesApply
     case updatesSummary
@@ -429,6 +430,8 @@ public enum Endpoint: Sendable {
             return "/api/settings"
         case .talariaRelayPair:
             return "/api/talaria/relay/pair"
+        case .talariaViewed:
+            return "/api/talaria/viewed"
         case .updatesCheck:
             return "/api/updates/check"
         case .updatesApply:

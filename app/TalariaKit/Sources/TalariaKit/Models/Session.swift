@@ -984,6 +984,9 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
     public let toolCalls: [PersistedToolCall]?
     public let messagesTruncated: Bool?
     public let messagesOffset: Int?
+    /// TAL-2676: the first row added since this profile last reported the chat viewed; only the chat-open read carries
+    /// it, and nil means nothing is new or the server predates it.
+    public let unreadFromMessageId: String?
     /// The chat this one was branched from, while it still loads (TAL-454); nil shows no link.
     public let branchedFrom: SessionBranchLink?
     /// TAL-1458: the file the session's last persisted file call named; nil when none, or from an older server.
@@ -1061,6 +1064,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
         case underscoredMessagesOffset = "_messages_offset"
         case transformedMessagesTruncated = "_messagesTruncated"
         case transformedMessagesOffset = "_messagesOffset"
+        case unreadFromMessageId
         case branchedFrom
         case focusPath
         case enabledToolsets
@@ -1143,6 +1147,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
         messagesOffset = container.decodeLossyIntIfPresent(forKey: .underscoredMessagesOffset)
             ?? container.decodeLossyIntIfPresent(forKey: .transformedMessagesOffset)
             ?? container.decodeLossyIntIfPresent(forKey: .messagesOffset)
+        unreadFromMessageId = container.decodeLossyStringIfPresent(forKey: .unreadFromMessageId)
         branchedFrom = try? container.decodeIfPresent(SessionBranchLink.self, forKey: .branchedFrom)
         focusPath = container.decodeLossyStringIfPresent(forKey: .focusPath)
         transcriptSeq = try? container.decodeIfPresent(TranscriptSeq.self, forKey: .transcriptSeq)

@@ -458,6 +458,35 @@ final class DuoFoldHostedTests: XCTestCase {
         XCTAssertTrue(kept, "Closing the Duo mid-drag moved the reader from \(reading) to \(readingRow(in: window) ?? "nothing")")
     }
 
+    /// TAL-1484: a chat that opened at the unread rule and was then scrolled keeps the reader's row when the Duo closes;
+    /// the rule's placement does not stop the rebuilt transcript restoring it.
+    func testClosingAfterTheUnreadRuleKeepsTheReadersRow() async throws {
+        let (detail, unreadText) = try TranscriptHostedTests.unreadDetail()
+        let folding = try await openChatOnInnerDisplay { fixture in
+            UITestFixtureURLProtocol.sessionDetail.withLock { $0 = detail }
+            return AnyView(fixture.sessionList())
+        }
+        let window = folding.window
+        _ = try await requireElement(in: window, label: "New since you left")
+        _ = try await requireElement(in: window, "The unread row never showed") { $0.accessibilityLabel?.contains(unreadText) == true }
+        let scroll = try transcriptScrollView(in: window)
+        let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
+        _ = await awaitCondition { coordinator.scrollPositionController?.isNavigating == false }
+        coordinator.scrollPositionController?.userDidBeginDragging()
+        coordinator.onFollowEvent(.userScrollBegin)
+        scroll.contentOffset.y += scroll.bounds.height / 2
+        _ = await awaitCondition { coordinator.scrollPositionController?.isRealizingRows == false }
+        coordinator.onFollowEvent(.userScrollEnd(isAtBottom: false))
+        let reading = try XCTUnwrap(readingRow(in: window), "No row at the top of the transcript")
+
+        fold(folding, closed: true)
+        let kept = await awaitCondition { self.readingRow(in: window) == reading }
+        let drawn = await awaitCondition { self.mountedTranscriptScrollView(in: window).map(self.drawsContent) == true }
+        await attachRealizedTranscript(window, name: "unread-rule-closed-reader-row")
+        XCTAssertTrue(kept, "Closing the Duo moved the reader from \(reading) to \(readingRow(in: window) ?? "nothing")")
+        XCTAssertTrue(drawn, "The closed Duo's transcript never drew its rows")
+    }
+
     /// TAL-2566: leaving a chat for another one and coming back from the sidebar reopens the reader's row, not the latest
     /// message, beside the list and in the closed Duo's drawer.
     func testRevisitingAChatBesideTheListReopensTheReadersRow() async throws {

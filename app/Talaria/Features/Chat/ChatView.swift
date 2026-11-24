@@ -23,6 +23,8 @@ extension EnvironmentValues {
     @Entry var acknowledgeViewedCompletionsForTesting: ViewedCompletionAcknowledger.Acknowledge? = nil
     /// The window's pending session open, which this chat's first frames end (TAL-1412).
     @Entry var sessionOpenTrace: SessionOpenTrace? = nil
+    /// How long a chat stays on screen in the foreground before it counts as viewed (TAL-1484); hosted tests shorten it.
+    @Entry var chatViewedDwell: Duration = .seconds(2)
 }
 
 private enum GitChatAlert: Identifiable {
@@ -106,6 +108,7 @@ struct ChatView: View {
     @State private var closedVaultPromptID: String?
     @State private var completionAcknowledger = ViewedCompletionAcknowledger()
     @Environment(\.acknowledgeViewedCompletionsForTesting) private var acknowledgeViewedCompletionsForTesting
+    @Environment(\.chatViewedDwell) private var viewedDwell
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.dismiss) private var dismiss
@@ -825,6 +828,12 @@ struct ChatView: View {
             await handleInitialAppearanceTask()
         }
         .task(id: viewModel.streamCoordinatorSessionID) { await viewModel.refreshPromptWithdrawal() }
+        // TAL-1484: the server's unread position moves only on these reports, so every visit makes one.
+        .task(id: viewModel.hasReadServerTranscript && scenePhase == .active) {
+            guard viewModel.hasReadServerTranscript, scenePhase == .active,
+                  (try? await Task.sleep(for: viewedDwell)) != nil else { return }
+            viewModel.reportViewed()
+        }
         .delayedStatus(viewModel.isSyncingTranscript, isVisible: $showsSyncingPill,
                        resetGeneration: viewModel.transcriptSyncPresentationGeneration)
     }
@@ -882,6 +891,7 @@ struct ChatView: View {
                         await chat.moveQueuedMessagesToDraft(in: draftStore, for: draftKey)
                         try? await draftStore.flush()
                     }
+                    chat.reportViewedAgainIfReported()
                     chat.stopListening()
                     chat.voiceInput.stopBeforeSubmittingDraft()
                     chat.persistTranscript(modelContext: modelContext)
@@ -2388,7 +2398,9 @@ struct ChatView: View {
                 retainedRowCache: chat.retained?.rows,
                 retainedChat: chat.retained,
                 restoredReadingRowID: chat.restoredReadingRowID,
-                onReaderMoved: chat.recordReadingRow
+                onReaderMoved: chat.recordReadingRow,
+                unreadFromMessageID: viewModel.unreadFromMessageID,
+                onPlaceUnreadRule: chat.placeReaderAtUnreadRule
             )
             .environment(\.chatShowsReasoning, viewModel.showsReasoning)
             .toolResultActions(of: chat)
@@ -3969,6 +3981,7 @@ struct ChatView: View {
         if phase != .active {
             completionAcknowledger.cancel()
             flushDraftsBestEffort()
+            viewModel.reportViewedAgainIfReported()
         }
 
         switch phase {
@@ -4277,6 +4290,13 @@ struct ChatView: View {
         } else {
             retained?.readingRowID = nil
         }
+    }
+
+    /// The visit opens at the unread rule's row: later rows stop pulling the reader to the latest message, and a rebuilt
+    /// view reopens at that row (TAL-1484).
+    private func placeReaderAtUnreadRule(_ rowID: String) {
+        followLatch.isFollowing = false
+        retained?.readingRowID = rowID
     }
 
     /// Keeps where the reader is, for the view the navigation may rebuild around it (TAL-1477).

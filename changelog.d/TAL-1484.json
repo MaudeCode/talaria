@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A chat that ran while you were away opens at a \"New since you left\" line above the first message you have not seen.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}
