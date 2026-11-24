@@ -5,7 +5,10 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const orientations = ['portrait', 'landscape_right', 'portrait_upside_down', 'landscape_left'];
-const angles = { closed: 0, book: 90, open: 180 };
+// Tent stands the closed phone on the cover at the hub's 80 degrees.
+const angles = { closed: 0, tent: 80, book: 90, open: 180 };
+const rotations = { 'rotate-right': 'landscape_right', 'rotate-left': 'landscape_left' };
+const opposite = { landscape_left: 'landscape_right', landscape_right: 'landscape_left' };
 const fail = (message, exitCode = 4) => Object.assign(new Error(message), { exitCode });
 
 export function selectDevice(devices, selector) {
@@ -41,14 +44,22 @@ function validState(state) {
     (state.hingeAngle === undefined || Number.isFinite(state.hingeAngle) && state.hingeAngle >= 0 && state.hingeAngle <= 180);
 }
 
+// The cover shows below the book angle, closed or standing as a tent; the inner panel from there up.
+const activeScreen = angle => angle < angles.book ? 1 : 3;
+
 function reached(state, pose) {
-  // An orientation-locked app may keep its framebuffer while the native sensor rotates.
-  const rotatedRight = state.physicalOrientation === undefined ? state.orientation === 'landscape_right' :
-    state.physicalOrientation === 'landscape-right';
-  if (pose === 'rotate-right') return rotatedRight &&
-    Number.isFinite(state.hingeAngle) && state.screenId === (state.hingeAngle === 0 ? 1 : 3);
-  return state.hingePose === pose && state.hingeAngle === angles[pose] &&
-    state.screenId === (pose === 'closed' ? 1 : 3);
+  const target = rotations[pose];
+  if (target) {
+    // An orientation-locked app may keep its framebuffer while the native sensor rotates. Without the sensor, the
+    // cover settles in the mirror of the requested landscape; the inner panel, a quarter turn round, in the same one.
+    const rotated = state.physicalOrientation === undefined
+      ? state.orientation === (state.screenId === 1 ? opposite[target] : target)
+      : state.physicalOrientation === target.replace('_', '-');
+    return rotated && Number.isFinite(state.hingeAngle) && state.screenId === activeScreen(state.hingeAngle);
+  }
+  // Tent stands the phone on its long edge: the cover's screen turns to landscape after the hinge settles.
+  return state.hingePose === pose && state.hingeAngle === angles[pose] && state.screenId === activeScreen(angles[pose]) &&
+    (pose !== 'tent' || state.orientation.startsWith('landscape'));
 }
 
 // shortcut: T3's private 0.15.3 framing; replace when a public pose API exposes native readback.
@@ -85,20 +96,20 @@ export async function controlDuo(origin, device, pose, timeoutMs = 10_000) {
         }
         if (bytes[0] === 0x90) {
           const reply = JSON.parse(new TextDecoder().decode(bytes.subarray(1)));
-          if (sent && pose !== 'rotate-right' && reply.requestId === 1) {
+          if (sent && !rotations[pose] && reply.requestId === 1) {
             if (reply.ok !== true) throw fail('T3 refused the requested pose.');
             acknowledged = true;
           }
         }
         if (sent) {
-          if (fresh && (acknowledged || pose === 'rotate-right') && reached(state, pose)) finish();
+          if (fresh && (acknowledged || rotations[pose]) && reached(state, pose)) finish();
           return;
         }
         if (!admitted || !state) return;
         if (reached(state, pose)) return finish();
         sent = true;
-        const orientation = pose === 'rotate-right';
-        const payload = orientation ? { orientation: 'landscape_right' } : { requestId: 1, command: { control: 'pose', value: pose } };
+        const orientation = rotations[pose];
+        const payload = orientation ? { orientation } : { requestId: 1, command: { control: 'pose', value: pose } };
         socket.send(Buffer.concat([Buffer.from([orientation ? 0x07 : 0x10]), Buffer.from(JSON.stringify(payload))]));
       } catch (error) { finish(error.exitCode ? error : fail('T3 returned an invalid input packet.')); }
     });
@@ -115,10 +126,10 @@ export function validatePng(png, screenId) {
 
 async function main(args) {
   const [selector, pose, option, path] = args;
-  if (![2, 4].includes(args.length) || ![...Object.keys(angles), 'rotate-right'].includes(pose) ||
+  if (![2, 4].includes(args.length) || ![...Object.keys(angles), ...Object.keys(rotations)].includes(pose) ||
       args.length === 4 && (option !== '--screenshot' || !path) ||
       selector !== 'booted' && !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(selector)) {
-    throw fail('Usage: scripts/duo-pose <udid|booted> <open|closed|book|rotate-right> [--screenshot <path>]', 64);
+    throw fail('Usage: scripts/duo-pose <udid|booted> <open|closed|book|tent|rotate-right|rotate-left> [--screenshot <path>]', 64);
   }
   let device;
   try { device = selectDevice(JSON.parse(execFileSync('xcrun', ['simctl', 'list', 'devices', 'available', '--json'], { timeout: 5000 })).devices, selector); }
