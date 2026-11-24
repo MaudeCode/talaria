@@ -771,6 +771,21 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertEqual(answer.activityScene, messages.first { $0.messageId == "lookup-answer" }?.activityScene)
     }
 
+    /// TAL-1176: offline, a settled reasoning row keeps the server's `disclosure_key`, and a row from an older server
+    /// stays without one.
+    func testCachedSceneKeepsTheReasoningDisclosureKey() throws {
+        let scenario = try RunningReasoningScenario()
+        let context = try makeContext(), server = URL(string: "https://disclosure-cache.test")!, now = Date()
+        let keys = { (messages: [ChatMessage]) in
+            messages.flatMap { $0.activityScene?.activityRows ?? [] }.filter { $0.role == "reasoning" }.map(\.disclosureKey)
+        }
+        for (sessionID, keepingKeys, expected) in [("current", true, [scenario.disclosureKey]), ("older", false, [nil])] {
+            try CacheStore.cacheMessages(try scenario.decodedMessages(keepingKeys: keepingKeys), serverURL: server, sessionID: sessionID, in: context, cachedAt: now)
+            let restored = try CacheStore.cachedMessages(serverURL: server, sessionID: sessionID, in: context, now: now)
+            XCTAssertEqual(keys(restored), expected, sessionID)
+        }
+    }
+
     func testCachedMessagesKeepReasoningTitles() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!

@@ -198,6 +198,7 @@ public final class ChatViewModel {
     @ObservationIgnored private var pendingReasoningTitles: [String] = []
     /// TAL-2332: the activity group of the reasoning buffered in `pendingReasoningText`.
     @ObservationIgnored private var pendingReasoningGroupID: String?
+    @ObservationIgnored private var pendingReasoningDisclosureKey: String?
     @ObservationIgnored private var pendingStreamingContentFlushTask: Task<Void, Never>?
     @ObservationIgnored private var isDeferringTranscriptMapping = false
     private(set) var completedToolCallGroups: [ToolCallGroup] = []
@@ -6758,6 +6759,11 @@ extension ChatViewModel {
             flushPendingStreamingContent()
             pendingReasoningGroupID = groupID
         }
+        if let disclosureKey = payload.disclosureKey, disclosureKey != pendingReasoningDisclosureKey {
+            // A new segment's reasoning starts its own row, under the key its settled row will carry.
+            flushPendingStreamingContent()
+            pendingReasoningDisclosureKey = disclosureKey
+        }
         if payload.text.isEmpty, !payload.titles.isEmpty {
             if !pendingReasoningText.isEmpty {
                 flushPendingStreamingContent()
@@ -6779,7 +6785,12 @@ extension ChatViewModel {
             reasoningAnchorMessageID = messageID
         }
 
-        liveAssistantActivity.appendReasoning(appendedText, titles: pendingReasoningTitles, groupID: pendingReasoningGroupID)
+        liveAssistantActivity.appendReasoning(
+            appendedText,
+            titles: pendingReasoningTitles,
+            groupID: pendingReasoningGroupID,
+            disclosureKey: pendingReasoningDisclosureKey
+        )
         return true
     }
 

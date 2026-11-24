@@ -770,7 +770,13 @@ struct ChatTranscriptView: View {
             if showsThinkingAndToolCards {
                 if hasLiveReasoningText,
                    !hasDisplayedTranscriptMessage(anchorID: reasoningAnchorMessageID) {
-                    ReasoningBlockView(text: liveReasoningText, isActive: true, stateID: streamingAssistantMessageID ?? "live")
+                    let disclosureKey = liveActivityRows.lazy.compactMap(\.disclosureKey).first
+                    ReasoningBlockView(
+                        text: liveReasoningText,
+                        isActive: true,
+                        stateID: disclosureKey ?? streamingAssistantMessageID ?? "live",
+                        sharesStateAcrossRows: disclosureKey != nil
+                    )
                 }
 
                 if !liveToolCalls.isEmpty,

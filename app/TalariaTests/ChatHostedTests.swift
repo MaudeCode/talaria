@@ -61,6 +61,62 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "reasoning-live-after-hide")
     }
 
+    /// TAL-1176: a thinking card the reader opened while its turn ran stays open once the turn settles, because the live
+    /// card and the settled scene row keep that choice under the server's `disclosure_key`.
+    func testAnOpenedLiveThinkingCardStaysOpenWhenItsTurnSettles() async throws {
+        let fixture = try FixtureApp(for: self)
+        let stream = ScriptedSSEStreamingClient()
+        let summary = SessionSummary(sessionId: "session-abc", title: "Thinking card")
+        let key = "thinking-run:reasoning:0", plan = "Plan the careful check."
+        let prompt = #"{"role":"user","content":"Check this","message_id":"prompt","_turn_id":"thinking-run"}"#
+        let reply = #"{"role":"assistant","content":"All checked.","message_id":"reply","_turn_id":"thinking-run","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"All checked.","terminal_state":"completed","expanded_by_default":true,"activity_rows":[{"row_id":"reply:reasoning","order_index":0,"role":"reasoning","text":"\#(plan)","titles":[],"disclosure_key":"\#(key)"}]}}"#
+        var settled = false
+        let model = try makeScriptedChatViewModel(streamClient: stream, sessionSummary: summary) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"thinking-run"}"#, for: request)
+            case "/api/session":
+                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","title":"Thinking card","messages":[\#(settled ? "\(prompt),\(reply)" : prompt)]}}"#, for: request)
+            case "/api/chat/stream/status":
+                return apiTestJSONResponse(#"{"active":\#(!settled),"stream_id":"thinking-run"}"#, for: request)
+            default:
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        defer {
+            model.suspendStreamForNavigation()
+            model.cleanupPollingTasks()
+            stream.stop()
+            ChatViewModel.resetActiveStreamSnapshotsForTesting()
+        }
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: URL(string: "https://example.test")!, onAPIError: { _ in },
+                     loadsInitialMessages: false, viewModel: model)
+        }.modelContainer(fixture.cache))
+        let started = await model.sendMessage("Check this")
+        XCTAssertTrue(started)
+        stream.emit(.reasoning(try JSONDecoder().decode(ReasoningStreamEvent.self, from: Data(#"{"text":"\#(plan)","disclosure_key":"\#(key)"}"#.utf8))))
+        let card = { (window: UIWindow) in HostedAccessibility.elements(in: window).first { $0.accessibilityLabel == "Thinking, Thinking" } }
+        let showsPlan = { HostedAccessibility.labels(in: window).contains { $0.contains(plan) } }
+        _ = try await requireElement(in: window, label: "Thinking, Thinking", "The live thinking card is not shown")
+        XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(card(window))))
+        let opened = await awaitCondition(showsPlan)
+        XCTAssertTrue(opened, "The live thinking card did not open")
+        attachHostedScreenshot(window, name: "thinking-card-live-open")
+
+        stream.emit(.token("All checked."))
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let detail = try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"session-abc","messages":[\#(prompt),\#(reply)]}"#.utf8))
+        settled = true
+        stream.emit(.done(DoneStreamEvent(session: detail)))
+        stream.emit(.streamEnd)
+        // The settled scene folds its work under "Worked", a header the live turn never shows.
+        _ = try await requireElement(in: window, label: "Worked", "The turn did not settle into the server's scene")
+        let stillOpen = await awaitCondition { card(window)?.accessibilityHint == "Double tap to collapse details." && showsPlan() }
+        attachHostedScreenshot(window, name: "thinking-card-settled")
+        XCTAssertTrue(stillOpen, "The settled thinking card closed: \(HostedAccessibility.labels(in: window))")
+    }
+
     /// TAL-2331: a call the server marks `hidden` (a tool lookup while Settings hides them) never shows in the transcript;
     /// a lookup whose completion failed shows.
     func testHiddenToolLookupsStayOutOfTheTranscriptUntilOneFails() async throws {

@@ -138,17 +138,21 @@ public struct ReasoningStreamEvent: Decodable, Equatable, Sendable {
     public let titles: [String]
     /// TAL-2332: the server's activity group of this reasoning segment.
     public let groupID: String?
+    /// TAL-1175: the server's name for this reasoning segment, which its settled scene row carries too.
+    public let disclosureKey: String?
 
     enum CodingKeys: String, CodingKey {
         case text
         case titles
         case groupID = "group_id"
+        case disclosureKey = "disclosure_key"
     }
 
-    init(text: String, titles: [String] = [], groupID: String? = nil) {
+    init(text: String, titles: [String] = [], groupID: String? = nil, disclosureKey: String? = nil) {
         self.text = text
         self.titles = ReasoningTitleMetadata.normalize(titles)
         self.groupID = groupID
+        self.disclosureKey = disclosureKey
     }
 
     public init(from decoder: Decoder) throws {
@@ -158,6 +162,7 @@ public struct ReasoningStreamEvent: Decodable, Equatable, Sendable {
             (try? container.decodeIfPresent([String].self, forKey: .titles)) ?? []
         )
         groupID = container.decodeLossyStringIfPresent(forKey: .groupID)
+        disclosureKey = container.decodeLossyStringIfPresent(forKey: .disclosureKey)
     }
 }
 

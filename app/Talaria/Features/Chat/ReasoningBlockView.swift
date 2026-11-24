@@ -17,8 +17,10 @@ struct ReasoningBlockView: View {
     @AppStorage(ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey) private var startsExpanded = false
     @ChatRetainedState("reasoning-expansion") private var userToggledExpansion: Bool? = nil
 
-    init(text: String, titles: [String] = [], isActive: Bool = false, stateID: String = "reasoning") {
-        _userToggledExpansion = ChatRetainedState(wrappedValue: nil, "reasoning-expansion:\(stateID)")
+    /// `sharesStateAcrossRows`: `stateID` is the server's segment name, so the reader's choice follows a live card to
+    /// its settled row (TAL-1176).
+    init(text: String, titles: [String] = [], isActive: Bool = false, stateID: String = "reasoning", sharesStateAcrossRows: Bool = false) {
+        _userToggledExpansion = ChatRetainedState(wrappedValue: nil, "reasoning-expansion:\(stateID)", acrossRows: sharesStateAcrossRows)
         self.text = text
         self.titles = titles
         self.isActive = isActive
