@@ -284,8 +284,8 @@ final class FixtureTeardownTests: XCTestCase {
         try CacheStore.cacheMessages(messages, serverURL: UITestFixtureEnvironment.serverURL,
                                      sessionID: UITestFixtureURLProtocol.sessionID, in: fixture.cache.mainContext,
                                      messagesOffset: 0, hasOlderMessages: false)
-        let chat = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL,
-                                 client: fixture.client, networkPath: nil)
+        let chat = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client,
+                                 liveActivityManager: SpyChatLiveActivityManager(), networkPath: nil)
         let window = try hostWindow(fixture.chat(session, viewModel: chat))
         // The held request can be the transcript the chat prefetches before its load starts and awaits.
         let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 && chat.hasCacheWorkInFlight }
@@ -298,7 +298,8 @@ final class FixtureTeardownTests: XCTestCase {
         XCTAssertNil(cache, "The outgoing fixture's cache outlived its teardown")
     }
 
-    /// A test that throws leaves its work to the fixture's own teardown block.
+    /// A test that throws leaves its work to the fixture's own teardown block. The reload needs no screen: the queue's
+    /// task outlives its caller either way.
     func testTeardownAfterAThrownErrorDrainsTheWorkItLeft() async throws {
         weak var list: SessionListViewModel?
         // Registered before the fixture's, so it runs after the fixture's teardown.
@@ -312,7 +313,7 @@ final class FixtureTeardownTests: XCTestCase {
         let fixture = try FixtureApp([UITestFixtureEnvironment.holdSessionListArgument], for: self)
         let model = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
         list = model
-        _ = try hostWindow(fixture.sessionList(viewModel: model))
+        _ = Task { await model.load(modelContext: fixture.cache.mainContext) }
         let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
         XCTAssertTrue(held, "The list's reload never reached the fixture")
         throw SetupFailure()
