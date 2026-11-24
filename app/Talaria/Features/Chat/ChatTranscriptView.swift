@@ -216,6 +216,10 @@ struct ChatTranscriptView: View {
                         .opacity(isPlacingRestoredReader ? 0 : 1)
                     }
                     .defaultScrollAnchor(initialScrollAnchor, for: .initialOffset)
+                    // A follow scroll ends the initial anchor, but rows above the viewport keep measuring after it; while
+                    // the reader follows the latest message, their growth keeps it in view instead of pushing it below
+                    // the screen (TAL-2719).
+                    .defaultScrollAnchor(isFollowingLatestContent ? .bottom : nil, for: .sizeChanges)
                     .task(id: readyRevision) {
                         guard !Task.isCancelled, let revision = readyRevision, readyScrollRevision == revision,
                               revision == nativeScrollRevision,

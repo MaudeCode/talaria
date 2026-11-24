@@ -281,6 +281,13 @@ final class HostedTestBundle: NSObject, XCTestObservation {
     }
 }
 
+extension ChatScrollPositionController {
+    /// No navigation, row realization or position preservation (a disclosure hold or a prepend's measurement window)
+    /// is running. Until then the controller owns the offset, and puts back a raw `contentOffset` write that is not a
+    /// drag as its own re-anchoring, so a synthetic scroll or fixture interaction waits for this (TAL-2719).
+    var isIdle: Bool { !isNavigating && !isPreservingPosition && !isRealizingRows }
+}
+
 /// The last text a Copy action copied while `recordCopies()` held the copy hook.
 @MainActor
 final class CopiedText {

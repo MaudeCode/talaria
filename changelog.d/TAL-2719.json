@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening a chat with long messages stays on the latest reply instead of sometimes stopping a screen above it.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

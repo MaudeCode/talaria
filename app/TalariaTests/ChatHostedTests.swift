@@ -96,10 +96,11 @@ final class ChatHostedTests: XCTestCase {
         let started = await model.sendMessage("Check this")
         XCTAssertTrue(started)
         stream.emit(.reasoning(try JSONDecoder().decode(ReasoningStreamEvent.self, from: Data(#"{"text":"\#(plan)","disclosure_key":"\#(key)"}"#.utf8))))
-        let card = { (window: UIWindow) in HostedAccessibility.elements(in: window).first { $0.accessibilityLabel == "Thinking, Thinking" } }
+        // A live row with no server title reads "Thinking"; once its turn settles it reads "Thought" (TAL-2026).
+        let card = { (window: UIWindow, label: String) in HostedAccessibility.elements(in: window).first { $0.accessibilityLabel == label } }
         let showsPlan = { HostedAccessibility.labels(in: window).contains { $0.contains(plan) } }
-        _ = try await requireElement(in: window, label: "Thinking, Thinking", "The live thinking card is not shown")
-        XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(card(window))))
+        _ = try await requireElement(in: window, label: "Thinking", "The live thinking card is not shown")
+        XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(card(window, "Thinking"))))
         let opened = await awaitCondition(showsPlan)
         XCTAssertTrue(opened, "The live thinking card did not open")
         attachHostedScreenshot(window, name: "thinking-card-live-open")
@@ -112,7 +113,7 @@ final class ChatHostedTests: XCTestCase {
         stream.emit(.streamEnd)
         // The settled scene folds its work under "Worked", a header the live turn never shows.
         _ = try await requireElement(in: window, label: "Worked", "The turn did not settle into the server's scene")
-        let stillOpen = await awaitCondition { card(window)?.accessibilityHint == "Double tap to collapse details." && showsPlan() }
+        let stillOpen = await awaitCondition { card(window, "Thought")?.accessibilityHint == "Double tap to collapse details." && showsPlan() }
         attachHostedScreenshot(window, name: "thinking-card-settled")
         XCTAssertTrue(stillOpen, "The settled thinking card closed: \(HostedAccessibility.labels(in: window))")
     }
@@ -1211,9 +1212,7 @@ final class ChatHostedTests: XCTestCase {
         }
         let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
         let controller = try XCTUnwrap(coordinator.scrollPositionController)
-        let entrySettled = await awaitCondition {
-            !controller.isNavigating && !controller.isPreservingPosition && !controller.isRealizingRows
-        }
+        let entrySettled = await awaitCondition { controller.isIdle }
         XCTAssertTrue(entrySettled, "Entry realization must settle before positioning the fixture reader")
         controller.userDidBeginDragging()
         coordinator.onFollowEvent(.userScrollBegin)
@@ -3136,9 +3135,7 @@ final class ChatHostedTests: XCTestCase {
         let navigate = try XCTUnwrap(controller.onHoldAnchor, "The transcript must register its navigation owner")
         navigate(id, anchor)
         afterRequest()
-        let arrived = await awaitCondition {
-            !controller.isNavigating && !controller.isPreservingPosition && !controller.isRealizingRows
-        }
+        let arrived = await awaitCondition { controller.isIdle }
         XCTAssertTrue(arrived, "The requested reader must finish navigation and realization before fixture interaction; navigating \(controller.isNavigating), preserving \(controller.isPreservingPosition), realizing \(controller.isRealizingRows), top \(String(describing: controller.viewportTop))")
     }
 
