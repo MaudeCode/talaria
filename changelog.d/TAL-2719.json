@@ -1,1 +1,12 @@
-{"skip": "Test-only change: two Duo fold hosted tests wait for the state they act on, so they pass on the hosted runner; no app behavior changes."}
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening a chat with long messages stays on the latest reply instead of sometimes stopping a screen above it.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
