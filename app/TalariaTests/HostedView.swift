@@ -273,14 +273,8 @@ extension XCTestCase {
                 $0.userInterfaceStyle = variant.style
                 $0.preferredContentSizeCategory = variant.textSize
             }
-            if let insets = variant.safeAreaInsets, let root = window.rootViewController {
-                // The host simulator's own insets differ from the display being modelled.
-                let host = root.view.safeAreaInsets
-                root.additionalSafeAreaInsets = UIEdgeInsets(top: insets.top - host.top, left: insets.left - host.left,
-                                                             bottom: insets.bottom - host.bottom, right: insets.right - host.right)
-                window.layoutIfNeeded()
-                settle()
-                XCTAssertEqual(root.view.safeAreaInsets, insets, "\(name)-\(variant.name): the modelled safe area")
+            if let insets = variant.safeAreaInsets {
+                applySafeArea(insets, to: window, "\(name)-\(variant.name)")
             }
             defer {
                 attachFailureScreenshot(window, name: "\(name)-\(variant.name) failure")
@@ -291,6 +285,22 @@ extension XCTestCase {
             try await inspect(window, variant)
             attachHostedScreenshot(window, name: "\(name)-\(variant.name)")
         }
+    }
+
+    /// Makes `insets` the whole safe area of `window`'s root: the host simulator's own insets differ from the display
+    /// a hosted window models.
+    @MainActor
+    func applySafeArea(_ insets: UIEdgeInsets, to window: UIWindow, _ context: String = "",
+                       file: StaticString = #filePath, line: UInt = #line) {
+        guard let root = window.rootViewController else { return }
+        let added = root.additionalSafeAreaInsets
+        let host = root.view.safeAreaInsets
+        root.additionalSafeAreaInsets = UIEdgeInsets(
+            top: insets.top - host.top + added.top, left: insets.left - host.left + added.left,
+            bottom: insets.bottom - host.bottom + added.bottom, right: insets.right - host.right + added.right)
+        window.layoutIfNeeded()
+        settle()
+        XCTAssertEqual(root.view.safeAreaInsets, insets, "\(context): the modelled safe area", file: file, line: line)
     }
 
     /// Finds `match` on a lazily built screen: checks what is on screen, then pages the main list down until the

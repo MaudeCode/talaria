@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Turning iPhone Duo's outer display to landscape or back keeps your place in a chat you scrolled back through.",
+      "highlight": false,
+      "announce": false
+    },
+    {
+      "category": "Fixed",
+      "summary": "An approval or question in a short landscape chat leaves the composer and its controls on screen instead of pushing them past the bottom edge.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

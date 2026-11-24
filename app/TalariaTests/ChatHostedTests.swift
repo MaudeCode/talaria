@@ -2211,7 +2211,17 @@ final class ChatHostedTests: XCTestCase {
 
     /// TAL-2021: at the largest accessibility text size the approval's last choice scrolls into view.
     func testTheLastApprovalChoiceScrollsIntoViewAtTheLargestTextSize() async throws {
-        let window = try await hostFixtureChat(["--ui-test-chat-full"]) {
+        try await assertTheLastApprovalChoiceScrollsIntoViewAtTheLargestTextSize(size: HostedSize.phone, name: "approval-slot-ax5")
+    }
+
+    /// TAL-1052: and on the Duo's outer display in landscape, compact in both dimensions.
+    func testTheLastApprovalChoiceScrollsIntoViewAtTheLargestTextSizeInOuterLandscape() async throws {
+        try await assertTheLastApprovalChoiceScrollsIntoViewAtTheLargestTextSize(size: HostedSize.duoOuterLandscape,
+                                                                                  name: "approval-slot-ax5-outer-landscape")
+    }
+
+    private func assertTheLastApprovalChoiceScrollsIntoViewAtTheLargestTextSize(size: CGSize, name: String) async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-full"], size: size) {
             $0.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
         }
         try await awaitFixtureApproval(in: window)
@@ -2241,7 +2251,7 @@ final class ChatHostedTests: XCTestCase {
                 && window.bounds.contains(lastFrame)
         }
         settle(0.3)
-        attachHostedScreenshot(window, name: "approval-slot-ax5")
+        attachHostedScreenshot(window, name: name)
         XCTAssertTrue(revealed, "Skip all this session stays out of view: \(lastFrame) in the card's scroll view \(viewport)")
     }
 

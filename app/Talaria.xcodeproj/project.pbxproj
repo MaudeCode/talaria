@@ -78,6 +78,7 @@
 		D857728B73FCE582FDD1DFB3 /* ChatHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856728B73FCE582FDD1DFB3 /* ChatHostedTests.swift */; };
 		D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */; };
 		D1477000000000000000A001 /* DuoFoldHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1477000000000000000A002 /* DuoFoldHostedTests.swift */; };
+		D1052000000000000000A001 /* DuoOuterLandscapeHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1052000000000000000A002 /* DuoOuterLandscapeHostedTests.swift */; };
 		D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA04 /* TasksHostedTests.swift */; };
 		D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */; };
 		D1965A000000000000000005 /* DecisionReviewHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1965A000000000000000004 /* DecisionReviewHostedTests.swift */; };
@@ -583,6 +584,7 @@
 		D856728B73FCE582FDD1DFB3 /* ChatHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHostedTests.swift; sourceTree = "<group>"; };
 		D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListHostedTests.swift; sourceTree = "<group>"; };
 		D1477000000000000000A002 /* DuoFoldHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoFoldHostedTests.swift; sourceTree = "<group>"; };
+		D1052000000000000000A002 /* DuoOuterLandscapeHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoOuterLandscapeHostedTests.swift; sourceTree = "<group>"; };
 		D856083559F0B34BD088CA04 /* TasksHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksHostedTests.swift; sourceTree = "<group>"; };
 		D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsHostedTests.swift; sourceTree = "<group>"; };
 		D1965A000000000000000004 /* DecisionReviewHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionReviewHostedTests.swift; sourceTree = "<group>"; };
@@ -1087,6 +1089,7 @@
 				D856728B73FCE582FDD1DFB3 /* ChatHostedTests.swift */,
 				D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */,
 				D1477000000000000000A002 /* DuoFoldHostedTests.swift */,
+				D1052000000000000000A002 /* DuoOuterLandscapeHostedTests.swift */,
 				D856083559F0B34BD088CA04 /* TasksHostedTests.swift */,
 				D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */,
 				D1965A000000000000000004 /* DecisionReviewHostedTests.swift */,
@@ -2236,6 +2239,7 @@
 				D857728B73FCE582FDD1DFB3 /* ChatHostedTests.swift in Sources */,
 				D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */,
 				D1477000000000000000A001 /* DuoFoldHostedTests.swift in Sources */,
+				D1052000000000000000A001 /* DuoOuterLandscapeHostedTests.swift in Sources */,
 				D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */,
 				D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */,
 				D1965A000000000000000005 /* DecisionReviewHostedTests.swift in Sources */,
