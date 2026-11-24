@@ -1704,3 +1704,43 @@ extension TranscriptHostedTests {
         }
     }
 }
+
+/// Forced left-to-right content (code, math, tool rows, media) inside a right-to-left chat (TAL-2030).
+@MainActor
+extension TranscriptHostedTests {
+    /// A forced-LTR code block must not stretch an RTL reply past its column, pushing its prose off-screen.
+    func testRightToLeftReplyWithWideCodeStaysInsideTheWindow() async throws {
+        let content = "שלום עולם, זו תשובה.\n\n```text\n\(String(repeating: "wide_fixture ", count: 9))\n```\n\nעוד טקסט בעברית.\n"
+        let message = ChatMessage(role: "assistant", content: content, timestamp: nil, messageId: "rtl-code")
+        let transcript = historyTranscript(messages: [message], hasOlderMessages: false) { _ in false }
+        let window = try hostWindow(transcript.environment(\.layoutDirection, .rightToLeft))
+        let reply = try await requireElement(in: window, "The Hebrew reply never rendered") {
+            $0.accessibilityLabel?.contains("שלום עולם") == true
+        }
+        let bounds = window.bounds.insetBy(dx: -0.5, dy: 0)
+        let replyFrame = window.convert(reply.accessibilityFrame, from: nil)
+        XCTAssertTrue(bounds.minX <= replyFrame.minX && replyFrame.maxX <= bounds.maxX, "The RTL reply left the window: \(replyFrame)")
+        let code = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Copy code"), "The code block never rendered")
+        let copyFrame = window.convert(code.accessibilityFrame, from: nil)
+        XCTAssertTrue(bounds.contains(copyFrame), "The code block's controls left the window: \(copyFrame)")
+        attachHostedScreenshot(window, name: "rtl-reply-wide-code")
+    }
+
+    /// Narrow forced-LTR content sits at its parent's leading edge: the right in RTL, the left in LTR.
+    func testNarrowForcedLeftToRightContentSitsAtTheLeadingEdge() async throws {
+        for direction in [LayoutDirection.rightToLeft, .leftToRight] {
+            var frame = CGRect.null
+            let window = try hostWindow(VStack(alignment: .leading) {
+                SwiftUI.Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
+                SwiftUI.Color.clear.frame(width: 100, height: 10)
+                    .forcedLeftToRight()
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+            }.environment(\.layoutDirection, direction))
+            let measured = await awaitCondition { !frame.isNull }
+            XCTAssertTrue(measured, "The narrow content never laid out in \(direction)")
+            let expectedMinX = direction == .rightToLeft ? window.bounds.width - 100 : 0
+            XCTAssertEqual(frame.minX, expectedMinX, accuracy: 0.5, "Narrow forced-LTR content left the \(direction) leading edge")
+            window.isHidden = true
+        }
+    }
+}
