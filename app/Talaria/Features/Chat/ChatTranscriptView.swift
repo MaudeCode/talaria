@@ -27,6 +27,8 @@ struct ChatTranscriptView: View {
     @State private var didReaderScroll = false
     /// The page before the window was loaded once to reach the server's unread row.
     @State private var didLoadPageForUnreadRule = false
+    /// This transcript scrolled to the unread rule, so its own restore of the reader yields to that scroll.
+    @State private var didPlaceUnreadRuleHere = false
     @State private var nativeScrollRevision = 0
     @State private var scrollDestination: (id: String, anchor: UnitPoint, animation: Animation?)?
     @State private var scrollDestinationNeedsMount = false
@@ -144,10 +146,9 @@ struct ChatTranscriptView: View {
     var onReaderMoved: (() -> String?) -> Void = { _ in }
     /// TAL-1484: the server's first unread message this visit; its row shows the "New since you left" rule above it.
     var unreadFromMessageID: String? = nil
-    /// The rule stayed on screen for its dwell.
-    var onUnreadRuleSeen: () -> Void = {}
-    /// The transcript is about to move the reader to the rule, away from the latest message.
-    var onPlaceUnreadRule: () -> Void = {}
+    /// The transcript is about to move the reader to the rule's row, named by its container id, away from the latest
+    /// message.
+    var onPlaceUnreadRule: (String) -> Void = { _ in }
 
     private var rowCache: ChatTranscriptRowCache { retainedRowCache ?? ownRowCache }
 
@@ -405,9 +406,11 @@ struct ChatTranscriptView: View {
             return
         }
         retainedChat?.didPlaceUnreadRule = true
-        onPlaceUnreadRule()
+        didPlaceUnreadRuleHere = true
+        let containerID = Self.containerID(for: rowID)
+        onPlaceUnreadRule(containerID)
         releasingPreservation {
-            scrollCommands.scrollTo(id: Self.containerID(for: rowID), anchor: ChatScrollPositionController.unreadRuleAnchor)
+            scrollCommands.scrollTo(id: containerID, anchor: ChatScrollPositionController.unreadRuleAnchor)
         }
     }
 
@@ -429,8 +432,8 @@ struct ChatTranscriptView: View {
     /// Scrolls the hidden rows to the restored reader's row, or to the latest message, following it, when the transcript
     /// no longer has that row (TAL-2566). The rows show once that scroll lands.
     private func placeRestoredReader() {
-        // The unread rule took over this placement; its scroll's landing shows the rows.
-        guard let restoredReadingRowID, retainedChat?.didPlaceUnreadRule != true else { return }
+        // This transcript's unread rule took over the placement; its scroll's landing shows the rows.
+        guard let restoredReadingRowID, !didPlaceUnreadRuleHere else { return }
         if rowCache.containsRow(restoredReadingRowID) {
             if scrollDestination?.id != restoredReadingRowID {
                 scrollCommands.scrollTo(id: restoredReadingRowID, anchor: .top)
@@ -631,7 +634,7 @@ struct ChatTranscriptView: View {
 
     private func transcriptRow(_ transcriptMessage: TranscriptMessage, index: Int, showsUnreadRule: Bool) -> some View {
         positionAnchoredRow(VStack(spacing: transcriptMessageSpacing) {
-            if showsUnreadRule { TranscriptUnreadRule(onSeen: onUnreadRuleSeen) }
+            if showsUnreadRule { TranscriptUnreadRule() }
 
             // Scope live-streaming state to the row that actually displays it.
             // Non-anchor / non-streaming rows receive stable empty/nil values so

@@ -1188,21 +1188,9 @@ struct ChatTranscriptSkeletonLine: Identifiable {
     let maxWidth: CGFloat
 }
 
-extension EnvironmentValues {
-    /// How long the unread rule stays on screen before the chat counts as viewed; hosted tests shorten it.
-    @Entry var transcriptUnreadRuleDwell: Duration = .seconds(2)
-}
-
 /// TAL-1484: the thin labeled line above the first row the reader has not seen, where the server's
-/// `unread_from_message_id` puts it. Once at least half of it has stayed on screen in the foreground for the dwell, it
-/// reports itself seen.
+/// `unread_from_message_id` puts it.
 struct TranscriptUnreadRule: View {
-    let onSeen: () -> Void
-
-    @Environment(\.transcriptUnreadRuleDwell) private var dwell
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var isVisible = false
-
     var body: some View {
         HStack(spacing: 8) {
             hairline
@@ -1217,11 +1205,6 @@ struct TranscriptUnreadRule: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("transcript-unread-rule")
-        .onScrollVisibilityChange(threshold: 0.5) { isVisible = $0 }
-        .task(id: isVisible && scenePhase == .active) {
-            guard isVisible, scenePhase == .active, (try? await Task.sleep(for: dwell)) != nil else { return }
-            onSeen()
-        }
     }
 
     private var hairline: some View {

@@ -932,7 +932,7 @@ final class TranscriptHostedTests: XCTestCase {
         let (detail, unreadText) = try Self.unreadDetail()
         UITestFixtureURLProtocol.sessionDetail.withLock { $0 = detail }
         let window = try hostWindow(fixture.chat(try await fixture.session())
-            .environment(\.transcriptUnreadRuleDwell, .milliseconds(100)), size: HostedSize.phone)
+            .environment(\.chatViewedDwell, .milliseconds(100)), size: HostedSize.phone)
 
         let scroll = try await unreadTranscriptScrollView(in: window)
         let placed = await awaitCondition { self.unreadRulePlacement(in: window, scroll: scroll, above: unreadText) == "top third" }
@@ -986,6 +986,19 @@ final class TranscriptHostedTests: XCTestCase {
         }
     }
 
+    /// TAL-1484: the server records a viewed position only from the App's reports, so a chat with nothing new is still
+    /// reported viewed once it has been on screen; otherwise a chat read only in the App would never get a rule.
+    func testAChatWithNothingNewIsStillReportedViewed() async throws {
+        let fixture = try FixtureApp(for: self)
+        let (detail, _) = try Self.unreadDetail(unreadFrom: NSNull())
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = detail }
+        let window = try hostWindow(fixture.chat(try await fixture.session())
+            .environment(\.chatViewedDwell, .milliseconds(100)), size: HostedSize.phone)
+        _ = try await unreadTranscriptScrollView(in: window)
+        let reported = await awaitCondition { UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/talaria/viewed") } }
+        XCTAssertTrue(reported, "A chat with nothing new was never reported viewed")
+    }
+
     /// TAL-1484: the server may name a row in the page before the window it sent; the chat loads that page once and
     /// opens at the rule there.
     func testAnUnreadRowInThePageBeforeTheWindowLoadsAndOpensAtTheRule() async throws {
@@ -1025,7 +1038,7 @@ final class TranscriptHostedTests: XCTestCase {
 
     /// The shared unread fixture's chat, long enough to scroll, with `appending` after its rows and its
     /// `unread_from_message_id` replaced by `unreadFrom` (removed when nil); also the text of the row the fixture names.
-    private nonisolated static func unreadDetail(appending extra: [String: Any]? = nil,
+    nonisolated static func unreadDetail(appending extra: [String: Any]? = nil,
                                                  unreadFrom: Any?? = .none) throws -> (Data, String) {
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("unread-from-message")) as? [String: Any])
         var session = try XCTUnwrap(fixture["session"] as? [String: Any])

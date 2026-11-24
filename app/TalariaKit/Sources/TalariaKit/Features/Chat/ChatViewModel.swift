@@ -141,8 +141,9 @@ public final class ChatViewModel {
     /// TAL-1484: the row the "New since you left" rule sits above, from this visit's first server read. Later reads never
     /// move it, so a reply that arrives while the chat is open is not new; nil shows no rule.
     public private(set) var unreadFromMessageID: String?
-    @ObservationIgnored private var hasReadUnreadPosition = false
-    @ObservationIgnored private var hasReportedUnreadRuleSeen = false
+    /// A server read applied this visit, so what the chat shows is the server's and can be reported viewed.
+    public private(set) var hasReadServerTranscript = false
+    @ObservationIgnored private var hasReportedViewed = false
     /// The outstanding `POST /api/session/clear`; sends and loads wait for it so it never overtakes newer input.
     @ObservationIgnored private var clearConversationTask: Task<ClearConversationOutcome, Never>?
     /// Counts `/clear`s; a history page read before the latest one carries rows it removed.
@@ -2090,15 +2091,20 @@ extension ChatViewModel {
         return prefetch.task
     }
 
-    /// TAL-1484: the rule has been on screen long enough, so the chat counts as viewed through now and the next open names
-    /// only rows after this one. Once a visit; a failed report lets the rule's next appearance try again.
-    public func reportUnreadRuleSeen() {
-        guard unreadFromMessageID != nil, !hasReportedUnreadRuleSeen, let sessionID else { return }
-        hasReportedUnreadRuleSeen = true
+    /// TAL-1484: the reader has had the chat on screen for the dwell, so it counts as viewed through now and the next open
+    /// names only rows after this one. The server records a position only from these reports, so they run whether or not
+    /// this visit showed the rule.
+    public func reportViewed() {
+        guard hasReadServerTranscript, let sessionID else { return }
+        hasReportedViewed = true
         let client = client
-        Task { @MainActor [weak self] in
-            if (try? await client.markSessionViewed(id: sessionID)) == nil { self?.hasReportedUnreadRuleSeen = false }
-        }
+        Task { _ = try? await client.markSessionViewed(id: sessionID) }
+    }
+
+    /// Leaving or backgrounding a chat already reported viewed: the rows that arrived while it was open were seen too.
+    public func reportViewedAgainIfReported() {
+        guard hasReportedViewed else { return }
+        reportViewed()
     }
 
     static func requestSessionLoad(_ sessionID: String, client: APIClient) async throws -> SessionResponse {
@@ -2281,8 +2287,8 @@ extension ChatViewModel {
             applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, connectionChangesAtFetch: connectionChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
             serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
             loadedClearGeneration = session?.clearGeneration
-            if !hasReadUnreadPosition, let session {
-                hasReadUnreadPosition = true
+            if !hasReadServerTranscript, let session {
+                hasReadServerTranscript = true
                 unreadFromMessageID = session.unreadFromMessageId
             }
             applyBranchedFrom(from: session, modelContext: modelContext)
