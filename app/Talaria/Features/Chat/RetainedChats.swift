@@ -31,6 +31,9 @@ final class RetainedChat {
     init(viewModel: ChatViewModel, session: SessionSummary? = nil) {
         self.viewModel = viewModel
         self.session = session
+        #if DEBUG
+        UITestCacheOwnerHook.created(self)
+        #endif
     }
 
     /// Whether a view shows the chat, or left it this turn and may yet hand it over.
@@ -61,6 +64,13 @@ final class RetainedChat {
         }
     }
 }
+
+#if DEBUG
+extension RetainedChat: UITestCacheOwner {
+    /// A chat's release, a turn after its last view leaves, writes its transcript to the cache (TAL-1097).
+    var hasCacheWorkInFlight: Bool { isLive }
+}
+#endif
 
 /// The open chats the session list keeps above its regular and compact layouts, so both hand the same chat to their
 /// `ChatView` (TAL-1477). Only the chat navigation shows stays, so a chat opened again later starts afresh, except for

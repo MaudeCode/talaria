@@ -348,6 +348,7 @@ final class SessionListAutoRefreshTests: XCTestCase {
             await queue.run {
                 withUnsafeCurrentTask { $0?.cancel() }
                 await Task.yield()
+                XCTAssertTrue(queue.hasReloadInFlight, "A reload whose caller was cancelled must still count as in flight")
                 completedReloads += 1
             }
         }
@@ -355,6 +356,7 @@ final class SessionListAutoRefreshTests: XCTestCase {
         await caller.value
 
         XCTAssertEqual(completedReloads, 1)
+        XCTAssertFalse(queue.hasReloadInFlight)
     }
 
     /// A replacement owner records its request and is turned away, so the caller

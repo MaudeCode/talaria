@@ -395,6 +395,25 @@ final class SessionListPendingChangeTests: XCTestCase {
         XCTAssertNil(viewModel.pendingChange(for: session))
     }
 
+    /// A hosted fixture's teardown waits on this before it releases the cache the confirmation writes (TAL-1097).
+    func testAHeldRenameCountsAsCacheWorkUntilItReturns() async throws {
+        let requests = DeferredRequests()
+        let held = expectation(description: "rename held")
+        let viewModel = model { request in
+            if request.request.url?.path == "/api/session/rename" { _ = requests.append(request); held.fulfill() }
+            else { request.complete(withJSON: self.baseline) }
+        }
+        _ = await viewModel.load()
+        let session = try XCTUnwrap(viewModel.sessions.first)
+        XCTAssertFalse(viewModel.hasCacheWorkInFlight)
+        let rename = Task { await viewModel.rename(session, to: "Submitted") }
+        await fulfillment(of: [held], timeout: 5)
+        XCTAssertTrue(viewModel.hasCacheWorkInFlight, "A rename awaiting the server is cache work in flight")
+        requests.request(at: 0).complete(withJSON: #"{"session":{"session_id":"same","title":"Canonical"}}"#)
+        _ = await rename.value
+        XCTAssertFalse(viewModel.hasCacheWorkInFlight)
+    }
+
     func testConfirmedDeleteCannotBeResurrectedByAPreWriteReload() async throws {
         let requests = DeferredRequests()
         let deletion = expectation(description: "delete held")

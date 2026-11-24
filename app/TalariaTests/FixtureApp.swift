@@ -39,14 +39,19 @@ enum FixtureLaunchArguments {
 @Observable
 final class FixtureApp {
     let environment: UITestFixtureEnvironment
-    let cache: ModelContainer
+    /// Released by `tearDown()`, once no work that could reach it is left.
+    @ObservationIgnored private(set) var cache: ModelContainer!
     var pendingSessionID: String?
     var requestedNewChat: NewChatRequest?
     var opensQuotaWidgetSettings = false
     var pendingDestination: SessionListUtilityDestination?
-    /// A screen's refresh task can still write its cache after its test ends; SwiftData traps on a context whose
-    /// container is gone, so every hosted test's in-memory cache lives for the rest of the run.
-    private static var retainedCaches: [ModelContainer] = []
+    /// Every chat and session list made since this fixture started: their async work reads and writes the cache, so
+    /// teardown waits until none has any admitted (TAL-1097).
+    @ObservationIgnored private let cacheOwners = NSHashTable<AnyObject>.weakObjects()
+    @ObservationIgnored private weak var testCase: XCTestCase?
+    /// Fixtures not yet torn down; the warm-up, whose teardown blocks never run, tears its own down through it.
+    private static var open: [FixtureApp] = []
+    nonisolated(unsafe) private static var busyCacheKey: UInt8 = 0
 
     var client: APIClient { environment.client }
 
@@ -67,15 +72,42 @@ final class FixtureApp {
             for: CachedSession.self, CachedMessage.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         )
-        Self.retainedCaches.append(cache)
-        // No load may stay held into the next test.
-        testCase.addTeardownBlock {
-            MainActor.assumeIsolated {
-                UITestFixtureHold.shared.release()
-                FixtureLaunchArguments.scenario = []
-                UITestFixtureURLProtocol.resetForHostedTest()
-            }
+        self.testCase = testCase
+        UITestCacheOwnerHook.created = { [weak self] in self?.cacheOwners.add($0) }
+        Self.open.append(self)
+        // The block holds the fixture, and so its cache, until its work has ended, whether the test passed, failed or threw.
+        testCase.addTeardownBlock { @MainActor in await self.tearDown() }
+    }
+
+    /// Ends this fixture's work before its cache goes (TAL-1097). SwiftData traps on a context whose container is gone,
+    /// so teardown takes down every hosted window while the cache is still there, stops admitting the fixture's loads
+    /// and fails those still open, held loads and streams included, then waits until no chat or session list made under
+    /// it has cache work admitted: a chat still shown has yet to write its transcript as its screen leaves, which it does
+    /// a turn later, and a queued list reload, which cancelling its screen does not cancel, ends with the load it
+    /// awaited. Only then do the scenario, the fixture's server state and the cache go. The test's teardown runs it;
+    /// a test that checks the drain itself calls it first.
+    func tearDown() async {
+        guard let cache else { return }
+        HostedScene.dismantleWindows()
+        UITestFixtureURLProtocol.cancelOpenLoads()
+        UITestFixtureHold.shared.release()
+        let busy = { self.cacheOwners.allObjects.compactMap { $0 as? any UITestCacheOwner }.filter(\.hasCacheWorkInFlight) }
+        let drained = await testCase?.awaitCondition { busy().isEmpty } ?? false
+        if !drained {
+            let owners = busy()
+            XCTFail("Cache work outlived its fixture's teardown: \(owners.map { String(describing: type(of: $0)) })")
+            // Each keeps the cache its work can still reach, so the failure stays this test's instead of a later trap.
+            for owner in owners { objc_setAssociatedObject(owner, &Self.busyCacheKey, cache, .OBJC_ASSOCIATION_RETAIN) }
         }
+        FixtureLaunchArguments.scenario = []
+        UITestFixtureURLProtocol.resetForHostedTest()
+        Self.open.removeAll { $0 === self }
+        self.cache = nil
+    }
+
+    /// Tears down every fixture still open, newest first.
+    static func tearDownOpenFixtures() async {
+        for fixture in open.reversed() { await fixture.tearDown() }
     }
 
     /// Entry opens at the latest row; older fixture rows may be unmounted by lazy layout.
@@ -175,12 +207,10 @@ final class HostedTestBundle: NSObject, XCTestObservation {
     func testBundleWillStart(_ testBundle: Bundle) {
         MainActor.assumeIsolated {
             var finished = false
-            var windows: [UIWindow] = []
-            // No test is running, so its teardown blocks never run; the same cleanup follows below.
+            // No test is running, so its teardown blocks never run; its fixtures are torn down below.
             let warmer = XCTestCase()
             Task { @MainActor in
                 if let window = try? await warmer.hostFixtureChat(["--ui-test-long-bodies"]) {
-                    windows.append(window)
                     _ = await warmer.awaitElement(in: window, label: "Short reply 25.", timeout: 60)
                     if let composer = await warmer.composerTextView(in: window) {
                         composer.becomeFirstResponder()
@@ -189,7 +219,6 @@ final class HostedTestBundle: NSObject, XCTestObservation {
                     window.isHidden = true
                 }
                 if let fixture = try? FixtureApp(for: warmer), let window = try? warmer.hostWindow(fixture.sessionList()) {
-                    windows.append(window)
                     try? await warmer.openSidebar(in: window)
                     if let row = await warmer.awaitElement(in: window, timeout: 60, where: {
                         $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
@@ -207,7 +236,6 @@ final class HostedTestBundle: NSObject, XCTestObservation {
                        $0.horizontalSizeClass = .regular
                        $0.verticalSizeClass = .regular
                    }) {
-                    windows.append(window)
                     try? await warmer.openSidebar(in: window)
                     if let row = await warmer.awaitElement(in: window, timeout: 60, where: {
                         $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
@@ -224,7 +252,6 @@ final class HostedTestBundle: NSObject, XCTestObservation {
                         .background(NavigationAppearanceCompletionObserver { pushed = true })
                     if let window = try? warmer.hostWindow(FixturePushHost(destination: chat), animationsEnabled: true),
                        let scene = window.windowScene {
-                        windows.append(window)
                         if let open = await warmer.awaitElement(in: window, label: "Open fixture chat", timeout: 60) {
                             await warmer.awaitDisplayUpdates(2, in: scene)
                             HostedAccessibility.activate(open)
@@ -238,7 +265,6 @@ final class HostedTestBundle: NSObject, XCTestObservation {
                     AuxiliaryModelsSettingsView(server: UITestFixtureEnvironment.serverURL)
                         .environment(fixture.environment.authManager)
                 }) {
-                    windows.append(window)
                     if let vision = await warmer.awaitElement(in: window, where: { $0.accessibilityLabel?.hasPrefix("Vision") == true }),
                        HostedAccessibility.activate(vision),
                        let model = await warmer.awaitElement(in: window, where: {
@@ -254,7 +280,6 @@ final class HostedTestBundle: NSObject, XCTestObservation {
                 for size in [HostedSize.phone, HostedSize.padLandscape] {
                     guard let fixture = try? FixtureApp(for: warmer),
                           let window = try? warmer.hostWindow(fixture.sessionList(), size: size) else { continue }
-                    windows.append(window)
                     try? await warmer.openSidebar(in: window)
                     _ = await warmer.awaitCondition(timeout: 60) { warmer.settingsAvatar(in: window) != nil }
                     guard let avatar = warmer.settingsAvatar(in: window), HostedAccessibility.activate(avatar) else { continue }
@@ -263,20 +288,14 @@ final class HostedTestBundle: NSObject, XCTestObservation {
                     _ = await warmer.awaitCondition(timeout: 60) { window.firstView(ofType: UITextField.self)?.isFirstResponder == true }
                     window.firstView(ofType: UITextField.self)?.resignFirstResponder()
                 }
+                await FixtureApp.tearDownOpenFixtures()
                 finished = true
             }
             // No test starts before the warm-up ends, however long a loaded host takes; each step has its own bounded
             // waits. A warm-up left running opened its next FixtureApp mid-test, whose reset cancelled that test's
             // requests, and its assertions failed whichever test was running (TAL-2688).
             while !finished { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05)) }
-            for window in windows {
-                window.isHidden = true
-                window.rootViewController = nil
-            }
             UIView.setAnimationsEnabled(true)
-            UITestFixtureHold.shared.release()
-            FixtureLaunchArguments.scenario = []
-            UITestFixtureURLProtocol.resetForHostedTest()
         }
     }
 }

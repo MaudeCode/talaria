@@ -188,3 +188,10 @@ final class SessionListRefreshQueue {
         }
     }
 }
+
+#if DEBUG
+extension SessionListRefreshQueue {
+    /// A reload is running or queued; cancelling its caller does not end it (TAL-1097).
+    var hasReloadInFlight: Bool { isServing }
+}
+#endif
