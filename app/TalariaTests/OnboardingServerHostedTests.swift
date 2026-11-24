@@ -82,6 +82,10 @@ final class OnboardingServerHostedTests: XCTestCase {
 
         try await confirm("Sign Out of This Server", alertTitle: "Sign out of this server?",
                           answer: "Sign Out of This Server", in: detail)
+        // The App tears this page down with the signed-out server's screens, so it never resets its button's spinner.
+        // Left up, the spinner commits every frame, which grew a CI runner's render server past a gigabyte over
+        // repeated attempts.
+        HostedScene.dismantle(detail)
         try await expectSidebar(in: window, lists: firstServerTitle, notListing: secondServerTitle)
         XCTAssertEqual(auth.servers.map(\.id), [first.id], "The signed-out server is still listed")
         XCTAssertEqual(auth.activeServerID, first.id)
@@ -206,12 +210,16 @@ final class OnboardingServerHostedTests: XCTestCase {
     /// sign-out's logout request; so the sidebar is opened again inside the wait for the row.
     private func expectSidebar(in window: UIWindow, lists title: String, notListing other: String,
                                file: StaticString = #filePath, line: UInt = #line) async throws {
+        // Each toggle is pressed once: a rebuilt root brings a new one, and pressing one still opening could close it.
+        var pressed: ObjectIdentifier?
         let listed = await awaitCondition {
             let labels = HostedAccessibility.labels(in: window)
             if labels.contains(where: { $0.hasPrefix(title) }) { return true }
             if !labels.contains("Close navigation"),
                let toggle: NSObject = window.firstView(ofType: UIControl.self, where: { $0.accessibilityLabel == "Open navigation" })
-                ?? HostedAccessibility.toolbarItem("Open navigation", in: window) {
+                ?? HostedAccessibility.toolbarItem("Open navigation", in: window),
+               pressed != ObjectIdentifier(toggle) {
+                pressed = ObjectIdentifier(toggle)
                 _ = HostedAccessibility.activate(toggle)
             }
             return false
