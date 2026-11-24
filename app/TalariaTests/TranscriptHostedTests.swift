@@ -951,7 +951,8 @@ final class TranscriptHostedTests: XCTestCase {
         let (detail, unreadText) = try Self.unreadDetail()
         UITestFixtureURLProtocol.sessionDetail.withLock { $0 = detail }
         let session = try await fixture.session()
-        let model = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client, networkPath: nil)
+        let model = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client,
+                                  liveActivityManager: SpyChatLiveActivityManager(), networkPath: nil)
         let window = try hostWindow(fixture.chat(session, viewModel: model), size: HostedSize.phone)
         let scroll = try await unreadTranscriptScrollView(in: window)
         let placed = await awaitCondition { self.unreadRulePlacement(in: window, scroll: scroll, above: unreadText) == "top third" }
