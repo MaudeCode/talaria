@@ -1211,9 +1211,7 @@ final class ChatHostedTests: XCTestCase {
         }
         let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
         let controller = try XCTUnwrap(coordinator.scrollPositionController)
-        let entrySettled = await awaitCondition {
-            !controller.isNavigating && !controller.isPreservingPosition && !controller.isRealizingRows
-        }
+        let entrySettled = await awaitCondition { controller.isIdle }
         XCTAssertTrue(entrySettled, "Entry realization must settle before positioning the fixture reader")
         controller.userDidBeginDragging()
         coordinator.onFollowEvent(.userScrollBegin)
@@ -3136,9 +3134,7 @@ final class ChatHostedTests: XCTestCase {
         let navigate = try XCTUnwrap(controller.onHoldAnchor, "The transcript must register its navigation owner")
         navigate(id, anchor)
         afterRequest()
-        let arrived = await awaitCondition {
-            !controller.isNavigating && !controller.isPreservingPosition && !controller.isRealizingRows
-        }
+        let arrived = await awaitCondition { controller.isIdle }
         XCTAssertTrue(arrived, "The requested reader must finish navigation and realization before fixture interaction; navigating \(controller.isNavigating), preserving \(controller.isPreservingPosition), realizing \(controller.isRealizingRows), top \(String(describing: controller.viewportTop))")
     }
 

@@ -532,6 +532,10 @@ final class DuoFoldHostedTests: XCTestCase {
         _ = try await scrollReaderToMiddle(in: window)
         let scrolled = try transcriptScrollView(in: window)
         let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
+        let controller = try XCTUnwrap(coordinator.scrollPositionController)
+        // The rows around the middle reader still measure: a raw offset write is not a drag, and the controller puts it back.
+        let settled = await awaitCondition { controller.isIdle }
+        XCTAssertTrue(settled, "The middle reader never settled; navigating \(controller.isNavigating), preserving \(controller.isPreservingPosition), realizing \(controller.isRealizingRows)")
         coordinator.onFollowEvent(.userScrollBegin)
         scrolled.contentOffset.y = scrolled.contentSize.height - scrolled.bounds.height + scrolled.adjustedContentInset.bottom
         coordinator.onFollowEvent(.userScrollEnd(isAtBottom: true))

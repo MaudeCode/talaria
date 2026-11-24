@@ -496,8 +496,7 @@ final class TranscriptHostedTests: XCTestCase {
         await awaitCondition {
             guard let controller = self.historyObserver(in: window)?.coordinator?.scrollPositionController,
                   let geometry = ChatScrollMetrics.geometry(of: scroll) else { return false }
-            return !controller.isNavigating && !controller.isRealizingRows && !controller.isPreservingPosition
-                && geometry.contentHeight > geometry.visibleHeight
+            return controller.isIdle && geometry.contentHeight > geometry.visibleHeight
         }
     }
 
