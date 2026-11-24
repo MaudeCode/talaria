@@ -18,7 +18,6 @@ struct ChatCodeBlock: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.chatCodeBlockMargin) private var margin
     @AppStorage(ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey) private var wrapsCodeBlockLines = false
-    @State private var copyConfirmation = CopyConfirmation()
     @State private var highlightedCode: NSAttributedString?
     @State private var scrollViewportWidth: CGFloat = 0
     @State private var columnWidth: CGFloat = 0
@@ -48,18 +47,16 @@ struct ChatCodeBlock: View {
                 .foregroundStyle(SwiftUI.Color.primary)
                 .accessibilityLabel(wrapsCodeBlockLines ? "Disable code line wrapping" : "Enable code line wrapping")
 
-                Button {
-                    PlatformHooks.copyText(content)
-                    copyConfirmation.copied(at: .now)
-                } label: {
-                    Image(systemName: copyConfirmation.isShowing ? "checkmark" : "square.on.square")
-                        .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 36, height: 36)
-                    .contentTransition(.symbolEffect(.replace))
-                }
+                ChatCopyButton(
+                    content,
+                    label: String(localized: "Copy code"),
+                    copiedLabel: String(localized: "Copied code"),
+                    systemImage: "square.on.square",
+                    side: 36
+                )
+                .font(.system(size: 18, weight: .semibold))
                 .buttonStyle(.plain)
                 .foregroundStyle(SwiftUI.Color.primary)
-                .accessibilityLabel(copyConfirmation.isShowing ? "Copied code" : "Copy code")
             }
             .padding(.leading, 16)
             .padding(.trailing, 10)
@@ -84,15 +81,6 @@ struct ChatCodeBlock: View {
         }
         .padding(.horizontal, -bleed)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnWidth = $0 }
-        .onChange(of: content) { _, _ in
-            copyConfirmation.reset()
-        }
-        .task(id: copyConfirmation.expiresAt) {
-            guard let expiresAt = copyConfirmation.expiresAt else { return }
-            try? await Task.sleep(until: expiresAt, clock: .continuous)
-            guard !Task.isCancelled else { return }
-            copyConfirmation.expire(at: .now)
-        }
         .task(id: highlightTaskKey) {
             await updateHighlightedCode()
         }
@@ -262,5 +250,58 @@ struct ChatCodeBlock: View {
         logger.info(
             "Syntax highlighting fallback reason=\(reason.rawValue, privacy: .public) languageCategory=\(MarkdownHighlightPolicy.languageLogCategory(for: normalizedLanguage), privacy: .public) characters=\(code.count, privacy: .public) lines=\(MarkdownHighlightPolicy.lineCount(in: code), privacy: .public)"
         )
+    }
+}
+
+/// The chat's one Copy button: code blocks, tool rows and replies (TAL-965). After each copy it shows a checkmark and
+/// reads `copiedLabel` for two seconds; a change of `text` clears that. Callers set its font and button style.
+struct ChatCopyButton: View {
+    private let text: String
+    private let label: String
+    private let copiedLabel: String
+    private let systemImage: String
+    private let side: CGFloat
+    private let copy: () -> Void
+
+    @State private var confirmation = ChatCodeBlock.CopyConfirmation()
+
+    /// `copy` defaults to putting `text` on the pasteboard.
+    init(
+        _ text: String,
+        label: String = String(localized: "Copy"),
+        copiedLabel: String = String(localized: "Copied"),
+        systemImage: String = "doc.on.doc",
+        side: CGFloat = 44,
+        copy: (() -> Void)? = nil
+    ) {
+        self.text = text
+        self.label = label
+        self.copiedLabel = copiedLabel
+        self.systemImage = systemImage
+        self.side = side
+        self.copy = copy ?? { PlatformHooks.copyText(text) }
+    }
+
+    var body: some View {
+        Button {
+            copy()
+            confirmation.copied(at: .now)
+        } label: {
+            Image(systemName: confirmation.isShowing ? "checkmark" : systemImage)
+                .frame(width: side, height: side)
+                .contentShape(Rectangle())
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .accessibilityLabel(confirmation.isShowing ? copiedLabel : label)
+        .help(label)
+        .onChange(of: text) { _, _ in
+            confirmation.reset()
+        }
+        .task(id: confirmation.expiresAt) {
+            guard let expiresAt = confirmation.expiresAt else { return }
+            try? await Task.sleep(until: expiresAt, clock: .continuous)
+            guard !Task.isCancelled else { return }
+            confirmation.expire(at: .now)
+        }
     }
 }

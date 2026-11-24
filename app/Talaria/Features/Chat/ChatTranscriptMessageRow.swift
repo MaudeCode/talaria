@@ -54,20 +54,32 @@ struct ChatTranscriptMessageRow: View {
             // bubble `contextMenu`: a press over a link opens the link's own
             // actions, and a press on prose opens the message menu at the press
             // point instead of lifting a snapshot of the whole bubble.
-            bubble
-                .environment(\.chatMessageLinkRegionStore, linkRegions)
-                .coordinateSpace(.named(ChatMessageInteraction.rowCoordinateSpace))
-                .background {
-                    ChatMessageInteractionMarker(registry: menuRegistry) {
-                        menuContent(for: actionContext)
+            let showsCopyButton = ChatMessageActionCatalog.showsCopyButton(for: actionContext, isStreaming: isStreaming)
+            VStack(alignment: .leading, spacing: 0) {
+                bubble
+                    .environment(\.chatMessageLinkRegionStore, linkRegions)
+                    .coordinateSpace(.named(ChatMessageInteraction.rowCoordinateSpace))
+                    .background {
+                        ChatMessageInteractionMarker(registry: menuRegistry) {
+                            menuContent(for: actionContext)
+                        }
+                        .accessibilityHidden(true)
                     }
-                    .accessibilityHidden(true)
-                }
-                .accessibilityActions {
-                    ForEach(actions(for: actionContext).filter(\.isEnabled)) { action in
-                        Button(action.title) { action.handler() }
+                    .accessibilityActions {
+                        ForEach(actions(for: actionContext).filter { $0.isEnabled && !(showsCopyButton && $0.id == "copy") }) { action in
+                            Button(action.title) { action.handler() }
+                        }
                     }
+                if showsCopyButton {
+                    // A 44pt target that takes 24pt of the row, its symbol under the reply's first letter.
+                    ChatCopyButton(actionContext.copyText) { onCopy(actionContext) }
+                        .font(AppFont.footnote())
+                        .foregroundStyle(.secondary)
+                        .buttonStyle(.borderless)
+                        .padding(.leading, -14)
+                        .padding(.vertical, -10)
                 }
+            }
         } else {
             bubble
         }

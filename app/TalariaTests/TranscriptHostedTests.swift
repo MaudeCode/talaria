@@ -1070,7 +1070,7 @@ final class TranscriptHostedTests: XCTestCase {
 
 
 @MainActor
-private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageCount: Int = 50, messageOffset: Int? = nil, hasOlderMessages: Bool = true, onMetrics: @escaping (ChatScrollMetrics) -> Void = { _ in }, shouldRender: @escaping (ChatMessage) -> Bool = { _ in true }, scrollRequest: Int = 0, onScrollRequest: @escaping (ChatTranscriptScrollProxy) -> Void = { _ in }, turnChangesSummary: TurnFileChangeSummary? = nil, load: @escaping (@MainActor () -> Void) async -> Bool) -> some View {
+private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageCount: Int = 50, messageOffset: Int? = nil, hasOlderMessages: Bool = true, onMetrics: @escaping (ChatScrollMetrics) -> Void = { _ in }, shouldRender: @escaping (ChatMessage) -> Bool = { _ in true }, scrollRequest: Int = 0, onScrollRequest: @escaping (ChatTranscriptScrollProxy) -> Void = { _ in }, turnChangesSummary: TurnFileChangeSummary? = nil, streamingAssistantMessageID: String? = nil, actionContext: @escaping (ChatMessage, Int) -> MessageActionContext? = { _, _ in nil }, onCopy: @escaping (MessageActionContext) -> Void = { _ in }, load: @escaping (@MainActor () -> Void) async -> Bool) -> some View {
     let messages = supplied ?? (0..<messageCount).map { index in
         ChatMessage(role: "user", content: "History row \(index). Synthetic transcript text.", timestamp: nil, messageId: "history-\(index)")
     }
@@ -1082,11 +1082,11 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageC
         completedToolCallGroupsForAnchor: { _ in [] }, archivedActivityRowsForAnchor: { _ in [] },
         earlierSceneRowsForTurn: { _ in [] }, earlierSceneRowsLoadStateForTurn: { _ in .idle }, onLoadEarlierSceneRows: { _ in },
         liveReasoningText: "", liveActivityRows: [], reasoningAnchorMessageID: nil,
-        liveToolCalls: [], toolCallAnchorMessageID: nil, streamingAssistantMessageID: nil,
+        liveToolCalls: [], toolCallAnchorMessageID: nil, streamingAssistantMessageID: streamingAssistantMessageID,
         liveTokensPerSecond: nil, showsRunStateCheck: false, clarificationPrompt: nil,
         showsThinkingAndToolCards: false, shouldFollowLatestMessage: false,
         isDisclosureSettling: false, latestTranscriptMessageRole: nil, isScrolledNearBottom: false,
-        activeStreamID: nil, streamingScrollTrigger: { 0 }, cacheFirstReconcileScrollToken: 0,
+        activeStreamID: streamingAssistantMessageID, streamingScrollTrigger: { 0 }, cacheFirstReconcileScrollToken: 0,
         transcriptMessageSpacing: 12, transcriptBlockSpacing: 8,
         transcriptBottomInsetHeight: 0, scrollToBottomRequest: scrollRequest, followReplayRequest: 0,
         assistantName: "Assistant", localAttachmentPreviews: [:], listeningMessageID: nil,
@@ -1095,14 +1095,14 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageC
         isRegeneratingMessage: false, isEditingMessage: false, isForkingMessage: false,
         loadAttachmentImage: { _ in nil }, loadAttachmentData: { _ in nil },
         loadTranscriptMediaImage: { _ in nil }, loadTranscriptMediaData: { _ in nil },
-        transcriptMediaCacheNamespace: "history-test", actionContext: { _, _ in nil },
+        transcriptMediaCacheNamespace: "history-test", actionContext: actionContext,
         shouldRenderMessageRow: shouldRender, onLoadMessages: {}, onLoadOlderMessages: load,
         onUpdateScrollMetrics: onMetrics, onFollowEvent: { _ in }, onDisclosureToggle: { {} },
         onFollowSuppressed: {}, onDismissKeyboard: {}, onScrollToBottom: onScrollRequest,
         onScrollToLatestTranscriptMessage: { _ in }, onScrollToLatestContent: { _, _ in },
         onPreviewAttachment: { _, _ in }, onPreviewTranscriptMedia: { _ in },
         onToggleListening: { _ in }, onSelectText: { _ in }, onRegenerate: { _ in },
-        onEdit: { _ in }, onFork: { _ in }, onCopy: { _ in }, turnChangesSummary: turnChangesSummary
+        onEdit: { _ in }, onFork: { _ in }, onCopy: onCopy, turnChangesSummary: turnChangesSummary
     )
 }
 
@@ -1438,6 +1438,49 @@ extension TranscriptHostedTests {
             attachHostedScreenshot(window, name: "turn-usage-long-\(name)")
             window.isHidden = true
         }
+    }
+}
+
+/// TAL-965: a settled reply shows one Copy button under its text that copies the reply's Markdown, and VoiceOver reaches
+/// Copy there rather than also in the reply's actions; a streaming reply shows no button and keeps Copy in its actions.
+@MainActor
+extension TranscriptHostedTests {
+    private func copyTranscript(streaming: Bool) throws -> UIWindow {
+        let messages = [
+            ChatMessage(role: "user", content: "Check the build.", timestamp: nil, messageId: "copy-q"),
+            ChatMessage(role: "assistant", content: "The **build** passes.", timestamp: nil, messageId: "copy-a"),
+        ]
+        return try hostWindow(historyTranscript(
+            messages: messages, hasOlderMessages: false, streamingAssistantMessageID: streaming ? "copy-a" : nil,
+            actionContext: { MessageActionContext(message: $0, visibleIndex: $1, messagesOffset: nil) },
+            onCopy: { PlatformHooks.copyText($0.copyText) }
+        ) { _ in false })
+    }
+
+    private func replyCopyActions(in window: UIWindow) -> [UIAccessibilityCustomAction] {
+        HostedAccessibility.elements(in: window, labelContaining: "The build passes")
+            .flatMap { $0.accessibilityCustomActions ?? [] }
+            .filter { $0.name == "Copy" }
+    }
+
+    func testSettledReplyShowsOneCopyButtonThatCopiesItsMarkdown() async throws {
+        let copied = recordCopies()
+        let window = try copyTranscript(streaming: false)
+        _ = try await requireElement(in: window, "The reply never rendered") { $0.accessibilityLabel?.contains("The build passes") == true }
+        let buttons = elements(named: "Copy", in: window)
+        XCTAssertEqual(buttons.count, 1, "The settled reply shows no single Copy button")
+        XCTAssertTrue(replyCopyActions(in: window).isEmpty, "VoiceOver offers Copy twice on the reply")
+        attachHostedScreenshot(window, name: "reply-copy-settled")
+
+        HostedAccessibility.activate(try XCTUnwrap(buttons.first))
+        XCTAssertEqual(copied.last, "The **build** passes.", "Copy did not take the reply's Markdown")
+    }
+
+    func testStreamingReplyShowsNoCopyButton() async throws {
+        let window = try copyTranscript(streaming: true)
+        _ = try await requireElement(in: window, "The reply never rendered") { $0.accessibilityLabel?.contains("The build passes") == true }
+        XCTAssertTrue(elements(named: "Copy", in: window).isEmpty, "A streaming reply shows a Copy button")
+        XCTAssertFalse(replyCopyActions(in: window).isEmpty, "A streaming reply lost Copy from its actions")
     }
 }
 
