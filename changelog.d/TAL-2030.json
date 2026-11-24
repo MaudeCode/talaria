@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "In a right-to-left language, a reply with a code block, math, image or tool row now stays on screen instead of running off both sides.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

@@ -958,25 +958,12 @@ final class ChatScrollPositionController {
 /// `layoutDirection` also isolates the subtree's bidi resolution from the parent
 /// paragraph direction.
 ///
-/// Forcing LTR also changes how the *parent* resolves this view's
-/// `.leading`/`.trailing` alignment guides: an LTR child inside an RTL
-/// `VStack(alignment: .leading)` reports its leading edge as its physical left,
-/// so the RTL parent — which pins `.leading` to its right edge — would hug or push
-/// a narrower-than-container child off the wrong side. When the parent is RTL we
-/// remap the guides back to the parent's expectation; in LTR (the default) the
-/// guide closures return the unmodified values, so it is a no-op.
+/// An RTL parent still places this view by its own leading edge, on the right.
+/// Don't remap the alignment guides for it: flipping them lines siblings up edge
+/// to edge, which stretches an RTL reply off both sides of the screen (TAL-2030).
 private struct ForcedLeftToRightModifier: ViewModifier {
-    @Environment(\.layoutDirection) private var parentDirection
-
     func body(content: Content) -> some View {
-        content
-            .environment(\.layoutDirection, .leftToRight)
-            .alignmentGuide(.leading) { [parentDirection] dimensions in
-                parentDirection == .rightToLeft ? dimensions[.trailing] : dimensions[.leading]
-            }
-            .alignmentGuide(.trailing) { [parentDirection] dimensions in
-                parentDirection == .rightToLeft ? dimensions[.leading] : dimensions[.trailing]
-            }
+        content.environment(\.layoutDirection, .leftToRight)
     }
 }
 
