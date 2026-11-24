@@ -3459,6 +3459,7 @@
 	"theme_usage": "Usage: /theme ",
 	"thinking": "Thinking",
 	"thinking_label": "Thinking",
+	"thought_label": "Thought",
 	"title_change_hint": "Use `/title <new name>` to rename.",
 	"title_current": "Current title",
 	"title_set": "Title set to",

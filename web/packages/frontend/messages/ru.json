@@ -2042,6 +2042,7 @@
 	"theme_set": "Тема: ",
 	"theme_usage": "Использование: /theme ",
 	"thinking": "Думаю",
+	"thought_label": "Обдумано",
 	"title_change_hint": "Используйте `/title <новое имя>`, чтобы переименовать.",
 	"title_current": "Текущее название",
 	"title_set": "Название изменено на",

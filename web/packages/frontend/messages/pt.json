@@ -1770,6 +1770,7 @@
 	"theme_set": "Tema: ",
 	"theme_usage": "Uso: /theme ",
 	"thinking": "Pensando",
+	"thought_label": "Pensou",
 	"title_change_hint": "Use `/title <novo nome>` para renomear.",
 	"title_current": "Título atual",
 	"title_set": "Título definido como",

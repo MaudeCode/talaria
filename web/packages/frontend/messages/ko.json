@@ -1942,6 +1942,7 @@
 	"theme_set": "Theme: ",
 	"theme_usage": "Usage: /theme ",
 	"thinking": "생각 중",
+	"thought_label": "생각 완료",
 	"title_change_hint": "`/title <새 이름>`으로 이름을 변경하세요.",
 	"title_current": "현재 제목",
 	"title_set": "제목 설정됨:",

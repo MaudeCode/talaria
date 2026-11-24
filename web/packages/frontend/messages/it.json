@@ -1950,6 +1950,7 @@
 	"theme_set": "Tema: ",
 	"theme_usage": "Uso: /theme ",
 	"thinking": "Pensando",
+	"thought_label": "Ha pensato",
 	"title_change_hint": "Usa `/title <nuovo nome>` per rinominare.",
 	"title_current": "Titolo attuale",
 	"title_set": "Titolo impostato a",

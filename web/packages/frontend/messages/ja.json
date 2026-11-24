@@ -1877,6 +1877,7 @@
 	"theme_set": "テーマ: ",
 	"theme_usage": "使い方: /theme ",
 	"thinking": "考え中",
+	"thought_label": "思考済み",
 	"title_change_hint": "`/title <新しい名前>` で改名できます。",
 	"title_current": "現在のタイトル",
 	"title_set": "タイトルを設定: ",

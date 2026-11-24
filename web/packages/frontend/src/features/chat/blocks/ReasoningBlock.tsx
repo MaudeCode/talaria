@@ -61,7 +61,7 @@ export function ReasoningBlock({ text, titles, disclosureKey, live = false, defa
       <div className="thinking-card-head-row">
         <button type="button" className="thinking-card-header" aria-expanded={open} onClick={toggle}>
           <span className="thinking-card-icon"><Lightbulb size={14} aria-hidden="true" /></span>
-          <SwapText className="thinking-card-label" text={latest ?? (live ? m.voice_thinking() : m.thinking_label())} />
+          <SwapText className="thinking-card-label" text={latest ?? (live ? m.voice_thinking() : m.thought_label())} />
           <span className="thinking-card-toggle" aria-hidden="true"><ChevronRight size={12} /></span>
         </button>
       </div>
