@@ -251,7 +251,7 @@ final class FixtureTeardownTests: XCTestCase {
     /// The session list's reload runs in a task its queue owns, which cancelling the screen does not cancel.
     func testTeardownDrainsAHeldSessionListReloadAndTheNextFixtureStartsClean() async throws {
         let fixture = try FixtureApp([UITestFixtureEnvironment.holdSessionListArgument], for: self)
-        weak var firstCache = fixture.cache
+        weak let firstCache = fixture.cache
         let list = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
         let window = try hostWindow(fixture.sessionList(viewModel: list))
         let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
@@ -264,7 +264,7 @@ final class FixtureTeardownTests: XCTestCase {
         XCTAssertNil(firstCache, "The outgoing fixture's cache outlived its teardown")
 
         let next = try FixtureApp(for: self)
-        weak var secondCache = next.cache
+        weak let secondCache = next.cache
         XCTAssertEqual(try next.cache.mainContext.fetchCount(FetchDescriptor<CachedSession>()), 0,
                        "The outgoing fixture's reload wrote into the next fixture's cache")
         XCTAssertEqual(UITestFixtureURLProtocol.answeredPaths.withLock { $0 }, [],
@@ -276,7 +276,7 @@ final class FixtureTeardownTests: XCTestCase {
     /// The chat paints its cached transcript, then reloads; teardown lands while that reload is held.
     func testTeardownDrainsAHeldChatReloadAfterItsCachedPaint() async throws {
         let fixture = try FixtureApp([UITestFixtureEnvironment.holdTranscriptReloadsArgument], for: self)
-        weak var cache = fixture.cache
+        weak let cache = fixture.cache
         let session = try await fixture.session()
         // The first detail read is answered; it seeds the cache the chat paints before its held reload.
         let detail = try await fixture.client.session(id: UITestFixtureURLProtocol.sessionID)
