@@ -144,6 +144,15 @@ extension APIClient {
         )
     }
 
+    /// TAL-1484: reports the chat viewed through now, so the server's next chat-open read names only rows after it.
+    func markSessionViewed(id: String) async throws -> SessionMutationResponse {
+        try await send(
+            endpoint: .talariaViewed,
+            method: "POST",
+            body: SessionIDRequest(sessionId: id)
+        )
+    }
+
     /// TAL-848: removes the session's messages on the server; answers with the reset row.
     func clearSession(id: String) async throws -> SessionMutationResponse {
         try await send(

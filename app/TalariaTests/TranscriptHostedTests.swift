@@ -925,6 +925,149 @@ final class TranscriptHostedTests: XCTestCase {
         return try JSONSerialization.data(withJSONObject: ["session": session])
     }
 
+    /// TAL-1484: a chat that ran while the reader was away opens with "New since you left" above the server's first
+    /// unread row, that rule in the top third, and reports the chat viewed once the rule has stayed on screen.
+    func testAChatOpensAtTheUnreadRuleAndReportsItViewed() async throws {
+        let fixture = try FixtureApp(for: self)
+        let (detail, unreadText) = try Self.unreadDetail()
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = detail }
+        let window = try hostWindow(fixture.chat(try await fixture.session())
+            .environment(\.transcriptUnreadRuleDwell, .milliseconds(100)), size: HostedSize.phone)
+
+        let scroll = try await unreadTranscriptScrollView(in: window)
+        let placed = await awaitCondition { self.unreadRulePlacement(in: window, scroll: scroll, above: unreadText) == "top third" }
+        // The rows around the rule realize after it lands; the evidence shows them drawn.
+        _ = await awaitCondition { ["Here is the plan.", "later note 2"].allSatisfy { HostedAccessibility.element(in: window, label: $0) != nil } }
+        attachHostedScreenshot(window, name: "unread-rule-open")
+        XCTAssertTrue(placed, "The rule is not above its row in the top third: \(String(describing: unreadRulePlacement(in: window, scroll: scroll, above: unreadText)))")
+        let reported = await awaitCondition { UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/talaria/viewed") } }
+        XCTAssertTrue(reported, "The chat was never reported viewed")
+    }
+
+    /// TAL-1484: the rule belongs to the visit. A later read naming another row, as a reply arriving while the chat is
+    /// open would, neither moves the rule nor adds one.
+    func testALaterReadNeverMovesTheUnreadRule() async throws {
+        let fixture = try FixtureApp(for: self)
+        let (detail, unreadText) = try Self.unreadDetail()
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = detail }
+        let session = try await fixture.session()
+        let model = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL, client: fixture.client, networkPath: nil)
+        let window = try hostWindow(fixture.chat(session, viewModel: model), size: HostedSize.phone)
+        let scroll = try await unreadTranscriptScrollView(in: window)
+        let placed = await awaitCondition { self.unreadRulePlacement(in: window, scroll: scroll, above: unreadText) == "top third" }
+        XCTAssertTrue(placed, "The rule never opened above its row")
+
+        let (later, _) = try Self.unreadDetail(appending: ["role": "assistant", "content": "Arrived while open", "message_id": "arrived-while-open"],
+                                               unreadFrom: "arrived-while-open")
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = later }
+        NotificationCenter.default.post(name: .talariaReauthenticated, object: UITestFixtureEnvironment.serverURL)
+        let applied = await awaitCondition { model.messages.contains { $0.messageId == "arrived-while-open" } }
+        XCTAssertTrue(applied, "The later read never applied")
+        attachHostedScreenshot(window, name: "unread-rule-after-later-read")
+        let rules = HostedAccessibility.elements(in: window).filter { $0.accessibilityLabel == "New since you left" }.count
+        XCTAssertEqual(rules, 1, "The later read added a rule")
+        XCTAssertNotNil(unreadRulePlacement(in: window, scroll: scroll, above: unreadText), "The rule left its row")
+    }
+
+    /// TAL-1484: a server that names nothing new, or predates the field, opens on the latest message with no rule.
+    func testAChatWithNothingNewOpensAtTheLatestMessageWithoutTheRule() async throws {
+        for unreadFrom in [NSNull(), nil] as [Any?] {
+            let fixture = try FixtureApp(for: self)
+            let (detail, _) = try Self.unreadDetail(unreadFrom: unreadFrom)
+            UITestFixtureURLProtocol.sessionDetail.withLock { $0 = detail }
+            let window = try hostWindow(fixture.chat(try await fixture.session()), size: HostedSize.phone)
+            let scroll = try await unreadTranscriptScrollView(in: window)
+            let atLatest = await awaitCondition {
+                scroll.contentOffset.y + scroll.bounds.height - scroll.adjustedContentInset.bottom >= scroll.contentSize.height - 2
+            }
+            XCTAssertTrue(atLatest, "The chat did not open on its latest message (\(String(describing: unreadFrom)))")
+            XCTAssertNil(HostedAccessibility.element(in: window, label: "New since you left"), "A rule showed (\(String(describing: unreadFrom)))")
+            window.isHidden = true
+        }
+    }
+
+    /// TAL-1484: the server may name a row in the page before the window it sent; the chat loads that page once and
+    /// opens at the rule there.
+    func testAnUnreadRowInThePageBeforeTheWindowLoadsAndOpensAtTheRule() async throws {
+        let fixture = try FixtureApp(for: self)
+        let (detail, unreadText) = try Self.unreadDetail()
+        var session = try XCTUnwrap(JSONSerialization.jsonObject(with: detail) as? [String: Any])["session"] as? [String: Any] ?? [:]
+        let rows = try XCTUnwrap(session["messages"] as? [[String: Any]])
+        let split = try XCTUnwrap(rows.firstIndex { $0["content"] as? String == unreadText }) + 2
+        func page(_ slice: ArraySlice<[String: Any]>, offset: Int, newest: Bool) throws -> Data {
+            session["messages"] = Array(slice)
+            session["_messages_offset"] = offset
+            session["_messages_truncated"] = offset > 0
+            if !newest { session.removeValue(forKey: "unread_from_message_id") }
+            return try JSONSerialization.data(withJSONObject: ["session": session])
+        }
+        let window = try page(rows[split...], offset: split, newest: true), before = try page(rows[..<split], offset: 0, newest: false)
+        let stream = ScriptedSSEStreamingClient()
+        let summary = SessionSummary(sessionId: UITestFixtureURLProtocol.sessionID, title: "Unread fixture")
+        let model = try makeScriptedChatViewModel(streamClient: stream, sessionSummary: summary) { request in
+            guard request.url?.path == "/api/session" else { return apiTestJSONResponse("{}", for: request) }
+            let paged = request.url?.query?.contains("msg_before=") == true
+            return apiTestJSONResponse(String(decoding: paged ? before : window, as: UTF8.self), for: request)
+        }
+        defer {
+            model.cleanupPollingTasks()
+            stream.stop()
+        }
+        let hosted = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: URL(string: "https://example.test")!, onAPIError: { _ in }, viewModel: model)
+        }.modelContainer(fixture.cache), size: HostedSize.phone)
+
+        let scroll = try await unreadTranscriptScrollView(in: hosted)
+        let placed = await awaitCondition { self.unreadRulePlacement(in: hosted, scroll: scroll, above: unreadText) == "top third" }
+        attachHostedScreenshot(hosted, name: "unread-rule-page-before")
+        XCTAssertTrue(placed, "The rule in the page before the window never opened in the top third")
+    }
+
+    /// The shared unread fixture's chat, long enough to scroll, with `appending` after its rows and its
+    /// `unread_from_message_id` replaced by `unreadFrom` (removed when nil); also the text of the row the fixture names.
+    private nonisolated static func unreadDetail(appending extra: [String: Any]? = nil,
+                                                 unreadFrom: Any?? = .none) throws -> (Data, String) {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("unread-from-message")) as? [String: Any])
+        var session = try XCTUnwrap(fixture["session"] as? [String: Any])
+        let rows = try XCTUnwrap(session["messages"] as? [[String: Any]])
+        let unreadID = try XCTUnwrap(session["unread_from_message_id"] as? String)
+        let unreadText = try XCTUnwrap(rows.first { $0["message_id"] as? String == unreadID }?["content"] as? String)
+        func filler(_ prefix: String) -> [[String: Any]] {
+            (0..<10).map { ["role": $0.isMultiple(of: 2) ? "user" : "assistant", "content": "\(prefix) note \($0)", "message_id": "\(prefix)-\($0)"] }
+        }
+        session["session_id"] = UITestFixtureURLProtocol.sessionID
+        session["messages"] = filler("earlier") + rows + filler("later") + (extra.map { [$0] } ?? [])
+        switch unreadFrom {
+        case .none: break
+        case .some(.none): session.removeValue(forKey: "unread_from_message_id")
+        case .some(.some(let value)): session["unread_from_message_id"] = value
+        }
+        return (try JSONSerialization.data(withJSONObject: ["session": session]), unreadText)
+    }
+
+    private func unreadTranscriptScrollView(in window: UIWindow) async throws -> UIScrollView {
+        _ = try await requireElement(in: window, "The transcript never loaded") { $0.accessibilityLabel?.contains(" note ") == true }
+        var scroll: UIScrollView?
+        _ = await awaitCondition {
+            scroll = window.firstView(ofType: ChatMessageMenuHostView.self)?.superview.flatMap {
+                sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
+            }
+            return scroll != nil
+        }
+        return try XCTUnwrap(scroll, "The transcript's scroll view did not attach")
+    }
+
+    /// Where the rule sits: "top third" when it is in the viewport's top third, "on screen" lower down, nil when it is
+    /// missing or not directly above the row showing `text`.
+    private func unreadRulePlacement(in window: UIWindow, scroll: UIScrollView, above text: String) -> String? {
+        let elements = HostedAccessibility.elements(in: window)
+        guard let rule = elements.first(where: { $0.accessibilityLabel == "New since you left" })?.accessibilityFrame,
+              let row = elements.first(where: { $0.accessibilityLabel?.contains(text) == true })?.accessibilityFrame,
+              rule.maxY <= row.minY, row.minY - rule.maxY < 40 else { return nil }
+        let viewport = scroll.convert(scroll.bounds.inset(by: scroll.adjustedContentInset), to: nil)
+        return rule.minY >= viewport.minY && rule.maxY <= viewport.minY + viewport.height / 3 ? "top third" : "on screen"
+    }
+
     /// A settled turn as the server ships it: a read, then the shared answered question in a group of its own.
     private nonisolated static func answeredQuestionDetail() throws -> Data {
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("answered-question")) as? [String: Any])

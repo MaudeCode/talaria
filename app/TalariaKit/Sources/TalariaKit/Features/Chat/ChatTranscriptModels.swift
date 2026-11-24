@@ -936,6 +936,11 @@ public struct TranscriptMessage: Identifiable, Equatable, Sendable {
 
     public var id: String { renderID }
 
+    /// Whether this row shows the message the server names by `messageID`, on its own or as one of its assistant segments.
+    public func shows(messageID: String) -> Bool {
+        message.messageId == messageID || assistantSegments.contains { $0.message.messageId == messageID }
+    }
+
     public func ownsActiveStream(
         hasLiveActivity: Bool,
         streamingAssistantMessageID: String?

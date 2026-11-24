@@ -2388,7 +2388,10 @@ struct ChatView: View {
                 retainedRowCache: chat.retained?.rows,
                 retainedChat: chat.retained,
                 restoredReadingRowID: chat.restoredReadingRowID,
-                onReaderMoved: chat.recordReadingRow
+                onReaderMoved: chat.recordReadingRow,
+                unreadFromMessageID: viewModel.unreadFromMessageID,
+                onUnreadRuleSeen: viewModel.reportUnreadRuleSeen,
+                onPlaceUnreadRule: chat.stopFollowingForUnreadRule
             )
             .environment(\.chatShowsReasoning, viewModel.showsReasoning)
             .toolResultActions(of: chat)
@@ -4277,6 +4280,11 @@ struct ChatView: View {
         } else {
             retained?.readingRowID = nil
         }
+    }
+
+    /// The visit opens at the unread rule, so later rows stop pulling the reader to the latest message (TAL-1484).
+    private func stopFollowingForUnreadRule() {
+        followLatch.isFollowing = false
     }
 
     /// Keeps where the reader is, for the view the navigation may rebuild around it (TAL-1477).

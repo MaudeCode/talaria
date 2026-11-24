@@ -162,6 +162,11 @@ final class ChatScrollPositionController {
         return !nativeScrollWaitsForArrival || abs(destination - scrollView.contentOffset.y) <= 2
     }
 
+    /// Puts the unread rule's row top a quarter of the way down the viewport, so the rule sits in the top third with the
+    /// reader's last seen rows above it (TAL-1484). A `UnitPoint` aligns the same point of row and viewport, which a tall
+    /// row would push off the top, so this exact value names the placement instead; hold anchors always use `x` 0.5.
+    static let unreadRuleAnchor = UnitPoint(x: 0, y: -0.25)
+
     /// Use the native scroll animation so each displayed step reports its offset.
     @discardableResult
     func scrollToMeasuredRow(_ id: String, anchor: UnitPoint, animated: Bool) -> Bool {
@@ -177,7 +182,9 @@ final class ChatScrollPositionController {
               let height = rowFrames[id]?.height else { return nil }
         let inset = scrollView.adjustedContentInset
         let viewportHeight = scrollView.bounds.height - inset.top - inset.bottom
-        let target = minY + height * anchor.y - inset.top - viewportHeight * anchor.y
+        let target = anchor == Self.unreadRuleAnchor
+            ? minY - inset.top + viewportHeight * anchor.y
+            : minY + height * anchor.y - inset.top - viewportHeight * anchor.y
         let minimum = -inset.top
         let maximum = max(minimum, scrollView.contentSize.height - scrollView.bounds.height + inset.bottom)
         let destination = min(maximum, max(minimum, target))
@@ -1179,4 +1186,45 @@ struct ChatTranscriptSkeletonLine: Identifiable {
     let id: String
     let text: String
     let maxWidth: CGFloat
+}
+
+extension EnvironmentValues {
+    /// How long the unread rule stays on screen before the chat counts as viewed; hosted tests shorten it.
+    @Entry var transcriptUnreadRuleDwell: Duration = .seconds(2)
+}
+
+/// TAL-1484: the thin labeled line above the first row the reader has not seen, where the server's
+/// `unread_from_message_id` puts it. Once at least half of it has stayed on screen in the foreground for the dwell, it
+/// reports itself seen.
+struct TranscriptUnreadRule: View {
+    let onSeen: () -> Void
+
+    @Environment(\.transcriptUnreadRuleDwell) private var dwell
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isVisible = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            hairline
+            Text("New since you left")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+            hairline
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("transcript-unread-rule")
+        .onScrollVisibilityChange(threshold: 0.5) { isVisible = $0 }
+        .task(id: isVisible && scenePhase == .active) {
+            guard isVisible, scenePhase == .active, (try? await Task.sleep(for: dwell)) != nil else { return }
+            onSeen()
+        }
+    }
+
+    private var hairline: some View {
+        Rectangle().fill(Color(.separator)).frame(height: 1).frame(maxWidth: .infinity)
+    }
 }

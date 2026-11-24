@@ -138,6 +138,11 @@ public final class ChatViewModel {
     public private(set) var isConfirmingClear = false
     /// The server's clear marker from the last load; an unknown `/clear` outcome compares a reread with it.
     @ObservationIgnored private var loadedClearGeneration: String?
+    /// TAL-1484: the row the "New since you left" rule sits above, from this visit's first server read. Later reads never
+    /// move it, so a reply that arrives while the chat is open is not new; nil shows no rule.
+    public private(set) var unreadFromMessageID: String?
+    @ObservationIgnored private var hasReadUnreadPosition = false
+    @ObservationIgnored private var hasReportedUnreadRuleSeen = false
     /// The outstanding `POST /api/session/clear`; sends and loads wait for it so it never overtakes newer input.
     @ObservationIgnored private var clearConversationTask: Task<ClearConversationOutcome, Never>?
     /// Counts `/clear`s; a history page read before the latest one carries rows it removed.
@@ -2085,6 +2090,17 @@ extension ChatViewModel {
         return prefetch.task
     }
 
+    /// TAL-1484: the rule has been on screen long enough, so the chat counts as viewed through now and the next open names
+    /// only rows after this one. Once a visit; a failed report lets the rule's next appearance try again.
+    public func reportUnreadRuleSeen() {
+        guard unreadFromMessageID != nil, !hasReportedUnreadRuleSeen, let sessionID else { return }
+        hasReportedUnreadRuleSeen = true
+        let client = client
+        Task { @MainActor [weak self] in
+            if (try? await client.markSessionViewed(id: sessionID)) == nil { self?.hasReportedUnreadRuleSeen = false }
+        }
+    }
+
     static func requestSessionLoad(_ sessionID: String, client: APIClient) async throws -> SessionResponse {
         try await client.session(
             id: sessionID,
@@ -2265,6 +2281,10 @@ extension ChatViewModel {
             applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, connectionChangesAtFetch: connectionChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
             serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
             loadedClearGeneration = session?.clearGeneration
+            if !hasReadUnreadPosition, let session {
+                hasReadUnreadPosition = true
+                unreadFromMessageID = session.unreadFromMessageId
+            }
             applyBranchedFrom(from: session, modelContext: modelContext)
             // The live stream names newer files than a detail read mid-run, so the detail only seeds the page.
             companionFocus.seed(session?.focusPath)
