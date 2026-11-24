@@ -535,9 +535,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     /// Puts the fixture's per-launch server state back to a fresh launch's, for hosted tests that start the fixture in
     /// process once per test (TAL-856).
     static func resetForHostedTest() {
-        generation.withLock { $0 += 1 }
-        // Shared API sessions carry the generation they were built under (TAL-847).
-        UITestURLSessionHook.resetSharedSessions()
+        cancelOpenLoads()
         approvalBypassOverride = nil
         sessionToolsets.withLock { $0 = nil }
         reasoningDefaults.withLock { $0 = ("medium", true) }
@@ -571,6 +569,25 @@ final class UITestFixtureURLProtocol: URLProtocol {
         chatState.reset()
     }
 
+    /// Loads admitted under the current generation that have not ended (TAL-1097).
+    private static let openLoads = OSAllocatedUnfairLock<[ObjectIdentifier: UITestFixtureURLProtocol]>(uncheckedState: [:])
+    static var openLoadCount: Int { openLoads.withLockUnchecked { $0.count } }
+
+    /// Stops admitting the outgoing hosted test's loads and fails every one still open with a cancellation, held loads
+    /// and streams included: a held load answers only a release and a stream outlives its test, so the work awaiting
+    /// them would otherwise never end (TAL-1097).
+    static func cancelOpenLoads() {
+        let loads = openLoads.withLockUnchecked { loads in
+            defer { loads = [:] }
+            generation.withLock { $0 += 1 }
+            return Array(loads.values)
+        }
+        // Shared API sessions carry the generation they were built under (TAL-847).
+        UITestURLSessionHook.resetSharedSessions()
+        chatState.wakeWaiters()
+        for load in loads { load.client?.urlProtocol(load, didFailWithError: URLError(.cancelled)) }
+    }
+
     static func configure(_ configuration: URLSessionConfiguration) {
         guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.launchArgument) else { return }
         configuration.protocolClasses = [Self.self]
@@ -598,7 +615,14 @@ final class UITestFixtureURLProtocol: URLProtocol {
             client?.urlProtocol(self, didFailWithError: URLError(.badURL))
             return
         }
-        if let made = request.value(forHTTPHeaderField: Self.generationHeader), made != String(Self.generation.withLock { $0 }) {
+        let made = request.value(forHTTPHeaderField: Self.generationHeader)
+        // Admitted under the same lock a teardown's cancellation takes, so no load starts after it unseen.
+        let admitted = Self.openLoads.withLockUnchecked { loads in
+            guard made == nil || made == String(Self.generation.withLock { $0 }) else { return false }
+            loads[ObjectIdentifier(self)] = self
+            return true
+        }
+        guard admitted else {
             client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
             return
         }
@@ -735,6 +759,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {
+        _ = Self.openLoads.withLockUnchecked { $0.removeValue(forKey: ObjectIdentifier(self)) }
         Self.nativeNoticeStreams.withLockUnchecked { _ = $0.removeValue(forKey: ObjectIdentifier(self)) }
         lifecycleLock.withLock { stopped = true }
         Self.chatState.wakeWaiters()

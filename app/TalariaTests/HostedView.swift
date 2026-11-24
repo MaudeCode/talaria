@@ -95,10 +95,25 @@ enum HostedScene {
         _ = silencesHinge
         let scene = try current(file: file, line: line)
         let window = UIWindow(windowScene: scene)
+        windows.add(window)
         guard let size, size != scene.coordinateSpace.bounds.size else { return window }
         window.frame = CGRect(origin: .zero, size: size)
         suppressVerticalBar(in: window)
         return window
+    }
+
+    /// Hosted windows not yet taken down by a fixture's teardown.
+    private static let windows = NSHashTable<UIWindow>.weakObjects()
+
+    /// Takes down every hosted window, so no screen is left to start work against a fixture that is ending (TAL-1097).
+    static func dismantleWindows() {
+        windows.allObjects.forEach(dismantle)
+        windows.removeAllObjects()
+    }
+
+    static func dismantle(_ window: UIWindow) {
+        window.isHidden = true
+        window.rootViewController = nil
     }
 
     /// Lets interactions created while it is set read the device's hinge, for a test of the hinge's own delivery.
@@ -487,8 +502,7 @@ extension XCTestCase {
                 if window.rootViewController != nil {
                     self?.attachFailureScreenshot(window, name: "\(self?.name ?? "hosted") window")
                 }
-                window.isHidden = true
-                window.rootViewController = nil
+                HostedScene.dismantle(window)
                 UIView.setAnimationsEnabled(animated)
             }
         }

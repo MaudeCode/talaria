@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import UIKit
 import XCTest
 @testable import Talaria
@@ -238,6 +239,83 @@ final class HostedViewTests: XCTestCase {
         HostedAccessibility.activate(button)
         XCTAssertEqual(taps, 1)
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Heading"))
+    }
+}
+
+/// A fixture's teardown ends the work its screens left pending before its cache goes (TAL-1097). SwiftData traps on a
+/// context whose container is gone, so a queued reload or chat load that outlives its fixture must never reach it.
+@MainActor
+final class FixtureTeardownTests: XCTestCase {
+    private struct SetupFailure: Error {}
+
+    /// The session list's reload runs in a task its queue owns, which cancelling the screen does not cancel.
+    func testTeardownDrainsAHeldSessionListReloadAndTheNextFixtureStartsClean() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.holdSessionListArgument], for: self)
+        weak var firstCache = fixture.cache
+        let list = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        let window = try hostWindow(fixture.sessionList(viewModel: list))
+        let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
+        XCTAssertTrue(held, "The list's reload never reached the fixture")
+        HostedScene.dismantle(window)
+        XCTAssertTrue(list.hasCacheWorkInFlight, "The list's reload ended with its screen")
+        await fixture.tearDown()
+        XCTAssertFalse(list.hasCacheWorkInFlight, "The list's queued reload was still pending when teardown returned")
+        XCTAssertEqual(UITestFixtureURLProtocol.openLoadCount, 0, "A fixture load was still open when teardown returned")
+        XCTAssertNil(firstCache, "The outgoing fixture's cache outlived its teardown")
+
+        let next = try FixtureApp(for: self)
+        weak var secondCache = next.cache
+        XCTAssertEqual(try next.cache.mainContext.fetchCount(FetchDescriptor<CachedSession>()), 0,
+                       "The outgoing fixture's reload wrote into the next fixture's cache")
+        XCTAssertEqual(UITestFixtureURLProtocol.answeredPaths.withLock { $0 }, [],
+                       "The outgoing fixture's reload was answered under the next fixture's scenario")
+        await next.tearDown()
+        XCTAssertNil(secondCache, "A repeated fixture's cache outlived its teardown")
+    }
+
+    /// The chat paints its cached transcript, then reloads; teardown lands while that reload is held.
+    func testTeardownDrainsAHeldChatReloadAfterItsCachedPaint() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.holdTranscriptReloadsArgument], for: self)
+        weak var cache = fixture.cache
+        let session = try await fixture.session()
+        // The first detail read is answered; it seeds the cache the chat paints before its held reload.
+        let detail = try await fixture.client.session(id: UITestFixtureURLProtocol.sessionID)
+        let messages = try XCTUnwrap(detail.session?.messages)
+        try CacheStore.cacheMessages(messages, serverURL: UITestFixtureEnvironment.serverURL,
+                                     sessionID: UITestFixtureURLProtocol.sessionID, in: fixture.cache.mainContext,
+                                     messagesOffset: 0, hasOlderMessages: false)
+        let chat = ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL,
+                                 client: fixture.client, networkPath: nil)
+        let window = try hostWindow(fixture.chat(session, viewModel: chat))
+        // The held request can be the transcript the chat prefetches before its load starts and awaits.
+        let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 && chat.hasCacheWorkInFlight }
+        XCTAssertTrue(held, "The chat's reload never reached the fixture")
+        HostedScene.dismantle(window)
+        XCTAssertTrue(chat.hasCacheWorkInFlight, "The chat's reload ended with its screen")
+        await fixture.tearDown()
+        XCTAssertFalse(chat.hasCacheWorkInFlight, "The chat's reload was still pending when teardown returned")
+        XCTAssertEqual(UITestFixtureURLProtocol.openLoadCount, 0, "A fixture load was still open when teardown returned")
+        XCTAssertNil(cache, "The outgoing fixture's cache outlived its teardown")
+    }
+
+    /// A test that throws leaves its work to the fixture's own teardown block.
+    func testTeardownAfterAThrownErrorDrainsTheWorkItLeft() async throws {
+        weak var list: SessionListViewModel?
+        // Registered before the fixture's, so it runs after the fixture's teardown.
+        addTeardownBlock { @MainActor in
+            XCTAssertFalse(list?.hasCacheWorkInFlight ?? false, "The list's queued reload outlived the fixture's teardown")
+            XCTAssertEqual(UITestFixtureURLProtocol.openLoadCount, 0, "A fixture load outlived the fixture's teardown")
+        }
+        let thrown = XCTExpectedFailure.Options()
+        thrown.issueMatcher = { $0.type == .thrownError }
+        XCTExpectFailure("The test throws while its reload is held", options: thrown)
+        let fixture = try FixtureApp([UITestFixtureEnvironment.holdSessionListArgument], for: self)
+        let model = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        list = model
+        _ = try hostWindow(fixture.sessionList(viewModel: model))
+        let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
+        XCTAssertTrue(held, "The list's reload never reached the fixture")
+        throw SetupFailure()
     }
 }
 

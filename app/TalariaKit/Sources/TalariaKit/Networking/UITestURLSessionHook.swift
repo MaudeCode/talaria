@@ -18,4 +18,17 @@ public enum UITestURLSessionHook {
     private static let generationLock = OSAllocatedUnfairLock(initialState: 0)
     static var generation: Int { generationLock.withLock { $0 } }
 }
+
+/// A chat or session list, whose async work reads and writes the offline cache. The App's hosted-test fixture waits at
+/// teardown until none has such work admitted, before its cache goes (TAL-1097).
+@MainActor
+public protocol UITestCacheOwner: AnyObject {
+    var hasCacheWorkInFlight: Bool { get }
+}
+
+/// Tells the fixture about each cache owner as it is made. Unset, it does nothing.
+@MainActor
+public enum UITestCacheOwnerHook {
+    public static var created: (any UITestCacheOwner) -> Void = { _ in }
+}
 #endif

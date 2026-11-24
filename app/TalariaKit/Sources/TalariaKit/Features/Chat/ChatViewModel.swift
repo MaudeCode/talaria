@@ -980,6 +980,9 @@ public final class ChatViewModel {
         }
         self.attachmentCoordinator.delegate = self
         recomputeSelectedModelTitle()
+        #if DEBUG
+        UITestCacheOwnerHook.created(self)
+        #endif
     }
 
     /// Fills the composer's empty catalogs from the last responses (TAL-437). Called when the chat
@@ -7831,3 +7834,13 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         sessionNotices = event.notices
     }
 }
+
+#if DEBUG
+extension ChatViewModel: UITestCacheOwner {
+    /// A session load runs from its request until its `defer`, cache writes included; `isLoading` can stay set for a
+    /// load the screen never started. A followed compression writes the run's status as it ends (TAL-1097).
+    public var hasCacheWorkInFlight: Bool {
+        !activeSessionLoadRequestGenerations.isEmpty || isLoadingOlderMessages || isCompressingSession
+    }
+}
+#endif

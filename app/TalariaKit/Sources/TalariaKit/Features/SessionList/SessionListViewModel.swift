@@ -236,6 +236,9 @@ public final class SessionListViewModel {
         // is presenting. The first-ever init always precedes the first export,
         // so the single sweep can never race an in-flight export.
         _ = Self.sweepLeakedExportsOnce
+        #if DEBUG
+        UITestCacheOwnerHook.created(self)
+        #endif
     }
 
     /// Root temp directory holding one UUID subdirectory per export
@@ -1996,3 +1999,9 @@ public struct PendingResourceChange: Equatable, Sendable {
     var snapshotClaim: Int? = nil
     public var status: String { String(localized: "Pending: \(label)") }
 }
+
+#if DEBUG
+extension SessionListViewModel: UITestCacheOwner {
+    public var hasCacheWorkInFlight: Bool { refreshQueue.hasReloadInFlight || profileRefreshQueue.hasReloadInFlight }
+}
+#endif
