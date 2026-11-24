@@ -7039,7 +7039,7 @@ extension ChatViewModel {
         let existingTranscriptMessage = displayedTranscriptMessages[transcriptIndex]
         let updatedSegments = existingTranscriptMessage.assistantSegments.map { segment in
             guard segment.message.messageId == message.messageId else { return segment }
-            return TranscriptAssistantSegment(anchorID: segment.anchorID, message: message)
+            return TranscriptAssistantSegment(anchorID: segment.anchorID, message: message, rowKey: segment.rowKey)
         }
         guard let lastSegment = updatedSegments.last else {
             recomputeDisplayedTranscriptMessages()
@@ -7051,7 +7051,8 @@ extension ChatViewModel {
             renderID: existingTranscriptMessage.renderID,
             anchorID: lastSegment.anchorID,
             message: lastSegment.message,
-            assistantSegments: updatedSegments
+            assistantSegments: updatedSegments,
+            rowKey: existingTranscriptMessage.rowKey
         )
 
         // A streamed update reaches the reasoning cards only through candidates anchored at this message: its own
