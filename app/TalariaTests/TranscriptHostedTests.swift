@@ -999,28 +999,31 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertTrue(reported, "A chat with nothing new was never reported viewed")
     }
 
-    /// TAL-1484: the server may name a row in the page before the window it sent; the chat loads that page once and
-    /// opens at the rule there.
-    func testAnUnreadRowInThePageBeforeTheWindowLoadsAndOpensAtTheRule() async throws {
+    /// TAL-1484: the server may name a row up to 500 rows before the window it sent; the chat loads older pages until it
+    /// reaches that row and opens at the rule there.
+    func testAnUnreadRowPagesBeforeTheWindowLoadsAndOpensAtTheRule() async throws {
         let fixture = try FixtureApp(for: self)
-        let (detail, unreadText) = try Self.unreadDetail()
+        let (detail, unreadText) = try Self.unreadDetail(laterRows: 40)
         var session = try XCTUnwrap(JSONSerialization.jsonObject(with: detail) as? [String: Any])["session"] as? [String: Any] ?? [:]
         let rows = try XCTUnwrap(session["messages"] as? [[String: Any]])
-        let split = try XCTUnwrap(rows.firstIndex { $0["content"] as? String == unreadText }) + 2
-        func page(_ slice: ArraySlice<[String: Any]>, offset: Int, newest: Bool) throws -> Data {
-            session["messages"] = Array(slice)
-            session["_messages_offset"] = offset
-            session["_messages_truncated"] = offset > 0
+        // Two older pages, each taller than the history prefetch reaches, separate the window from the unread row.
+        let middle = try XCTUnwrap(rows.firstIndex { $0["content"] as? String == unreadText }) + 2
+        let newest = middle + 20
+        func page(_ range: Range<Int>, newest: Bool) throws -> String {
+            session["messages"] = Array(rows[range])
+            session["_messages_offset"] = range.lowerBound
+            session["_messages_truncated"] = range.lowerBound > 0
             if !newest { session.removeValue(forKey: "unread_from_message_id") }
-            return try JSONSerialization.data(withJSONObject: ["session": session])
+            return String(decoding: try JSONSerialization.data(withJSONObject: ["session": session]), as: UTF8.self)
         }
-        let window = try page(rows[split...], offset: split, newest: true), before = try page(rows[..<split], offset: 0, newest: false)
+        let pages = ["": try page(newest..<rows.count, newest: true), "\(newest)": try page(middle..<newest, newest: false),
+                     "\(middle)": try page(0..<middle, newest: false)]
         let stream = ScriptedSSEStreamingClient()
         let summary = SessionSummary(sessionId: UITestFixtureURLProtocol.sessionID, title: "Unread fixture")
         let model = try makeScriptedChatViewModel(streamClient: stream, sessionSummary: summary) { request in
-            guard request.url?.path == "/api/session" else { return apiTestJSONResponse("{}", for: request) }
-            let paged = request.url?.query?.contains("msg_before=") == true
-            return apiTestJSONResponse(String(decoding: paged ? before : window, as: UTF8.self), for: request)
+            guard request.url?.path == "/api/session", let url = request.url else { return apiTestJSONResponse("{}", for: request) }
+            let before = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "msg_before" }?.value ?? ""
+            return apiTestJSONResponse(pages[before] ?? "{}", for: request)
         }
         defer {
             model.cleanupPollingTasks()
@@ -1032,24 +1035,24 @@ final class TranscriptHostedTests: XCTestCase {
 
         let scroll = try await unreadTranscriptScrollView(in: hosted)
         let placed = await awaitCondition { self.unreadRulePlacement(in: hosted, scroll: scroll, above: unreadText) == "top third" }
-        attachHostedScreenshot(hosted, name: "unread-rule-page-before")
-        XCTAssertTrue(placed, "The rule in the page before the window never opened in the top third")
+        attachHostedScreenshot(hosted, name: "unread-rule-pages-before")
+        XCTAssertTrue(placed, "The rule two pages before the window never opened in the top third")
     }
 
     /// The shared unread fixture's chat, long enough to scroll, with `appending` after its rows and its
     /// `unread_from_message_id` replaced by `unreadFrom` (removed when nil); also the text of the row the fixture names.
-    nonisolated static func unreadDetail(appending extra: [String: Any]? = nil,
-                                                 unreadFrom: Any?? = .none) throws -> (Data, String) {
+    nonisolated static func unreadDetail(appending extra: [String: Any]? = nil, unreadFrom: Any?? = .none,
+                                         laterRows: Int = 10) throws -> (Data, String) {
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("unread-from-message")) as? [String: Any])
         var session = try XCTUnwrap(fixture["session"] as? [String: Any])
         let rows = try XCTUnwrap(session["messages"] as? [[String: Any]])
         let unreadID = try XCTUnwrap(session["unread_from_message_id"] as? String)
         let unreadText = try XCTUnwrap(rows.first { $0["message_id"] as? String == unreadID }?["content"] as? String)
-        func filler(_ prefix: String) -> [[String: Any]] {
-            (0..<10).map { ["role": $0.isMultiple(of: 2) ? "user" : "assistant", "content": "\(prefix) note \($0)", "message_id": "\(prefix)-\($0)"] }
+        func filler(_ prefix: String, count: Int = 10) -> [[String: Any]] {
+            (0..<count).map { ["role": $0.isMultiple(of: 2) ? "user" : "assistant", "content": "\(prefix) note \($0)", "message_id": "\(prefix)-\($0)"] }
         }
         session["session_id"] = UITestFixtureURLProtocol.sessionID
-        session["messages"] = filler("earlier") + rows + filler("later") + (extra.map { [$0] } ?? [])
+        session["messages"] = filler("earlier") + rows + filler("later", count: laterRows) + (extra.map { [$0] } ?? [])
         switch unreadFrom {
         case .none: break
         case .some(.none): session.removeValue(forKey: "unread_from_message_id")

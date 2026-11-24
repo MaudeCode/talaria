@@ -25,8 +25,8 @@ struct ChatTranscriptView: View {
     @State private var isPlacingRestoredReader = false
     /// The reader scrolled by hand during this visit, so the unread rule never moves them (TAL-1484).
     @State private var didReaderScroll = false
-    /// The page before the window was loaded once to reach the server's unread row.
-    @State private var didLoadPageForUnreadRule = false
+    /// Older pages loaded so far to reach the server's unread row.
+    @State private var pagesLoadedForUnreadRule = 0
     /// This transcript scrolled to the unread rule, so its own restore of the reader yields to that scroll.
     @State private var didPlaceUnreadRuleHere = false
     @State private var nativeScrollRevision = 0
@@ -227,7 +227,10 @@ struct ChatTranscriptView: View {
                                       animation: destination.animation, using: proxy)
                     }
                     // After this update's own follow scrolls, so placing the reader at the rule wins over them.
-                    .task(id: [unreadFromMessageID, unreadRuleRowID]) { await placeUnreadRule(proxy: proxy) }
+                    // The row count re-runs it after each older page, until the row arrives.
+                    .task(id: [unreadFromMessageID, unreadRuleRowID, String(displayedTranscriptMessages.count)]) {
+                        await placeUnreadRule(proxy: proxy)
+                    }
                     .onChange(of: rowCache.layoutRevision) {
                         guard isFollowingLatestContent, !scrollPositionController.isNavigating,
                               !scrollPositionController.isUserInteracting else { return }
@@ -391,7 +394,7 @@ struct ChatTranscriptView: View {
     /// The row showing the server's first unread message, which the rule sits above; nil when it is not displayed.
     private var unreadRuleRowID: String? {
         guard let unreadFromMessageID else { return nil }
-        return displayedTranscriptMessages.first { $0.shows(messageID: unreadFromMessageID) }?.renderID
+        return displayedTranscriptMessages.first { $0.shows(rowKey: unreadFromMessageID) }?.renderID
     }
 
     /// Opens the visit with the rule in the top third, unless the reader already moved or a rebuilt transcript
@@ -399,9 +402,9 @@ struct ChatTranscriptView: View {
     private func placeUnreadRule(proxy: ScrollViewProxy) async {
         guard unreadFromMessageID != nil, !didReaderScroll, retainedChat?.didPlaceUnreadRule != true else { return }
         guard let rowID = unreadRuleRowID else {
-            // The server names a row up to one page before the window it sent, so that page loads once to reach it.
-            guard hasOlderMessages, !didLoadPageForUnreadRule else { return }
-            didLoadPageForUnreadRule = true
+            // The server names a row up to 500 rows before the window it sent; ten 50-row pages reach any of them.
+            guard hasOlderMessages, pagesLoadedForUnreadRule < 10 else { return }
+            pagesLoadedForUnreadRule += 1
             _ = await loadOlderMessagesPreservingPosition(proxy: proxy)
             return
         }

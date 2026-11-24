@@ -933,12 +933,20 @@ public struct TranscriptMessage: Identifiable, Equatable, Sendable {
     public let anchorID: String
     public let message: ChatMessage
     public let assistantSegments: [TranscriptAssistantSegment]
+    /// The server's transcript row key for `message` when it shows on its own; segments carry their own.
+    var rowKey: String? = nil
 
     public var id: String { renderID }
 
-    /// Whether this row shows the message the server names by `messageID`, on its own or as one of its assistant segments.
-    public func shows(messageID: String) -> Bool {
-        message.messageId == messageID || assistantSegments.contains { $0.message.messageId == messageID }
+    /// Whether this row shows the server row named by `key`, on its own or as one of its assistant segments (TAL-1484).
+    public func shows(rowKey key: String) -> Bool {
+        rowKey == key || assistantSegments.contains { $0.rowKey == key }
+    }
+
+    /// The server's transcript row key, as the contract documents it: `message_id`, else the row's `id`, else
+    /// `<absolute index>-<role>`.
+    nonisolated static func serverRowKey(for message: ChatMessage, absoluteIndex: Int) -> String {
+        message.messageId ?? message.serverRowID ?? "\(absoluteIndex)-\(message.role ?? "")"
     }
 
     public func ownsActiveStream(
@@ -954,6 +962,7 @@ public struct TranscriptMessage: Identifiable, Equatable, Sendable {
 public struct TranscriptAssistantSegment: Equatable, Sendable {
     public let anchorID: String
     let message: ChatMessage
+    var rowKey: String? = nil
 }
 
 public struct MessageActionContext: Equatable, Identifiable, Sendable {
@@ -1142,7 +1151,8 @@ extension ChatViewModel {
                 }
                 assistantSegments.append((
                     loadedIndex,
-                    TranscriptAssistantSegment(anchorID: anchorID, message: message)
+                    TranscriptAssistantSegment(anchorID: anchorID, message: message,
+                                               rowKey: TranscriptMessage.serverRowKey(for: message, absoluteIndex: offset + loadedIndex))
                 ))
                 continue
             }
@@ -1159,7 +1169,8 @@ extension ChatViewModel {
                 renderID: renderID,
                 anchorID: anchorID,
                 message: message,
-                assistantSegments: []
+                assistantSegments: [],
+                rowKey: TranscriptMessage.serverRowKey(for: message, absoluteIndex: absoluteIndex)
             ))
         }
 
@@ -1176,7 +1187,8 @@ extension ChatViewModel {
                 renderID: "transcript-segment:\(row.anchorID)",
                 anchorID: row.anchorID,
                 message: row.message,
-                assistantSegments: row.assistantSegments
+                assistantSegments: row.assistantSegments,
+                rowKey: row.rowKey
             )
         }
         return transcriptMessages
