@@ -531,6 +531,8 @@
   "ProvidersViewTests/testExpansionKeyPrefersStableProviderIDWithIndexFallback": 0.0,
   "ReasoningBlockViewTests/testExpandedReasoningParsesMarkdownEmphasis": 0.0,
   "RegularSplitHostedTests/testAFileChosenInTheBrowserHoldsUntilFollowResumes": 0.2,
+  "RegularSplitHostedTests/testAFoldLeavesAHiddenCompanionPageHidden": 0.0,
+  "RegularSplitHostedTests/testANewFileLeavesAHiddenCompanionPageHidden": 0.0,
   "RegularSplitHostedTests/testAReopenedChatShowsItsLastFileBeforeAnyStreamEvent": 0.1,
   "RegularSplitHostedTests/testASidebarPressSurvivesALayoutUpdateThatLandsBeforeTheColumnMoves": 3.2,
   "RegularSplitHostedTests/testBookFoldAlignsTheSharedSidebarToTheDivision": 3.8,
