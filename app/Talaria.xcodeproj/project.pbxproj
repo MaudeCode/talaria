@@ -79,6 +79,7 @@
 		D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */; };
 		D1477000000000000000A001 /* DuoFoldHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1477000000000000000A002 /* DuoFoldHostedTests.swift */; };
 		D1052000000000000000A001 /* DuoOuterLandscapeHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1052000000000000000A002 /* DuoOuterLandscapeHostedTests.swift */; };
+		3E928B0EF8822A6A4F231492 /* OnboardingServerHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55E6E3A3264520A97C6FE748 /* OnboardingServerHostedTests.swift */; };
 		D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA04 /* TasksHostedTests.swift */; };
 		D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */; };
 		D1965A000000000000000005 /* DecisionReviewHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1965A000000000000000004 /* DecisionReviewHostedTests.swift */; };
@@ -585,6 +586,7 @@
 		D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListHostedTests.swift; sourceTree = "<group>"; };
 		D1477000000000000000A002 /* DuoFoldHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoFoldHostedTests.swift; sourceTree = "<group>"; };
 		D1052000000000000000A002 /* DuoOuterLandscapeHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuoOuterLandscapeHostedTests.swift; sourceTree = "<group>"; };
+		55E6E3A3264520A97C6FE748 /* OnboardingServerHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingServerHostedTests.swift; sourceTree = "<group>"; };
 		D856083559F0B34BD088CA04 /* TasksHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksHostedTests.swift; sourceTree = "<group>"; };
 		D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsHostedTests.swift; sourceTree = "<group>"; };
 		D1965A000000000000000004 /* DecisionReviewHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionReviewHostedTests.swift; sourceTree = "<group>"; };
@@ -1090,6 +1092,7 @@
 				D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */,
 				D1477000000000000000A002 /* DuoFoldHostedTests.swift */,
 				D1052000000000000000A002 /* DuoOuterLandscapeHostedTests.swift */,
+				55E6E3A3264520A97C6FE748 /* OnboardingServerHostedTests.swift */,
 				D856083559F0B34BD088CA04 /* TasksHostedTests.swift */,
 				D856083559F0B34BD088CA05 /* InsightsHostedTests.swift */,
 				D1965A000000000000000004 /* DecisionReviewHostedTests.swift */,
@@ -2240,6 +2243,7 @@
 				D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */,
 				D1477000000000000000A001 /* DuoFoldHostedTests.swift in Sources */,
 				D1052000000000000000A001 /* DuoOuterLandscapeHostedTests.swift in Sources */,
+				3E928B0EF8822A6A4F231492 /* OnboardingServerHostedTests.swift in Sources */,
 				D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */,
 				D857083559F0B34BD088CA05 /* InsightsHostedTests.swift in Sources */,
 				D1965A000000000000000005 /* DecisionReviewHostedTests.swift in Sources */,

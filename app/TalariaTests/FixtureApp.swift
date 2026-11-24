@@ -55,17 +55,19 @@ final class FixtureApp {
 
     var client: APIClient { environment.client }
 
-    init(_ scenario: [String] = [], for testCase: XCTestCase) throws {
+    /// `configured: false` starts the App with no saved server, on onboarding.
+    init(_ scenario: [String] = [], configured: Bool = true, for testCase: XCTestCase) throws {
         FixtureLaunchArguments.scenario = [UITestFixtureLaunch.launchArgument] + scenario
         UITestFixtureURLProtocol.resetForHostedTest()
         // A relaunch empties what a process keeps in memory per session; hosted tests share one process.
         ActiveChatStreamSnapshotStore.shared.removeAll(for: UITestFixtureEnvironment.serverURL)
         ChatViewModel.forgetCompanionPages()
-        environment = UITestFixtureEnvironment.make()
+        environment = UITestFixtureEnvironment.make(configured: configured)
         // Each hosted journey owns its sidebar choices; a second window within it still exercises persistence.
         for key in ["settings.modelPicker.collapsedProviders", SessionSidebarDisclosureSettings.regularPortraitVisibilityKey,
                     SessionSidebarDisclosureSettings.regularLandscapeVisibilityKey,
-                    SessionNavigationPersistence.key(for: UITestFixtureEnvironment.serverURL)] {
+                    SessionNavigationPersistence.key(for: UITestFixtureEnvironment.serverURL),
+                    SessionNavigationPersistence.key(for: UITestFixtureEnvironment.secondServerURL)] {
             UserDefaults.standard.removeObject(forKey: key)
         }
         cache = try ModelContainer(
@@ -153,6 +155,14 @@ final class FixtureApp {
         // A window outside SwiftUI's scene lifecycle reports no scene phase of its own; the App's runs in the foreground.
         .environment(\.scenePhase, .active)
         .modelContainer(cache)
+    }
+
+    /// The App's root, whose auth state picks onboarding or the session list, as a launch does.
+    func root() -> some View {
+        // Its own router: the test host's ContentView drains the shared one.
+        ContentView(authManager: environment.authManager, draftStore: environment.draftStore, intentRouter: AppIntentRouter())
+            .environment(\.scenePhase, .active)
+            .modelContainer(cache)
     }
 
     func sessionList(scenePhase: ScenePhase = .active, chats: ChatViewModelCache? = nil,

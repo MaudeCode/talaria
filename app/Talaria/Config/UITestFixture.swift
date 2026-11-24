@@ -81,6 +81,9 @@ struct UITestFixtureEnvironment {
     /// Opens the fixture session through the deep-link route at launch, as `simctl openurl` would without the system's
     /// confirmation prompt (TAL-1412's `scripts/benchmark-display-phases`).
     nonisolated static let openSessionArgument = "--ui-test-open-session"
+    /// TAL-70: a password server that answers every API read with 401 until `/api/auth/login` gets `fixturePassword`.
+    nonisolated static let authRequiredArgument = "--ui-test-auth-required"
+    nonisolated static let fixturePassword = "fixture-password"
 
     /// The fixture's response-cache directory, emptied once per launch.
     nonisolated static let responseCacheRoot: URL? = {
@@ -139,12 +142,14 @@ struct UITestFixtureEnvironment {
         ProcessInfo.processInfo.arguments.contains(unwritableCronStoreArgument)
     }
     nonisolated static let serverURL = UITestFixtureLaunch.serverURL
+    nonisolated static let secondServerURL = UITestFixtureLaunch.secondServerURL
 
     let authManager: AuthManager
     let client: APIClient
     let draftStore: ChatDraftStore
 
-    static func make() -> UITestFixtureEnvironment {
+    /// `configured: false` starts with an empty keychain, so the App opens on onboarding (TAL-70).
+    static func make(configured: Bool = true) -> UITestFixtureEnvironment {
         let chatScenario = UITestChatScenario.current
         var initialDrafts: [ChatDraftKey: ChatDraft] = [:]
         let fixtureSessionDraft = ChatDraftKey.session(server: serverURL, sessionID: UITestFixtureURLProtocol.sessionID)
@@ -205,7 +210,7 @@ struct UITestFixtureEnvironment {
         UserDefaults.standard.removeObject(forKey: TaskSidebarDisclosureSettings.recentCompletionsAreExpandedKey)
         UserDefaults.standard.removeObject(forKey: TaskSidebarDisclosureSettings.scheduledJobsAreExpandedKey)
 
-        let keychain = UITestFixtureKeychainStore(serverURL: serverURL)
+        let keychain = UITestFixtureKeychainStore(serverURL: configured ? serverURL : nil)
         let defaultsName = "dev.kil.talaria.ui-test-fixture"
         let defaults = UserDefaults(suiteName: defaultsName)!
         defaults.removePersistentDomain(forName: defaultsName)
@@ -225,8 +230,11 @@ struct UITestFixtureEnvironment {
         )
         let authManager = AuthManager(
             keychain: keychain,
-            clientFactory: { _ in client },
-            probeClientFactory: { _, _, _ in client },
+            // The fixture server keeps the shared client every other screen uses; another server gets its own (TAL-70).
+            clientFactory: { $0 == serverURL ? client : APIClient(baseURL: $0) },
+            probeClientFactory: { url, headers, cookies in
+                APIClient(baseURL: url, cookieStorage: cookies, customHeaderProvider: { headers })
+            },
             headerStore: .shared,
             cookieStorage: URLSessionConfiguration.ephemeral.httpCookieStorage!,
             profileEntityCache: ProfileEntityCache(defaults: nil),
@@ -277,8 +285,8 @@ private final class UITestFixtureKeychainStore: KeychainStoring {
     private let lock = NSLock()
     private var values: [String: String]
 
-    init(serverURL: URL) {
-        values = [KeychainStore.Key.serverURL.rawValue: serverURL.absoluteString]
+    init(serverURL: URL?) {
+        values = serverURL.map { [KeychainStore.Key.serverURL.rawValue: $0.absoluteString] } ?? [:]
     }
 
     func save(_ value: String, forKey key: KeychainStore.Key) throws {
@@ -490,6 +498,9 @@ final class UITestFixtureURLProtocol: URLProtocol {
     /// The full chat's approval as Relay names it (TAL-1463).
     static let approvalHeadID = "ui-fixture-approval-head"
     static let sessionTitle = "UI Fixture Session"
+    /// The second server's one chat (TAL-70).
+    static let secondServerSessionID = "ui-fixture-second-server-session"
+    static let secondServerSessionTitle = "Second Server Session"
     private static let recoveryState = NSLock()
     nonisolated(unsafe) private static var approvalBypassOverride: Bool?
     /// The session's toolsets as the fixture saved them (TAL-631); nil is the profile's defaults.
@@ -548,6 +559,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         targetedDirectoryReads.withLock { $0 = [] }
         targetedQuotaReads.withLock { $0 = [] }
         transcriptReads = 0
+        isSignedIn.withLock { $0 = false }
         archivedSessionIDs = []
         deletedSessionIDs = []
         cancelledMonitorStreamIDs = []
@@ -603,7 +615,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
-        request.url?.host == UITestFixtureEnvironment.serverURL.host
+        [UITestFixtureEnvironment.serverURL.host, UITestFixtureEnvironment.secondServerURL.host].contains(request.url?.host)
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -726,8 +738,10 @@ final class UITestFixtureURLProtocol: URLProtocol {
         let refusesLogs = url.path == "/api/logs"
             && ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-first-logs")
             && Self.answeredPaths.withLock { $0.filter { $0 == "/api/logs" }.count == 1 }
+        let refusesSignIn = Self.refusesSignIn(request)
         let statusCode: Int
-        if case .status(let code) = listFailure { statusCode = code }
+        if refusesSignIn { statusCode = 401 }
+        else if case .status(let code) = listFailure { statusCode = code }
         else if Self.isFullWidthPanelLoad(url), Self.panelScenario == UITestFixtureEnvironment.panelUnavailableArgument { statusCode = 503 }
         else if refusesLogs { statusCode = 403 }
         else if refusesRemoval { statusCode = 409 }
@@ -748,7 +762,9 @@ final class UITestFixtureURLProtocol: URLProtocol {
             client?.urlProtocol(self, didLoad: Data(": fixture heartbeat\n\n".utf8))
             return
         }
-        if refusesLogs {
+        if refusesSignIn {
+            client?.urlProtocol(self, didLoad: Self.json(["error": "Unauthorized"]))
+        } else if refusesLogs {
             client?.urlProtocol(self, didLoad: Self.json(["error": "Fixture log access refused"]))
         } else if refusesRemoval {
             client?.urlProtocol(self, didLoad: Self.json(["error": "Synthetic session removal refusal"]))
@@ -756,6 +772,26 @@ final class UITestFixtureURLProtocol: URLProtocol {
             client?.urlProtocol(self, didLoad: Self.responseData(for: request))
         }
         client?.urlProtocolDidFinishLoading(self)
+    }
+
+    /// `--ui-test-auth-required` is signed in once `/api/auth/login` has received the fixture password (TAL-70).
+    /// ponytail: one sign-in for both hosts; keep it per host when a test needs one server signed out beside another.
+    private static let isSignedIn = OSAllocatedUnfairLock(initialState: false)
+
+    private static var requiresSignIn: Bool {
+        ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.authRequiredArgument)
+    }
+
+    /// Under `--ui-test-auth-required`, a login with any other password and every other API path but the auth status
+    /// get 401 until a login with the fixture password signs the fixture in.
+    private static func refusesSignIn(_ request: URLRequest) -> Bool {
+        guard requiresSignIn, let path = request.url?.path, path.hasPrefix("/api/") else { return false }
+        if path == "/api/auth/login" {
+            let accepted = requestJSON(request)["password"] as? String == UITestFixtureEnvironment.fixturePassword
+            if accepted { isSignedIn.withLock { $0 = true } }
+            return !accepted
+        }
+        return path != "/api/auth/status" && !isSignedIn.withLock { $0 }
     }
 
     override func stopLoading() {
@@ -815,6 +851,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 "person_isolation": ["version": 1, "enabled": true],
                 "person": ["id": "oidc:fixture-person", "display_name": "alex@example.invalid"],
             ])
+        case "/api/auth/status" where requiresSignIn:
+            return json(["auth_enabled": true, "logged_in": isSignedIn.withLock { $0 }, "password_auth_enabled": true])
         case "/api/auth/status":
             return json(["auth_enabled": false, "logged_in": true])
         case "/api/auth/login":
@@ -822,6 +860,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
         case "/api/sessions" where URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
             .contains { $0.name == "include_archived" && $0.value == "1" } == true:
             return archivedSessionsResponse()
+        case "/api/sessions" where url.host == UITestFixtureEnvironment.secondServerURL.host:
+            return json(["sessions": [session(id: secondServerSessionID, title: secondServerSessionTitle)], "archived_count": 0])
         case "/api/sessions":
             return sessionsResponse()
         case "/api/session/branch" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.forkSessionArgument):
