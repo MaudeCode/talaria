@@ -51,7 +51,7 @@ that shard with its reason. See
 
 ### Set a Duo posture
 
-`scripts/duo-pose <udid|booted> <open|closed|book|rotate-right> [--screenshot <path>]`
+`scripts/duo-pose <udid|booted> <open|closed|book|tent|rotate-right|rotate-left> [--screenshot <path>]`
 uses the same local simulator backend as T3's 3D panel. Run Node 24 and open a
 simulator in T3 first. Accessibility trust and the Device Hub window are unnecessary.
 The command reads the running hub's port from
@@ -77,8 +77,12 @@ env IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo \
 scripts/test-duo-pose --live
 ```
 
-`booted` requires exactly one booted Duo. `rotate-right` sets the absolute native
-orientation `landscape_right`; repeating any settled target sends no command.
+`booted` requires exactly one booted Duo. `tent` is Device Hub's Tent Stand
+preset: the cover at 80 degrees, its screen in landscape. `rotate-right` and
+`rotate-left` set the absolute native orientation `landscape_right` or
+`landscape_left`; on the cover each settles in the mirrored landscape, so the
+two reach both Tent Stand directions. Repeating any settled target sends no
+command.
 The result is JSON containing the device, requested pose, native state, and
 `changed`, which is false for a no-op. Each call captures and validates the active
 panel even without `--screenshot`. The screenshot option saves that verified PNG.
@@ -89,8 +93,9 @@ This is an owner-approved, undocumented protocol, checked with T3's bundled
 expo-device-hub 0.15.3. The single transport in `scripts/duo-pose.mjs` handles
 input admission, pose requests, acknowledgements, and native state. An
 acknowledgement can arrive before the display handoff: success waits for the
-requested hinge angle and active panel together. `open`, `closed`, and `book`
-require 180, 0, and 90 degrees respectively. Rotation waits for a fresh native
+requested hinge angle and active panel together. `open`, `closed`, `book` and
+`tent` require 180, 0, 90 and 80 degrees respectively; `tent` also waits for the
+cover's landscape screen. Rotation waits for a fresh native
 sensor orientation update; an orientation-locked app can keep its framebuffer
 unchanged. When the backend omits sensor orientation, its screen orientation is
 the verification field. Inactive panels can retain a framebuffer, so a successful
@@ -108,7 +113,7 @@ on the actual test destination afterward.
 `scripts/test-duo-pose` runs only synthetic protocol tests and never consults a
 running simulator or T3 backend. Explicit `scripts/test-duo-pose --live`
 validation also creates a disposable Duo, owns its shared lease, exercises
-closed/open/closed, book, rotation, screenshots and repeated-target no-ops, then deletes only that
+closed/open/closed, book, rotation, Tent Stand in both directions, screenshots and repeated-target no-ops, then deletes only that
 test device. The live portion skips clearly when the Duo type or running local
 T3 backend is unavailable. CI runs the synthetic tests without live accounts,
 Accessibility access, or a simulator backend.

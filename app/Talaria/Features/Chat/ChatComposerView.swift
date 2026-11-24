@@ -32,6 +32,8 @@ struct MessageComposerView: View {
     let onDraftEdit: (String) -> Void
     @Binding var clarificationPanelHeight: CGFloat
     let availableHeight: CGFloat
+    /// What the chat stacks above the composer in the same pane, such as the run status chip.
+    let heightAboveComposer: CGFloat
     @Binding var isFocused: Bool
     let isSending: Bool
     let isCompressingSession: Bool
@@ -157,7 +159,9 @@ struct MessageComposerView: View {
     private var isAnsweringClarification: Bool { clarificationPrompt != nil }
 
     @State private var textFieldHeight: CGFloat = 0
-    @State private var composerSurfaceHeight: CGFloat = 110
+    /// Everything the composer shows besides its open question panel, as laid out; until measured, the answer field's
+    /// usual height and the handle (TAL-1052).
+    @State private var questionPanelChromeHeight: CGFloat = 174
     @State private var twoRowComposerHeight: CGFloat = 0
     @State private var twoRowInputHeight: CGFloat = 0
     @GestureState private var clarificationResizeTranslation: CGFloat = 0
@@ -414,6 +418,17 @@ struct MessageComposerView: View {
                     }
             }
         }
+        .backgroundPreferenceValue(QuestionPanelFrame.Bounds.self) { panel in
+            GeometryReader { proxy in
+                // Both heights come from one layout pass, so the panel's own height never feeds back into its budget.
+                let chrome = panel.map { proxy.size.height - proxy[$0].height }
+                Color.clear.onChange(of: chrome, initial: true) { _, chrome in
+                    // A sub-point wobble would resize the panel and measure it again, forever.
+                    guard let chrome, chrome > 0, abs(chrome - questionPanelChromeHeight) >= 0.5 else { return }
+                    questionPanelChromeHeight = chrome
+                }
+            }
+        }
         .task(id: selectedProfileName) {
             guard let apiClient else { return }
             let preferences = SettingsModelPickerViewModel(client: apiClient, favorites: .shared, live: true)
@@ -641,8 +656,7 @@ struct MessageComposerView: View {
                     onToggleChoice: onToggleClarificationChoice,
                     onSelectQuestion: onSelectClarificationQuestion
                 )
-                .frame(height: displayedClarificationHeight)
-                .clipped()
+                .modifier(questionPanelFrame)
                 .id(clarificationPrompt.id)
                 Divider()
                     .padding(.horizontal, 16)
@@ -650,8 +664,7 @@ struct MessageComposerView: View {
                 clarificationResizeHandle
                     .overlay(alignment: .trailing) { approval.collapseButton.padding(.trailing, 8) }
                 approval
-                    .frame(height: displayedClarificationHeight)
-                    .clipped()
+                    .modifier(questionPanelFrame)
                     .id(approval.prompt.id)
                 Divider()
                     .padding(.horizontal, 16)
@@ -665,21 +678,31 @@ struct MessageComposerView: View {
                     onMove: onConnectionMove,
                     onDismiss: onDismissConnection
                 )
-                .frame(height: displayedClarificationHeight)
-                .clipped()
+                .modifier(questionPanelFrame)
                 .id(connectionOperation.opId)
                 Divider()
                     .padding(.horizontal, 16)
             }
 
             composerSurface
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerSurfaceHeight = $0 }
         }
     }
 
     private var maximumClarificationHeight: CGFloat {
-        // Leave the answer field, send controls, and resize handle on screen.
-        availableHeight > 0 ? max(0, availableHeight - composerSurfaceHeight - 64) : 420
+        // Leave the resize handle, answer field, send controls, the strip under the card and the chips above it on
+        // screen: a short pane, as on the Duo's outer display in landscape, otherwise pushed the composer past the
+        // bottom safe area (TAL-1052).
+        guard availableHeight > 0 else { return 420 }
+        let room = availableHeight - heightAboveComposer - questionPanelChromeHeight - (keyboardIsVisible ? 10 : 0)
+        return max(Self.minimumQuestionPanelHeight, room)
+    }
+
+    /// Room for one answer at the largest text size, which scrolls to the rest. A pane too short for it and the
+    /// composer's controls lets the composer run past it rather than hide the question.
+    private static let minimumQuestionPanelHeight: CGFloat = 120
+
+    private var questionPanelFrame: QuestionPanelFrame {
+        QuestionPanelFrame(height: displayedClarificationHeight)
     }
 
     private func clampedClarificationHeight(_ height: CGFloat) -> CGFloat {
@@ -1818,5 +1841,24 @@ private struct ComposerDropDelegate: DropDelegate {
         guard !items.isEmpty else { return false }
         perform(items)
         return true
+    }
+}
+
+/// A question panel at its displayed height, publishing its bounds for the composer to measure around it.
+private struct QuestionPanelFrame: ViewModifier {
+    struct Bounds: PreferenceKey {
+        static var defaultValue: Anchor<CGRect>? { nil }
+        static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+            value = nextValue() ?? value
+        }
+    }
+
+    let height: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .frame(height: height)
+            .clipped()
+            .anchorPreference(key: Bounds.self, value: .bounds) { $0 }
     }
 }

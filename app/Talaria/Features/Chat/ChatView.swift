@@ -416,6 +416,7 @@ struct ChatView: View {
             onDraftEdit: { editComposerDraft($0, promptID: prompt?.id) },
             clarificationPanelHeight: $clarificationPanelHeight,
             availableHeight: availableHeight,
+            heightAboveComposer: composerAccessoryVisibleItemCount > 0 ? (composerAccessoriesHeight ?? 0) + 8 : 0,
             isFocused: $composerIsFocused,
             isSending: prompt != nil ? viewModel.isRespondingToClarification : viewModel.isSubmittingMessage,
             isCompressingSession: prompt == nil && viewModel.isCompressingSession,

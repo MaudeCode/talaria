@@ -158,6 +158,54 @@ final class DuoFoldHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Stopped", "The run's end never reached the transcript")
     }
 
+    /// TAL-1052: turning the closed Duo to its outer display's landscape, as Tent Stand does, and back keeps the same
+    /// chat with its draft, staged file and running response. Resizing neither sends the draft nor starts, reconnects
+    /// or refetches anything, and a transcript that followed the response stays on its latest message.
+    func testRotatingTheOuterDisplayKeepsTheChatDraftFileAndRun() async throws {
+        let chats = ChatViewModelCache()
+        let window = try await openChatOnDuo(["--ui-test-chat-controls"], closed: true) {
+            AnyView($0.sessionList(chats: chats))
+        }.window
+        try await sendFromComposer("Run the deterministic fixture", in: window)
+        _ = try await requireElement(in: window, label: "Waiting for control input.")
+        let viewModel = fixtureChat(in: chats).viewModel
+        let stream = try XCTUnwrap(viewModel.activeStreamID, "The run never started its stream")
+        try await typeIntoComposer("Tent rotation draft", in: window)
+        let staged = await viewModel.stageAttachment(data: Data("Tent notes".utf8), filename: "tent-notes.txt")
+        let file = try XCTUnwrap(staged, "The file was not staged")
+        _ = try await requireElement(in: window, label: "Open attachment tent-notes.txt")
+        _ = await awaitRenderedQuiet(in: window) { self.chatRequests() }
+        let before = chatRequests()
+
+        for landscape in [true, false] {
+            let moment = landscape ? "Turning the outer display to landscape" : "Turning it back to portrait"
+            rotateDuoOuter(window, landscape: landscape)
+            // Runs the resized chat's main-actor tasks until its requests stop changing, so it sends anything it would.
+            _ = await awaitRenderedQuiet(in: window) { self.chatRequests() }
+            XCTAssertTrue(fixtureChat(in: chats).viewModel === viewModel, "\(moment) replaced the chat's view model")
+            XCTAssertEqual(composerDraftText(in: window), "Tent rotation draft", "\(moment) lost the draft")
+            XCTAssertEqual(viewModel.pendingAttachments.map(\.id), [file.id], "\(moment) lost the staged file")
+            _ = try await requireElement(in: window, label: "Open attachment tent-notes.txt", "\(moment) hid the staged file")
+            _ = try await requireElement(in: window, label: "Waiting for control input.", "\(moment) lost the running response")
+            XCTAssertEqual(viewModel.activeStreamID, stream, "\(moment) started another stream")
+            XCTAssertEqual(Array(chatRequests().dropFirst(before.count)), [], "\(moment) sent, reconnected or refetched")
+            let pinned = await awaitCondition { (try? self.transcriptScrollView(in: window, timeout: 0)).map(self.isAtBottom) == true }
+            XCTAssertTrue(pinned, "\(moment) moved a transcript that followed the response off the latest message")
+            attachHostedScreenshot(window, name: landscape ? "outer-rotated-landscape" : "outer-rotated-back")
+        }
+    }
+
+    /// TAL-1052: a reader scrolled up keeps the row at the top while the outer display turns to landscape and back.
+    func testTheReadersRowStaysAtTheTopAcrossRotatingTheOuterDisplay() async throws {
+        let window = try await openChatOnDuo(closed: true).window
+        let reading = try await scrollReaderToMiddle(in: window)
+        for landscape in [true, false] {
+            rotateDuoOuter(window, landscape: landscape)
+            let kept = await awaitCondition { self.readingRow(in: window) == reading }
+            XCTAssertTrue(kept, "Turning to \(landscape ? "landscape" : "portrait") moved the reader from \(reading) to \(readingRow(in: window) ?? "nothing")")
+        }
+    }
+
     /// A chat with a message queued behind its held run.
     private func openChatWithAQueuedMessage(closed: Bool = false) async throws -> Folding {
         let folding = try await openChatOnDuo(["--ui-test-chat-controls"], closed: closed)
@@ -685,6 +733,20 @@ extension XCTestCase {
         settle(0.3)
         let showsSplit = HostedAccessibility.splitViewController(under: window.rootViewController) != nil
         XCTAssertEqual(showsSplit, !closed, closed ? "Closing the Duo kept the split view" : "Opening the Duo kept the stack")
+    }
+
+    /// Turns the closed Duo's outer display between portrait and landscape, as the device does: the same window takes
+    /// the other orientation's size, compact in width either way and compact in height in landscape. A wide aspect
+    /// alone never brings the inner display's split view.
+    @MainActor
+    func rotateDuoOuter(_ window: UIWindow, landscape: Bool) {
+        window.frame = CGRect(origin: .zero, size: landscape ? HostedSize.duoOuterLandscape : HostedSize.duoOuter)
+        window.traitOverrides.verticalSizeClass = landscape ? .compact : .regular
+        window.layoutIfNeeded()
+        settle(0.3)
+        XCTAssertEqual(window.traitCollection.horizontalSizeClass, .compact)
+        XCTAssertNil(HostedAccessibility.splitViewController(under: window.rootViewController),
+                     "Turning the outer display to \(landscape ? "landscape" : "portrait") took the split view")
     }
 }
 

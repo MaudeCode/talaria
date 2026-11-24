@@ -95,6 +95,40 @@ test('native sensor orientation confirms rotation even when the app locks its fr
   }, { ...open, physicalOrientation: 'portrait' });
 });
 
+const tent = { ...closed, width: 1398, height: 2034, hingeAngle: 80, hingePose: 'tent', orientation: 'landscape_left' };
+
+test('tent waits on the cover for its landscape screen', async () => {
+  await scenario(async socket => {
+    let finished = false;
+    const result = controlDuo('http://127.0.0.1:1', device, 'tent').then(state => { finished = true; return state; });
+    await tick();
+    assert.deepEqual(socket().sent, [{ tag: 0x10, payload: { requestId: 1, command: { control: 'pose', value: 'tent' } } }]);
+    socket().emit(0x90, { requestId: 1, ok: true });
+    socket().emit(0x82, { ...tent, orientation: 'portrait' });
+    await tick();
+    assert.equal(finished, false, 'the hinge alone is not the stand');
+    socket().emit(0x82, tent);
+    assert.equal((await result).screenId, 1);
+  }, closed);
+});
+
+test('rotations on the cover settle in the mirrored landscape', async () => {
+  for (const [pose, requested, settled] of [['rotate-left', 'landscape_left', 'landscape_right'],
+    ['rotate-right', 'landscape_right', 'landscape_left']]) {
+    await scenario(async socket => {
+      let finished = false;
+      const result = controlDuo('http://127.0.0.1:1', device, pose).then(state => { finished = true; return state; });
+      await tick();
+      assert.deepEqual(socket().sent, [{ tag: 7, payload: { orientation: requested } }]);
+      socket().emit(0x82, { ...tent, hingePose: null, orientation: requested });
+      await tick();
+      assert.equal(finished, false, `${pose} must not accept the requested name on the cover`);
+      socket().emit(0x82, { ...tent, hingePose: null, orientation: settled });
+      assert.equal((await result).orientation, settled);
+    }, { ...tent, orientation: 'portrait' });
+  }
+});
+
 test('refused, malformed, unsupported and disconnected input fail closed', async () => {
   for (const reply of [s => s.emit(0x90, { requestId: 1, ok: false }),
     s => s.emit(0x90, { requestId: 1, ok: 'yes' }),
@@ -224,15 +258,15 @@ test('live leased Duo round trip and repeated targets', { skip: !process.env.DUO
   const root = mkdtempSync(join(tmpdir(), 'duo-pose-'));
   const command = fileURLToPath(new URL('./duo-pose', import.meta.url));
   try {
-    for (const pose of ['closed', 'open', 'closed', 'book', 'rotate-right']) {
+    for (const pose of ['closed', 'open', 'closed', 'book', 'rotate-right', 'closed', 'tent', 'rotate-left', 'rotate-right']) {
       const screenshot = join(root, `${pose}.png`);
       const invoke = () => JSON.parse(execFileSync(command, [udid, pose, '--screenshot', screenshot], { timeout: 30_000, encoding: 'utf8' }));
       const first = invoke();
       assert.equal(first.device, udid);
       assert.equal(first.pose, pose);
-      assert.equal(first.screenId, pose === 'closed' ? 1 : 3);
-      if (pose !== 'rotate-right') assert.equal(first.hingeAngle, { closed: 0, open: 180, book: 90 }[pose]);
-      else assert.equal(first.physicalOrientation ?? first.orientation.replaceAll('_', '-'), 'landscape-right');
+      assert.equal(first.screenId, first.hingeAngle < 90 ? 1 : 3);
+      if (!pose.startsWith('rotate-')) assert.equal(first.hingeAngle, { closed: 0, tent: 80, open: 180, book: 90 }[pose]);
+      else assert.ok(first.orientation.startsWith('landscape'), `${pose} left the screen in ${first.orientation}`);
       validatePng(readFileSync(screenshot), first.screenId);
       assert.equal(invoke().changed, false, `${pose} must be a no-op when repeated`);
       console.log(`verified ${pose}: display ${first.screenId}, ${first.width}x${first.height}; repeated request was a no-op`);

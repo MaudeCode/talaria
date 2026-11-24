@@ -252,7 +252,7 @@ struct ChatTranscriptView: View {
                                 scrollCommands.scrollTo(id: id, anchor: anchor)
                             }
                         }
-                        retainedChat?.widthChangePreparation = (ObjectIdentifier(scrollPositionController), preserveReaderForWidthChange)
+                        registerWidthChangePreparation()
                         scrollPositionController.onPreservationEnded = {
                             preparedWidthChange = false
                             releaseUnownedRowPins()
@@ -308,6 +308,9 @@ struct ChatTranscriptView: View {
                 .frame(width: confinesToDivisionPane ? viewport.size.width : nil,
                        height: confinesToDivisionPane ? viewport.size.height : nil, alignment: .topLeading)
                 .background(Color(.systemBackground))
+                // The registered preparation is a copy of this view: one made while following would hold the latest
+                // message through the next width change after the reader scrolled away (TAL-1052).
+                .onChange(of: isFollowingLatestContent) { registerWidthChangePreparation() }
                 .onGeometryChange(for: CGFloat.self, of: { max(0, $0.size.width) }) { width in
                     guard width > 0, width != previousViewportWidth else { return }
                     if previousViewportWidth != nil, !preparedWidthChange { preserveReaderForWidthChange() }
@@ -448,6 +451,11 @@ struct ChatTranscriptView: View {
         } else {
             onScrollToBottom(scrollCommands)
         }
+    }
+
+    /// Lets the chat's owner prepare this transcript before it changes the width (`ChatViewModelCache.prepareForWidthChange`).
+    private func registerWidthChangePreparation() {
+        retainedChat?.widthChangePreparation = (ObjectIdentifier(scrollPositionController), preserveReaderForWidthChange)
     }
 
     private func preserveReaderForWidthChange() {
