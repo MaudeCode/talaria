@@ -252,7 +252,6 @@ class RepeatTests(unittest.TestCase):
             # Four heavy classes alone take four shards; beside the Duo shard at most three, and two finish as early.
             ("the lane gives up a shard for the Duo", four, {}, 2),
             ("beside the repeats too", {**four, "repeat": ["TalariaTests/Heavy2/testX"]}, {}, 2),
-            ("repeated attempts add none", four, {"repetitions": 2}, 1),
             ("a lane with no native Duo test adds none", four, {"native": lambda identifiers: ([], {})}, 4),
         ]
         for name, selected, options, width in cases:
@@ -268,6 +267,15 @@ class RepeatTests(unittest.TestCase):
                                                                "-skip-testing:TalariaTests/Split/testKnown"])
                 else:
                     self.assertEqual(duo, [])
+
+    def test_a_focused_native_duo_run_repeats_on_the_duo(self):
+        identifier = "TalariaTests/RegularSplitHostedTests/testFoldingKeepsTheCompanionPagesToolResult"
+        result = shard.plan({"mode": "explicit", "identifiers": [identifier]}, repetitions=20, table=TABLE)
+        (entry,) = result["shards"]
+        self.assertTrue(entry.get("duo"))
+        self.assertEqual(shard.selection(entry), [f"-only-testing:{identifier}", "-test-iterations", "20",
+                                                  "-run-tests-until-failure"])
+        shard.check(result, {1: [identifier] * 20})
 
     def test_the_native_duo_shard_is_proved_on_its_own_or_reports_its_skip(self):
         result = shard.plan(lane("Heavy1", "Split"), table=TABLE,
