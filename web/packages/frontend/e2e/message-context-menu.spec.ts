@@ -10,7 +10,7 @@ const ANSWER = 'Read the [release notes](https://example.com/notes) first.'
 async function boot(page: Page): Promise<{ user: Locator; assistant: Locator; truncates: Record<string, unknown>[] }> {
   let truncated = false
   const truncates: Record<string, unknown>[] = []
-  const messages = [{ role: 'user', id: 1, content: 'Plan the release', attachments: [{ filename: 'report.pdf', download_url: 'api/media?path=report.pdf' }] }, { role: 'assistant', id: 2, content: ANSWER }]
+  const messages = [{ role: 'user', id: 1, content: 'Plan the release', attachments: [{ filename: 'report.pdf', download_url: 'api/media?path=report.pdf' }] }, { role: 'assistant', id: 2, content: ANSWER, _copy_button: true }]
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'msg-menu', title: 'Message menu', can_branch: true, messages: truncated ? [] : messages } } }))
   await page.route('**/api/session/truncate', (route) => {
     truncates.push(route.request().postDataJSON() as Record<string, unknown>)

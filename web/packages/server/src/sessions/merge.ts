@@ -1668,10 +1668,22 @@ export function withDisplayMedia<T>(messages: T[], project: (text: string) => Me
 /**
  * TAL-2481: each non-tool row whose `content` is a list of parts carries `_display_text`, the text of those parts as
  * `messageText` joins them, so clients never join parts themselves; a row whose `content` is a string is its own text. A
- * tool row's result shows through its call, never as row text. Returns copies.
+ * tool row's result shows through its call, never as row text. Assistant text also controls footer Copy eligibility.
+ * Returns copies for rows with projected fields.
  */
 export function withDisplayText<T>(messages: T[]): T[] {
-  return messages.map((m) => isDict(m) && m.role !== 'tool' && Array.isArray(m.content) ? { ...m, _display_text: messageText(m.content) } : m)
+  return messages.map((m) => {
+    if (!isDict(m)) return m
+    const displayParts = m.role !== 'tool' && Array.isArray(m.content)
+    const text = displayParts || m.role === 'assistant' ? messageText(m.content) : ''
+    const copyButton = m.role === 'assistant' && text.trim().length > 0
+    if (!displayParts && !copyButton && !('_copy_button' in m)) return m
+    const out: Record<string, unknown> = { ...m }
+    if (displayParts) out._display_text = text
+    if (copyButton) out._copy_button = true
+    else delete out._copy_button
+    return out as T
+  })
 }
 
 /** Anthropic-style tool calls: `tool_use` blocks in the content array, interleaved with the text around them. */

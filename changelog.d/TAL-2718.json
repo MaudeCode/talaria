@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Reply footers show Copy when the server marks the reply as copyable.",
+      "highlight": false,
+      "components": ["app", "web"],
+      "announce": false
+    }
+  ]
+}

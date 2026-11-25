@@ -10895,6 +10895,10 @@
                               "_final_phase_duration": {
                                 "type": "number"
                               },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
+                              },
                               "_display_truncated": {
                                 "type": "boolean",
                                 "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
@@ -19207,6 +19211,10 @@
                               "_final_phase_duration": {
                                 "type": "number"
                               },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
+                              },
                               "_display_truncated": {
                                 "type": "boolean",
                                 "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
@@ -25761,6 +25769,10 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
                               },
                               "_display_truncated": {
                                 "type": "boolean",
@@ -35641,6 +35653,10 @@
                               "_final_phase_duration": {
                                 "type": "number"
                               },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
+                              },
                               "_display_truncated": {
                                 "type": "boolean",
                                 "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
@@ -44840,6 +44856,10 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
                               },
                               "_display_truncated": {
                                 "type": "boolean",
@@ -54601,6 +54621,10 @@
                               "_final_phase_duration": {
                                 "type": "number"
                               },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
+                              },
                               "_display_truncated": {
                                 "type": "boolean",
                                 "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
@@ -61099,6 +61123,10 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
                               },
                               "_display_truncated": {
                                 "type": "boolean",
@@ -67661,6 +67689,10 @@
                               "_final_phase_duration": {
                                 "type": "number"
                               },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
+                              },
                               "_display_truncated": {
                                 "type": "boolean",
                                 "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
@@ -74219,6 +74251,10 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
                               },
                               "_display_truncated": {
                                 "type": "boolean",
@@ -94589,6 +94625,10 @@
                               "_final_phase_duration": {
                                 "type": "number"
                               },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
+                              },
                               "_display_truncated": {
                                 "type": "boolean",
                                 "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
@@ -101262,6 +101302,10 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
                               },
                               "_display_truncated": {
                                 "type": "boolean",
@@ -108534,6 +108578,10 @@
                               "_final_phase_duration": {
                                 "type": "number"
                               },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
+                              },
                               "_display_truncated": {
                                 "type": "boolean",
                                 "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
@@ -115252,6 +115300,10 @@
                                   },
                                   "_final_phase_duration": {
                                     "type": "number"
+                                  },
+                                  "_copy_button": {
+                                    "type": "boolean",
+                                    "description": "Whether the assistant message has text eligible for the footer Copy button."
                                   },
                                   "_display_truncated": {
                                     "type": "boolean",
@@ -172768,6 +172820,10 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_copy_button": {
+                                "type": "boolean",
+                                "description": "Whether the assistant message has text eligible for the footer Copy button."
                               },
                               "_display_truncated": {
                                 "type": "boolean",

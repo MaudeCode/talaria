@@ -83,6 +83,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
     public internal(set) var steer: [String: JSONValue]?
     /// The server's collapsed excerpt of a body too long to lay out whole (TAL-456); `content` stays whole for actions.
     public internal(set) var displayExcerpt: String?
+    public internal(set) var copyButton: Bool?
     /// The URL the server chose for this row's link preview (TAL-2504); nil when it has none.
     public internal(set) var linkPreviewURL: URL?
     /// The server folds this long user message behind "Show more" (TAL-452); `content` stays whole for actions.
@@ -137,6 +138,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         turnId: String? = nil,
         steer: [String: JSONValue]? = nil,
         displayExcerpt: String? = nil,
+        copyButton: Bool? = nil,
         linkPreviewURL: URL? = nil,
         collapsible: Bool = false,
         displayBody: TranscriptDisplayBody? = nil,
@@ -168,6 +170,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         self.turnId = turnId
         self.steer = steer
         self.displayExcerpt = displayExcerpt
+        self.copyButton = copyButton
         self.linkPreviewURL = linkPreviewURL
         self.collapsible = collapsible
         self.displayBody = displayBody
@@ -202,6 +205,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         case underscoredTimestamp = "_ts"
         case displayTruncated = "_displayTruncated"
         case displayExcerpt = "_displayExcerpt"
+        case copyButton = "_copyButton"
         case linkPreviewURL = "_linkPreviewUrl"
         case collapsible = "_collapsible"
         case displayContent = "_displayContent"
@@ -244,6 +248,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         turnSummary = activityScene?.turnSummary
         turnId = container.decodeLossyStringIfPresent(forKey: .turnId)
         steer = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steer)
+        copyButton = try? container.decodeIfPresent(Bool.self, forKey: .copyButton)
         displayExcerpt = (try? container.decodeIfPresent(Bool.self, forKey: .displayTruncated)) == true
             ? container.decodeLossyStringIfPresent(forKey: .displayExcerpt)
             : nil

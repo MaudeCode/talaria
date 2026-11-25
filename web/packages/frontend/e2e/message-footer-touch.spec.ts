@@ -11,9 +11,9 @@ const session = {
   owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [], queued_input_count: 0 },
   messages: [
     { role: 'user', message_id: 'q1', content: 'First question', timestamp: at },
-    { role: 'assistant', message_id: 'a1', content: 'First answer', timestamp: at + 5, _usedModel: 'model-one', _turnDuration: 3 },
+    { role: 'assistant', message_id: 'a1', content: 'First answer', _copy_button: true, timestamp: at + 5, _usedModel: 'model-one', _turnDuration: 3 },
     { role: 'user', message_id: 'q2', content: 'Second question', timestamp: at + 60 },
-    { role: 'assistant', message_id: 'a2', content: 'Second answer', timestamp: at + 65, _usedModel: 'model-one', _turnDuration: 3 },
+    { role: 'assistant', message_id: 'a2', content: 'Second answer', _copy_button: true, timestamp: at + 65, _usedModel: 'model-one', _turnDuration: 3 },
   ],
 }
 

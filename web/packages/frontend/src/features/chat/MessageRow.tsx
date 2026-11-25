@@ -352,14 +352,14 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
     while (prev && !(prev instanceof HTMLElement && prev.dataset.role === 'user')) prev = prev.previousElementSibling
     if (prev) revealQuestion(prev, true)
   }
-  const items: MessageAction[] = [
-    ...replyActions(row, actions),
-    { label: m.copy(), Icon: Copy, run: () => copyWithToast(content) },
+  const copyAction = { label: m.copy(), Icon: Copy, run: () => copyWithToast(content) }
+  const leadingActions = replyActions(row, actions)
+  const trailingActions: MessageAction[] = [
     ...(tts && content.trim() ? [{ label: m.speak_message(), Icon: Volume2, run: () => { void speak(content) } }] : []),
     ...(actions.onRegenerate && isLast ? [{ label: m.regenerate_response(), Icon: RotateCcw, run: () => actions.onRegenerate?.(row) }] : []),
     { label: m.jump_to_question_label(), Icon: ArrowUp, run: jumpToQuestion, className: 'msg-question-jump-btn' },
   ]
-  return <MessageMenu items={items} row={
+  return <MessageMenu items={[...leadingActions, copyAction, ...trailingActions]} row={
     <div ref={ref} className="msg-row assistant-turn" data-role="assistant" data-member-author={row.author === undefined ? undefined : '1'} data-msg-idx={row.index} data-message-key={row.key} data-latest={retainHeight ? '1' : undefined}>
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span>{row.scheduled && <Badge tone="border-border text-muted">{m.group_scheduled()}</Badge>}{row.message.badge && <span className="msg-badge">{row.message.badge}</span>}</div>
       <div className="assistant-turn-blocks">
@@ -374,7 +374,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
         {speed !== null && <span className="msg-turn-tps whitespace-nowrap font-mono text-[11px] tabular-nums text-muted opacity-75" title={`${speed} tok/s`}>{Math.round(speed)} tok/s</span>}
         {tokenUsage && row.message._turnUsage && <TurnUsageMeta usage={row.message._turnUsage} />}
         <span className="ml-auto" aria-hidden="true" />
-        <ActionButtons items={items} />
+        <ActionButtons items={[...leadingActions, ...(row.message._copy_button === true ? [copyAction] : []), ...trailingActions]} />
       </div>
     </div>
   } />

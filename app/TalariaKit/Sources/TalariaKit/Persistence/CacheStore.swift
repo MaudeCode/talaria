@@ -581,6 +581,7 @@ private extension ChatMessage {
             turnId: cachedMessage.turnId,
             steer: cachedMessage.steerData.flatMap { try? JSONDecoder().decode([String: JSONValue].self, from: $0) },
             displayExcerpt: cachedMessage.displayExcerpt,
+            copyButton: cachedMessage.copyButton,
             linkPreviewURL: cachedMessage.linkPreviewURL.flatMap(URL.init(string:)),
             collapsible: cachedMessage.collapsible == true,
             displayBody: cachedMessage.displayBodyData.flatMap { try? JSONDecoder().decode(TranscriptDisplayBody.self, from: $0) },
