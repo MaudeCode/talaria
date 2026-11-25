@@ -177,10 +177,13 @@ def plan(lane, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS, rese
     empty = lane["mode"] == "empty" or not lane.get("identifiers")
     if empty and not repeat:
         raise ValueError("an empty lane has no shards; the workflow skips the simulators")
-    # Repeated attempts and a repeat-only run add no native Duo shard.
     identifiers = [] if empty else [f"{TARGET}/{cls}" for cls in (classes if classes is not None else discover())] \
         if full else lane["identifiers"]
-    duo_planned, duo_left_out = (native or duo)(identifiers) if identifiers and repetitions == 1 else ([], {})
+    duo_planned, duo_left_out = (native or duo)(identifiers) if identifiers else ([], {})
+    # A focused investigation stays on one runner, using the Duo when its selection needs it.
+    focused_duo = repetitions > 1 and bool(duo_planned)
+    if repetitions > 1:
+        duo_planned = []
     limit = max(1, MAX_SHARDS - reserved - (1 if repeat else 0) - (1 if duo_planned else 0))
     if repetitions > 1:
         limit = 1  # A focused investigation repeats its selection on one runner.
@@ -213,6 +216,8 @@ def plan(lane, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS, rese
             "notifications": catch_all or any(cls in NOTIFICATION_CLASSES for cls in shard["classes"]),
             "estimate": round(shard["load"], 1), "repetitions": repetitions,
         })
+    if focused_duo:
+        entries[0].update(duo=True, known_failures={})
     if repeat:
         entries.append(repeat_shard(repeat, len(entries) + 1, table))
     if duo_planned:
@@ -388,7 +393,7 @@ def check(result, ran, skipped=None):
 
 
 def check_duo(shard, executed, skipped):
-    """The native Duo shard's summary line: skipped with its reason, or every planned identifier ran once there and
+    """The native Duo shard's summary line: skipped with its reason, or every planned identifier ran within its repetition limit and
     nothing else, its known failures included."""
     number = shard["shard"]
     if skipped is not None:
@@ -396,7 +401,7 @@ def check_duo(shard, executed, skipped):
     if not executed:
         raise ValueError(f"native Duo shard {number} has no receipt and no skip reason")
     counts = {case: executed.count(case) for case in executed}
-    repeated = sorted(case for case, count in counts.items() if count > 1)
+    repeated = sorted(case for case, count in counts.items() if count > shard.get("repetitions", 1))
     if repeated:
         raise ValueError(f"{repeated[0]} ran {counts[repeated[0]]} times in native Duo shard {number}")
     for identifier in shard["planned"]:
