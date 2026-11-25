@@ -528,6 +528,7 @@ export const MessageSchema = z.looseObject({
   _steer: z.looseObject({ steer_id: z.string(), submitted_at: z.number().nullable().optional(), consumed_at: z.number().optional(), phase_duration: z.number().optional() }).optional(),
   /** On a steered turn's last reply: seconds from the last consumed steer to the turn's end. */
   _final_phase_duration: z.number().optional(),
+  _copy_button: z.boolean().optional().describe("Whether the assistant message has text eligible for the footer Copy button."),
   /** A settled body too long to lay out whole. The session-global newest settled visible assistant reply and running output carry no excerpt. Only a newer visible terminal answer transfers that exemption. Clients render `_display_excerpt` with a local "Show more" for full `content`. */
   _display_truncated: z.boolean().optional().describe("Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."),
   _display_excerpt: z.string().optional().describe("Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."),

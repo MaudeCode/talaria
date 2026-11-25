@@ -1607,7 +1607,7 @@ extension TranscriptHostedTests {
     private func copyTranscript(streaming: Bool) throws -> UIWindow {
         let messages = [
             ChatMessage(role: "user", content: "Check the build.", timestamp: nil, messageId: "copy-q"),
-            ChatMessage(role: "assistant", content: "The **build** passes.", timestamp: nil, messageId: "copy-a"),
+            ChatMessage(role: "assistant", content: "The **build** passes.", timestamp: nil, messageId: "copy-a", copyButton: true),
         ]
         return try hostWindow(historyTranscript(
             messages: messages, hasOlderMessages: false, streamingAssistantMessageID: streaming ? "copy-a" : nil,

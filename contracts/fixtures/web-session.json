@@ -3,6 +3,7 @@
     "session_id": "contract-session",
     "messages": [
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Contract answer.",
         "message_id": "contract-assistant",
@@ -109,6 +110,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Legacy answer.",
         "message_id": "contract-legacy",
@@ -270,6 +272,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "First reply.",
         "message_id": "contract-run-a-1",
@@ -278,6 +281,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Second reply in the same turn.",
         "message_id": "contract-run-a-2",
@@ -330,6 +334,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Next turn after a hidden wakeup.",
         "message_id": "contract-run-b-1",
@@ -419,6 +424,7 @@
         "_display": "in_scene"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "The service uses port 8080.",
         "message_id": "contract-run-c-2",
@@ -535,6 +541,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Working",
         "message_id": "contract-run-d-1",
@@ -569,6 +576,7 @@
         "_display": "in_scene"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Tool budget exhausted; here is the saved explanation.",
         "message_id": "contract-run-d-2",
@@ -668,6 +676,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Checking",
         "message_id": "contract-run-e-1",
@@ -790,6 +799,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Reading a.",
         "message_id": "contract-run-g-1",
@@ -838,6 +848,7 @@
         "_display": "in_scene"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Reading b.",
         "message_id": "contract-run-g-2",
@@ -886,6 +897,7 @@
         "_display": "in_scene"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Both files read.",
         "message_id": "contract-run-g-3",
@@ -1121,6 +1133,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "**Error:** boom",
         "message_id": "contract-run-y-1",
@@ -1159,6 +1172,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "**Task cancelled:** Task cancelled.\n\n*Hermes stopped this turn at your request. Send a new message to continue.*",
         "message_id": "contract-run-z-1",
@@ -1197,6 +1211,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Streaming…",
         "message_id": "contract-run-f-1",
@@ -1287,6 +1302,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Earlier answer.",
         "message_id": "contract-run-g0-1",
@@ -1410,6 +1426,7 @@
         "_display": "in_scene"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "a.txt is read; one test fails.",
         "message_id": "tool-openai-answer",
@@ -1554,6 +1571,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": [
           {
@@ -1624,6 +1642,7 @@
         "_display": "in_scene"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "The search failed.",
         "message_id": "tool-anthropic-answer",
@@ -1729,6 +1748,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Checking.",
         "message_id": "tool-session-calls",
@@ -1770,6 +1790,7 @@
         "_display": "in_scene"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "It is Saturday.",
         "message_id": "tool-session-answer",
@@ -1870,6 +1891,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Building.",
         "message_id": "tool-live-calls",
@@ -2083,6 +2105,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. ",
         "message_id": "long-body-reply",
@@ -2125,6 +2148,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "A short reply stays whole.",
         "message_id": "short-body-reply",
@@ -2164,6 +2188,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "## Latest report\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\nA readable paragraph with a [reference](https://example.test/report).\n\n```swift\nlet answer = 42\n```\n\n| Key | Value |\n| --- | --- |\n| State | Complete |\n",
         "message_id": "newest-body-reply",
@@ -2212,6 +2237,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Synthetic reply line 1: assistant rows are never folded.\nSynthetic reply line 2: assistant rows are never folded.\nSynthetic reply line 3: assistant rows are never folded.\nSynthetic reply line 4: assistant rows are never folded.\nSynthetic reply line 5: assistant rows are never folded.\nSynthetic reply line 6: assistant rows are never folded.\nSynthetic reply line 7: assistant rows are never folded.\nSynthetic reply line 8: assistant rows are never folded.\nSynthetic reply line 9: assistant rows are never folded.\nSynthetic reply line 10: assistant rows are never folded.\nSynthetic reply line 11: assistant rows are never folded.\nSynthetic reply line 12: assistant rows are never folded.\nSynthetic reply line 13: assistant rows are never folded.\nSynthetic reply line 14: assistant rows are never folded.\nSynthetic reply line 15: assistant rows are never folded.\nSynthetic reply line 16: assistant rows are never folded.\nSynthetic reply line 17: assistant rows are never folded.\nSynthetic reply line 18: assistant rows are never folded.\nSynthetic reply line 19: assistant rows are never folded.\nSynthetic reply line 20: assistant rows are never folded.\nSynthetic reply line 21: assistant rows are never folded.\nSynthetic reply line 22: assistant rows are never folded.\nSynthetic reply line 23: assistant rows are never folded.\nSynthetic reply line 24: assistant rows are never folded.",
         "message_id": "collapsible-reply",
@@ -2251,6 +2277,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "A short reply.",
         "message_id": "short-prompt-reply",
@@ -2330,6 +2357,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Noted.",
         "message_id": "typed-marker-reply",
@@ -2399,6 +2427,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "The audit finished, but the test run failed: 1 test is red.",
         "message_id": "wakeup-mixed-reply",
@@ -2462,6 +2491,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Done.",
         "message_id": "wakeup-legacy-reply",
@@ -2526,6 +2556,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "[SILENT]",
         "message_id": "wakeup-silent-reply",
@@ -2590,6 +2621,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Picking up where the update stopped me.",
         "message_id": "continuation-reply",
@@ -2630,6 +2662,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "NO_REPLY",
         "message_id": "user-no-reply-answer",
@@ -3116,6 +3149,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer think.",
         "message_id": "think-start",
@@ -3173,6 +3207,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Lead think. Answer think.",
         "message_id": "think-middle",
@@ -3230,6 +3265,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer think.",
         "message_id": "think-unterminated",
@@ -3287,6 +3323,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer thinking.",
         "message_id": "thinking-start",
@@ -3344,6 +3381,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Lead thinking. Answer thinking.",
         "message_id": "thinking-middle",
@@ -3401,6 +3439,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer thinking.",
         "message_id": "thinking-unterminated",
@@ -3458,6 +3497,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer channel.",
         "message_id": "channel-start",
@@ -3515,6 +3555,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Lead channel. Answer channel.",
         "message_id": "channel-middle",
@@ -3572,6 +3613,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer channel.",
         "message_id": "channel-unterminated",
@@ -3629,6 +3671,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer turn.",
         "message_id": "turn-start",
@@ -3686,6 +3729,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Lead turn. Answer turn.",
         "message_id": "turn-middle",
@@ -3743,6 +3787,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer turn.",
         "message_id": "turn-unterminated",
@@ -3800,6 +3845,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer xml.",
         "message_id": "xml-closed",
@@ -3839,6 +3885,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer cut.",
         "message_id": "xml-unterminated",
@@ -3878,6 +3925,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer dsml.",
         "message_id": "xml-dsml",
@@ -3917,6 +3965,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": [
           {
@@ -3981,6 +4030,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer fields.",
         "message_id": "reasoning-fields",
@@ -4044,6 +4094,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "The plan has three steps.",
         "message_id": "marker-reply",
@@ -4102,6 +4153,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Context compaction is how the Agent summarises older turns to fit its window.",
         "message_id": "marker-prose",
@@ -4161,6 +4213,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Here is the run:\n\n- MEDIA:/talaria-contract/out/chart.png\n- **Before ![Chart](./out/chart.png) after**\n- Narration: MEDIA:/talaria-contract/out/narration.mp3\n\n```text\nMEDIA:/talaria-contract/out/secret.png\n```",
         "message_id": "media-reply",
@@ -4404,6 +4457,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Done.",
           "message_id": "view-answer",
@@ -4999,6 +5053,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Earlier answer.",
         "message_id": "contract-run-r0-1",
@@ -5038,6 +5093,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Reading a.txt.",
         "message_id": "contract-run-r-1",
@@ -5082,6 +5138,7 @@
         "_display": "in_scene"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Now b.txt.",
         "message_id": "contract-run-r-2",
@@ -5414,6 +5471,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Done.",
           "message_id": "edit-answer",
@@ -5640,6 +5698,7 @@
           "timestamp": 1770000400
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Here is the plan.",
           "message_id": "reference-plan",
@@ -5652,6 +5711,7 @@
           "timestamp": 1770000402
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Step one done.",
           "message_id": "reference-anchor",
@@ -5664,6 +5724,7 @@
           "timestamp": 1770000404
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Step two done.",
           "message_id": "reference-last",
@@ -5685,6 +5746,7 @@
       "_messages_offset": 3,
       "messages": [
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Step one done.",
           "message_id": "reference-anchor",
@@ -5733,6 +5795,7 @@
           "_display": "row"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Step two done.",
           "message_id": "reference-last",
@@ -6067,6 +6130,7 @@
         "display_kind": "hidden"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "This turn did not complete. Some actions may already have run; verify their effects before resending.",
         "message_id": "notice-failed-turn",
@@ -6141,6 +6205,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Here is the plan.",
         "message_id": "refused-reply",
@@ -6334,6 +6399,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "I'll let you know when the injury report lands.",
         "message_id": "delivery-answer",
@@ -6399,6 +6465,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Yes, he is out Wednesday.",
         "message_id": "delivery-reply",
@@ -6684,6 +6751,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Done.",
           "message_id": "meta-answer",
@@ -6957,6 +7025,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer one",
         "timestamp": 1792027540.187386,
@@ -6994,6 +7063,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Answer two",
         "timestamp": 1792027540.187957,
@@ -7599,6 +7669,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Done.",
           "message_id": "file-answer",
@@ -8182,6 +8253,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Done.",
           "message_id": "web-answer",
@@ -8960,6 +9032,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Done.",
           "message_id": "media-answer",
@@ -9976,6 +10049,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Done.",
           "message_id": "rows-answer",
@@ -10793,6 +10867,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Done.",
           "message_id": "kanban-answer",
@@ -11556,6 +11631,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Done.",
           "message_id": "browser-answer",
@@ -12149,6 +12225,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Filed #42 and told the team.",
           "message_id": "app-answer",
@@ -12672,6 +12749,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "One chat mentions the deploy: Deploy notes.",
           "message_id": "lookup-answer",
@@ -13199,6 +13277,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "Done. The release chat has the message, its deploy is approved, Postgres is saved as your preference, and the daily digest is paused.",
           "message_id": "outcome-answer-1",
@@ -13896,6 +13975,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "The session cookie expired one second early because the expiry was rounded down. I changed it to round up; the test passes now.",
           "message_id": "outcome-answer-2",
@@ -14611,6 +14691,7 @@
           "_display": "in_scene"
         },
         {
+          "_copy_button": true,
           "role": "assistant",
           "content": "0.23.2 is out. GitHub refused the issue because the integration can't write to that repository, so I emailed you the details instead. The login ticket is in Review.",
           "message_id": "outcome-answer-3",
@@ -15123,6 +15204,7 @@
         "_display": "row"
       },
       {
+        "_copy_button": true,
         "role": "assistant",
         "content": "Three commits landed; two pull requests are open.",
         "message_id": "scheduled-reply",

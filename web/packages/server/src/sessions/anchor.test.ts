@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { anchorActivitySceneTransportPreview, assistantAnchorSceneMessageRef, buildTurnScene, hydrateAnchorActivityScenes, normalizeSceneRows, turnsOf, turnTerminalState, withTurnIds } from './anchor.js'
-import { splitDisplayText, withToolCallOutcomes } from './merge.js'
+import { splitDisplayText, withDisplayText, withToolCallOutcomes } from './merge.js'
 import { str } from '../util.js'
 
 // Pass-through spies: hydration cost is counted in SHA-256 digests (message refs) and prose-row splits (row normalization).
@@ -243,12 +243,16 @@ describe('buildTurnScene', () => {
   })
 
   it('keeps content-array tool_use blocks in order with their text', () => {
-    const scene = buildTurnScene(turnOf([
+    const messages = withTurnIds([
       { role: 'user', content: 'Weather?' },
       { role: 'assistant', id: 1, content: [{ type: 'text', text: 'Checking.' }, { type: 'tool_use', id: 'w', name: 'weather', input: { city: 'Berlin' } }, { type: 'text', text: 'Then more.' }] },
       { role: 'tool', tool_use_id: 'w', content: '18C' },
       { role: 'assistant', id: 2, content: [{ type: 'tool_use', id: 'x', name: 'weather', input: {} }] },
-    ]))!
+    ])
+    const projected = withDisplayText(hydrateAnchorActivityScenes(messages, {})) as Json[]
+    const tail = projected.at(-1)!
+    const scene = tail._anchor_activity_scene as Json
+    expect(tail._copy_button).toBe(true)
     expect((scene.activity_rows as Json[]).map((r) => [r.row_id, r.text ?? (r.tool as Json).result])).toEqual([
       ['1:prose', 'Checking.'], ['tool:w', '18C'], ['1:prose:2', 'Then more.'], ['tool:x', null],
     ])

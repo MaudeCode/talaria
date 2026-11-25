@@ -194,7 +194,7 @@ final class CacheStoreIncrementalTests: XCTestCase {
                     \.timestamp, \.messageId, \.name, \.toolCallId, \.toolUseId, \.toolCallsData,
                     \.contentPartsData, \.reasoning, \.reasoningTitlesData, \.activitySceneData,
                     \.attachmentsData, \.turnDuration, \.turnTps, \.turnUsageData, \.turnId, \.steerData,
-                    \.displayExcerpt, \.collapsible, \.displayBodyData, \.backgroundUpdateData,
+                    \.displayExcerpt, \.copyButton, \.collapsible, \.displayBodyData, \.backgroundUpdateData,
                     \.talariaActivityData, \.deliveryData, \.backgroundSilent, \.markerKind, \.markerBody, \.refusedNotice, \.display,
                     \.cachedAt, \.expiresAt,
                 ]

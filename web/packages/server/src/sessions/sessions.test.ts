@@ -2777,6 +2777,24 @@ describe('session detail collapses very long message bodies (TAL-456)', () => {
     expect(readFileSync(path).equals(before)).toBe(true)
   })
 
+  it('ships Copy eligibility in full detail and paginated history', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = await s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: 'Question', timestamp: 1000 },
+      { role: 'assistant', content: ' \n ', timestamp: 1001 },
+      { role: 'assistant', content: 'Answer', timestamp: 1002 },
+      { role: 'user', content: 'Follow-up', timestamp: 1003 },
+    ]
+    await s.deps.sessionStore.save(session)
+    for (const query of ['', '&msg_limit=3&msg_before=3']) {
+      const response = await s.get(`/api/session?session_id=${sid}&messages=1${query}`)
+      expect(response.status).toBe(200)
+      const messages = ((await json(response)).session as Json).messages as Json[]
+      expect(messages.filter((message) => '_copy_button' in message).map((message) => [message.timestamp, message._copy_button]), query).toEqual([[1002, true]])
+    }
+  })
+
   it('serves the shared long-body example exactly as the contract fixture records it', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).long_body_session as Json
     const sid = String((await newSession(s)).session_id)

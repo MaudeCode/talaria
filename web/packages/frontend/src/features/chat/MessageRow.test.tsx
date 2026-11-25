@@ -80,10 +80,16 @@ describe('server-collapsed bodies (TAL-456)', () => {
 })
 
 describe('assistant reply copy', () => {
+  it('omits the footer Copy button when the server omits eligibility', () => {
+    const row = groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Final answer' }]))[0]!
+    render(<AssistantMessageRow row={row} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
+    expect(screen.queryByRole('button', { name: 'Copy' })).toBeNull()
+  })
+
   it('copies a partial reply when there is no final answer', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    const row = groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Partial output', _partial: true }]))[0]!
+    const row = groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Partial output', _partial: true, _copy_button: true }]))[0]!
     render(<AssistantMessageRow row={row} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
     expect(writeText).toHaveBeenCalledWith('Partial output')

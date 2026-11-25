@@ -979,6 +979,7 @@ public struct MessageActionContext: Equatable, Identifiable, Sendable {
     let keepCountThroughMessage: Int
     public let messageID: String
     public let copyText: String
+    let copyButton: Bool?
     let listenText: String?
 
     public init?(message: ChatMessage, visibleIndex: Int, messagesOffset: Int?) {
@@ -1001,6 +1002,7 @@ public struct MessageActionContext: Equatable, Identifiable, Sendable {
         keepCountThroughMessage = fullHistoryIndex + 1
         messageID = message.id
         copyText = content
+        copyButton = message.copyButton
         listenText = role == .assistant ? content : nil
     }
 }

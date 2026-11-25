@@ -4,6 +4,14 @@ import XCTest
 /// One action list serves the long-press menu and VoiceOver, so the states it
 /// reports are asserted once, here (TAL-49).
 final class ChatMessageActionCatalogTests: XCTestCase {
+    func testCopyButtonRequiresServerEligibility() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"assistant","content":"Answer"}"#.utf8))
+        let context = try XCTUnwrap(MessageActionContext(message: message, visibleIndex: 0, messagesOffset: nil))
+        XCTAssertFalse(ChatMessageActionCatalog.showsCopyButton(for: context, isStreaming: false))
+    }
+
     func testAssistantMessageOffersItsFullActionList() {
         XCTAssertEqual(
             ids(for: .assistant, state: idleState),

@@ -74,7 +74,7 @@ public enum ChatMessageActionCatalog {
     /// TAL-965: a settled assistant reply with text also shows Copy as a button under it. VoiceOver reaches Copy there,
     /// so the row's custom actions leave it out; the long-press menu keeps it. A streaming reply shows no button.
     public static func showsCopyButton(for context: MessageActionContext, isStreaming: Bool) -> Bool {
-        context.role == .assistant && !isStreaming && !context.copyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        context.copyButton == true && !isStreaming
     }
 
     public static func actions(
