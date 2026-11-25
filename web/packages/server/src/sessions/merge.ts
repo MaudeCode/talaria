@@ -1668,7 +1668,7 @@ export function withDisplayMedia<T>(messages: T[], project: (text: string) => Me
 /**
  * TAL-2481: each non-tool row whose `content` is a list of parts carries `_display_text`, the text of those parts as
  * `messageText` joins them, so clients never join parts themselves; a row whose `content` is a string is its own text. A
- * tool row's result shows through its call, never as row text. Assistant text also controls footer Copy eligibility.
+ * tool row's result shows through its call, never as row text. Assistant bodies and their turn scenes control footer Copy eligibility.
  * Returns copies for rows with projected fields.
  */
 export function withDisplayText<T>(messages: T[]): T[] {
@@ -1676,7 +1676,11 @@ export function withDisplayText<T>(messages: T[]): T[] {
     if (!isDict(m)) return m
     const displayParts = m.role !== 'tool' && Array.isArray(m.content)
     const text = displayParts || m.role === 'assistant' ? messageText(m.content) : ''
-    const copyButton = m.role === 'assistant' && text.trim().length > 0
+    const scene = m._anchor_activity_scene
+    const sceneHasCopyText = isDict(scene) && scene.version === 'activity_scene_v1' && Array.isArray(scene.activity_rows)
+      && (str(scene.final_answer) ? str(scene.final_answer).trim().length > 0
+        : scene.activity_rows.some((row) => isDict(row) && row.role === 'prose' && str(row.text).trim().length > 0))
+    const copyButton = m.role === 'assistant' && (text.trim().length > 0 || sceneHasCopyText)
     if (!displayParts && !copyButton && !('_copy_button' in m)) return m
     const out: Record<string, unknown> = { ...m }
     if (displayParts) out._display_text = text
