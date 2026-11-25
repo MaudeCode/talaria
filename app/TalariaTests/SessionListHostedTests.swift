@@ -3114,10 +3114,14 @@ extension RegularSplitHostedTests {
     }
 
     /// The settled turn's clipped tool row.
-    private func clippedToolRow(in window: UIWindow) async throws -> NSObject {
-        try await requireElement(in: window, "The settled turn has no tool row") {
+    private func openClippedToolRow(in window: UIWindow, beside: Bool = true) async throws {
+        let hint = beside ? "Double tap to show details beside the chat." : "Double tap to expand details."
+        let row = try await requireElement(in: window, "The settled turn has no ready tool row") {
             $0.accessibilityLabel?.contains("Called a tool, Completed") == true
+                && $0.accessibilityHint == hint
+                && !$0.accessibilityTraits.contains(.notEnabled)
         }
+        XCTAssertTrue(HostedAccessibility.activate(row), "The tool row did not handle activation")
     }
 
     /// An element labelled `label` on the companion page, right of the chat; a row's label starts with its name.
@@ -3139,7 +3143,7 @@ extension RegularSplitHostedTests {
         let gamma = await companionTitle("Gamma.swift", in: window)
         XCTAssertNotNil(gamma, "The page did not show the session's last file")
 
-        HostedAccessibility.activate(try await clippedToolRow(in: window))
+        try await openClippedToolRow(in: window)
         let whole = await onPage("fixture result, in full", in: window)
         XCTAssertNotNil(whole, "The page did not show the tool's whole result")
         let shownBeside = await awaitCondition { self.clippedToolRowValue(in: window) == "Shown beside" }
@@ -3184,9 +3188,9 @@ extension RegularSplitHostedTests {
         try requireArrangement()
         let display = HostedDuoDisplay()
         let window = try await openSettledCompanionTurn(size: HostedSize.duoInnerLandscape, display: display)
-        HostedAccessibility.activate(try await clippedToolRow(in: window))
+        try await openClippedToolRow(in: window)
         let whole = await onPage("fixture result, in full", in: window)
-        XCTAssertNotNil(whole, "The page did not show the tool's whole result")
+        _ = try XCTUnwrap(whole, "The page did not show the tool's whole result")
 
         foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: true)
         foldDuo(window, display: display, inner: HostedSize.duoInnerLandscape, closed: false)
@@ -3198,7 +3202,7 @@ extension RegularSplitHostedTests {
     func testAFileInTheCompanionPagesToolResultOpensOnThePage() async throws {
         try requireArrangement()
         let window = try await openSettledCompanionTurn(size: HostedSize.duoInnerLandscape)
-        HostedAccessibility.activate(try await clippedToolRow(in: window))
+        try await openClippedToolRow(in: window)
         let open = try await requireElement(in: window, "The page's result offers no way to open its file") {
             $0.accessibilityLabel?.hasPrefix("Open Sources/Demo/Beta.swift") == true && $0.accessibilityFrame.minX > window.bounds.width / 3
         }
@@ -3211,7 +3215,7 @@ extension RegularSplitHostedTests {
     func testDuoInnerPortraitOpensToolDetailsInlineAndChangesInASheet() async throws {
         try requireArrangement()
         let window = try await openSettledCompanionTurn(size: HostedSize.duoInner)
-        HostedAccessibility.activate(try await clippedToolRow(in: window))
+        try await openClippedToolRow(in: window, beside: false)
         _ = try await requireElement(in: window, label: "Show full output", "The card did not expand inline")
 
         HostedAccessibility.activate(try await requireElement(in: window, label: "Open diff", "The turn shows no Changes"))
