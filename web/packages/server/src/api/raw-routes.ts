@@ -7,7 +7,7 @@ import { handleGroupFile } from './groups-router.js'
 import { closeSync, createReadStream, existsSync, statSync, realpathSync } from 'node:fs'
 import { readdir, realpath, stat } from 'node:fs/promises'
 import { Readable } from 'node:stream'
-import { OWNER_IMAGE_LIMIT, OwnerExportFormatSchema } from '@maudecode/talaria-web-contracts'
+import { AGENT_RESTORE_UPLOAD_LIMIT, OWNER_IMAGE_LIMIT, OwnerExportFormatSchema } from '@maudecode/talaria-web-contracts'
 import { basename, join, relative } from 'node:path'
 import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
@@ -43,6 +43,7 @@ import { MeshyError } from '../tools/meshy.js'
 import { fetchRemoteImage, publicImageFetch, relaySlot, RemoteImageError, vouchedRemoteImage } from '../http/remote-image.js'
 import { dashboardScope } from '../tools/dashboard-plugins.js'
 import { ProfileError } from '../profiles/profiles.js'
+import { assertAgentRestoreScope } from '../tools/agent-restore.js'
 import { agentBackupRefusal } from '../tools/agent-backup.js'
 import { STORAGE_FULL, storageFull } from '../util.js'
 
@@ -63,6 +64,7 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
   '/api/profile/avatar': handleProfileAvatar,
   '/api/folder/download': handleFolderDownload,
   '/api/agent-backup/download': handleAgentBackupDownload,
+  '/api/agent-backup/recovery': handleAgentRecoveryDownload,
   '/api/session/export': handleSessionExport,
   '/api/transcribe/stream': handleTranscribeStream,
   '/api/screen/ws': async (ctx) => { await ctx.deps.screens.handle(ctx) },
@@ -71,6 +73,7 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
 }
 
 export const RAW_POST_ROUTES: Record<string, RawHandler> = {
+  '/api/agent-backup/restore/upload': handleAgentRestoreUpload,
   '/api/feedback/attachments': handleFeedbackAttachment,
   '/api/upload': handleUpload,
   '/api/upload/extract': handleUploadExtract,
@@ -439,6 +442,20 @@ async function handleAgentBackupDownload(ctx: RequestContext): Promise<void> {
   const reason = agentBackupRefusal(ctx)
   if (reason === 'named_profile' || reason === 'isolated_profile') throw new HttpError(403, 'Only the root profile can download the Agent-home backup.')
   const archive = ctx.deps.agentBackups.archive(ctx.query.get('id') ?? '')
+  if (!archive) throw new HttpError(404, 'not found')
+  await serveFileBytes(ctx, archive.path, { mime: 'application/zip', disposition: 'attachment', cacheControl: 'no-store', anchorRoot: archive.dir, downloadName: archive.name, denyHardLinks: true })
+}
+
+async function handleAgentRestoreUpload(ctx: RequestContext): Promise<void> {
+  assertAgentRestoreScope(ctx)
+  if (ctx.header('content-type') !== 'application/zip') throw new HttpError(415, 'A ZIP archive is required.')
+  if (Number(ctx.header('content-length')) > AGENT_RESTORE_UPLOAD_LIMIT) throw new HttpError(413, 'Restore archive is too large.')
+  await ctx.json(await ctx.deps.agentRestores.stage(ctx.req.iterator({ destroyOnReturn: false }), sanitizeUploadName(ctx.query.get('name') ?? '').slice(0, 255) || 'backup.zip'))
+}
+
+async function handleAgentRecoveryDownload(ctx: RequestContext): Promise<void> {
+  assertAgentRestoreScope(ctx)
+  const archive = ctx.deps.agentRestores.archive(ctx.query.get('id') ?? '')
   if (!archive) throw new HttpError(404, 'not found')
   await serveFileBytes(ctx, archive.path, { mime: 'application/zip', disposition: 'attachment', cacheControl: 'no-store', anchorRoot: archive.dir, downloadName: archive.name, denyHardLinks: true })
 }

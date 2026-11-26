@@ -11,11 +11,11 @@ import type { GroupOperation } from '@maudecode/talaria-web-contracts'
 
 import type { ConnectorOperationView, OwnerActionRequest, AgentImportSource, SessionHandoffRequest } from '@maudecode/talaria-web-contracts'
 import type { DecisionAnswerInput, OutboundDraftAction, OutboundDraftRef, WebPushPreferences } from '@maudecode/talaria-web-contracts'
-import { postForm } from './client'
+import { postForm, request } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
 import { UploadResponseSchema, type ChatStartRequest, type SessionId, type SessionNewRequestSchema, type SteerRequestSchema, type ApprovalRespondRequestSchema, type ClarifyRespondRequestSchema, type DraftRequestSchema } from '../contracts'
 import type { z } from 'zod'
-import { FeedbackAttachmentStagedSchema, TranscribeResponseSchema, type FeedbackAttachmentType, type SteerSendNowRequestSchema, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+import { AgentRestoreStatusSchema, FeedbackAttachmentStagedSchema, TranscribeResponseSchema, type FeedbackAttachmentType, type SteerSendNowRequestSchema, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 
 export const fetchGroups = (offset = 0) => orpc().groups.list({ offset })
 export const fetchGroup = (room_id: string, before_seq?: number, signal?: AbortSignal) => orpc().groups.view({ room_id, ...(before_seq === undefined ? {} : { before_seq }) }, signal ? { signal } : {})
@@ -418,6 +418,12 @@ export const respondConnectorOperation = (move: { op_id: string; action: 'skip' 
 export const shutdownServer = () => orpc().ops.shutdown({})
 export const fetchAgentBackup = () => orpc().agentBackup.status()
 export const createAgentBackup = () => orpc().agentBackup.create({ scope: 'agent_home' })
+export const fetchAgentRestore = () => orpc().agentBackup.restoreStatus()
+export const confirmAgentRestore = (id: string) => orpc().agentBackup.restoreConfirm({ id, confirmed: true })
+export const uploadAgentRestore = (file: File) => request(`api/agent-backup/restore/upload${qs({ name: file.name })}`, {
+  method: 'POST', body: file, schema: AgentRestoreStatusSchema, headers: { 'Content-Type': 'application/zip' },
+  retries: 0, timeoutMs: 0,
+})
 export const discardAgentBackup = (id: string) => orpc().agentBackup.discard({ id })
 
 export const fetchContextDetail = (session_id: string, context_detail_key: string, signal?: AbortSignal) => orpc().session.contextDetail({ session_id, context_detail_key }, { ...(signal ? { signal } : {}) })

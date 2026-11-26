@@ -26,6 +26,7 @@ import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema, UpdateVersionSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
 import { GatewayRestart } from './GatewayRestart'
+import { AgentRestoreRow } from './AgentRestore'
 import { AgentBackupRow } from './AgentBackup'
 import { markServerStopped } from '../notices/useRuntimeNotices'
 
@@ -191,6 +192,7 @@ export function SystemSection() {
         <SettingsGroup id="server" title={m.settings_group_server()}>
           {agent.data?.gateway_lifecycle ? <SettingAction label={m.system_restart_agent()} icon={RotateCw}><GatewayRestart /></SettingAction> : null}
           <AgentBackupRow />
+          <AgentRestoreRow />
           <SettingAction label={m.system_shutdown()} hint={m.system_shutdown_hint()} icon={Power}><IconButton variant="danger" label={m.system_shutdown()} onClick={() => setConfirmShutdown(true)}><Power aria-hidden="true" /></IconButton></SettingAction>
         </SettingsGroup>
       )}

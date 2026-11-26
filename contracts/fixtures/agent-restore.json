@@ -1,0 +1,13 @@
+{
+  "available": true,
+  "can_upload": true,
+  "server": "fixture.invalid",
+  "profile": "default",
+  "job": {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "file_name": "fixture.zip",
+    "state": "partial",
+    "can_confirm": false,
+    "recovery_url": "api/agent-backup/recovery?id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}

@@ -356,7 +356,10 @@ def _write(root_fd, rel, body, *, exclusive=False, mode=0o600, expected=None):
         try:
             with os.fdopen(child, 'wb') as stream:
                 os.fchmod(stream.fileno(), stat.S_IMODE(mode) & 0o777)
-                stream.write(body)
+                if isinstance(body, bytes):
+                    stream.write(body)
+                else:
+                    shutil.copyfileobj(body, stream)
                 stream.flush()
                 os.fsync(stream.fileno())
             guard = memory.file_lock(Path(name), parent_fd=fd) if rel in _MEMORY_FILES else nullcontext()

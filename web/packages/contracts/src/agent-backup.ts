@@ -53,8 +53,38 @@ export type AgentBackupStatus = z.infer<typeof AgentBackupStatusSchema>
 
 export const AgentBackupCreateSchema = z.object({ scope: AgentBackupScopeSchema })
 
+export const AGENT_RESTORE_UPLOAD_LIMIT = 1024 ** 3
+
+export const AgentRestoreOutcomeSchema = z.enum([
+  'restored', 'invalid_archive', 'refused', 'busy', 'backup_failed', 'partial', 'unknown', 'unavailable',
+])
+export const AgentRestoreJobSchema = z.object({
+  id: AgentBackupIdSchema,
+  state: z.union([z.enum(['staged', 'running']), AgentRestoreOutcomeSchema]),
+  file_name: z.string(),
+  /** Recovery archives remain available until the owner stages another restore. */
+  recovery_url: z.string().nullable(),
+  can_confirm: z.boolean(),
+})
+export type AgentRestoreJob = z.infer<typeof AgentRestoreJobSchema>
+
+export const AgentRestoreStatusSchema = z.object({
+  available: z.boolean(),
+  can_upload: z.boolean(),
+  server: z.string(),
+  profile: z.string(),
+  job: AgentRestoreJobSchema.nullable(),
+})
+export type AgentRestoreStatus = z.infer<typeof AgentRestoreStatusSchema>
+export const AgentRestoreConfirmSchema = z.object({ id: AgentBackupIdSchema, confirmed: z.literal(true) })
+
 /** The sidecar runs the Agent's own command for the root `profile_home`, writing `output` in a private directory the server created. */
 export const AGENT_BACKUP_METHODS = {
+  'backup.restore_available': { params: z.object({}), result: z.object({ available: z.boolean() }) },
+  'backup.restore': {
+    params: z.object({ profile_home: z.string().min(1), scope: AgentBackupScopeSchema, input: z.string().min(1), output: z.string().min(1), state_dir: z.string().min(1) }),
+    result: z.object({ status: AgentRestoreOutcomeSchema }),
+  },
   'backup.create': {
     params: z.object({ profile_home: z.string().min(1), scope: AgentBackupScopeSchema, output: z.string().min(1) }),
     /** `incomplete`: the command kept an archive missing some files (exit 1). `busy`: another backup holds the Agent's backup lock. */

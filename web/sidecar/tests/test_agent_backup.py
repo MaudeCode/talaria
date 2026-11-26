@@ -188,3 +188,85 @@ def test_a_held_native_backup_lock_reports_busy(hermes_home) -> None:
             proc.close()
     assert result["status"] == "busy", result
     assert not out.exists()
+
+
+def test_restore_reports_unavailable_without_the_native_contract(root, monkeypatch) -> None:
+    def missing():
+        raise ImportError("Agent restore helper unavailable")
+
+    monkeypatch.setattr(backup.backup_restore, "_native", missing)
+    methods = {}
+    registry = types.SimpleNamespace(method=lambda name, **_: lambda func: methods.setdefault(name, func))
+    backup.register(registry)
+    assert methods["backup.restore"](_Ctx(), {"profile_home": str(root), "scope": "agent_home"}) == {"status": "unavailable"}
+
+
+@requires_agent
+def test_native_restore_recovers_config_and_sessions_with_a_private_undo_archive(hermes_home) -> None:
+    _synthetic_root(hermes_home)
+    web_state = hermes_home / "webui"
+    folder = web_state / ".cache" / "agent-restores" / "one"
+    folder.mkdir(parents=True, mode=0o700)
+    incoming = folder / "incoming.zip"
+    recovery = folder / "recovery.zip"
+    proc = SidecarProcess(hermes_home)
+    params = {"profile_home": str(hermes_home), "scope": "agent_home"}
+    try:
+        message, _ = proc.call("backup.create", {**params, "output": str(incoming)}, timeout=120)
+        assert message["result"]["status"] == "completed", message
+        (hermes_home / "config.yaml").write_text("model:\n  default: before/restore\n")
+        with sqlite3.connect(hermes_home / "state.db") as db:
+            db.execute("update marker set value = 'before-restore'")
+        message, _ = proc.call("backup.restore", {
+            **params, "input": str(incoming), "output": str(recovery), "state_dir": str(web_state),
+        }, timeout=120)
+        assert message.get("result", {}).get("status") == "restored", message
+    finally:
+        proc.close()
+
+    assert (hermes_home / "config.yaml").read_text() == "model:\n  default: test/model\n"
+    with sqlite3.connect(hermes_home / "state.db") as db:
+        assert db.execute("select value from marker").fetchall() == [("root-state",)]
+    assert stat.S_IMODE(recovery.stat().st_mode) == 0o600
+    with zipfile.ZipFile(recovery) as archive:
+        assert archive.read("config.yaml") == b"model:\n  default: before/restore\n"
+        assert not any("agent-restores" in name for name in archive.namelist())
+    assert sorted(os.listdir(folder)) == [incoming.name, recovery.name, "result.json"]
+
+
+@requires_agent
+@pytest.mark.parametrize("invalid", ["corrupt", "outside-destination", "active-agent"])
+def test_native_restore_refuses_before_live_files_change(hermes_home, tmp_path, invalid) -> None:
+    _synthetic_root(hermes_home)
+    state = hermes_home / "webui"
+    folder = state / ".cache" / "agent-restores" / "one"
+    folder.mkdir(parents=True, mode=0o700)
+    incoming, recovery = folder / "incoming.zip", folder / "recovery.zip"
+    config = hermes_home / "config.yaml"
+    original = config.read_bytes()
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(original)
+    if invalid == "corrupt":
+        incoming.write_bytes(b"invalid zip")
+    else:
+        with zipfile.ZipFile(incoming, "w") as archive:
+            archive.writestr("config.yaml", "model: {}\n")
+    lock = None
+    if invalid == "outside-destination":
+        config.unlink()
+        config.symlink_to(outside)
+    elif invalid == "active-agent":
+        lock = (hermes_home / "gateway.lock").open("w")
+        fcntl.flock(lock, fcntl.LOCK_EX)
+    proc = SidecarProcess(hermes_home)
+    try:
+        reply, _ = proc.call("backup.restore", {"scope": "agent_home", "profile_home": str(hermes_home),
+                                              "input": str(incoming), "output": str(recovery), "state_dir": str(state)})
+        expected = {"corrupt": "invalid_archive", "outside-destination": "refused", "active-agent": "busy"}[invalid]
+        assert reply.get("result", {}).get("status") == expected, reply
+    finally:
+        proc.close()
+        if lock:
+            lock.close()
+    assert config.read_bytes() == outside.read_bytes() == original
+    assert not recovery.exists()
