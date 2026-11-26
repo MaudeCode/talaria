@@ -13,6 +13,7 @@ struct TranscriptMediaContentView: View {
     let loadMediaData: (@MainActor (TranscriptMediaReference) async -> Data?)?
     let onPreviewMedia: (@MainActor (TranscriptMediaReference) -> Void)?
     let isStreaming: Bool
+    @Environment(\.chatTranscriptMedia) private var transcriptMedia
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -26,17 +27,32 @@ struct TranscriptMediaContentView: View {
                 ))
 
             ForEach(display.tiles) { reference in
-                TranscriptMediaThumbnailView(
-                    reference: reference,
-                    cacheNamespace: cacheNamespace,
-                    loadMediaImage: loadMediaImage,
-                    loadMediaData: loadMediaData,
-                    onPreviewMedia: onPreviewMedia
-                )
+                Group {
+                    if !isStreaming, let url = transcriptMedia?.htmlPreviewURL?(reference), let onPreviewMedia {
+                        InlineReportView(url: url, title: reference.displayName) {
+                            onPreviewMedia(reference)
+                        } fallback: {
+                            thumbnail(reference)
+                        }
+                        .id(url)
+                    } else {
+                        thumbnail(reference)
+                    }
+                }
                 // Pin media LTR so it keeps its leading-edge anchor inside an RTL message (#259).
                 .forcedLeftToRight()
             }
         }
+    }
+
+    private func thumbnail(_ reference: TranscriptMediaReference) -> some View {
+        TranscriptMediaThumbnailView(
+            reference: reference,
+            cacheNamespace: cacheNamespace,
+            loadMediaImage: loadMediaImage,
+            loadMediaData: loadMediaData,
+            onPreviewMedia: onPreviewMedia
+        )
     }
 }
 
