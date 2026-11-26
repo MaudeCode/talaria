@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Server owners can restore a local Agent backup from System settings and download the pre-restore recovery backup.",
+      "highlight": true,
+      "components": ["web"],
+      "announcement": {
+        "title": "Agent backup and restore",
+        "description": "Save a private Agent backup and restore it with clear recovery results.",
+        "icon": "security"
+      }
+    }
+  ]
+}

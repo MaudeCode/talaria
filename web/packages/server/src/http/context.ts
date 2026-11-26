@@ -73,6 +73,7 @@ import type { CliSessionSource } from '../sessions/cli-sessions.js'
 import type { CompletionDrain } from '../sessions/completions.js'
 import type { HygieneTicker } from '../tools/hygiene.js'
 import type { PruneAdvice } from '../tools/prune-advice.js'
+import type { AgentRestores } from '../tools/agent-restore.js'
 import type { AgentBackups } from '../tools/agent-backup.js'
 import type { McpHealthProber } from '../tools/mcp-health.js'
 import type { GatewayWatcherRegistry } from '../sessions/gateway-watcher.js'
@@ -220,6 +221,7 @@ export interface AppDeps {
   pruneAdvice: PruneAdvice
   /** TAL-2661: the owner's one native Agent-home backup and its private archive. */
   agentBackups: AgentBackups
+  agentRestores: AgentRestores
   /** TAL-953: the post-update gateway restart that waits for the gateway to go idle. */
   gatewayRestarts: GatewayRestartQueue
   /** TAL-1627: whether Web's local gateway CLI controls the Gateway it monitors for the profile at this home. */

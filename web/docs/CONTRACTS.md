@@ -1011,3 +1011,27 @@ Settings reads and saves return effective values in their regular fields. A
 corresponding `managed_fields` entry with `managed: true` makes that control
 read-only. A Settings save that changes a managed field receives HTTP 409 with
 `condition: "config_key_managed"`.
+
+## Agent-home restore
+
+The root owner stages a ZIP with `POST /api/agent-backup/restore/upload`.
+The upload streams into private server storage and creates a receipt. It does
+not change the Agent. Confirm the receipt with `POST /api/agent-backup/restore`
+and `confirmed: true`. Repeating a confirmation reads the original outcome.
+Read `GET /api/agent-backup/restore` after an interrupted request. A native
+result can settle an unknown receipt after a restart. The server never
+replays the restore. An unknown receipt keeps custody of its recovery files
+until the native worker fence confirms publication has stopped. Web
+reconciles file-owned launch credentials with the restored root `.env`
+before admitting new chat work. Deployment-supplied values keep precedence.
+Download the owner's private pre-restore snapshot from the receipt's
+`recovery_url` before staging another archive.
+
+The sidecar expands and verifies the archive in disposable storage, takes
+Hermes maintenance reservations, and writes a complete native recovery
+backup before publication. Symlinked or hard-linked destinations are
+refused. Ordinary files use directory-relative writes. SQLite uses Hermes
+restore so existing connections converge on the same database. The worker
+requires OS filesystem confinement and the Agent's native helpers. It
+leaves the gateway, aliases, and Talaria Web state alone. External archive
+members are refused. A failure after publication begins may be partial.

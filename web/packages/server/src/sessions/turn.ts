@@ -126,6 +126,7 @@ export interface TurnRunnerDeps {
   /** Whether the profile's deletion RPC is in flight (its home must not be entered by a new turn). */
   profileDeleting?: (profile: string | null) => boolean
   updateInProgress?: () => boolean
+  restoreInProgress?: () => boolean
   /** Whether a Git mutation or worktree removal is changing this workspace; no run starts inside it meanwhile. */
   workspaceBusy?: (workspace: string) => boolean
   /** TAL-913: a checkpoint diff or restore holds the profile's checkpoint store, which a turn's capture would collide with. */
@@ -700,6 +701,7 @@ export class TurnRunner {
     const readOnly = (await this.deps.service().readOnlyReason(s))
     if (readOnly) return { error: readOnly, _status: 403 }
     if (this.deps.updateInProgress?.()) return { error: UPDATING_MESSAGE, _status: 503 }
+    if (this.deps.restoreInProgress?.()) return { error: 'Agent-home restore is in progress.', _status: 503 }
     if (this.deps.profileDeleting?.(s.profile ?? null)) return { error: `Profile '${str(s.profile)}' is being deleted.`, _status: 409 }
     if (this.deps.workspaceBusy?.(opts.workspace)) return { error: WORKSPACE_BUSY_MESSAGE, _status: 409 }
     if (this.deps.checkpointStoreBusy?.(s.profile ?? null)) return { error: CHECKPOINT_STORE_BUSY_MESSAGE, _status: 409 }
@@ -724,6 +726,7 @@ export class TurnRunner {
     if (this.draining) return { error: SHUTTING_DOWN_MESSAGE, _status: 503 }
     // TAL-1629: so does an update that started meanwhile, so the runs a confirmed update interrupts are exactly those it saw.
     if (this.deps.updateInProgress?.()) return { error: UPDATING_MESSAGE, _status: 503 }
+    if (this.deps.restoreInProgress?.()) return { error: 'Agent-home restore is in progress.', _status: 503 }
     closeChecks()
     const streamId = randomUUID().replace(/-/g, '')
     timing.identify(s.session_id, streamId)

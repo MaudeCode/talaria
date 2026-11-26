@@ -1,7 +1,7 @@
 import { McpCostPatchSchema } from '../mcp-cost-policy.js'
 import { MeshyCardQuerySchema, MeshyCardSchema, MeshyDetailsQuerySchema, MeshyDetailsSchema, MeshyOverviewSchema, MeshySaveImagesInputSchema, MeshySaveInputSchema, MeshySaveResultSchema, MeshyTaskQuerySchema, MeshyTaskResultSchema } from '../meshy.js'
 import { oc, type OpenAPI } from '@orpc/contract'
-import { AgentBackupCreateSchema, AgentBackupIdSchema, AgentBackupStatusSchema } from '../agent-backup.js'
+import { AgentBackupCreateSchema, AgentBackupIdSchema, AgentBackupStatusSchema, AgentRestoreConfirmSchema, AgentRestoreStatusSchema } from '../agent-backup.js'
 import { SkillRevisionsInputSchema, SkillRevisionsSchema } from '../sidecar-shared.js'
 import { SkillReplayJobSchema, SkillReplayJobsSchema, SkillReplayPlanQuerySchema, SkillReplayPlanSchema, SkillReplayStartSchema } from '../skill-replay.js'
 import { z } from 'zod'
@@ -164,6 +164,8 @@ export const toolsContract = {
   agentBackup: {
     status: oc.route({ method: 'GET', path: '/api/agent-backup', tags, summary: 'Whether this request may back up the Agent home (`available`, else `unavailable_reason`), the host and root profile it covers, and the current or most recent backup.' }).output(AgentBackupStatusSchema),
     create: oc.route({ method: 'POST', path: '/api/agent-backup', tags, summary: 'Start `hermes backup` for the whole Agent home, every profile included, into a private server directory, and answer at once with `job.state` `running`; read the status for progress and the outcome. A previous archive is deleted first. 403 `agent_backup_unavailable` with `unavailable_reason` from a named profile, isolated profile mode or without an Agent; 409 `agent_backup_running` while one runs.' }).input(AgentBackupCreateSchema).output(AgentBackupStatusSchema),
+    restoreStatus: oc.route({ method: 'GET', path: '/api/agent-backup/restore', tags, summary: 'Read the owner-only Agent-home restore capability and current action, including any recovery download.' }).output(AgentRestoreStatusSchema),
+    restoreConfirm: oc.route({ method: 'POST', path: '/api/agent-backup/restore', tags, summary: 'Explicitly confirm one staged archive by id. Repeated confirmation reads the existing action without restoring again.' }).input(AgentRestoreConfirmSchema).output(AgentRestoreStatusSchema),
     discard: oc.route({ method: 'DELETE', path: '/api/agent-backup/{id}', tags, summary: 'Cancel the running backup `id` (its child is stopped and its files removed) or delete its finished archive. An unknown id changes nothing. Answers the status as it now stands.' }).input(z.object({ id: AgentBackupIdSchema })).output(AgentBackupStatusSchema),
   },
   mcp: {

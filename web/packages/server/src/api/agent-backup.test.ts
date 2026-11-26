@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto'
 import { hostname, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentBackupStatusSchema } from '@maudecode/talaria-web-contracts'
+import { AgentBackupStatusSchema, AgentRestoreStatusSchema } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 
@@ -83,5 +83,94 @@ describe('Agent-home backup routes (TAL-2661)', () => {
     const { s } = await boot({ HERMES_HOME: home, TALARIA_WEB_STATE_DIR: join(root, 'state'), TALARIA_WEB_ISOLATED_PROFILE: '1' })
     const res = await s.get('/api/agent-backup', { method: 'POST', headers: json, body: JSON.stringify({ scope: 'agent_home' }) })
     expect([res.status, ((await res.json()) as { unavailable_reason: string }).unavailable_reason]).toEqual([403, 'isolated_profile'])
+  })
+})
+
+describe('Agent-home restore routes (TAL-2667)', () => {
+  it('reconciles file-owned credentials before completing a restore and preserves deployment values', async () => {
+    const { s, sidecar } = await boot({
+      OPENAI_API_KEY: 'old-file-key', OPENROUTER_API_KEY: 'old-router-key', ANTHROPIC_API_KEY: 'deployment-key',
+      TALARIA_WEB_HOME_DOTENV_KEYS: 'OPENAI_API_KEY,OPENROUTER_API_KEY',
+    })
+    sidecar.respond('backup.restore_available', () => ({ available: true }))
+    sidecar.respond('backup.restore', () => {
+      writeFileSync(join(s.state, '.env'), 'export OPENROUTER_API_KEY="restored-router-key" # comment\nANTHROPIC_API_KEY=archive-key\n', { mode: 0o600 })
+      return { status: 'restored' }
+    })
+    sidecar.respond('runtime.env', () => ({ ok: true }))
+    const upload = await s.get('/api/agent-backup/restore/upload?name=fixture.zip', {
+      method: 'POST', headers: { 'content-type': 'application/zip' }, body: 'disposable archive',
+    })
+    const id = AgentRestoreStatusSchema.parse(await upload.json()).job!.id
+    await s.get('/api/agent-backup/restore', { method: 'POST', headers: json, body: JSON.stringify({ id, confirmed: true }) })
+    await vi.waitFor(async () => {
+      const status = AgentRestoreStatusSchema.parse(await (await s.get('/api/agent-backup/restore')).json())
+      expect(status.job?.state).toBe('restored')
+    })
+    expect(sidecar.calls.filter(({ method }) => method === 'runtime.env').map(({ params }) => params))
+      .toEqual([{ set: { OPENROUTER_API_KEY: 'restored-router-key' }, unset: ['OPENAI_API_KEY'] }])
+    const env = s.deps.config.env
+    expect(env.OPENAI_API_KEY).toBeUndefined()
+    expect(env.OPENROUTER_API_KEY).toBe('restored-router-key')
+    expect(env.ANTHROPIC_API_KEY).toBe('deployment-key')
+    expect(env.TALARIA_WEB_HOME_DOTENV_KEYS).toBe('OPENROUTER_API_KEY')
+  })
+
+  it('keeps recovery custody until a disconnected restore worker has stopped', async () => {
+    const { s, sidecar } = await boot()
+    let stopped = false
+    sidecar.respond('backup.restore_available', ({ reconcile_output }) => ({
+      available: true, ...(reconcile_output ? { replacement_safe: stopped } : {}),
+    }))
+    sidecar.respond('backup.restore', ({ output }) => {
+      writeFileSync(output, 'recovery', { mode: 0o600 })
+      return { status: 'unknown' }
+    })
+    const upload = () => s.get('/api/agent-backup/restore/upload?name=fixture.zip', {
+      method: 'POST', headers: { 'content-type': 'application/zip' }, body: 'disposable archive',
+    })
+    const first = AgentRestoreStatusSchema.parse(await (await upload()).json())
+    const id = first.job!.id
+    await s.get('/api/agent-backup/restore', { method: 'POST', headers: json, body: JSON.stringify({ id, confirmed: true }) })
+    const status = async () => AgentRestoreStatusSchema.parse(await (await s.get('/api/agent-backup/restore')).json())
+    await vi.waitFor(async () => { expect((await status()).job?.state).toBe('unknown') })
+    expect((await status()).can_upload).toBe(false)
+    expect((await upload()).status).toBe(409)
+    expect(await (await s.get(`/api/agent-backup/recovery?id=${id}`)).text()).toBe('recovery')
+    stopped = true
+    expect((await status()).can_upload).toBe(true)
+    expect((await status()).job?.state).toBe('unknown')
+    expect((await upload()).status).toBe(200)
+  })
+
+  it('stages without restoring, confirms exactly once, and exposes a private recovery snapshot on partial restore', async () => {
+    const { s, sidecar } = await boot()
+    sidecar.respond('backup.restore_available', () => ({ available: true }))
+    const archive = Buffer.from('disposable archive bytes')
+    const recovery = Buffer.from('disposable recovery bytes')
+    sidecar.respond('backup.restore', (params) => {
+      expect(readFileSync(params.input)).toEqual(archive)
+      writeFileSync(params.output, recovery, { mode: 0o600 })
+      return { status: 'partial' }
+    })
+    const upload = await s.get('/api/agent-backup/restore/upload?name=fixture.zip', {
+      method: 'POST', headers: { 'content-type': 'application/zip' }, body: archive.toString(),
+    })
+    expect(upload.status).toBe(200)
+    const staged = AgentRestoreStatusSchema.parse(await upload.json())
+    expect(staged.job).toMatchObject({ state: 'staged', can_confirm: true })
+    const id = staged.job!.id
+    expect(sidecar.calls.some(({ method }) => method === 'backup.restore')).toBe(false)
+    const confirm = (confirmed: boolean) => s.get('/api/agent-backup/restore', { method: 'POST', headers: json, body: JSON.stringify({ id, confirmed }) })
+    expect((await confirm(false)).status).toBe(400)
+    expect((await confirm(true)).status).toBe(200)
+    expect((await confirm(true)).status).toBe(200)
+    const status = AgentRestoreStatusSchema.parse(await (await s.get('/api/agent-backup/restore')).json())
+    const expected = AgentRestoreStatusSchema.parse(JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/agent-restore.json'), 'utf8')))
+    expect({ ...status, server: expected.server, job: { ...status.job, id: expected.job!.id, recovery_url: status.job?.recovery_url?.replace(id, expected.job!.id) } }).toEqual(expected)
+    expect(sidecar.calls.filter(({ method }) => method === 'backup.restore')).toHaveLength(1)
+    const download = await s.get(`/${status.job!.recovery_url!}`)
+    expect([download.status, download.headers.get('cache-control'), Buffer.from(await download.arrayBuffer())]).toEqual([200, 'no-store', recovery])
+    expect((await s.get(`/${status.job!.recovery_url!}`, { headers: { cookie: 'hermes_profile=work' } })).status).toBe(403)
   })
 })

@@ -8,6 +8,16 @@
         ""
       ]
     },
+    "tests/test_agent_backup.py::test_native_restore_recovers_config_and_sessions_with_a_private_undo_archive": {
+      "layer": "compatibility",
+      "reason": "The pinned Agent's real backup, maintenance reservation and SQLite restore must round-trip files and session data through the sidecar and keep a private pre-restore snapshot. All homes are disposable.",
+      "cases": [""]
+    },
+    "tests/test_agent_backup.py::test_native_restore_refuses_before_live_files_change": {
+      "layer": "compatibility",
+      "reason": "The confined native worker must refuse a corrupt archive, a linked live destination and a real native gateway lock before writing live data or publishing a recovery snapshot.",
+      "cases": ["[corrupt]", "[outside-destination]", "[active-agent]"]
+    },
     "tests/test_agent_backup.py::test_native_backup_archives_every_profile_into_a_private_file": {
       "layer": "compatibility",
       "reason": "The supported Agent's own hermes backup, run through the sidecar for a disposable root, must archive every profile, a readable state.db snapshot and .env, publish an owner-only file into the Web server's private directory inside the home, leave no staging there and never archive that directory; only the release's collectors and atomic staging decide this. No network or providers.",

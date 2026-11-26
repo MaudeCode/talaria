@@ -146331,6 +146331,237 @@
         }
       }
     },
+    "/api/agent-backup/restore": {
+      "get": {
+        "operationId": "agentBackup.restoreStatus",
+        "summary": "Read the owner-only Agent-home restore capability and current action, including any recovery download.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "can_upload": {
+                      "type": "boolean"
+                    },
+                    "server": {
+                      "type": "string"
+                    },
+                    "profile": {
+                      "type": "string"
+                    },
+                    "job": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{32}$"
+                            },
+                            "state": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "staged",
+                                    "running"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "enum": [
+                                    "restored",
+                                    "invalid_archive",
+                                    "refused",
+                                    "busy",
+                                    "backup_failed",
+                                    "partial",
+                                    "unknown",
+                                    "unavailable"
+                                  ],
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "file_name": {
+                              "type": "string"
+                            },
+                            "recovery_url": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "can_confirm": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "file_name",
+                            "recovery_url",
+                            "can_confirm"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "can_upload",
+                    "server",
+                    "profile",
+                    "job"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "agentBackup.restoreConfirm",
+        "summary": "Explicitly confirm one staged archive by id. Repeated confirmation reads the existing action without restoring again.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$"
+                  },
+                  "confirmed": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "id",
+                  "confirmed"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "can_upload": {
+                      "type": "boolean"
+                    },
+                    "server": {
+                      "type": "string"
+                    },
+                    "profile": {
+                      "type": "string"
+                    },
+                    "job": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{32}$"
+                            },
+                            "state": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "staged",
+                                    "running"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "enum": [
+                                    "restored",
+                                    "invalid_archive",
+                                    "refused",
+                                    "busy",
+                                    "backup_failed",
+                                    "partial",
+                                    "unknown",
+                                    "unavailable"
+                                  ],
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "file_name": {
+                              "type": "string"
+                            },
+                            "recovery_url": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "can_confirm": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "file_name",
+                            "recovery_url",
+                            "can_confirm"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "can_upload",
+                    "server",
+                    "profile",
+                    "job"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agent-backup/{id}": {
       "delete": {
         "operationId": "agentBackup.discard",
@@ -180844,6 +181075,88 @@
             "content": {
               "application/json": {}
             }
+          }
+        }
+      }
+    },
+    "/api/agent-backup/restore/upload": {
+      "post": {
+        "summary": "Stage a local Agent-home backup for explicit owner confirmation. Upload alone never writes to the selected Agent home.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Archive display name.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AgentRestoreStatus with the staged receipt.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Not a root owner."
+          },
+          "409": {
+            "description": "Busy or unavailable."
+          },
+          "413": {
+            "description": "Archive exceeds the limit."
+          },
+          "415": {
+            "description": "Expected application/zip."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "ZIP bytes, at most 1 GiB.",
+          "content": {
+            "application/zip": {}
+          }
+        }
+      }
+    },
+    "/api/agent-backup/recovery": {
+      "get": {
+        "summary": "Download the private backup taken immediately before Agent-home publication. Use the restore receipt's recovery_url.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "description": "Restore receipt id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private snapshot.",
+            "content": {
+              "application/zip": {}
+            }
+          },
+          "206": {
+            "description": "Partial content."
+          },
+          "403": {
+            "description": "Not a root owner."
+          },
+          "404": {
+            "description": "Snapshot unavailable."
           }
         }
       }

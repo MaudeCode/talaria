@@ -27,6 +27,7 @@ import { canonicalExecCommand, classifyCommand, COMMAND_REGISTRY_UNAVAILABLE, co
 import { spokenText } from './tools-raw.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, forgetGatewayProbes, gatewayStatus, logCatalog, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { EXTERNALLY_MANAGED } from '../tools/gateway-lifecycle.js'
+import { assertAgentRestoreScope } from '../tools/agent-restore.js'
 import { AgentBackupRunning, agentBackupRefusal, agentBackupStatus } from '../tools/agent-backup.js'
 import { NOT_CONTROLLED, restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
@@ -896,6 +897,14 @@ export const toolsRouter = os.router({
         throw error
       }
       return agentBackupStatus(ctx)
+    })),
+    restoreStatus: os.agentBackup.restoreStatus.handler(({ context: { ctx } }) => run(() => {
+      assertAgentRestoreScope(ctx)
+      return ctx.deps.agentRestores.status()
+    })),
+    restoreConfirm: os.agentBackup.restoreConfirm.handler(({ input, context: { ctx } }) => run(() => {
+      assertAgentRestoreScope(ctx)
+      return ctx.deps.agentRestores.confirm(input.id, ctx.deps.profileHome('default'))
     })),
     discard: os.agentBackup.discard.handler(({ input, context: { ctx } }) => run(() => {
       const reason = agentBackupRefusal(ctx)

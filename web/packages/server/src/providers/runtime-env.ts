@@ -6,10 +6,15 @@
  * then, once the file is written, the process. Values supplied explicitly by
  * the process environment are never touched.
  */
-import { homeDotenvKeys, setHomeDotenvKeys } from '../cli/dotenv.js'
+import { lstat } from 'node:fs/promises'
+import { join } from 'node:path'
+import { homeDotenvKeys, homeEnvKeyAllowed, parseDotenv, setHomeDotenvKeys } from '../cli/dotenv.js'
+import { migrateLegacyWebEnv } from '../config.js'
 import { writeProfileEnv } from './env-file.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
+import { readFileUpToAsync } from '../workspace/fs.js'
+import { resolvePathLikePythonAsync } from '../workspace/paths.js'
 
 export class RuntimeCredentialError extends Error {}
 
@@ -66,12 +71,51 @@ export async function prepareRuntimeCredentialEdit(deps: RuntimeEnvDeps, rootPro
 // ponytail: global chain; per-credential locks only if credential edits ever contend for throughput.
 let credentialEdits: Promise<unknown> = Promise.resolve()
 
+function serializeCredentialEdit(edit: () => Promise<void>): Promise<void> {
+  const run = credentialEdits.then(edit)
+  credentialEdits = run.catch(() => undefined)
+  return run
+}
+
+/** Apply a replaced root .env to both runtimes using the same ownership and serialization as individual edits. */
+export function reconcileRuntimeCredentials(deps: RuntimeEnvDeps, home: string): Promise<void> {
+  return serializeCredentialEdit(async () => {
+    const { env } = deps
+    const root = await resolvePathLikePythonAsync(home)
+    const info = await lstat(join(root, '.env')).catch((error: unknown) => {
+      if (!(error instanceof Error) || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      return null
+    })
+    const values = info ? parseDotenv((await readFileUpToAsync(root, '.env', 1024 ** 2)).toString('utf8')) : {}
+    migrateLegacyWebEnv(values)
+    const owned = homeDotenvKeys(env)
+    const set: Record<string, string> = {}
+    const unset: string[] = []
+    for (const key of owned) if (!Object.hasOwn(values, key)) unset.push(key)
+    for (const [key, value] of Object.entries(values)) {
+      if ((!owned.has(key) && !homeEnvKeyAllowed(key)) || credentialShadowed(env, true, key)) continue
+      if (value.includes('\0')) throw new RuntimeCredentialError('The restored .env contains an invalid value.')
+      if (env[key] !== value) set[key] = value
+    }
+    if (!unset.length && !Object.keys(set).length) return
+    const sidecar = deps.sidecar()
+    try {
+      if (!(await sidecar?.call('runtime.env', { set, unset }))?.ok) throw new Error('unconfirmed')
+    } catch {
+      throw new RuntimeCredentialError('The Agent sidecar has not applied the restored credentials.')
+    }
+    for (const key of unset) { Reflect.deleteProperty(env, key); owned.delete(key) }
+    for (const [key, value] of Object.entries(set)) { env[key] = value; owned.add(key) }
+    setHomeDotenvKeys(env, owned)
+  })
+}
+
 /**
  * Write one credential to `<profileHome>/.env`; a root-profile edit keeps the sidecar and process in step. `precondition`
  * runs inside the serialized edit, before anything changes, and may throw to refuse it.
  */
 export function writeRuntimeCredential(deps: RuntimeEnvDeps, rootProfile: boolean, profileHome: string, envVar: string, apiKey: string | null, precondition?: () => void): Promise<void> {
-  const run = credentialEdits.then(async () => {
+  return serializeCredentialEdit(async () => {
     precondition?.()
     const edit = await prepareRuntimeCredentialEdit(deps, rootProfile, envVar, apiKey)
     try {
@@ -82,6 +126,4 @@ export function writeRuntimeCredential(deps: RuntimeEnvDeps, rootProfile: boolea
     }
     edit.commit()
   })
-  credentialEdits = run.catch(() => undefined)
-  return run
 }

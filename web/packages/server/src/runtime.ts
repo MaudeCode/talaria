@@ -33,6 +33,8 @@ import { ConnectorOffers } from './tools/connectors.js'
 import { Groups } from './sessions/groups.js'
 import { HygieneTicker } from './tools/hygiene.js'
 import { PruneAdvice } from './tools/prune-advice.js'
+import { reconcileRuntimeCredentials } from './providers/runtime-env.js'
+import { AgentRestores } from './tools/agent-restore.js'
 import { AgentBackups } from './tools/agent-backup.js'
 import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
@@ -632,6 +634,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     onBackgroundWork: (sessionId, profile) => { background.refresh(sessionId, profile); completions.wake() },
     profileDeleting: (profile) => profiles.isDeleting(profile),
     updateInProgress: () => deps.updates.blocksNewWork(),
+    restoreInProgress: () => deps.agentRestores.blocksNewWork(),
     // TAL-2270: with the owner's setting on, chats a shutdown interrupted continue on the next start (TAL-1990's record).
     continueInterruptedChats: () => { try { return settings.peekValue('continue_interrupted_chats') === true } catch { return false } },
     recordInterruptedChats: async (chats) => { appendContinuation(config.stateDir, (await Promise.all(chats.map((chat) => continuationRun(chat.session_id, chat.stream_id)))).map((run) => ({ ...run, restart: true }))) },
@@ -1158,6 +1161,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     updates: null as unknown as UpdateService,
     updateNotifications,
     pruneAdvice,
+    agentRestores: new AgentRestores(
+      config.stateDir, () => sidecar, () => restartBlockers().restart_blocked || deps.updates.blocksNewWork() || profileOps.size > 0,
+      () => reconcileRuntimeCredentials({ env, sidecar: () => sidecar, log }, baseHome),
+    ),
     agentBackups: new AgentBackups({ dir: join(config.stateDir, 'agent-backups'), sidecar: () => sidecar, log, redact: (text) => redactString(text) }),
     gatewayRestarts: null as unknown as GatewayRestartQueue,
     gatewayLifecycle: (home: string) => gatewayLifecycle({

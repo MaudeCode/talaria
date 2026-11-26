@@ -113,6 +113,17 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'ZIP attachment, `Cache-Control: no-store`.', contentType: 'application/zip' }, 206: { description: 'Partial content.' }, 403: { description: 'Not the owner, a named profile, or isolated profile mode.', contentType: 'application/json' }, 404: { description: 'No ready backup with this id; it was deleted or expired.', contentType: 'application/json' } },
   },
   {
+    method: 'POST', path: '/api/agent-backup/restore/upload', summary: 'Stage a local Agent-home backup for explicit owner confirmation. Upload alone never writes to the selected Agent home.', tags: ['tools'],
+    query: { name: { description: 'Archive display name.' } },
+    requestBody: { contentType: 'application/zip', description: 'ZIP bytes, at most 1 GiB.' },
+    responses: { 200: { description: 'AgentRestoreStatus with the staged receipt.', contentType: 'application/json' }, 403: { description: 'Not a root owner.' }, 409: { description: 'Busy or unavailable.' }, 413: { description: 'Archive exceeds the limit.' }, 415: { description: 'Expected application/zip.' } },
+  },
+  {
+    method: 'GET', path: '/api/agent-backup/recovery', summary: 'Download the private backup taken immediately before Agent-home publication. Use the restore receipt\'s recovery_url.', tags: ['tools'],
+    query: { id: { description: 'Restore receipt id.', required: true } },
+    responses: { 200: { description: 'Private snapshot.', contentType: 'application/zip' }, 206: { description: 'Partial content.' }, 403: { description: 'Not a root owner.' }, 404: { description: 'Snapshot unavailable.' } },
+  },
+  {
     method: 'GET', path: '/api/session/export', summary: 'Transcript download as JSON, Markdown, or a self-contained HTML page.', tags: ['sessions'],
     query: { session_id: { description: 'Session to export, including a canonical chat owned by an already-running Agent gateway.', required: true }, format: { description: '`json` (default), `markdown`, or `html`. Other values retain the legacy JSON fallback.' }, theme: { description: 'HTML only: `dark` (default) or `light`.' }, palette: { description: 'HTML only: base64 JSON map of CSS variables captured from the live UI.' } },
     responses: { 200: { description: 'Attachment named `hermes-<session_id>.<ext>`.' }, 400: { description: 'Session ID is required.', contentType: 'application/json' }, 404: { description: 'Session not found in the active profile.', contentType: 'application/json' }, 409: { description: 'The canonical Agent owner is unavailable or does not support transcript export.', contentType: 'application/json' }, 413: { description: 'The owner transcript exceeds the export limit.', contentType: 'application/json' } },

@@ -46,7 +46,7 @@ const CREDENTIAL_KEY_RE = /_(?:KEY|TOKEN|SECRET)$/
  * user for (TAL-1969). Loader, shell and launch hooks (`BASH_ENV`, `NODE_OPTIONS`, `GIT_SSH_COMMAND`) never match.
  */
 export const credentialEnvName = (key: string): boolean => ![LEGACY_WEB_ENV_PREFIX, 'TALARIA_WEB_'].some((prefix) => key.startsWith(prefix)) && CREDENTIAL_KEY_RE.test(key)
-const homeEnvKeyAllowed = (key: string): boolean => HOME_ENV_KEYS.has(key) || credentialEnvName(key)
+export const homeEnvKeyAllowed = (key: string): boolean => HOME_ENV_KEYS.has(key) || credentialEnvName(key)
 
 function unescapeDouble(raw: string): string {
   let out = ''
