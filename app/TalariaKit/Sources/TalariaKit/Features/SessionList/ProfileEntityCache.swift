@@ -29,10 +29,9 @@ public struct ProfileEntityCache {
         guard let defaults else { return false }
         let snapshot = profiles.compactMap { CachedProfile($0, publisherID: publisherID) }
         if let publisherID {
-            let botProfiles = snapshot.filter { $0.hasBotChat == true }
             let key = botProfilesKey(publisherID)
-            if botProfiles != loadCached(key: key) {
-                defaults.set(try? JSONEncoder().encode(botProfiles), forKey: key)
+            if snapshot != loadCached(key: key) {
+                defaults.set(try? JSONEncoder().encode(snapshot), forKey: key)
                 saveBotChatAvatars(botChatAvatars(publisherID: publisherID), publisherID: publisherID)
                 Self.reloadWidget()
             }
@@ -53,7 +52,7 @@ public struct ProfileEntityCache {
         loadCached()
     }
 
-    /// Widget configurations retain their server even when the app switches to a different one.
+    /// The server's profile list for widgets that retain this server when the app switches away.
     public func loadBotChatProfiles(publisherID: String) -> [CachedProfile] {
         loadCached(key: botProfilesKey(publisherID))
     }
@@ -105,7 +104,6 @@ public struct CachedProfile: Codable, Equatable, Sendable {
     public let name: String
     public let subtitle: String?
     public let publisherID: String?
-    public let hasBotChat: Bool?
     let avatarPath: String?
 
     /// Skips a profile with no usable name (the name is the load-bearing identifier for
@@ -116,7 +114,6 @@ public struct CachedProfile: Codable, Equatable, Sendable {
         self.name = summary.displayName
         self.subtitle = Self.subtitle(for: summary)
         self.publisherID = publisherID
-        self.hasBotChat = summary.canonicalSession != nil
         self.avatarPath = summary.botChatAvatarPath
     }
 

@@ -68,6 +68,22 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
         XCTAssertNil(loaded.last?.subtitle)
     }
 
+    func testBotChatPickerKeepsTheServerProfileListWhenACanonicalChatIsMissing() throws {
+        let cache = ProfileEntityCache(defaults: .ephemeral("bot-chat-widget-profiles"))
+        let publisher = "https://widget.example.test/talaria"
+        let profiles = try APIClient.responseDecoder().decode([ProfileSummary].self, from: Data("""
+            [
+              {"name":"workspace","display_name":"Workspace","canonical_session":null},
+              {"name":"research","display_name":"Research","canonical_session":{"session_id":"root","tip_session_id":"tip"}}
+            ]
+            """.utf8))
+        cache.save(profiles, publisherID: publisher)
+
+        let routes = cache.loadBotChatEntities().compactMap { URL(string: $0.id).flatMap(TalariaDeepLink.botChat(from:)) }
+        XCTAssertEqual(routes.map(\.profileName), ["workspace", "research"])
+        XCTAssertEqual(cache.loadBotChatProfiles(publisherID: publisher).map(\.id), ["workspace", "research"])
+    }
+
     func testCacheSkipsUnnamedProfiles() throws {
         let (cache, suite, defaults) = makeIsolatedCache()
         defer { defaults.removePersistentDomain(forName: suite) }

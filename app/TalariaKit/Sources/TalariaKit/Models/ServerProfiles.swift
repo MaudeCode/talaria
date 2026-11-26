@@ -197,7 +197,7 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
     }
 
     var botChatAvatarPath: String? {
-        canonicalSession != nil && hasAvatar == true ? avatarUrl : nil
+        hasAvatar == true ? avatarUrl : nil
     }
 }
 

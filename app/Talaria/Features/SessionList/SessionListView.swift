@@ -444,7 +444,7 @@ struct SessionListView: View {
             }
     }
 
-    // The body's modifiers in three properties: one chain of them all took the type checker 8 s (TAL-2470).
+    // Keep the modifier groups separate to bound SwiftUI type checking (TAL-2470).
     private var sessionListWithTasks: some View {
         sessionListWithPresentations
             .background(WindowSceneReader(title: windowTitle))
@@ -541,7 +541,7 @@ struct SessionListView: View {
             }
     }
 
-    private var sessionListWithEvents: some View {
+    private var sessionListWithIncomingRoutes: some View {
         sessionListWithTasks
             .onAppear {
                 if sessionActionContext == nil {
@@ -578,6 +578,10 @@ struct SessionListView: View {
             .onChange(of: pendingDestination) {
                 openPendingDestinationIfNeeded()
             }
+    }
+
+    private var sessionListWithEvents: some View {
+        sessionListWithIncomingRoutes
             .onChange(of: opensProviderQuotaWidgetSettings) {
                 openProviderQuotaWidgetSettingsIfNeeded()
             }

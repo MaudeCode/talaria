@@ -8,8 +8,7 @@ import TalariaKit
 /// of #339/#8 ships first owns it, the other reuses it, so the picker plumbing isn't
 /// duplicated.
 struct ProfileEntity: AppEntity, Identifiable {
-    /// The profile's server name (e.g. `default`, `dev`). The stable identifier the deep link
-    /// and `createSession(profile:)` use to pin a new chat to this profile.
+    /// The profile name for New Chat, or the server-scoped link for a Bot Chat widget.
     let id: String
     /// Human-facing label, mirroring `ProfileSummary.displayName` (so `default` → "Default").
     let name: String
@@ -47,6 +46,15 @@ extension ProfileEntityCache {
     func loadEntities() -> [ProfileEntity] {
         loadProfiles().map(ProfileEntity.init)
     }
+
+    func loadBotChatEntities() -> [ProfileEntity] {
+        loadProfiles().compactMap { profile in
+            guard let publisher = profile.publisherID,
+                  let link = TalariaDeepLink.botChatURL(profileName: profile.id, publisherID: publisher)
+            else { return nil }
+            return ProfileEntity(id: link.absoluteString, name: profile.name, subtitle: profile.subtitle)
+        }
+    }
 }
 
 /// Supplies the profile choices for a profile-parameterized App Intent. iOS runs this
@@ -56,13 +64,13 @@ extension ProfileEntityCache {
 /// still populated when the background fetch can't authenticate. Both paths degrade to an
 /// empty list rather than throwing, which the system renders as an empty picker (#339).
 struct ProfileEntityQuery: EntityQuery {
-    var botChatOnly = false
+    var forBotChatWidget = false
 
     /// A profile the server no longer lists resolves to a stand-in named by its identifier, so a configured widget
     /// keeps the user's choice instead of WidgetKit silently swapping it for the active profile (TAL-50). The server
     /// then refuses the deleted profile on the first Send.
     func entities(for identifiers: [ProfileEntity.ID]) async throws -> [ProfileEntity] {
-        if botChatOnly { return identifiers.compactMap(Self.resolveBotChatProfile) }
+        if forBotChatWidget { return identifiers.compactMap(Self.resolveBotChatProfile) }
         return Self.resolve(identifiers, in: await ProfileEntityProvider.currentEntities())
     }
 
@@ -71,14 +79,7 @@ struct ProfileEntityQuery: EntityQuery {
     }
 
     func suggestedEntities() async throws -> [ProfileEntity] {
-        if botChatOnly {
-            return ProfileEntityCache.shared.loadProfiles().compactMap { profile in
-                guard profile.hasBotChat == true, let publisher = profile.publisherID,
-                      let link = TalariaDeepLink.botChatURL(profileName: profile.id, publisherID: publisher)
-                else { return nil }
-                return ProfileEntity(id: link.absoluteString, name: profile.name, subtitle: profile.subtitle)
-            }
-        }
+        if forBotChatWidget { return ProfileEntityCache.shared.loadBotChatEntities() }
         return await ProfileEntityProvider.currentEntities()
     }
 

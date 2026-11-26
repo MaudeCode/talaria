@@ -134,16 +134,16 @@ struct NewChatWidgetConfigurationIntent: WidgetConfigurationIntent {
     @Parameter(title: "Profile")
     var profile: ProfileEntity?
 
-    @Parameter(title: "Profile", query: ProfileEntityQuery(botChatOnly: true))
+    @Parameter(title: "Profile", query: ProfileEntityQuery(forBotChatWidget: true))
     var botProfile: ProfileEntity?
 
-    @Parameter(title: "Second Profile", query: ProfileEntityQuery(botChatOnly: true))
+    @Parameter(title: "Second Profile", query: ProfileEntityQuery(forBotChatWidget: true))
     var secondBotProfile: ProfileEntity?
 
-    @Parameter(title: "Third Profile", query: ProfileEntityQuery(botChatOnly: true))
+    @Parameter(title: "Third Profile", query: ProfileEntityQuery(forBotChatWidget: true))
     var thirdBotProfile: ProfileEntity?
 
-    @Parameter(title: "Fourth Profile", query: ProfileEntityQuery(botChatOnly: true))
+    @Parameter(title: "Fourth Profile", query: ProfileEntityQuery(forBotChatWidget: true))
     var fourthBotProfile: ProfileEntity?
 
     static var parameterSummary: some ParameterSummary {
