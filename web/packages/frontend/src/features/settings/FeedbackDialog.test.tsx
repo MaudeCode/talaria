@@ -273,6 +273,20 @@ it('offers Attach with the accept list from feedback.options', async () => {
   expect(picker()).toHaveAttribute('multiple')
 })
 
+it('offers only images at the video limit and offers videos again after removal', async () => {
+  const { upload } = await setup()
+  upload.mockResolvedValue({ ...staged(1), contentType: 'video/mp4' })
+  open()
+  await attach()
+  pick(synthetic('clip.mp4', 'video/mp4'))
+  expect(picker()).toHaveAttribute('accept', 'image/png,image/jpeg,image/heic,image/webp')
+  const remove = await screen.findByRole('button', { name: 'Remove clip.mp4' })
+  await waitFor(() => expect(remove.closest('li')).toHaveAttribute('data-status', 'done'))
+  expect(picker()).toHaveAttribute('accept', 'image/png,image/jpeg,image/heic,image/webp')
+  fireEvent.click(remove)
+  expect(picker()).toHaveAttribute('accept', ALL_TYPES.join(','))
+})
+
 it('hides Attach when the server disables attachments', async () => {
   const { diagnostics } = await setup({ attachments: { ...OPTIONS.attachments, enabled: false, videoAllowed: false, maxCount: 0, maxVideoCount: 0, acceptedTypes: [] } })
   diagnostics.mockResolvedValue({ text: '', bytes: 0 })

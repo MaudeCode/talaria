@@ -87,6 +87,20 @@ final class APIClientFeedbackTests: APIClientTestCase {
         XCTAssertEqual(result.reportId, "synthetic-report")
     }
 
+    func testFeedbackOptionsDecodeTheSharedVideoLimit() async throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("web-feedback")) as? [String: Any])
+        let options = try XCTUnwrap(fixture["options"] as? [String: Any])
+        let attachments = try XCTUnwrap(options["attachments"] as? [String: Any])
+        let limit = try XCTUnwrap(attachments["maxVideoCount"] as? Int)
+        let body = String(decoding: try JSONSerialization.data(withJSONObject: options), as: UTF8.self)
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/feedback/options")
+            return apiTestJSONResponse(body, for: request)
+        }
+        let response = try await client.feedbackOptions()
+        XCTAssertEqual(response.attachments.maxVideoCount, limit)
+    }
+
     func testFeedbackAttachmentUploadOptionsAndPerAttachmentResults() async throws {
         let staged = UUID(), refused = UUID()
         let file = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
@@ -116,6 +130,7 @@ final class APIClientFeedbackTests: APIClientTestCase {
             }
         }
         let options = try await client.feedbackOptions().attachments
+        XCTAssertNil(options.maxVideoCount, "Older servers omit the video limit")
         XCTAssertEqual(options, .init(enabled: true, videoAllowed: false, maxCount: 5, maxImageBytes: 10_000_000,
                                       maxVideoBytes: 20_000_000, maxVideoSeconds: 120, acceptedTypes: ["image/png", "image/jpeg"]))
         let uploaded = try await client.uploadFeedbackAttachment(file, contentType: "image/png", filename: "screen.png")
