@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Importing from Claude Code, Codex, Cursor, Grok Bot or OpenBot works with the Agent Importers plugin that Agent v0.23.4 installs. A Grok Bot routine whose schedule could not be read now shows as needing a schedule.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

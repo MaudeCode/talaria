@@ -308,7 +308,8 @@ def _project(report):
              'mcp-servers': 'MCP servers', 'skills': 'Skills', 'skill': 'Skill', 'memories': 'Memories',
              'rules': 'Cursor rules', 'config': 'Configuration', 'slash-commands': 'Slash commands',
              'role': 'Instructions', 'user-facts': 'User facts', 'routines': 'Routines', 'routine': 'Routine (paused task)',
-             'event-routines': 'Event routines (saved as notes)', 'apps': 'Connected apps', 'export': 'Export file',
+             'event-routines': 'Event routines (saved as notes)', 'needs-schedule': 'Routines that need a schedule',
+             'import-record': 'Import record (memory)', 'apps': 'Connected apps', 'export': 'Export file',
              'database': 'OpenBot database',
              'agents': 'OpenBot agents', 'mcp-env-passthrough': 'MCP environment variables'}
     statuses = {'imported', 'skipped', 'conflict', 'error'}
