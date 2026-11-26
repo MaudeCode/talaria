@@ -6,48 +6,6 @@
       "lastRequired": "0.23.2",
       "summary": "Agent 0.23.3 moved sessions, the runtime store's refusal and admissions, and hosted rooms behind persistence_assembly; tests seed older Agents through SessionDB, hermes_state_runtime and room store paths.",
       "tests": ["web/sidecar/tests/conftest.py", "web/sidecar/tests/fixtures/gateway_cron_refusal.py", "web/sidecar/tests/fixtures/gateway_shell_policy.py", "web/sidecar/tests/test_cron_room_delivery.py"]
-    },
-    {
-      "id": "compaction-progress-kind",
-      "lastRequired": "0.23.1",
-      "summary": "agent.conversation_compression.compaction_status_kind is new in 0.23.2; older Agents rely on the wording markers.",
-      "tests": ["web/sidecar/tests/test_status_events.py"]
-    },
-    {
-      "id": "config-drop-other-access",
-      "lastRequired": "0.23.1",
-      "summary": "The Agent writers' drop_other_access policy is new in 0.23.2; the sidecar applies it to config.yaml itself.",
-      "tests": ["web/sidecar/tests/test_config_write.py"]
-    },
-    {
-      "id": "config-secret-refs",
-      "lastRequired": "0.23.1",
-      "summary": "hermes_cli.config_secret_refs is new in 0.23.2; older Agents keep an entered model credential inline in config.yaml.",
-      "tests": ["web/sidecar/tests/test_config_write.py"]
-    },
-    {
-      "id": "cron-guard-modules",
-      "lastRequired": "0.23.1",
-      "summary": "The cron prompt and job-argument checks moved to cron.prompt_scan and cron.job_args in 0.23.2; older Agents keep them in tools.cronjob_*.",
-      "tests": ["web/sidecar/tests/test_cron_parity.py"]
-    },
-    {
-      "id": "cron-wrap-response",
-      "lastRequired": "0.23.1",
-      "summary": "A per-task cron wrap_response is new in 0.23.2; older Agents read only the global cron.wrap_response, so the sidecar reports no capability and refuses an explicit value.",
-      "tests": ["web/sidecar/tests/test_cron_parity.py"]
-    },
-    {
-      "id": "dashboard-credential-binding",
-      "lastRequired": "0.23.1",
-      "summary": "BasicAuthProvider(credential_id=) is new in 0.23.2; older Agents sign dashboard sessions with the secret alone.",
-      "tests": ["web/sidecar/tests/test_agent_services.py"]
-    },
-    {
-      "id": "plugin-registration-ownership",
-      "lastRequired": "0.23.1",
-      "summary": "Per-home plugin registration ownership is new in 0.23.2; older Agents attribute a provider by its module path.",
-      "tests": ["web/sidecar/tests/test_plugin_providers.py"]
     }
   ]
 }

@@ -67,8 +67,26 @@ CASES = [
 ]
 
 
+class CompactionProgressText(str):
+    """Stand-in for the Agent's mark on real compaction progress."""
+
+
+def _stand_in_compaction_classifier(monkeypatch) -> None:
+    """The Agent's ``agent.conversation_compression.compaction_status_kind`` for tests without the Agent's dependencies:
+    only a marked lifecycle line is compaction progress."""
+    if "agent" not in sys.modules:
+        package = types.ModuleType("agent")
+        package.__path__ = []
+        monkeypatch.setitem(sys.modules, "agent", package)
+    compression = types.ModuleType("agent.conversation_compression")
+    compression.compaction_status_kind = lambda kind, text: (
+        "compacting" if kind == "lifecycle" and isinstance(text, CompactionProgressText) and text.strip() else str(kind))
+    monkeypatch.setitem(sys.modules, "agent.conversation_compression", compression)
+
+
 @pytest.mark.parametrize(("kind", "message", "expected"), CASES, ids=[message[:48] for _kind, message, _expected in CASES])
-def test_status_events_classify_the_agents_real_status_lines(kind, message, expected):
+def test_status_events_classify_the_agents_real_status_lines(monkeypatch, kind, message, expected):
+    _stand_in_compaction_classifier(monkeypatch)
     assert _status_events(kind, message) == expected
 
 
@@ -111,6 +129,7 @@ def test_pinned_stream_diagnostics_reach_warning_frames(pinned_stream_diag, monk
     else:
         lines.append("❌ API failed after 1 retries: endpoint unavailable")
 
+    _stand_in_compaction_classifier(monkeypatch)
     _patch(monkeypatch)
 
     def run_conversation(self, **kwargs):
@@ -127,21 +146,11 @@ def test_pinned_stream_diagnostics_reach_warning_frames(pinned_stream_diag, monk
     ]
 
 
-# agent-shim: compaction-progress-kind
 def test_marked_compaction_progress_and_compression_warnings_reach_their_frames(monkeypatch, tmp_path):
     """TAL-2290: the callback classifies the Agent's own object, so a context engine's reworded progress still opens
-    the span, and a warn-severity notice about compression warns without opening one. The stand-in mirrors Agent
-    v0.23.2's ``CompactionProgressText`` and ``compaction_status_kind``."""
-    class CompactionProgressText(str):
-        pass
-
-    package = types.ModuleType("agent")
-    package.__path__ = []
-    compression = types.ModuleType("agent.conversation_compression")
-    compression.compaction_status_kind = lambda kind, text: (
-        "compacting" if kind == "lifecycle" and isinstance(text, CompactionProgressText) and text.strip() else str(kind))
-    monkeypatch.setitem(sys.modules, "agent", package)
-    monkeypatch.setitem(sys.modules, "agent.conversation_compression", compression)
+    the span, and a warn-severity notice about compression warns without opening one. The stand-in mirrors the
+    Agent's ``CompactionProgressText`` and ``compaction_status_kind``."""
+    _stand_in_compaction_classifier(monkeypatch)
     warning = "⚠️  Session compressed 2 times — accuracy may degrade. Consider /new to start fresh."
     _patch(monkeypatch)
 
@@ -174,19 +183,19 @@ from talaria_sidecar.methods.chat import _status_events
 
 engine = SimpleNamespace(get_automatic_compaction_status_message=lambda **context: sys.argv[2] or context["default_message"])
 status = automatic_compaction_status_message(engine, phase="compress", default_message=conversation_compression.COMPACTION_STATUS)
-print(json.dumps({"events": _status_events("lifecycle", status), "marks": hasattr(conversation_compression, "compaction_status_kind")}))
+print(json.dumps({"events": _status_events("lifecycle", status)}))
 '''
 
 
 @requires_agent
 @pytest.mark.parametrize("engine_text", ["", "Rebuilding older context"], ids=["default", "custom-engine"])
 def test_pinned_compaction_progress_opens_the_span(tmp_path, engine_text):
-    """The default compaction line opens the span on every supported release (by its mark from v0.23.2, by its wording
-    before), and a context engine's reworded line opens it wherever the release marks progress."""
+    """The pinned release's default compaction line and a context engine's reworded line both open the span by their
+    progress mark."""
     home = tmp_path / "hermes"
     home.mkdir()
     run = subprocess.run([AGENT_PYTHON, "-c", PINNED_COMPACTION_PROBE, str(AGENT_DIR), engine_text],
                          env=isolated_env(home), capture_output=True, text=True, timeout=90)
     assert run.returncode == 0, run.stderr[-4000:]
     probe = json.loads(run.stdout.strip().splitlines()[-1])
-    assert probe["events"] == (["compressing"] if not engine_text or probe["marks"] else [])
+    assert probe["events"] == ["compressing"]

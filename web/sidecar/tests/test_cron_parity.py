@@ -6,13 +6,10 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
-from types import SimpleNamespace
 
 import pytest
 
 from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, agent_script, isolated_env, requires_agent
-from talaria_sidecar.errors import InvalidParams
-from talaria_sidecar.methods import cron
 
 
 @requires_agent
@@ -272,27 +269,11 @@ def test_schedule_policy_round_trips_clears_and_returns_the_agents_refusal(hands
         assert refusal in message["error"]["message"], message
 
 
-def test_an_agent_without_per_task_wrapping_reports_none_and_refuses_an_explicit_wrap(monkeypatch) -> None:  # agent-shim: cron-wrap-response
-    """TAL-2634: an Agent before 0.23.2 never reads a task's ``wrap_response``, so nothing stores one there; a null asks
-    for the default that Agent already applies."""
-    monkeypatch.setattr(cron, "_jobs", lambda: SimpleNamespace(create_job=lambda prompt, schedule, catch_up=None: None, is_terminal_job=lambda job: False, is_job_runnable=lambda job: True))
-    assert cron.job_for_api({"id": "a", "wrap_response": True})["wrap_response_supported"] is False
-    assert cron._field_updates({"wrap_response": None, "catch_up": True}) == {"catch_up": True}
-    for value in (True, False, "yes"):
-        with pytest.raises(InvalidParams, match="per task"):
-            cron._field_updates({"wrap_response": value})
-
-
 @requires_agent
-def test_wrap_response_round_trips_clears_and_refuses_malformed_values(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:  # agent-shim: cron-wrap-response
+def test_wrap_response_round_trips_clears_and_refuses_malformed_values(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
     home = str(hermes_home)
     get = lambda: handshaken.result("cron.get", {"profile_home": home, "job_id": job_id})["job"]  # noqa: E731
     update = lambda value: handshaken.result("cron.update", {"profile_home": home, "job_id": job_id, "updates": {"wrap_response": value}})["job"]  # noqa: E731
-    if not handshaken.result("cron.list", {"profile_home": home})["wrap_response_supported"]:
-        message, _ = handshaken.call("cron.create", {"profile_home": home, "job": {"schedule": "0 9 * * *", "prompt": "say hi", "wrap_response": False}})
-        assert "per task" in message["error"]["message"], message
-        assert handshaken.result("cron.list", {"profile_home": home})["jobs"] == []
-        return
     job = handshaken.result("cron.create", {"profile_home": home, "job": {"schedule": "0 9 * * *", "prompt": "say hi", "wrap_response": False}})["job"]
     job_id = job["id"]
     assert (job["wrap_response"], job["wrap_response_supported"]) == (False, True)
@@ -308,12 +289,10 @@ def test_wrap_response_round_trips_clears_and_refuses_malformed_values(handshake
 
 
 @requires_agent
-def test_a_stored_wrap_response_changes_the_bytes_the_agent_delivers(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:  # agent-shim: cron-wrap-response
+def test_a_stored_wrap_response_changes_the_bytes_the_agent_delivers(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
     """TAL-2634: the Agent's own delivery, through a recording local-chat transport, wraps by the task's stored override
     and, once a null clears it, by the profile's ``cron.wrap_response``."""
     home = str(hermes_home)
-    if not handshaken.result("cron.list", {"profile_home": home})["wrap_response_supported"]:
-        pytest.skip("per-task wrap_response is new in Agent 0.23.2")
     create = lambda name, wrap: handshaken.result("cron.create", {"profile_home": home, "job": {  # noqa: E731
         "schedule": "0 9 * * *", "prompt": "say hi", "name": name, "deliver": "local:chat-1", "wrap_response": wrap}})["job"]["id"]
     cleared, raw, wrapped = create("Cleared", True), create("Raw", False), create("Wrapped", True)
@@ -344,7 +323,7 @@ FOREIGN = "https://foreign.example/v1"
 
 
 @requires_agent
-def test_mutations_refuse_what_the_agents_cron_guards_refuse(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:  # agent-shim: cron-guard-modules
+def test_mutations_refuse_what_the_agents_cron_guards_refuse(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
     """TAL-2297: create and update pass the Agent's own prompt, provider/base_url and Bot Chat checks under the owning
     profile, refuse scheduler bookkeeping, and a refusal leaves the store bytes and a live run claim untouched."""
     beta = hermes_home / "profiles" / "beta"

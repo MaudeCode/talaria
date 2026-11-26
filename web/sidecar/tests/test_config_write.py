@@ -319,7 +319,7 @@ for env, marker, expected in [("nixos", None, "nixos"), ("1", None, "nixos"), ("
 
 @requires_agent
 @pytest.mark.parametrize("fallback", [False, True])
-def test_config_set_drops_other_access(hermes_home: pathlib.Path, fallback: bool) -> None:  # agent-shim: config-drop-other-access
+def test_config_set_drops_other_access(hermes_home: pathlib.Path, fallback: bool) -> None:
     agent_script(hermes_home, '''
 import os
 from pathlib import Path
@@ -504,22 +504,4 @@ with patch.object(config, "env_write", side_effect=observed):
 assert seen and all("api_key" not in state.get("delegation", {}) and "old.example.test" not in str(state) for state in seen), seen
 assert config.read_config(path)["config"]["delegation"]["api_key"] == "${HERMES_DELEGATION_API_KEY}"
 assert "HERMES_DELEGATION_API_KEY=synthetic-new-key" in env_lines()
-''')
-
-
-@requires_agent
-def test_config_set_keeps_credentials_inline_without_native_references(hermes_home: pathlib.Path) -> None:  # agent-shim: config-secret-refs
-    agent_script(hermes_home, CREDENTIAL_HOME + r'''
-from unittest.mock import patch
-
-original_import = config.importlib.import_module
-def import_module(name):
-    if name == "hermes_cli.config_secret_refs":
-        raise ImportError("Agent before v0.23.2")
-    return original_import(name)
-
-with patch.object(config.importlib, "import_module", side_effect=import_module):
-    save({"model": {"provider": "custom", "base_url": url, "api_key": "synthetic-model-key"}})
-assert config.read_config(path)["config"]["model"]["api_key"] == "synthetic-model-key"
-assert not env.exists()
 ''')

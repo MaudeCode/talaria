@@ -14,7 +14,7 @@ import time
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, load_schema, requires_agent, validate
+from conftest import AGENT_PYTHON, SidecarProcess, load_schema, requires_agent, validate
 
 PROFILE = textwrap.dedent(
     """
@@ -472,8 +472,6 @@ GENERATION_PROFILE = textwrap.dedent(
 
 
 @requires_agent
-@pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "providers/plugin_reload.py").is_file(), reason="Agent has no native plugin reload")
-# agent-shim: plugin-registration-ownership
 def test_an_updated_plugin_is_attributed_through_its_current_native_generation(tmp_path: pathlib.Path) -> None:
     """TAL-2289: a plugin the Agent runs from a frozen copy stays its manifest's provider across updates."""
     home = tmp_path / "home" / ".hermes"
@@ -545,7 +543,6 @@ def test_an_updated_plugin_is_attributed_through_its_current_native_generation(t
 
 
 @requires_agent
-@pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "providers/plugin_reload.py").is_file(), reason="Agent has no native plugin reload")
 @pytest.mark.parametrize("manifestless", [False, True], ids=["both-manifests", "manifestless"])
 def test_plugins_sharing_a_directory_name_are_not_attributed_through_native_ownership(tmp_path: pathlib.Path, manifestless: bool) -> None:
     """The Agent names a plugin's module after its directory, so same-named flat and model-providers plugins share an owner."""

@@ -163,17 +163,6 @@ def assert_config_writable(profile_home: Path | None = None) -> None:
                        condition="config_write_refused")
 
 
-def _drop_other_access(path: str) -> None:  # agent-shim: config-drop-other-access
-    """Apply the Agent writers' ``drop_other_access`` policy after the target's mode is carried onto the staged file;
-    Agents before v0.23.2 and the parser fallback lack it. Other-access bits go, group bits stay for shared-group
-    homes, and containers keep their deliberate modes. Managed homes never get here (``assert_config_writable``)."""
-    if importlib.import_module("hermes_constants")._container_or_chmod_skipped():
-        return
-    mode = os.stat(path).st_mode & 0o7777
-    if mode & 0o007:
-        os.chmod(path, mode & ~0o007)
-
-
 def managed_config() -> dict:
     """The Agent's normalized, effective administrator overlay, separate from the user document."""
     try:
@@ -267,10 +256,7 @@ def _route_entered_credentials(config: dict, target: Path, home: Path) -> tuple[
     """
     if not any(isinstance(block.get("api_key"), str) and block["api_key"].strip() for block, _, _ in _credential_routes(config, {})):
         return {}, []
-    try:
-        refs = importlib.import_module("hermes_cli.config_secret_refs")
-    except ImportError:  # agent-shim: config-secret-refs
-        return {}, []
+    refs = importlib.import_module("hermes_cli.config_secret_refs")
     current = read_config(target)["config"]
     updates: dict[str, str] = {}
     repointed: list[dict] = []
@@ -348,7 +334,9 @@ def _publish_config(path: Path, target: Path, config: dict, before_replace=None)
             raise RpcError(f"{path} was retargeted while config.yaml was being written; retry", condition="config_changed")
         if before_replace is not None:
             before_replace()
-        _drop_other_access(tmp)
+        # Both writers carry the target's mode across; the Agent's policy strips other access, keeps group bits for
+        # shared-group homes and leaves containers alone. Managed homes never get here (``assert_config_writable``).
+        importlib.import_module("hermes_cli.config_backend").drop_other_access(Path(tmp))
         os.replace(tmp, target)
     except BaseException:
         try:
