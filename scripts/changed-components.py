@@ -40,7 +40,7 @@ FIXTURE_READERS = {
     "app": {"answered-question.json", "connectors.json", "decision-review.json", "delegation-status.json", "execution-modes.json",
             "model-confirmation.json", "proposal.json", "provider-quotas.json", "running-subagent.json", "settings-model-picker.json", "show.json",
             "terminal-view.json", "tool-approval-and-agents.json", "unread-from-message.json", "vault-prompts.json",
-            "web-native-work.json", "web-session.json"},
+            "web-feedback.json", "web-native-work.json", "web-session.json"},
     "relay": {"app-registration.json", "feedback-attachment-limits.json", "feedback-report.json",
               "feedback-report-agent.json", "notification-alerts.json", "publisher-server-notice.json", "publisher-session-started.json",
               "publisher-snapshot.json", "relay-approval-alert.json", "relay-pairing.json", "relay-server-notice-push.json",
