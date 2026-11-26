@@ -8,7 +8,7 @@ import pathlib
 
 import pytest
 
-from conftest import AGENT_DIR, SidecarProcess, agent_script, requires_agent
+from conftest import SidecarProcess, agent_script, requires_agent
 from talaria_sidecar import SIDECAR_RPC_VERSION
 
 
@@ -385,8 +385,6 @@ def test_config_get_distinguishes_unavailable_managed_policy(hermes_home: pathli
 
 
 # TAL-2304: a config.set that enters a credential keeps it in the profile's .env under the Agent's own name.
-native_refs = pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "hermes_cli" / "config_secret_refs.py").is_file(),
-                                 reason="Agent without config_secret_refs")
 CREDENTIAL_HOME = r'''
 import os
 from pathlib import Path
@@ -407,7 +405,6 @@ def env_lines():
 
 
 @requires_agent
-@native_refs
 def test_config_set_keeps_entered_credentials_in_profile_env(hermes_home: pathlib.Path) -> None:
     agent_script(hermes_home, CREDENTIAL_HOME + r'''
 from hermes_cli.config_secret_refs import aux_api_key_env, endpoint_api_key_env
@@ -448,7 +445,6 @@ assert "synthetic-model-key" not in env.read_text()
 
 
 @requires_agent
-@native_refs
 def test_config_set_refuses_credential_before_any_write(hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
     managed = tmp_path / "managed"
     managed.mkdir()
@@ -484,7 +480,6 @@ for case in ("endpoint", "no_url", "managed"):
 
 
 @requires_agent
-@native_refs
 def test_config_set_never_shows_a_repointed_route_the_old_endpoints_key(hermes_home: pathlib.Path) -> None:
     agent_script(hermes_home, CREDENTIAL_HOME + r'''
 from unittest.mock import patch
@@ -504,4 +499,30 @@ with patch.object(config, "env_write", side_effect=observed):
 assert seen and all("api_key" not in state.get("delegation", {}) and "old.example.test" not in str(state) for state in seen), seen
 assert config.read_config(path)["config"]["delegation"]["api_key"] == "${HERMES_DELEGATION_API_KEY}"
 assert "HERMES_DELEGATION_API_KEY=synthetic-new-key" in env_lines()
+''')
+
+
+@requires_agent
+def test_config_set_refuses_an_entered_key_without_native_references(hermes_home: pathlib.Path) -> None:
+    """A broken Agent that cannot import its credential references refuses the save; the key never lands inline."""
+    agent_script(hermes_home, CREDENTIAL_HOME + r'''
+from unittest.mock import patch
+
+path.write_text("model:\n  provider: custom\n")
+before = path.read_bytes()
+original_import = config.importlib.import_module
+def import_module(name):
+    if name == "hermes_cli.config_secret_refs":
+        raise ImportError("synthetic broken Agent")
+    return original_import(name)
+
+with patch.object(config.importlib, "import_module", side_effect=import_module):
+    try:
+        save({"model": {"provider": "custom", "base_url": url, "api_key": "synthetic-model-key"}})
+    except RpcError as error:
+        assert error.data["condition"] == "config_policy_unavailable", error.data
+    else:
+        raise AssertionError("an entered key was saved without the Agent's credential references")
+assert path.read_bytes() == before
+assert not env.exists()
 ''')

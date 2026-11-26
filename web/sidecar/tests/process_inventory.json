@@ -1011,6 +1011,11 @@
       "reason": "Supported-Agent write order: the release's names and .env writer, observed at the moment the key lands, must never meet a config.yaml that routes it to the old endpoint.",
       "cases": [""]
     },
+    "tests/test_config_write.py::test_config_set_refuses_an_entered_key_without_native_references": {
+      "layer": "compatibility",
+      "reason": "Real config.set through the installed Agent writer with its credential-reference module unimportable: the save is refused before config.yaml or .env changes, so an entered key never lands inline.",
+      "cases": [""]
+    },
     "tests/test_config_write.py::test_config_set_preserves_comments_quotes_order_and_removals": {
       "layer": "compatibility",
       "reason": "The installed Agent's YAML parser and atomic_config_replace writer must keep comments, quoting, key order and removals through config.get and config.set on a real sidecar; only the release's own round-trip writer shows what it preserves.",
