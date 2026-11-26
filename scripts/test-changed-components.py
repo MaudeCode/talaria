@@ -66,6 +66,7 @@ class RoutingTests(unittest.TestCase):
             (["app/changelog.d/TAL-123.json"], set()),
             (["README.md", "docs/guide.md", "app/DEVELOPMENT.md", "web/docs/guide.md", "relay/README.md"], set()),
             (["web/packages/frontend/src/main.tsx", "web/static/dist/app.js", "changelog.d/TAL-123.json"], {"web_frontend"}),
+            (["web/packages/contracts/src/routes/settings.ts"], {"web_server", "web_frontend", "contracts"}),
             (["web/packages/contracts/src/router.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["web/packages/contracts/src/x.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["web/packages/contracts/src/openapi.test.ts"], {"web_server"}),

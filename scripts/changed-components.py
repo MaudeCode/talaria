@@ -227,6 +227,9 @@ def path_suites(path):
         # Contracts unit tests stay out of the package build (tsconfig.build.json); the server job's checks shard runs them.
         if local.startswith("packages/contracts/src/") and local.endswith(".test.ts"):
             return {"web_server"}
+        # HTTP route contracts feed Web and the App probe. Sidecar schema export imports its own entry point.
+        if local.startswith("packages/contracts/src/routes/"):
+            return {"web_server", "web_frontend", "contracts"}
         # The sidecar's result schemas are generated from the contracts.
         if local.startswith("packages/contracts/"):
             return {"web_server", "web_frontend", "web_sidecar", "contracts"}
