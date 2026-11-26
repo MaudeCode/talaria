@@ -593,6 +593,33 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertNotNil(row, "An older server's known failure must remain a warning, while its success proves no parent review")
     }
 
+    func testScheduledTaskShowsTheJobPromptAndCopiesTheStoredMessage() async throws {
+        let fixture = try FixtureApp(for: self)
+        let sessions = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("web-session")) as? [String: Any])
+        let rows = try XCTUnwrap((sessions["scheduled_task_session"] as? [String: Any])?["messages"] as? [[String: Any]])
+        let task = try XCTUnwrap(rows.first { $0["_marker_kind"] as? String == "scheduled_task" })
+        let prompt = try XCTUnwrap(task["_marker_body"] as? String)
+        let stored = try XCTUnwrap(task["content"] as? String)
+        let reply = try XCTUnwrap(rows.first { $0["role"] as? String == "assistant" }?["content"] as? String)
+        var detail = UITestFixtureURLProtocol.session(id: UITestFixtureURLProtocol.sessionID, title: "Daily brief")
+        detail["messages"] = rows
+        let response = try JSONSerialization.data(withJSONObject: ["session": detail])
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = response }
+        let copied = recordCopies()
+        let window = try hostWindow(fixture.chat(try await fixture.session()), size: HostedSize.phone)
+        defer { window.isHidden = true }
+
+        _ = try await requireElement(in: window, label: reply)
+        attachHostedScreenshot(window, name: "scheduled-task-chat")
+        let marker = try await requireElement(in: window, label: "Scheduled task with daily-brief and inbox-triage")
+        let body = try await requireElement(in: window) { $0.accessibilityLabel == prompt }
+        XCTAssertLessThan(marker.accessibilityFrame.minY, body.accessibilityFrame.minY)
+        XCTAssertFalse(HostedAccessibility.labels(in: window).contains { $0.contains("You are running as a scheduled cron job") })
+        let copy = try await requireElement(in: window, label: "Copy scheduled task")
+        HostedAccessibility.activate(copy)
+        XCTAssertEqual(copied.last, stored)
+    }
+
     /// TAL-1003: a long delivery shows the server's excerpt of its body, not the whole body, until Show more opens it.
     func testALongDeliveryShowsTheServersExcerptUntilShowMore() async throws {
         let message = try DecisionReview.decoder.decode(ChatMessage.self, from: Data(#"""

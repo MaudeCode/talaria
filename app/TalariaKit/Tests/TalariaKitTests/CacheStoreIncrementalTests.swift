@@ -177,6 +177,26 @@ final class CacheStoreIncrementalTests: XCTestCase {
             now: now.addingTimeInterval(20)).messages, messages)
     }
 
+    func testCachedScheduledTaskKeepsItsPromptSkillsAndStoredCopy() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let stored = "Agent instructions\n\nWrite a brief."
+        let message = try decoder.decode(ChatMessage.self, from: JSONEncoder().encode([
+            "role": JSONValue.string("user"), "message_id": .string("brief"), "content": .string(stored),
+            "_marker_kind": .string("scheduled_task"), "_marker_body": .string("Write a brief."),
+            "_marker_skills": .array([.string("daily-brief"), .string("inbox-triage")]),
+        ]))
+        let context = try makeContext()
+        let server = URL(string: "https://scheduled-task.test")!
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        try CacheStore.cacheMessages([message], serverURL: server, sessionID: "chat", in: context, cachedAt: now)
+        let cached = try XCTUnwrap(CacheStore.cachedMessages(serverURL: server, sessionID: "chat", in: context, now: now).first)
+        XCTAssertEqual(cached.markerKind?.wireValue, "scheduled_task")
+        XCTAssertEqual(cached.markerKind, message.markerKind)
+        XCTAssertEqual(cached.markerBody, "Write a brief.")
+        XCTAssertEqual(cached.content, stored)
+    }
+
     func testChangingOneMessageContentDirtiesOnlyThatRow() throws {
         let context = try makeContext()
         let server = URL(string: "https://message-dirty.test")!
@@ -195,7 +215,8 @@ final class CacheStoreIncrementalTests: XCTestCase {
                     \.contentPartsData, \.reasoning, \.reasoningTitlesData, \.activitySceneData,
                     \.attachmentsData, \.turnDuration, \.turnTps, \.turnUsageData, \.turnId, \.steerData,
                     \.displayExcerpt, \.copyButton, \.collapsible, \.displayBodyData, \.backgroundUpdateData,
-                    \.talariaActivityData, \.deliveryData, \.backgroundSilent, \.markerKind, \.markerBody, \.refusedNotice, \.display,
+                    \.talariaActivityData, \.deliveryData, \.backgroundSilent, \.markerKind, \.markerBody, \.markerSkillsData,
+                    \.refusedNotice, \.display,
                     \.cachedAt, \.expiresAt,
                 ]
                 for field in fields { _ = row[keyPath: field] }

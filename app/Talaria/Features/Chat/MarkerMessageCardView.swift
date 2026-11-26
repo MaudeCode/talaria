@@ -1,16 +1,14 @@
 import SwiftUI
 import TalariaKit
 
-/// A row the server marks as a compaction marker, preserved task list (TAL-305), refused ask (TAL-2058) or mirrored
-/// delivery (TAL-1003), in place of a message bubble: one flat disclosure line on the `ReasoningBlockView` pattern, so it
-/// reads like the transcript's other activity rows (TAL-1566).
+/// A flat transcript row for a server marker, activity or delivery, using the transcript's shared disclosure line.
 struct MarkerMessageCardView: View {
     let kind: ChatMarkerMessageKind?
     let content: String?
     let activity: TalariaActivity?
     let delivery: MessageDelivery?
-    /// The server's excerpt of a long delivery's body (TAL-456), shown until the reader opens the whole body.
-    let deliveryExcerpt: String?
+    let excerpt: String?
+    let copyText: String?
     let messageID: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -19,12 +17,13 @@ struct MarkerMessageCardView: View {
     @ChatRetainedState("marker-expansion") private var isExpanded = false
 
     /// `stateID` names the row, so its expansion follows it, not its kind or position.
-    init(kind: ChatMarkerMessageKind, content: String?, stateID: String) {
+    init(kind: ChatMarkerMessageKind, content: String?, stateID: String, excerpt: String? = nil, copyText: String? = nil) {
         self.kind = kind
         self.content = content
         self.activity = nil
         self.delivery = nil
-        self.deliveryExcerpt = nil
+        self.excerpt = excerpt
+        self.copyText = copyText
         self.messageID = nil
         _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
     }
@@ -34,7 +33,8 @@ struct MarkerMessageCardView: View {
         self.content = delivery.body
         self.activity = nil
         self.delivery = delivery
-        self.deliveryExcerpt = excerpt
+        self.excerpt = excerpt
+        self.copyText = nil
         self.messageID = nil
         _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
     }
@@ -44,7 +44,8 @@ struct MarkerMessageCardView: View {
         self.content = activity.details
         self.activity = activity
         self.delivery = nil
-        self.deliveryExcerpt = nil
+        self.excerpt = nil
+        self.copyText = nil
         self.messageID = messageID
         _isExpanded = ChatRetainedState(wrappedValue: false, "marker-expansion:\(stateID)")
     }
@@ -61,6 +62,8 @@ struct MarkerMessageCardView: View {
             refusedAsk(notice: notice)
         } else if kind == .failedTurn {
             failedTurnNotice
+        } else if case .scheduledTask = kind {
+            scheduledTaskNotice
         } else {
             disclosure
         }
@@ -89,16 +92,43 @@ struct MarkerMessageCardView: View {
             noticeLine(delivery.kind == .webhook
                 ? String(localized: "Webhook “\(delivery.name)” delivered")
                 : String(localized: "Scheduled job “\(delivery.name)” delivered"))
-            VStack(alignment: .leading, spacing: 6) {
-                MarkdownRenderer(content: isExpanded ? delivery.body : deliveryExcerpt ?? delivery.body)
+            noticeBody(delivery.body) { text in
+                MarkdownRenderer(content: text)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if deliveryExcerpt != nil {
-                    ChatBodyCollapseToggle(isExpanded: $isExpanded)
-                }
             }
-            .padding(.leading, 24)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var scheduledTaskNotice: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            noticeLine(title)
+            noticeBody(content ?? "") { text in
+                Text(verbatim: text)
+                    .font(AppFont.body())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let copyText, !copyText.isEmpty {
+                ChatCopyButton(copyText, label: String(localized: "Copy scheduled task"))
+                    .font(AppFont.footnote())
+                    .foregroundStyle(.secondary)
+                    .buttonStyle(.borderless)
+                    .padding(.leading, 10)
+                    .padding(.vertical, -10)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func noticeBody<Content: View>(_ fullText: String, @ViewBuilder render: (String) -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            render(isExpanded ? fullText : excerpt ?? fullText)
+            if excerpt != nil {
+                ChatBodyCollapseToggle(isExpanded: $isExpanded)
+            }
+        }
+        .padding(.leading, 24)
     }
 
     /// TAL-984: the server's failed-turn notice, one quiet line in its place; nothing to open and no actions.
@@ -170,6 +200,8 @@ struct MarkerMessageCardView: View {
             return "xmark.shield"
         case .failedTurn:
             return "exclamationmark.triangle"
+        case .scheduledTask:
+            return "calendar.badge.clock"
         case nil:
             return "info.circle"
         }

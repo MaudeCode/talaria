@@ -216,6 +216,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         case backgroundSilent = "_backgroundSilent"
         case markerKind = "_markerKind"
         case markerBody = "_markerBody"
+        case markerSkills = "_markerSkills"
         case refusedNotice = "_refusedNotice"
         case noticeKind = "_noticeKind"
         case display = "_display"
@@ -264,7 +265,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         backgroundSilent = (try? container.decodeIfPresent(Bool.self, forKey: .backgroundSilent)) == true
         markerKind = ChatMarkerMessageKind(
             wireValue: container.decodeLossyStringIfPresent(forKey: .markerKind),
-            refusedNotice: container.decodeLossyStringIfPresent(forKey: .refusedNotice)
+            refusedNotice: container.decodeLossyStringIfPresent(forKey: .refusedNotice),
+            scheduledTaskSkills: try? container.decodeIfPresent([String].self, forKey: .markerSkills)
         ) ?? ChatMarkerMessageKind(noticeWireValue: container.decodeLossyStringIfPresent(forKey: .noticeKind))
         markerBody = markerKind == nil ? nil : container.decodeLossyStringIfPresent(forKey: .markerBody)
         display = container.decodeLossyStringIfPresent(forKey: .display).flatMap(Display.init(rawValue:))
