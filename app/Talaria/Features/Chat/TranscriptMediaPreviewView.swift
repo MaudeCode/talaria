@@ -106,7 +106,7 @@ struct TranscriptMediaPreviewView: View {
                         .accessibilityLabel("Save media to Photos")
                     }
 
-                    if viewModel.canExportMedia {
+                    if reportURL != nil || viewModel.canExportMedia {
                         Button {
                             Task { await exportMedia() }
                         } label: {
@@ -114,6 +114,7 @@ struct TranscriptMediaPreviewView: View {
                         }
                         .disabled(exportActionsAreDisabled)
                         .accessibilityLabel("Export media")
+                        .help("Export media")
                     }
                 }
             }

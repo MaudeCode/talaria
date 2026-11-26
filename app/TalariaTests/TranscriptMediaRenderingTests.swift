@@ -143,14 +143,34 @@ final class TranscriptMediaRenderingTests: XCTestCase {
     func testDeliveredReportExpandsInTheMediaSheet() async throws {
         let server = try reportServer()
         let window = try hostWindow(reportTranscript(server: server, state: ReportState()))
+        let sheet = try await openReport(in: window)
+        let web = try await loadedReport(in: sheet.view)
+        XCTAssertTrue(web.scrollView.isScrollEnabled)
+        attachHostedScreenshot(window, name: "delivered-html-expanded")
+    }
+
+    func testExpandedReportExportsTheOriginalHTMLOnDemand() async throws {
+        let server = try reportServer()
+        let window = try hostWindow(reportTranscript(server: server, state: ReportState()))
+        let sheet = try await openReport(in: window)
+        _ = try await loadedReport(in: sheet.view)
+        XCTAssertFalse(server.requests.contains { $0.path.hasPrefix("/api/media?") })
+        let export = try await requireElement(in: window, label: "Export media")
+        attachHostedScreenshot(window, name: "delivered-html-expanded-export-action")
+        XCTAssertTrue(HostedAccessibility.activate(export))
+        let opened = await awaitCondition { sheet.presentedViewController is UIDocumentPickerViewController }
+        XCTAssertTrue(opened, "Export opened the system file picker")
+        XCTAssertEqual(server.requests.filter { $0.path.hasPrefix("/api/media?") }.map(\.path),
+                       ["/api/media?path=%2Ftalaria-contract%2Fout%2Fsummary.html&session_id=contract-media-session"])
+        sheet.presentedViewController?.dismiss(animated: false)
+    }
+
+    private func openReport(in window: UIWindow) async throws -> UIViewController {
         _ = try await loadedReport(in: window)
         let expand = try await requireElement(in: window, label: "Expand report")
         XCTAssertTrue(expand.accessibilityActivate())
         let presented = await presentedController(in: window)
-        let sheet = try XCTUnwrap(presented)
-        let web = try await loadedReport(in: sheet.view)
-        XCTAssertTrue(web.scrollView.isScrollEnabled)
-        attachHostedScreenshot(window, name: "delivered-html-expanded")
+        return try XCTUnwrap(presented)
     }
 
     func testStreamingDeliveredHTMLKeepsTheDownloadRow() async throws {
@@ -219,6 +239,9 @@ final class TranscriptMediaRenderingTests: XCTestCase {
 
     private func reportServer(height: Int = 200) throws -> LoopbackHTTPServer {
         try LoopbackHTTPServer { request in
+            if request.path == "/api/media?path=%2Ftalaria-contract%2Fout%2Fsummary.html&session_id=contract-media-session" {
+                return .init(status: 200, headers: ["Content-Type": "text/html"], body: Data("<h1>Original report</h1>".utf8))
+            }
             guard let url = URLComponents(string: request.path),
                   url.path == "/workspace-preview/example-grant/summary.html",
                   let theme = url.queryItems?.first(where: { $0.name == "theme" })?.value,
