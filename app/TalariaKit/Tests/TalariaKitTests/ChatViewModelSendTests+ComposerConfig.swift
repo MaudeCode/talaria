@@ -7,6 +7,35 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension ChatViewModelSendTests {
+    func testComposerConfigurationHidesTransportFailure() async throws {
+        let model = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/profiles": throw URLError(.networkConnectionLost)
+            case "/api/commands": return apiTestJSONResponse(#"{"commands":[]}"#, for: request)
+            default: return apiTestJSONResponse("{}", statusCode: 404, for: request)
+            }
+        }
+
+        await model.loadComposerConfiguration()
+
+        XCTAssertNil(model.composerConfigurationErrorMessage, "The composer must not show a connection error")
+    }
+
+    func testComposerConfigurationShowsServerFailure() async throws {
+        let body = #"{"error":"Profile settings could not load"}"#
+        let model = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/profiles": return apiTestJSONResponse(body, statusCode: 500, for: request)
+            case "/api/commands": return apiTestJSONResponse(#"{"commands":[]}"#, for: request)
+            default: return apiTestJSONResponse("{}", statusCode: 404, for: request)
+            }
+        }
+
+        await model.loadComposerConfiguration()
+
+        XCTAssertEqual(model.composerConfigurationErrorMessage, APIError.http(statusCode: 500, body: body).localizedDescription)
+    }
+
     func testChatStartWaitsForToolsetsWhileTheMessageAppearsImmediately() async throws {
         for status in [200, 403, 500] {
             let host = "toolsets-send-\(status).test"

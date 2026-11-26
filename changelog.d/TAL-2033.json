@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chat composer settings reload when an offline chat reconnects.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

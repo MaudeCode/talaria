@@ -1304,10 +1304,10 @@ extension ChatViewModel {
                 isProfileSelectionFromCache = false
             }
 
-            if let error = result.configurationError {
-                lastError = error
-                composerConfigurationErrorMessage = error.localizedDescription
-            }
+            guard let error = result.configurationError, !APIError.isCancellation(error) else { continue }
+            if case APIError.network = error { continue }
+            lastError = error
+            composerConfigurationErrorMessage = error.localizedDescription
         } while needsComposerConfigurationReload
     }
 
@@ -6104,8 +6104,8 @@ extension ChatViewModel {
 
     /// Recovers a chat that fell back to its cached transcript once its server answers again
     /// (TAL-184): every `interval` it retries the session load, skipping a tick while another
-    /// load is in flight. A failed retry stays silent and offline; success refreshes background
-    /// work like a manual refresh. Runs until cancelled, so the caller scopes it to an active
+    /// load is in flight. A successful retry refreshes background work and composer settings.
+    /// Runs until cancelled, so the caller scopes it to an active
     /// scene and the visible chat. `afterAttempt` reports each attempt's error.
     public func recoverWhenServerReturns(
         modelContext: ModelContext? = nil,
@@ -6119,7 +6119,11 @@ extension ChatViewModel {
             afterAttempt()
             // A chat closed meanwhile has stopped its polling; leave it stopped.
             if !isViewingCachedData, !Task.isCancelled {
+                let recovered = lastError == nil
                 await refreshBackgroundTasks()
+                if recovered, !isViewingCachedData, !Task.isCancelled {
+                    await loadComposerConfiguration()
+                }
             }
         }
     }
