@@ -49,6 +49,19 @@
       ],
       "message": "test-audit snapshot: sample a per-frame check right after each display commit (sampleCommittedLayouts(in:), UIUpdateLink .afterCATransactionCommit), never from a run-loop observer (docs/testing.md)"
     },
+    "ready-report-layout": {
+      "paths": [
+        "app/TalariaTests/TranscriptMediaRenderingTests.swift"
+      ],
+      "patterns": [
+        "\\bawait loadedReport\\(in:"
+      ],
+      "nearby": {
+        "lines": 2,
+        "pattern": "\\bweak var web: WKWebView|web\\.scrollView\\.isScrollEnabled|web\\.bounds\\.width"
+      },
+      "message": "test-audit ready: use mountedReport for report layout and lifetime assertions. Wait for the document only when reading its content (docs/testing.md)"
+    },
     "clock-day-seconds": {
       "paths": [
         "app/TalariaTests/",

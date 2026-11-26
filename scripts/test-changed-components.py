@@ -150,6 +150,7 @@ class RoutingTests(unittest.TestCase):
             (["contracts/web-api.openapi.json"], {"web_server", "contracts"}),
             (["contracts/fixtures/web-session.json"], FIXTURE_SUITES | {"app"}),
             (["contracts/fixtures/delegation-status.json"], FIXTURE_SUITES | {"app"}),
+            (["contracts/fixtures/delivered-html-media.json"], FIXTURE_SUITES | {"app"}),
             (["contracts/fixtures/mcp-events.json"], FIXTURE_SUITES | {"web_sidecar"}),
             (["contracts/fixtures/plan-allowance.json"], FIXTURE_SUITES | {"web_sidecar"}),
             (["contracts/fixtures/vault-prompts.json"], FIXTURE_SUITES | {"app"}),

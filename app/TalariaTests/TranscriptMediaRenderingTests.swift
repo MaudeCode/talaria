@@ -106,31 +106,44 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         let server = try reportServer()
         let state = ReportState()
         let window = try hostWindow(reportTranscript(server: server, state: state))
-        let web = try await loadedReport(in: window)
-        let style = "getComputedStyle(document.body).backgroundColor"
-        let light = try await web.evaluateJavaScript(style) as? String
-        XCTAssertEqual(light, "rgb(255, 255, 255)")
-        attachHostedScreenshot(window, name: "delivered-html-phone-light")
+        let web = try await mountedReport(in: window)
+        let coordinator = try XCTUnwrap(web.navigationDelegate as? ShowFrameView.Coordinator)
+        let firstNavigation = try XCTUnwrap(coordinator.navigation)
+        let light = try XCTUnwrap(reportTheme(coordinator.requestedURL))
+        XCTAssertEqual(light["--background"], "#ffffff")
+        XCTAssertEqual(light["--foreground"], "#000000")
+        try await captureReport(in: window, name: "delivered-html-phone-light")
 
         state.dark = true
-        let reloaded = await awaitCondition { !web.isLoading && self.reportTheme(web.url)?["--background"] == "#000000" }
+        let reloaded = await awaitCondition {
+            guard let navigation = coordinator.navigation else { return false }
+            return navigation !== firstNavigation && self.reportTheme(coordinator.requestedURL)?["--background"] == "#000000"
+        }
         XCTAssertTrue(reloaded, "The visible report reloaded for the dark App theme")
-        let dark = try await web.evaluateJavaScript(style) as? String
-        XCTAssertEqual(dark, "rgb(0, 0, 0)")
-        let theme = try XCTUnwrap(reportTheme(web.url))
-        XCTAssertEqual(Set(theme.keys), [
+        let dark = try XCTUnwrap(reportTheme(coordinator.requestedURL))
+        XCTAssertEqual(dark["--foreground"], "#ffffff")
+        let allowed = Set([
             "--background", "--foreground", "--card", "--muted", "--muted-foreground", "--border",
             "--primary", "--primary-foreground", "--font-sans", "--font-mono",
         ])
-        attachHostedScreenshot(window, name: "delivered-html-phone-dark")
+        XCTAssertEqual(Set(light.keys), allowed)
+        XCTAssertEqual(Set(dark.keys), allowed)
+        try await captureReport(in: window, name: "delivered-html-phone-dark")
     }
 
     func testAnOffscreenDeliveredReportReleasesItsWebView() async throws {
-        let server = try reportServer(height: 3_600)
+        let reportHeight: CGFloat = 3_600
+        let server = try reportServer(height: Int(reportHeight))
         let state = ReportState()
         let window = try hostWindow(reportTranscript(server: server, state: state))
         weak var web: WKWebView?
-        web = try await loadedReport(in: window)
+        web = try await mountedReport(in: window)
+        // Drive the frame's resize callback with a long document height while WebKit starts.
+        do {
+            let coordinator = try XCTUnwrap(web?.navigationDelegate as? ShowFrameView.Coordinator)
+            let resize = try XCTUnwrap(coordinator.onHeight)
+            resize(reportHeight)
+        }
         let measured = await awaitCondition { (web?.bounds.height ?? 0) > 320 }
         XCTAssertTrue(measured, "The report replaced its initial height with the measured document height")
         XCTAssertEqual(try XCTUnwrap(web?.bounds.height), 3 * window.safeAreaLayoutGuide.layoutFrame.height, accuracy: 1)
@@ -144,19 +157,19 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         let server = try reportServer()
         let window = try hostWindow(reportTranscript(server: server, state: ReportState()))
         let sheet = try await openReport(in: window)
-        let web = try await loadedReport(in: sheet.view)
+        let web = try await mountedReport(in: sheet.view)
         XCTAssertTrue(web.scrollView.isScrollEnabled)
-        attachHostedScreenshot(window, name: "delivered-html-expanded")
+        try await captureReport(in: window, frameRoot: sheet.view, name: "delivered-html-expanded")
     }
 
     func testExpandedReportExportsTheOriginalHTMLOnDemand() async throws {
         let server = try reportServer()
         let window = try hostWindow(reportTranscript(server: server, state: ReportState()))
         let sheet = try await openReport(in: window)
-        _ = try await loadedReport(in: sheet.view)
+        _ = try await mountedReport(in: sheet.view)
         XCTAssertFalse(server.requests.contains { $0.path.hasPrefix("/api/media?") })
         let export = try await requireElement(in: window, label: "Export media")
-        attachHostedScreenshot(window, name: "delivered-html-expanded-export-action")
+        try await captureReport(in: window, frameRoot: sheet.view, name: "delivered-html-expanded-export-action")
         XCTAssertTrue(HostedAccessibility.activate(export))
         let opened = await awaitCondition { sheet.presentedViewController is UIDocumentPickerViewController }
         XCTAssertTrue(opened, "Export opened the system file picker")
@@ -166,7 +179,7 @@ final class TranscriptMediaRenderingTests: XCTestCase {
     }
 
     private func openReport(in window: UIWindow) async throws -> UIViewController {
-        _ = try await loadedReport(in: window)
+        _ = try await mountedReport(in: window)
         let expand = try await requireElement(in: window, label: "Expand report")
         XCTAssertTrue(expand.accessibilityActivate())
         let presented = await presentedController(in: window)
@@ -215,20 +228,33 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         let window = try hostWindow(reportTranscript(server: server, state: state), size: variant.size) {
             $0.preferredContentSizeCategory = variant.textSize
         }
-        let web = try await loadedReport(in: window)
+        let web = try await mountedReport(in: window)
         XCTAssertEqual(web.bounds.width, variant.size.width - 32, accuracy: 1)
         let expand = try await requireElement(in: window, label: "Expand report")
         XCTAssertGreaterThanOrEqual(expand.accessibilityFrame.width.rounded(), 44)
-        attachHostedScreenshot(window, name: "delivered-html-\(name)")
+        try await captureReport(in: window, name: "delivered-html-\(name)")
+    }
+
+    private func mountedReport(in root: UIView) async throws -> WKWebView {
+        let mounted = await awaitCondition {
+            guard let web = root.firstSubview(of: WKWebView.self),
+                  let coordinator = web.navigationDelegate as? ShowFrameView.Coordinator else { return false }
+            return coordinator.navigation != nil && coordinator.requestedURL?.path == "/workspace-preview/example-grant/summary.html"
+        }
+        return try XCTUnwrap(mounted ? root.firstSubview(of: WKWebView.self) : nil, "The hosted report scheduled its preview")
     }
 
     private func loadedReport(in root: UIView) async throws -> WKWebView {
-        let loaded = await awaitCondition {
-            guard let web = root.firstSubview(of: WKWebView.self) else { return false }
-            return web.url?.path == "/workspace-preview/example-grant/summary.html" && !web.isLoading
-        }
-        XCTAssertTrue(loaded, "The report loaded the server's preview")
-        return try XCTUnwrap(root.firstSubview(of: WKWebView.self))
+        let web = try await mountedReport(in: root)
+        let coordinator = try XCTUnwrap(web.navigationDelegate as? ShowFrameView.Coordinator)
+        let loaded = await awaitCondition { web.url != nil && web.url == coordinator.requestedURL && !web.isLoading }
+        return try XCTUnwrap(loaded ? web : nil, "The report committed its document")
+    }
+
+    private func captureReport(in window: UIWindow, frameRoot: UIView? = nil, name: String) async throws {
+        guard keepsHostedScreenshots else { return }
+        _ = try await loadedReport(in: frameRoot ?? window)
+        attachHostedScreenshot(window, name: name)
     }
 
     private func reportTheme(_ url: URL?) -> [String: String]? {
