@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 public struct ExportedFileDocument: FileDocument, Sendable {
     public static var readableContentTypes: [UTType] { [.data] }
+    public static var writableContentTypes: [UTType] { [.data, .html] }
 
     public let data: Data
 

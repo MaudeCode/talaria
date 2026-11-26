@@ -136,20 +136,17 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         let server = try reportServer(height: Int(reportHeight))
         let state = ReportState()
         let window = try hostWindow(reportTranscript(server: server, state: state))
-        weak var web: WKWebView?
-        web = try await mountedReport(in: window)
+        let web = try await mountedReport(in: window)
+        let coordinator = try XCTUnwrap(web.navigationDelegate as? ShowFrameView.Coordinator)
+        let resize = try XCTUnwrap(coordinator.onHeight)
         // Drive the frame's resize callback with a long document height while WebKit starts.
-        do {
-            let coordinator = try XCTUnwrap(web?.navigationDelegate as? ShowFrameView.Coordinator)
-            let resize = try XCTUnwrap(coordinator.onHeight)
-            resize(reportHeight)
-        }
-        let measured = await awaitCondition { (web?.bounds.height ?? 0) > 320 }
+        resize(reportHeight)
+        let measured = await awaitCondition { web.bounds.height > 320 }
         XCTAssertTrue(measured, "The report replaced its initial height with the measured document height")
-        XCTAssertEqual(try XCTUnwrap(web?.bounds.height), 3 * window.safeAreaLayoutGuide.layoutFrame.height, accuracy: 1)
+        XCTAssertEqual(web.bounds.height, 3 * window.safeAreaLayoutGuide.layoutFrame.height, accuracy: 1)
 
         let scroll = try XCTUnwrap(window.firstView(ofType: UIScrollView.self) { $0.isScrollEnabled })
-        let reportBottom = try XCTUnwrap(web.map { $0.convert($0.bounds, to: scroll).maxY })
+        let reportBottom = web.convert(web.bounds, to: scroll).maxY
         let destination = reportBottom + 1
         let canReachDestination = await awaitCondition {
             scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height >= destination
@@ -159,9 +156,15 @@ final class TranscriptMediaRenderingTests: XCTestCase {
             return
         }
         scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: destination), animated: false)
-        let released = await awaitCondition { scroll.bounds.minY > reportBottom && web == nil }
+        let released = await awaitCondition {
+            scroll.bounds.minY > reportBottom && web.window == nil && web.navigationDelegate == nil
+        }
         XCTAssertGreaterThan(scroll.bounds.minY, reportBottom, "The native viewport moved past the report")
-        XCTAssertTrue(released, "The off-screen web view was deallocated (in window: \(web?.window != nil), delegate: \(web?.navigationDelegate != nil))")
+        XCTAssertTrue(released, "The App removed the off-screen web view and detached its delegate")
+        XCTAssertNil(window.firstSubview(of: WKWebView.self))
+        XCTAssertNil(coordinator.navigation, "Teardown dropped the App's navigation handle")
+        XCTAssertNil(coordinator.openLink, "Teardown detached the report's actions")
+        XCTAssertNil(coordinator.onHeight, "Teardown detached the report's sizing callback")
     }
 
     func testDeliveredReportExpandsInTheMediaSheet() async throws {
@@ -182,11 +185,13 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         let export = try await requireElement(in: window, label: "Export media")
         try await captureReport(in: window, frameRoot: sheet.view, name: "delivered-html-expanded-export-action")
         XCTAssertTrue(HostedAccessibility.activate(export))
-        let opened = await awaitCondition { sheet.presentedViewController is UIDocumentPickerViewController }
-        XCTAssertTrue(opened, "Export opened the system file picker")
+        let picker = await presentedController(in: window, timeout: 10) { $0 is UIDocumentPickerViewController }
+        XCTAssertNotNil(picker, "Export opened the system file picker")
         XCTAssertEqual(server.requests.filter { $0.path.hasPrefix("/api/media?") }.map(\.path),
                        ["/api/media?path=%2Ftalaria-contract%2Fout%2Fsummary.html&session_id=contract-media-session"])
-        sheet.presentedViewController?.dismiss(animated: false)
+        window.rootViewController?.dismiss(animated: false)
+        let dismissed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(dismissed, "The export and preview sheets finished dismissing before teardown")
     }
 
     private func openReport(in window: UIWindow) async throws -> UIViewController {
@@ -198,9 +203,10 @@ final class TranscriptMediaRenderingTests: XCTestCase {
     }
 
     func testStreamingDeliveredHTMLKeepsTheDownloadRow() async throws {
-        let server = try reportServer()
-        let window = try hostWindow(reportTranscript(server: server, state: ReportState(), streaming: true))
+        let state = ReportState()
+        let window = try hostWindow(reportTranscript(state: state, streaming: true))
         _ = try await requireElement(in: window, label: "Download summary.html")
+        XCTAssertEqual(state.previewLookups, 0, "Streaming never resolves the report preview")
         XCTAssertNil(window.firstSubview(of: WKWebView.self))
         attachHostedScreenshot(window, name: "delivered-html-download-row")
     }
@@ -303,14 +309,15 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         }
     }
 
-    private func reportTranscript(server: LoopbackHTTPServer, state: ReportState, streaming: Bool = false) throws -> some View {
+    private func reportTranscript(server: LoopbackHTTPServer? = nil, state: ReportState, streaming: Bool = false) throws -> some View {
         let report = String(decoding: try sharedContractFixture("delivered-html-media"), as: UTF8.self)
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let message = try decoder.decode(ChatMessage.self, from: Data("""
         {"role":"assistant","content":"Report ready.","_display_content":"Report ready.","_media":[\(report)]}
         """.utf8))
-        return ReportTranscript(message: message, client: APIClient(baseURL: server.baseURL), state: state, streaming: streaming)
+        let baseURL = server?.baseURL ?? URL(string: "http://127.0.0.1:0")!
+        return ReportTranscript(message: message, client: APIClient(baseURL: baseURL), state: state, streaming: streaming)
     }
 }
 
@@ -318,6 +325,7 @@ final class TranscriptMediaRenderingTests: XCTestCase {
 private final class ReportState {
     var dark = false
     var openedLinks: [URL] = []
+    @ObservationIgnored var previewLookups = 0
 }
 
 private struct ReportTranscript: View {
@@ -341,7 +349,10 @@ private struct ReportTranscript: View {
         .background(state.dark ? Color.black : Color.white)
         .environment(\.chatTranscriptMedia, ChatTranscriptMedia(
             cacheNamespace: "", loadImage: { _ in nil }, loadData: { _ in nil }, preview: { _ in },
-            htmlPreviewURL: { client.transcriptHTMLPreviewURL(for: $0) }
+            htmlPreviewURL: {
+                state.previewLookups += 1
+                return client.transcriptHTMLPreviewURL(for: $0)
+            }
         ))
         .transcriptLinks { url in state.openedLinks.append(url); return .handled }
         .sheet(item: $selected) { item in

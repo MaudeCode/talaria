@@ -353,6 +353,13 @@ struct ShowFrameView: UIViewRepresentable {
 
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
         view.navigationDelegate = nil
+        coordinator.requestedURL = nil
+        coordinator.admitsInitialLoad = false
+        coordinator.navigation = nil
+        coordinator.openLink = nil
+        coordinator.onHeight = nil
+        coordinator.onLoad = nil
+        coordinator.onFailure = nil
         view.stopLoading()
         view.configuration.userContentController.removeScriptMessageHandler(forName: "report", contentWorld: .defaultClient)
     }

@@ -426,14 +426,17 @@ extension XCTestCase {
 
     /// The controller presented on top of the window's root, once there is one.
     @MainActor
-    func presentedController(in window: UIWindow, timeout: TimeInterval = 5) async -> UIViewController? {
+    func presentedController(
+        in window: UIWindow, timeout: TimeInterval = 5,
+        where matches: @escaping (UIViewController) -> Bool = { _ in true }
+    ) async -> UIViewController? {
         func top() -> UIViewController? {
             var controller = window.rootViewController
             while let presented = controller?.presentedViewController { controller = presented }
             return controller === window.rootViewController ? nil : controller
         }
-        _ = await awaitCondition(timeout: timeout) { top() != nil }
-        return top()
+        _ = await awaitCondition(timeout: timeout) { top().map(matches) == true }
+        return top().flatMap { matches($0) ? $0 : nil }
     }
 
     /// The alert presented on top of the window's root, once there is one.
