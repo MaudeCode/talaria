@@ -39,15 +39,16 @@ extension APIClient {
 
     public func updateCron(
         jobID: String,
-        prompt: String?,
-        schedule: String?,
-        name: String?,
-        deliver: String?,
-        skills: [String]?,
-        model: String?,
-        provider: String?,
-        profile: String?,
-        toastNotifications: Bool?
+        prompt: String? = nil,
+        schedule: String? = nil,
+        name: String? = nil,
+        deliver: String? = nil,
+        skills: [String]? = nil,
+        model: String? = nil,
+        provider: String? = nil,
+        profile: String? = nil,
+        toastNotifications: Bool? = nil,
+        wrapResponse: CronResponseWrapping? = nil
     ) async throws -> CronMutationResponse {
         try await send(
             endpoint: .cronUpdate,
@@ -62,7 +63,8 @@ extension APIClient {
                 model: model,
                 provider: provider,
                 profile: profile,
-                toastNotifications: toastNotifications
+                toastNotifications: toastNotifications,
+                wrapResponse: wrapResponse
             )
         )
     }
@@ -156,6 +158,7 @@ private struct CronUpdateRequest: Encodable {
     let provider: String?
     let profile: String?
     let toastNotifications: Bool?
+    let wrapResponse: CronResponseWrapping?
 }
 
 private struct CronJobIDRequest: Encodable {

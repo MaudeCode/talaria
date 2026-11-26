@@ -19,6 +19,30 @@ public final class TaskDetailViewModel {
     public private(set) var actionErrorMessage: String?
     public private(set) var lastError: Error?
     public private(set) var lastMutation: CronJobListMutation?
+    private var optimisticResponseWrapping: CronResponseWrapping?
+    private var isUpdatingResponseWrapping = false
+    private var wrappingWriteGeneration = 0
+    private var rejectedEditorDraft: CronJobEditorDraft?
+
+    public var responseWrapping: CronResponseWrapping? {
+        optimisticResponseWrapping ?? job.responseWrapping
+    }
+
+    public var showsMutationProgress: Bool {
+        isMutating && !isUpdatingResponseWrapping
+    }
+
+    public var editorDraft: CronJobEditorDraft {
+        var draft = rejectedEditorDraft ?? CronJobEditorDraft(job: job)
+        draft.responseWrapping = responseWrapping
+        return draft
+    }
+
+    /// Restore a rejected draft once. Canceling the reopened editor discards it.
+    public func takeEditorDraft() -> CronJobEditorDraft {
+        defer { rejectedEditorDraft = nil }
+        return editorDraft
+    }
 
     /// Newest-first run history, paged through `GET /api/crons/history`.
     public private(set) var runs: [CronRunSummary] = []
@@ -88,6 +112,7 @@ public final class TaskDetailViewModel {
     /// the user opened (TAL-435): the screen calls it on foreground return, cron events and its poll.
     public func refresh() async {
         guard let jobID = job.jobId else { return }
+        let wrappingGeneration = wrappingWriteGeneration
         async let statusResponse = try? client.cronStatus(jobID: jobID)
         async let jobsResponse = try? client.crons()
         async let outputResponse = try? client.cronOutput(jobID: jobID, limit: 5)
@@ -96,7 +121,8 @@ public final class TaskDetailViewModel {
         if let status = await statusResponse {
             runningElapsed = status.running == true ? (status.elapsed ?? runningElapsed ?? 0) : nil
         }
-        if let latest = await jobsResponse?.jobs?.first(where: { $0.jobId == jobID }) {
+        if let latest = await jobsResponse?.jobs?.first(where: { $0.jobId == jobID }),
+           wrappingGeneration == wrappingWriteGeneration, !isUpdatingResponseWrapping {
             adopt(latest)
         }
         if let output = await outputResponse {
@@ -223,7 +249,8 @@ public final class TaskDetailViewModel {
             return false
         }
 
-        return await mutateJob { jobID in
+        let wrapping = job.responseWrapping == nil ? nil : draft.responseWrapping
+        let saved = await mutateJob(responseWrapping: wrapping) { jobID in
             try await client.updateCron(
                 jobID: jobID,
                 prompt: draft.trimmedPrompt,
@@ -234,8 +261,22 @@ public final class TaskDetailViewModel {
                 model: draft.model.trimmingCharacters(in: .whitespacesAndNewlines),
                 provider: draft.provider.trimmingCharacters(in: .whitespacesAndNewlines),
                 profile: draft.profile.trimmingCharacters(in: .whitespacesAndNewlines),
-                toastNotifications: draft.toastNotifications
+                toastNotifications: draft.toastNotifications,
+                wrapResponse: wrapping
             )
+        }
+        // The editor closes optimistically when a wrapping edit is submitted.
+        if draft.responseWrapping != nil {
+            rejectedEditorDraft = saved ? nil : draft
+        }
+        return saved
+    }
+
+    /// A policy-only edit can save tasks whose script or skills replace a prompt.
+    public func updateResponseWrapping(_ wrapping: CronResponseWrapping) async -> Bool {
+        guard job.responseWrapping != nil else { return false }
+        return await mutateJob(responseWrapping: wrapping) { jobID in
+            try await client.updateCron(jobID: jobID, wrapResponse: wrapping)
         }
     }
 
@@ -270,12 +311,15 @@ public final class TaskDetailViewModel {
     /// Takes a live job record, with the server's running state (TAL-835).
     private func adopt(_ latest: CronJob) {
         job = latest
+        optimisticResponseWrapping = nil
         isListedRunning = latest.running == true
     }
 
     private func mutateJob(
+        responseWrapping: CronResponseWrapping? = nil,
         action: (String) async throws -> CronMutationResponse
     ) async -> Bool {
+        guard !isMutating else { return false }
         guard let jobID = job.jobId else {
             actionErrorMessage = String(localized: "Missing job identifier.")
             return false
@@ -285,24 +329,61 @@ public final class TaskDetailViewModel {
         actionErrorMessage = nil
         lastError = nil
         lastMutation = nil
-        defer { isMutating = false }
+        if let responseWrapping {
+            isUpdatingResponseWrapping = true
+            wrappingWriteGeneration += 1
+            optimisticResponseWrapping = responseWrapping
+        }
+        defer {
+            if isUpdatingResponseWrapping {
+                wrappingWriteGeneration += 1
+                isUpdatingResponseWrapping = false
+            }
+            isMutating = false
+        }
 
         do {
             let response = try await action(jobID)
             guard response.ok != false else {
+                if responseWrapping != nil { optimisticResponseWrapping = nil }
                 actionErrorMessage = response.error ?? String(localized: "Could not update task.")
                 return false
             }
 
             if let updatedJob = response.job {
-                adopt(updatedJob)
-                lastMutation = .upsert(updatedJob)
+                acceptMutation(updatedJob)
+            } else if responseWrapping != nil {
+                await reconcileWrappingWrite(jobID: jobID)
             }
             return true
         } catch {
+            if let responseWrapping {
+                if APIError.isDefinitiveWriteFailure(error) {
+                    optimisticResponseWrapping = nil
+                } else {
+                    let latest = await reconcileWrappingWrite(jobID: jobID)
+                    if latest?.responseWrapping == responseWrapping { return true }
+                }
+            }
             lastError = error
             actionErrorMessage = error.localizedDescription
             return false
         }
+    }
+
+    @discardableResult
+    private func reconcileWrappingWrite(jobID: String) async -> CronJob? {
+        guard let jobs = try? await client.crons().jobs else { return nil }
+        guard let latest = jobs.first(where: { $0.jobId == jobID }) else {
+            optimisticResponseWrapping = nil
+            return nil
+        }
+        acceptMutation(latest)
+        return latest
+    }
+
+    private func acceptMutation(_ latest: CronJob) {
+        adopt(latest)
+        lastMutation = .upsert(latest)
     }
 }

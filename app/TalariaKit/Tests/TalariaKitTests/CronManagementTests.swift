@@ -1027,6 +1027,87 @@ final class CronManagementViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testTaskDetailRollsBackAnOptimisticWrappingClearWhenRefused() async throws {
+        let requests = DeferredRequests()
+        let client = deferredClient { _ = requests.append($0) }
+        let job = try decodeCronJob(
+            #"{"id":"digest","no_agent":true,"script":"digest.py","schedule_input":"0 7 * * *","wrap_response_supported":true,"wrap_response":true}"#
+        )
+        let viewModel = TaskDetailViewModel(job: job, runningElapsed: nil, server: Self.defaultServerURL, client: client)
+        let update = Task { await viewModel.updateResponseWrapping(.inherit) }
+        defer { update.cancel() }
+
+        try await waitUntil { requests.count > 0 }
+        guard requests.count == 1 else { return XCTFail("Expected one task update") }
+        let request = requests.request(at: 0)
+        XCTAssertEqual(request.request.url?.path, "/api/crons/update")
+        let body = try XCTUnwrap(apiTestBodyData(from: request.request))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(Set(json.keys), ["job_id", "wrap_response"])
+        XCTAssertTrue(json["wrap_response"] is NSNull, "Inherit must clear the stored override")
+        XCTAssertEqual(viewModel.responseWrapping, .inherit, "Show the chosen policy before the write returns")
+        request.complete(withJSON: #"{"ok":false,"error":"Task policy was refused."}"#)
+
+        let saved = await update.value
+        XCTAssertFalse(saved)
+        XCTAssertEqual(viewModel.responseWrapping, .on)
+        XCTAssertEqual(viewModel.actionErrorMessage, "Task policy was refused.")
+    }
+
+    @MainActor
+    func testRejectedCombinedWrappingSavePreservesEditsForReopening() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/crons/update")
+            return apiTestJSONResponse(#"{"ok":false,"error":"Task policy was refused."}"#, for: request)
+        }
+        let job = try decodeCronJob(
+            #"{"id":"digest","prompt":"Summarize releases.","schedule_input":"0 7 * * *","wrap_response_supported":true,"wrap_response":true}"#
+        )
+        let viewModel = TaskDetailViewModel(job: job, runningElapsed: nil, server: Self.defaultServerURL, client: client)
+        var submitted = viewModel.editorDraft
+        submitted.prompt = "Summarize releases and known issues."
+        submitted.responseWrapping = .off
+
+        let saved = await viewModel.update(from: submitted)
+
+        XCTAssertFalse(saved)
+        let reopened = viewModel.editorDraft
+        XCTAssertEqual(reopened.prompt, submitted.prompt, "Reopening must restore the unsaved prompt")
+        XCTAssertEqual(reopened.responseWrapping, .on, "Reopening must show the confirmed policy")
+    }
+
+    @MainActor
+    func testTaskDetailReconcilesWrappingAfterAnUnknownWriteOutcome() async throws {
+        let client = makeClient { request in
+            switch (request.httpMethod, request.url?.path) {
+            case ("POST", "/api/crons/update"):
+                let body = try XCTUnwrap(apiTestBodyData(from: request))
+                let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                XCTAssertEqual(json["wrap_response"] as? Bool, false)
+                throw URLError(.networkConnectionLost)
+            case ("GET", "/api/crons"):
+                return apiTestJSONResponse(
+                    #"{"jobs":[{"id":"digest","wrap_response_supported":true,"wrap_response":false}]}"#, for: request
+                )
+            default:
+                XCTFail("Unexpected request: \(request)")
+                throw URLError(.unsupportedURL)
+            }
+        }
+        let job = try decodeCronJob(
+            #"{"id":"digest","prompt":"Summarize releases.","schedule_input":"0 7 * * *","wrap_response_supported":true,"wrap_response":true}"#
+        )
+        let viewModel = TaskDetailViewModel(job: job, runningElapsed: nil, server: Self.defaultServerURL, client: client)
+        var draft = CronJobEditorDraft(job: job)
+        draft.responseWrapping = .off
+        let saved = await viewModel.update(from: draft)
+        XCTAssertTrue(saved)
+        XCTAssertEqual(viewModel.job.responseWrapping, .off, "Reconcile from the server record")
+        XCTAssertEqual(viewModel.lastMutation, .upsert(viewModel.job))
+        XCTAssertNil(viewModel.actionErrorMessage)
+    }
+
+    @MainActor
     func testTaskDetailViewModelPagesHistoryByRequestedLimit() async throws {
         let requestedOffsets = LockedValues<String>()
         let client = makeClient { request in

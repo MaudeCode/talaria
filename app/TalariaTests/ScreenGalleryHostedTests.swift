@@ -465,6 +465,20 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }
     }
 
+    func testTaskResponseWrappingEditor() async throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let job = try decoder.decode(CronJob.self, from: Data(#"{"id":"gallery-digest","name":"Release digest","prompt":"Summarize releases.","schedule_input":"0 7 * * *","wrap_response_supported":true,"wrap_response":null}"#.utf8))
+        try await page("task-edit-wrap-output", title: "Edit Task", wrapsNavigation: false, prepare: { window in
+            _ = try await self.requireElementScrolling(in: window, "Wrap Output is missing in the form") {
+                HostedAccessibility.identifier(of: $0) == "task-wrap-output"
+            }
+        }) {
+            CronJobEditorSheet(title: "Edit Task", client: fixture.client, draft: CronJobEditorDraft(job: job),
+                               saveTitle: "Save", isSaving: false, errorMessage: nil, onSave: { _ in false })
+        }
+    }
+
     func testContextCost() async throws {
         let snapshot = try JSONDecoder().decode(ContextWindowSnapshot.self, from: Data(#"{"estimated_cost":0.455}"#.utf8))
         try await renderHostedPage("context-cost") {

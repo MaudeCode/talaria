@@ -8,9 +8,11 @@ struct CronJobEditorSheet: View {
     let isSaving: Bool
     let errorMessage: String?
     let allowsBlueprints: Bool
+    let onSaveResponseWrapping: ((CronResponseWrapping) async -> Void)?
     let onSave: (CronJobEditorDraft) async -> Bool
 
     @State private var draft: CronJobEditorDraft
+    @State private var initialDraft: CronJobEditorDraft
     /// Model catalog, profile list, and skill list for the Configuration
     /// section. Loaded when this sheet opens, not when the task list appears.
     @State private var catalogs: CronJobEditorCatalogs
@@ -54,11 +56,13 @@ struct CronJobEditorSheet: View {
         title: String,
         client: APIClient,
         draft: CronJobEditorDraft,
+        baselineDraft: CronJobEditorDraft? = nil,
         saveTitle: String,
         isSaving: Bool,
         errorMessage: String?,
         deliveryOptions: [CronDeliveryOption]? = nil,
         allowsBlueprints: Bool = false,
+        onSaveResponseWrapping: ((CronResponseWrapping) async -> Void)? = nil,
         onSave: @escaping (CronJobEditorDraft) async -> Bool
     ) {
         self.client = client
@@ -67,11 +71,15 @@ struct CronJobEditorSheet: View {
         self.saveTitle = saveTitle
         self.isSaving = isSaving
         self.errorMessage = errorMessage
+        self.onSaveResponseWrapping = onSaveResponseWrapping
         self.onSave = onSave
         self.serverDeliveryOptions = deliveryOptions
         self.initialDeliver = draft.deliver
         self.initialProfile = draft.profile
         _draft = State(initialValue: draft)
+        var baseline = baselineDraft ?? draft
+        baseline.responseWrapping = draft.responseWrapping
+        _initialDraft = State(initialValue: baseline)
         _catalogs = State(initialValue: CronJobEditorCatalogs(client: client, includesBlueprints: allowsBlueprints))
     }
 
@@ -109,6 +117,21 @@ struct CronJobEditorSheet: View {
                     }
 
                     Toggle("Toast Notifications", isOn: $draft.toastNotifications)
+
+                    if let wrapping = draft.responseWrapping {
+                        SettingsPickerRow(
+                            title: String(localized: "Wrap Output"), systemImage: nil,
+                            selection: $draft.responseWrapping
+                        ) {
+                            ForEach([CronResponseWrapping.inherit, .on, .off], id: \.self) { choice in
+                                Text(choice.title).tag(Optional(choice))
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Wrap Output")
+                        .accessibilityValue(Text(wrapping.title))
+                        .accessibilityIdentifier("task-wrap-output")
+                    }
                 }
 
                 Section {
@@ -202,8 +225,19 @@ struct CronJobEditorSheet: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
+                        if let wrappingOnly, let onSaveResponseWrapping {
+                            dismiss()
+                            Task { await onSaveResponseWrapping(wrappingOnly) }
+                            return
+                        }
+                        var submitted = draft
+                        if submitted.responseWrapping == initialDraft.responseWrapping {
+                            submitted.responseWrapping = nil
+                        }
+                        let dismissOnSubmit = submitted.responseWrapping != nil
+                        if dismissOnSubmit { dismiss() }
                         Task {
-                            if await onSave(draft) {
+                            if await onSave(submitted), !dismissOnSubmit {
                                 dismiss()
                             }
                         }
@@ -214,7 +248,7 @@ struct CronJobEditorSheet: View {
                             Text(saveTitle)
                         }
                     }
-                    .disabled(isSaving || draft.validationMessage != nil)
+                    .disabled(isSaving || (wrappingOnly == nil && draft.validationMessage != nil))
                 }
             }
         }
@@ -382,10 +416,28 @@ struct CronJobEditorSheet: View {
     }
 
     private var formMessage: String? {
-        errorMessage ?? draft.validationMessage
+        errorMessage ?? (wrappingOnly == nil ? draft.validationMessage : nil)
+    }
+
+    private var wrappingOnly: CronResponseWrapping? {
+        guard onSaveResponseWrapping != nil, let wrapping = draft.responseWrapping,
+              wrapping != initialDraft.responseWrapping else { return nil }
+        var baseline = initialDraft
+        baseline.responseWrapping = wrapping
+        return draft == baseline ? wrapping : nil
     }
 
     private var messageColor: Color {
         errorMessage == nil ? .secondary : .red
+    }
+}
+
+extension CronResponseWrapping {
+    var title: String {
+        switch self {
+        case .inherit: String(localized: "Profile Default")
+        case .on: String(localized: "Wrap")
+        case .off: String(localized: "Send as Written")
+        }
     }
 }
