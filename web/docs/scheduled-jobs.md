@@ -51,6 +51,16 @@ job carries `can_run_now` and `run_now_refusal`; Web shows Run now and the
 needs-attention banner's Run once now disabled with that reason. Resume the job
 first to run it.
 
+A profile that a plugin runs elsewhere (Agent 0.23.4 or later marks it under
+`profiles_run_elsewhere/` in the Hermes root) is never run on this host. Run now
+asks the Agent's own run-elsewhere check for the job's store and execution
+profile, and for a retained manual run's recorded profile, before it claims or
+starts anything: the sidecar refuses `cron.run` with `cron_not_runnable` and the
+Agent's message, with no reason, and the server answers `409`. The run's worker
+asks again before it starts, so a profile marked in between runs nothing: a new
+run fails with that message and a recovery stays unverified. An older Agent has
+no such marker and runs the job as before.
+
 ## Advanced
 
 The section opens automatically whenever a job already has one of these set.

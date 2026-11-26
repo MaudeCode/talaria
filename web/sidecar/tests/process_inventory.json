@@ -1262,6 +1262,20 @@
         "[terminal]"
       ]
     },
+    "tests/test_cron_run_elsewhere.py::test_run_now_refuses_a_profile_run_elsewhere_before_claiming_admitting_or_launching": {
+      "layer": "compatibility",
+      "reason": "TAL-2735: only the supported Agent's own run-elsewhere marker module decides whether a host may run a profile, so a real sidecar on that Agent must refuse cron.run for a disposable marked profile before any claim, attempt row or script; an Agent without the module must still run it.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_run_elsewhere.py::test_a_worker_for_a_profile_marked_after_admission_launches_nothing": {
+      "layer": "compatibility",
+      "reason": "TAL-2735: the manual-run worker asks the supported Agent's own run-elsewhere marker module before it calls run_job or recovery, so it runs on that Agent's interpreter with both replaced by sentinels; no gateway, model or network.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_cron_owner.py::test_schedule_mutations_cannot_remove_a_manual_execution_recovery_barrier": {
       "layer": "compatibility",
       "reason": "While a real gateway owner runs a manual execution, cron.resume, cron.update and cron.delete are refused by the held ManualExecution lease and the paused job, fire claim and record survive. Needs the real in-flight admission.",

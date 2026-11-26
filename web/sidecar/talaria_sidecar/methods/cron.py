@@ -448,11 +448,33 @@ def _snippet(text: str, limit: int = 600) -> str:
 
 # ── manual runs ───────────────────────────────────────────────────────────
 
+def _runs_elsewhere(*homes) -> str | None:
+    """The Agent's own refusal (``run_elsewhere_for_home``, 0.23.4+) when a plugin runs any of ``homes``' profiles
+    elsewhere, else ``None``. The Agent's tick and claim refuse such a store, and its agents and scripts refuse such an
+    execution home; an Agent without the module has no such policy."""
+    try:
+        from hermes_cli.profiles_run_elsewhere import run_elsewhere_for_home
+    except ModuleNotFoundError as exc:
+        if exc.name in ("hermes_cli", "hermes_cli.profiles_run_elsewhere"):
+            return None
+        raise
+    for home in dict.fromkeys(str(home) for home in homes if home):
+        if (entry := run_elsewhere_for_home(home)) is not None:
+            return entry.message()
+    return None
+
+
 def _child_main(job, execution_home, result_queue, cancel_event=None, execution_id=None, recovering=False):
     try:
         from cron.scheduler import run_job
 
         def execute():
+            # Admission refused already; this catches a profile marked since, before anything runs locally.
+            if refusal := _runs_elsewhere(execution_home or os.environ.get("HERMES_HOME")):
+                if recovering:
+                    from .cron_execution import Unverified
+                    raise Unverified(refusal)  # the original admission's outcome stays unproven, its record kept
+                return False, "", "", refusal
             if recovering:
                 from .cron_execution import recover
                 return recover(job, execution_id, cancel_event)
@@ -462,8 +484,6 @@ def _child_main(job, execution_home, result_queue, cancel_event=None, execution_
             result = execute()
         else:
             from talaria_sidecar.home import scoped_home as _scoped
-
-            import os
 
             os.environ["HERMES_HOME"] = str(execution_home)
             with _scoped(Path(execution_home)):
@@ -979,7 +999,10 @@ def register(registry) -> None:
         store_home = profile_home_param(params)
         execution_home = Path(params["execution_home"]).expanduser() if params.get("execution_home") else None
         job_id = _job_id(params)
-        from .cron_execution import path
+        from .cron_execution import path, retained_execution_home
+        # Before the claim, the attempt row or a retained record's recovery: a recovery runs in the record's home.
+        if refusal := _runs_elsewhere(execution_home or store_home, store_home, retained_execution_home(store_home, job_id)):
+            raise RpcError(refusal, condition="cron_not_runnable")
         if path(store_home, job_id).exists():
             return run_tracked({"id": job_id}, store_home, execution_home, ctx, recovery_only=True)
         with _store(store_home, transaction=True):
