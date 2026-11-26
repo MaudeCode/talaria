@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web now reports when it cannot save a conversation’s deletion marker, so you can retry the deletion.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

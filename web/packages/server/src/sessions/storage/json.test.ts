@@ -29,6 +29,27 @@ runSessionBackendConformance('JSON', () => {
   }
 })
 
+it('reports a failed deletion marker and publishes it on retry after the document is gone', async () => {
+  const directory = fs.mkdtempSync(join(tmpdir(), 'talaria-json-delete-'))
+  const storage = new JsonStorage({ directory, now: () => Date.now() / 1000, stampingSince: () => 0 })
+  onTestFinished(async () => {
+    await storage.close()
+    fs.rmSync(directory, { recursive: true, force: true })
+  })
+  const sid = 'deleted'
+  await storage.sessions.write(sid, { doc: { session_id: sid }, messages: { kind: 'replace', rows: [] } }, null)
+  const markerPath = join(directory, '_deleted_webui_sessions.json')
+  fs.mkdirSync(markerPath)
+
+  expect(await storage.sessions.delete(sid, { tombstone: true })).toBe(false)
+  expect(await storage.sessions.ids()).not.toContain(sid)
+  expect(await storage.sessions.tombstones.has(sid)).toBe(false)
+
+  fs.rmdirSync(markerPath)
+  expect(await storage.sessions.delete(sid, { tombstone: true })).toBe(true)
+  expect(await storage.sessions.tombstones.has(sid)).toBe(true)
+})
+
 it('keeps persisted ids current across owned writes, deletes, external edits and caller mutations (TAL-1226)', async () => {
   const directory = fs.mkdtempSync(join(tmpdir(), 'talaria-json-ids-'))
   const storage = new JsonStorage({ directory, now: () => Date.now() / 1000, stampingSince: () => 0 })

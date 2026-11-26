@@ -211,8 +211,7 @@ export class JsonSessions implements SessionBackend {
     try { rmSync(path, { force: true }) } catch { return false }
     if (existsSync(path)) return false
     try { rmSync(`${path}.bak`, { force: true }) } catch { /* best effort */ }
-    if (opts.tombstone) this.addTombstone(sid)
-    return true
+    return !opts.tombstone || this.addTombstone(sid)
   }
   // A mutation's final directory revision cannot distinguish our changes from concurrent external ones.
   private invalidatePersistedIds(): void { this.persistedIds = null }
@@ -265,17 +264,18 @@ export class JsonSessions implements SessionBackend {
       return new Set(raw.ids.map((v) => String(v ?? '').trim()).filter(Boolean))
     } catch { return new Set() }
   }
-  private saveTombstones(ids: Set<string>): void {
+  private saveTombstones(ids: Set<string>): boolean {
     try {
       mkdirSync(this.options.directory, { recursive: true })
       writeAtomic(this.tombstonePath, JSON.stringify({ version: 1, ids: [...ids].sort().slice(-1000) }, null, 2))
-    } catch { /* legacy best effort */ }
+      return true
+    } catch { return false }
   }
-  private addTombstone(sid: string): void {
+  private addTombstone(sid: string): boolean {
     const ids = this.allTombstones()
-    if (ids.has(sid)) return
+    if (ids.has(sid)) return true
     ids.add(sid)
-    this.saveTombstones(ids)
+    return this.saveTombstones(ids)
   }
   readonly tombstones = {
     has: async (sid: string): Promise<boolean> => this.allTombstones().has(sid),
