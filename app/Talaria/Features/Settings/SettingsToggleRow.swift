@@ -6,6 +6,7 @@ struct SettingsToggleRow: View {
     @Binding var isOn: Bool
     var accessibilityIdentifier: String? = nil
     var isMenuItem = false
+    var status: String? = nil
 
     @ViewBuilder
     var body: some View {
@@ -13,7 +14,7 @@ struct SettingsToggleRow: View {
             Toggle(title, isOn: $isOn)
         } else {
             Toggle(isOn: $isOn) {
-                SettingsRowLabel(title: title, systemImage: systemImage)
+                SettingsRowLabel(title: title, systemImage: systemImage, status: status)
             }
             .indexedSettingsRow(title: title, identifier: accessibilityIdentifier)
             .toggleStyle(.switch)

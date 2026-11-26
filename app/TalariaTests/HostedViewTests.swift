@@ -1125,9 +1125,23 @@ final class SettingsPlacementHostedTests: XCTestCase {
         XCTAssertTrue(unavailable.accessibilityTraits.contains(.notEnabled))
     }
 
+    func testToolsLetsAnUnavailableSavedToolsetBeTurnedOff() async throws {
+        let fixture = try FixtureApp(for: self)
+        let (server, store) = try await loadToolsetsSettingsFixture(savedUnavailable: true)
+        let window = try hostWindow(NavigationStack {
+            SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .category(.tools))
+                .environment(store)
+        })
+        let row = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-tools-toolset-todo"
+        }
+        XCTAssertFalse(row.accessibilityTraits.contains(.notEnabled),
+                       "A saved unavailable toolset must be removable when the server allows it")
+    }
+
     func testToolsSettingsGallery() async throws {
         let fixture = try FixtureApp(for: self)
-        let (server, store) = try await loadToolsetsSettingsFixture()
+        let (server, store) = try await loadToolsetsSettingsFixture(savedUnavailable: true)
         try await renderHostedPage("settings-tools-defaults") {
             NavigationStack {
                 SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .category(.tools))
@@ -1140,14 +1154,14 @@ final class SettingsPlacementHostedTests: XCTestCase {
         }
     }
 
-    private func loadToolsetsSettingsFixture() async throws -> (URL, ServerSettingsStore) {
+    private func loadToolsetsSettingsFixture(savedUnavailable: Bool = false) async throws -> (URL, ServerSettingsStore) {
         let host = "toolset-defaults-\(UUID().uuidString).test"
         let catalog = """
         {"toolsets":[
-          {"name":"file","selected":true,"available":true,"group":"available","can_deselect":false},
+          {"name":"file","selected":true,"available":true,"group":"available","can_deselect":\(savedUnavailable)},
           {"name":"web","selected":false,"available":true,"group":"available","can_deselect":true},
-          {"name":"todo","selected":false,"available":false,"group":"not_available","can_deselect":false,"unavailable_reason":"disabled"}
-        ],"selected_toolsets":["file"]}
+          {"name":"todo","selected":\(savedUnavailable),"available":false,"group":"not_available","can_deselect":\(savedUnavailable),"unavailable_reason":"disabled"}
+        ],"selected_toolsets":[\(savedUnavailable ? #""file","todo""# : #""file""#)]}
         """
         DeferredMockURLProtocol.setOnRequest({ request in
             switch request.request.url?.path {

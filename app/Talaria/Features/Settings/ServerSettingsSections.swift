@@ -157,23 +157,31 @@ struct ServerSettingsSections: View {
         if !available.isEmpty {
             SettingsSection(title: String(localized: "Toolsets")) {
                 ForEach(available) { item in
-                    SettingsToggleRow(title: item.name, systemImage: "wrench.and.screwdriver",
-                                      isOn: Binding(get: { store.isToolsetEnabled(item) },
-                                                    set: { store.setToolsetDefault(name: item.name, enabled: $0) }),
-                                      accessibilityIdentifier: "settings-tools-toolset-\(item.name)")
-                        .disabled(item.canDeselect != true)
+                    toolsetToggle(item, store: store)
                 }
             }
         }
         if !unavailable.isEmpty {
             SettingsSection(title: String(localized: "Not available")) {
                 ForEach(unavailable) { item in
-                    SettingsInfoRow(title: item.name, value: item.localizedUnavailableReason)
-                        .disabled(true)
-                        .accessibilityIdentifier("settings-tools-toolset-\(item.name)")
+                    if item.selected == true || item.canDeselect == true {
+                        toolsetToggle(item, store: store, status: item.localizedUnavailableReason)
+                    } else {
+                        SettingsInfoRow(title: item.name, value: item.localizedUnavailableReason)
+                            .disabled(true)
+                            .accessibilityIdentifier("settings-tools-toolset-\(item.name)")
+                    }
                 }
             }
         }
+    }
+
+    private func toolsetToggle(_ item: ToolsetChoice, store: ServerSettingsStore, status: String? = nil) -> some View {
+        SettingsToggleRow(title: item.name, systemImage: "wrench.and.screwdriver",
+                          isOn: Binding(get: { store.isToolsetEnabled(item) },
+                                        set: { store.setToolsetDefault(name: item.name, enabled: $0) }),
+                          accessibilityIdentifier: "settings-tools-toolset-\(item.name)", status: status)
+            .disabled(item.canDeselect != true)
     }
 
     private var requestedUnavailableSetting: SettingsIndex? {
