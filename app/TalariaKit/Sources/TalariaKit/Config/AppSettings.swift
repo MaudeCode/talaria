@@ -177,6 +177,7 @@ public enum SectionVisibilitySettings {
     public static let insightsKey = "sectionVisibility.insights"
     public static let chatFilesKey = "sectionVisibility.chatFiles"
     public static let chatGitKey = "sectionVisibility.chatGit"
+    public static let chatScreenKey = "sectionVisibility.chatScreen"
     public static let sidebarFeedbackKey = "sectionVisibility.sidebarFeedback"
     public static let defaultShowsSidebarFeedbackButton = false
 

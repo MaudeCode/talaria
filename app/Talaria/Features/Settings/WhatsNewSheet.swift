@@ -163,6 +163,7 @@ struct WhatsNewSheet: View {
     static func symbol(for icon: String) -> String {
         switch icon {
         case "chat": "bubble.left.and.bubble.right.fill"
+        case "display": "display"
         case "voice": "mic.fill"
         case "attachment": "paperclip"
         case "search": "magnifyingglass"

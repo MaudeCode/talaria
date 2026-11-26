@@ -191,6 +191,8 @@
 		C22600000000000000016781 /* ChatOpenPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000016782 /* ChatOpenPerformanceTests.swift */; };
 		1A2B3C4D5E6F7000000000D8 /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */; };
 		BEEF02400000000000000001 /* ChatAttachmentPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */; };
+		5A9E59180B97459BB4D80C4A /* AgentScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F5CEAA4853841D9A728F01C /* AgentScreenView.swift */; };
+		2D3C31200A234703BF9D907A /* ScreenCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37B30AC33D214BC588D8625E /* ScreenCanvas.swift */; };
 		1A2B3C4D5E6F7000000000DA /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */; };
 		C107Q0000000000000000001 /* StreamingMarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000101 /* StreamingMarkdownRenderer.swift */; };
 		C107Q0000000000000000002 /* StreamingMarkdownChunkedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000102 /* StreamingMarkdownChunkedView.swift */; };
@@ -683,6 +685,8 @@
 		C22600000000000000016782 /* ChatOpenPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatOpenPerformanceTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
 		BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachmentPreviewView.swift; sourceTree = "<group>"; };
+		8F5CEAA4853841D9A728F01C /* AgentScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentScreenView.swift; sourceTree = "<group>"; };
+		37B30AC33D214BC588D8625E /* ScreenCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCanvas.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
 		C107Q0000000000000000101 /* StreamingMarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownRenderer.swift; sourceTree = "<group>"; };
 		C107Q0000000000000000102 /* StreamingMarkdownChunkedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownChunkedView.swift; sourceTree = "<group>"; };
@@ -1352,6 +1356,8 @@
 				1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */,
 				C03190000000000000F002 /* InlineAudioPlayerView.swift */,
 				BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */,
+				8F5CEAA4853841D9A728F01C /* AgentScreenView.swift */,
+				37B30AC33D214BC588D8625E /* ScreenCanvas.swift */,
 				C12800000000000000000002 /* ToolActivityGroupView.swift */,
 				1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */,
 				D1968A000000000000000002 /* ShowBlockResultSection.swift */,
@@ -2104,6 +2110,8 @@
 				1A2B3C4D5E6F7000000000D8 /* MessageBubbleView.swift in Sources */,
 				C03190000000000000B002 /* InlineAudioPlayerView.swift in Sources */,
 				BEEF02400000000000000001 /* ChatAttachmentPreviewView.swift in Sources */,
+				5A9E59180B97459BB4D80C4A /* AgentScreenView.swift in Sources */,
+				2D3C31200A234703BF9D907A /* ScreenCanvas.swift in Sources */,
 				C12800000000000000000001 /* ToolActivityGroupView.swift in Sources */,
 				1A2B3C4D5E6F7000000000E0 /* ToolCallCardView.swift in Sources */,
 				D1968A000000000000000001 /* ShowBlockResultSection.swift in Sources */,

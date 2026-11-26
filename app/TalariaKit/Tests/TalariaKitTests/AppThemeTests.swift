@@ -123,6 +123,8 @@ final class SettingsNavigationTests: XCTestCase {
             switch entry.scope {
             case .profile: allowed = [.profile]
             case .server: allowed = [.server]
+            // The chat Screen switch is device-local and sits with the server capability it exposes (TAL-2381).
+            case .device where entry == .systemScreen: allowed = [.server]
             case .device, .synced: allowed = [.interface, .device]
             // The server's interface settings, and the one a Live Activity reads (TAL-2341), which sits with its other switches.
             case .interface: allowed = [.interface, .device]

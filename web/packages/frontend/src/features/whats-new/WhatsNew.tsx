@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouterState } from '@tanstack/react-router'
-import { Accessibility, Bell, ChevronLeft, ChevronRight, Cpu, Gauge, Lock, MessageSquare, Mic, Palette, Paperclip, RefreshCw, Search, Settings, Share2, ShieldCheck, Sparkles, Workflow, type LucideIcon } from 'lucide-react'
+import { Accessibility, Bell, ChevronLeft, ChevronRight, Cpu, Gauge, Lock, MessageSquare, Mic, Monitor, Palette, Paperclip, RefreshCw, Search, Settings, Share2, ShieldCheck, Sparkles, Workflow, type LucideIcon } from 'lucide-react'
 import { WhatsNewObservedSchema, type WhatsNewAnnouncement } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -18,7 +18,7 @@ type Icon = WhatsNewAnnouncement['rows'][number]['icon']
 const ICONS: Record<Icon, LucideIcon> = {
   sparkles: Sparkles, chat: MessageSquare, voice: Mic, attachment: Paperclip, search: Search, notifications: Bell,
   automation: Workflow, model: Cpu, appearance: Palette, speed: Gauge, reliability: ShieldCheck, security: Lock,
-  sync: RefreshCw, share: Share2, settings: Settings, accessibility: Accessibility,
+  sync: RefreshCw, share: Share2, settings: Settings, accessibility: Accessibility, display: Monitor,
 }
 
 /**

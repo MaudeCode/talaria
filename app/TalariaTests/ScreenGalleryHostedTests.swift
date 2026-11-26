@@ -558,17 +558,23 @@ final class ScreenGalleryHostedTests: XCTestCase {
             switch name {
             case "settings-models": controlIDs = ["settings-models-default-reasoning", "settings-models-show-thinking"]
             case "settings-default-model", "settings-auxiliary-model-picker": controlIDs = ["settings-model-visibility-fixture-model"]
+            case "settings-system": controlIDs = [SettingsIndex.systemScreen.id]
             default: controlIDs = []
             }
             if !controlIDs.isEmpty {
                 let scroll = try XCTUnwrap(window.firstView(ofType: UICollectionView.self))
                 let initialOffset = scroll.contentOffset
                 for identifier in controlIDs {
-                    _ = try await requireElementScrolling(in: window, "Models is missing \(identifier)") {
+                    _ = try await requireElementScrolling(in: window, "\(name) is missing \(identifier)") {
                         let frame = window.convert($0.accessibilityFrame, from: window.screen.coordinateSpace)
                         let visible = window.convert(scroll.bounds.inset(by: scroll.adjustedContentInset), from: scroll)
+                        // The last System row can meet the bottom inset at accessibility sizes. Its center
+                        // identifies the visible control without treating its inaccessible row padding as content.
+                        let isVisible = name == "settings-system" && variant.textSize.isAccessibilityCategory
+                            ? visible.contains(CGPoint(x: frame.midX, y: frame.midY))
+                            : visible.contains(frame)
                         return HostedAccessibility.identifier(of: $0) == identifier
-                            && frame.width > 0 && frame.height > 0 && visible.contains(frame)
+                            && frame.width > 0 && frame.height > 0 && isVisible
                     }
                     attachHostedScreenshot(window, name: "\(name)-\(identifier)-\(variant.name)")
                 }

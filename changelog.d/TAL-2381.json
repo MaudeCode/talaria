@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Watch and take over the agent's desktop from an iOS chat.",
+      "highlight": true,
+      "components": ["app"],
+      "announcement": {
+        "title": "Watch the agent's screen",
+        "description": "See and take over the desktop your agent is using, right from the chat.",
+        "icon": "display"
+      }
+    }
+  ]
+}

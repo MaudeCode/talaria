@@ -192,6 +192,9 @@ public enum Endpoint: Sendable {
     /// TAL-1997: a session terminal's output after a cursor, and the stream that signals new output.
     case terminalRead(sessionID: String, terminalID: String, afterEventID: Int)
     case terminalOutput(sessionID: String)
+    case screenStream(viewID: String)
+    case screenView(viewID: String)
+    case screenLease
     case feedbackDiagnostics
     case feedbackSubmit
     case feedbackOptions
@@ -556,6 +559,12 @@ public enum Endpoint: Sendable {
             return "/api/terminal/read"
         case .terminalOutput:
             return "/api/terminal/output"
+        case .screenStream:
+            return "/api/screen/ws"
+        case .screenView:
+            return "/api/screen/view"
+        case .screenLease:
+            return "/api/screen/lease"
         case .feedbackDiagnostics:
             return "/api/feedback/diagnostics"
         case .feedbackSubmit:
@@ -697,6 +706,8 @@ public enum Endpoint: Sendable {
                 URLQueryItem(name: "terminal_id", value: terminalID),
                 URLQueryItem(name: "after_event_id", value: "\(afterEventID)")
             ]
+        case let .screenStream(viewID), let .screenView(viewID):
+            return [URLQueryItem(name: "view_id", value: viewID)]
         case let .connectorOperation(_, owner):
             return owner.map { [URLQueryItem(name: "session_id", value: $0.sessionId), URLQueryItem(name: "authority_epoch", value: String($0.authorityEpoch))] } ?? []
         case let .backgroundTasks(sessionID):

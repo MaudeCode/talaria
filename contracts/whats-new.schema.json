@@ -54,7 +54,8 @@
               "sync",
               "share",
               "settings",
-              "accessibility"
+              "accessibility",
+              "display"
             ]
           },
           "title": {

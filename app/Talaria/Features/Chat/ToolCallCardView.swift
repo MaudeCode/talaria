@@ -11,6 +11,7 @@ struct ToolCallCardView: View {
     @Environment(\.chatFullToolResultLoader) private var loadFullToolResult
     @Environment(\.chatScreenReads) private var screenReads
     @Environment(\.chatProcessOutputTails) private var processOutputTails
+    @Environment(\.chatOpenScreen) private var openScreen
     @AppStorage(ChatTranscriptDisplaySettings.toolCardsStartExpandedKey) private var startsExpanded = false
     @ChatRetainedState("tool-expansion") private var userToggledExpansion: Bool? = nil
     /// TAL-331: the whole result of a call the server clipped or capped, once the reader asked for it.
@@ -54,23 +55,39 @@ struct ToolCallCardView: View {
                     .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.accessibilityDetailText))
                     .accessibilityAddTraits(.isHeader)
             } else {
-                Button {
-                    if let companionPresentation {
-                        companionPresentation.show(toolCall)
-                        return
+                HStack(spacing: 4) {
+                    Button {
+                        if let companionPresentation {
+                            companionPresentation.show(toolCall)
+                            return
+                        }
+                        chatDisclosureToggled()
+                        withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
+                            userToggledExpansion = !isExpanded
+                        }
+                    } label: {
+                        header
                     }
-                    chatDisclosureToggled()
-                    withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
-                        userToggledExpansion = !isExpanded
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.accessibilityDetailText))
+                    .accessibilityValue(isShownBeside ? String(localized: "Shown beside") : "")
+                    .accessibilityHint(opensBeside ? "Double tap to show details beside the chat."
+                                       : isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
+
+                    if toolCall.screenAction, let openScreen {
+                        Button {
+                            openScreen()
+                        } label: {
+                            Label("Open screen", systemImage: "arrow.up.right")
+                                .labelStyle(.iconOnly)
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open screen")
+                        .accessibilityIdentifier("tool-open-screen-\(toolCall.id)")
                     }
-                } label: {
-                    header
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.accessibilityDetailText))
-                .accessibilityValue(isShownBeside ? String(localized: "Shown beside") : "")
-                .accessibilityHint(opensBeside ? "Double tap to show details beside the chat."
-                                   : isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
             }
 
             // TAL-2340: the latest output line of the background process the call started, while it runs.
