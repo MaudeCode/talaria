@@ -928,7 +928,13 @@ final class SettingsPlacementHostedTests: XCTestCase {
             (#"{"agent_approvals":false}"#, true, false)
         ] {
             let host = "settings-visibility-\(UUID().uuidString).test"
-            DeferredMockURLProtocol.setOnRequest({ $0.complete(withJSON: payload) }, forHost: host)
+            DeferredMockURLProtocol.setOnRequest({ request in
+                if request.request.url?.path == "/api/settings" {
+                    request.complete(withJSON: payload)
+                } else {
+                    request.complete(withJSON: "{}", statusCode: 404)
+                }
+            }, forHost: host)
             addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
             let config = URLSessionConfiguration.ephemeral
             config.protocolClasses = [DeferredMockURLProtocol.self]
@@ -1083,6 +1089,94 @@ final class SettingsPlacementHostedTests: XCTestCase {
         _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true && $0.accessibilityLabel?.contains("fixture-model") == true }
         settle(0.3)
         attachHostedScreenshot(window, name: "settings-auxiliary-model-saved")
+    }
+
+    func testToolsShowsProfileToolsetsWithoutAgentApprovals() async throws {
+        let fixture = try FixtureApp(for: self)
+        let (server, store) = try await loadToolsetsSettingsFixture()
+        var selectedPane: SettingsPane?
+        let selection = Binding(get: { selectedPane }, set: { selectedPane = $0 })
+        let root = try hostWindow(NavigationStack {
+            SettingsView(server: server, selection: selection).environment(store)
+        })
+        let tools = try await requireElementScrolling(in: root, "Tools must appear with only toolset settings") {
+            HostedAccessibility.identifier(of: $0) == "settings-category-tools"
+        }
+        attachHostedScreenshot(root, name: "settings-root-toolsets-without-approvals")
+        XCTAssertTrue(HostedAccessibility.activate(tools))
+        let pane = try XCTUnwrap(selectedPane)
+        XCTAssertEqual(pane, .category(.tools))
+        root.isHidden = true
+        root.rootViewController = nil
+
+        let window = try hostWindow(NavigationStack {
+            SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: pane)
+                .environment(store)
+        })
+        for (name, enabled) in [("file", false), ("web", true)] {
+            let row = try await requireElement(in: window) {
+                HostedAccessibility.identifier(of: $0) == "settings-tools-toolset-\(name)"
+            }
+            XCTAssertEqual(!row.accessibilityTraits.contains(.notEnabled), enabled, name)
+        }
+        let unavailable = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-tools-toolset-todo"
+        }
+        XCTAssertTrue(unavailable.accessibilityTraits.contains(.notEnabled))
+    }
+
+    func testToolsLetsAnUnavailableSavedToolsetBeTurnedOff() async throws {
+        let fixture = try FixtureApp(for: self)
+        let (server, store) = try await loadToolsetsSettingsFixture(savedUnavailable: true)
+        let window = try hostWindow(NavigationStack {
+            SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .category(.tools))
+                .environment(store)
+        })
+        let row = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-tools-toolset-todo"
+        }
+        XCTAssertFalse(row.accessibilityTraits.contains(.notEnabled),
+                       "A saved unavailable toolset must be removable when the server allows it")
+    }
+
+    func testToolsSettingsGallery() async throws {
+        let fixture = try FixtureApp(for: self)
+        let (server, store) = try await loadToolsetsSettingsFixture(savedUnavailable: true)
+        try await renderHostedPage("settings-tools-defaults") {
+            NavigationStack {
+                SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .category(.tools))
+                    .environment(store)
+            }
+        } inspect: { window, _ in
+            _ = try await self.requireElement(in: window) {
+                HostedAccessibility.identifier(of: $0) == "settings-tools-toolset-file"
+            }
+        }
+    }
+
+    private func loadToolsetsSettingsFixture(savedUnavailable: Bool = false) async throws -> (URL, ServerSettingsStore) {
+        let host = "toolset-defaults-\(UUID().uuidString).test"
+        let catalog = """
+        {"toolsets":[
+          {"name":"file","selected":true,"available":true,"group":"available","can_deselect":\(savedUnavailable)},
+          {"name":"web","selected":false,"available":true,"group":"available","can_deselect":true},
+          {"name":"todo","selected":\(savedUnavailable),"available":false,"group":"not_available","can_deselect":\(savedUnavailable),"unavailable_reason":"disabled"}
+        ],"selected_toolsets":[\(savedUnavailable ? #""file","todo""# : #""file""#)]}
+        """
+        DeferredMockURLProtocol.setOnRequest({ request in
+            switch request.request.url?.path {
+            case "/api/settings": request.complete(withJSON: #"{"agent_approvals":null}"#)
+            case "/api/toolsets/defaults": request.complete(withJSON: catalog)
+            default: request.complete(withJSON: "{}", statusCode: 404)
+            }
+        }, forHost: host)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
+        let store = ServerSettingsStore(client: APIClient(baseURL: server, session: URLSession(configuration: config)))
+        await store.loadIfNeeded()
+        return (server, store)
     }
 
     func testToolsAgentApprovalToggleWritesServerSettings() async throws {

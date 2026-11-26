@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Choose the toolsets new chats start with in iOS Settings.",
+      "highlight": false,
+      "components": ["app"],
+      "announcement": {
+        "title": "Default toolsets",
+        "description": "Choose which tools every new chat starts with, in Settings › Tools.",
+        "icon": "settings"
+      }
+    }
+  ]
+}

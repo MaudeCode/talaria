@@ -745,6 +745,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         else if Self.isFullWidthPanelLoad(url), Self.panelScenario == UITestFixtureEnvironment.panelUnavailableArgument { statusCode = 503 }
         else if refusesLogs { statusCode = 403 }
         else if refusesRemoval { statusCode = 409 }
+        else if url.path == "/api/toolsets/defaults" { statusCode = 404 }
         else if url.path == "/api/session/anchor-scene" { statusCode = Self.anchorScenePageStatus.withLock { $0 } }
         else if Self.failsInitialUpload(url) { statusCode = 500 }
         else if Self.failsSessionCreation(url) {

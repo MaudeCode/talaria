@@ -59,7 +59,7 @@ struct SettingsView: View {
                         }
                     }
                     ForEach(SettingsCategory.rootCategories.filter {
-                        $0.group == group && ($0 != .tools || settingsStore.settings?.agentApprovals != nil)
+                        $0.group == group && ($0 != .tools || settingsStore.showsTools)
                     }) { category in
                         SectionSelectionRow(item: .category(category), selection: $selection) {
                             Label {

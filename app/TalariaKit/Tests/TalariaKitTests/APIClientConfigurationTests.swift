@@ -743,6 +743,9 @@ final class APIClientConfigurationTests: APIClientTestCase {
           "pace_warning_burn_rate_percent": 125, "pace_critical_burn_rate_percent": 175, "pace_minimum_elapsed_hours": 12 }
         """
         let client = makeClient { request in
+            if request.url?.path == "/api/toolsets/defaults" {
+                return apiTestJSONResponse("{}", statusCode: 404, for: request)
+            }
             XCTAssertEqual(request.url?.path, "/api/settings")
             if request.httpMethod == "POST" {
                 let body = try XCTUnwrap(apiTestBodyData(from: request))
