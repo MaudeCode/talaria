@@ -12,11 +12,19 @@ public struct NewChatRequest: Equatable, Sendable {
     /// active profile (the plain "+" / "New Chat" behavior).
     public let profileName: String?
     public let providerID: String?
+    /// Nil restores the ordinary New Chat draft. A supplied string is the entire initial text.
+    public let initialDraft: String?
 
-    public init(autoStartsVoiceInput: Bool = false, profileName: String? = nil, providerID: String? = nil) {
+    public init(
+        autoStartsVoiceInput: Bool = false,
+        profileName: String? = nil,
+        providerID: String? = nil,
+        initialDraft: String? = nil
+    ) {
         self.id = UUID()
         self.autoStartsVoiceInput = autoStartsVoiceInput
         self.profileName = profileName
         self.providerID = providerID
+        self.initialDraft = initialDraft
     }
 }

@@ -130,7 +130,7 @@ final class AppLockHostedTests: XCTestCase {
         router.requestDeepLink(link)
         let queued = await awaitCondition { model.queuedDeepLinks == [link] }
         XCTAssertTrue(queued, "The router drains into the lock's queue, not into navigation")
-        XCTAssertNil(router.pendingDeepLink)
+        XCTAssertNil(router.pendingRoute)
 
         model.unlock()
         await model.authentication?.value
@@ -200,7 +200,7 @@ final class AppLockHostedTests: XCTestCase {
         )
 
         router.requestDeepLink(Self.addServerLink)
-        let routed = await awaitCondition { router.pendingDeepLink == nil }
+        let routed = await awaitCondition { router.pendingRoute == nil }
         XCTAssertTrue(routed)
         attachHostedScreenshot(window, name: "add-server-link-ignored")
         XCTAssertNil(window.rootViewController?.presentedViewController, "No sheet opens")

@@ -376,11 +376,16 @@ final class ChatHostedTests: XCTestCase {
         editor.inputView = UIView(frame: .zero)
         XCTAssertTrue(editor.becomeFirstResponder(), "The editor must focus before the first resize")
         editor.selectedRange = NSRange(location: (draft as NSString).length, length: 0)
-        let lineHeight = try XCTUnwrap(editor.font).lineHeight
+        let font = try XCTUnwrap(editor.font)
+        let firstWord = String(draft.prefix { !$0.isWhitespace }) as NSString
+        let firstWordWidth = firstWord.size(withAttributes: [.font: font]).width
         let selection = editor.selectedRange
-        // The keyboard leaves a landscape chat about 200 pt. Rotate there, back to portrait, and there again.
+        // The short windows model the space left when the keyboard comes up in each orientation.
         let landscape = CGSize(width: 874, height: 200)
-        for (size, name) in [(landscape, "landscape"), (portrait, "portrait"), (landscape, "landscape-again")] {
+        let shortPortrait = CGSize(width: 402, height: 300)
+        let viewports = [(landscape, "landscape"), (portrait, "portrait"), (landscape, "landscape-again"),
+                         (shortPortrait, "short-portrait")]
+        for (size, name) in viewports {
             window.frame.size = size
             let settled = await awaitRenderedQuiet(in: window) { editor.convert(editor.bounds, to: window) }
             XCTAssertTrue(settled, "\(name): the composer must settle")
@@ -390,7 +395,9 @@ final class ChatHostedTests: XCTestCase {
                 guard let end = editor.selectedTextRange?.end else { return false }
                 return editor.bounds.insetBy(dx: -1, dy: -1).contains(editor.caretRect(for: end))
             }
-            XCTAssertGreaterThanOrEqual(editor.bounds.height, lineHeight, "\(name): the editor cuts its line")
+            XCTAssertGreaterThanOrEqual(editor.bounds.height, font.lineHeight, "\(name): the editor cuts its line")
+            let textWidth = editor.textContainer.size.width - 2 * editor.textContainer.lineFragmentPadding
+            XCTAssertGreaterThanOrEqual(textWidth, firstWordWidth, "\(name): the first draft word must fit at this text size")
             let caret = editor.caretRect(for: try XCTUnwrap(editor.selectedTextRange).end)
             XCTAssertTrue(editor.bounds.insetBy(dx: -1, dy: -1).contains(caret),
                           "\(name): the caret \(caret) is outside the editor's visible \(editor.bounds)")

@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Use Shortcuts to open a new chat with text ready to review and send.",
+      "highlight": false,
+      "announcement": {
+        "title": "New Chat with Text",
+        "description": "Pass text from Shortcuts to a new chat draft and review it before sending.",
+        "icon": "automation"
+      }
+    }
+  ]
+}

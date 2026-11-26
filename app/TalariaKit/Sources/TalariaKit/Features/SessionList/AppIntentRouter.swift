@@ -1,26 +1,20 @@
 import Foundation
 import Observation
 
-/// Bridges App Intents (which run outside the SwiftUI view tree) into the app's existing
-/// deep-link router. An intent writes a `talaria://…` URL here; `ContentView` observes
-/// `pendingDeepLink` and feeds it through the same `handleOpenURL` path as an external URL,
-/// so intent navigation reuses the share/session deep-link plumbing rather than inventing a
-/// parallel one (issue #337). A shared singleton is the standard bridge because the intent
-/// has no reference to the live view hierarchy.
-///
-/// TAL-2388: every event enters here, external URLs and notification taps included, and names the one window that
-/// handles it, so two windows never both act on it.
+/// Delivers App Intents, external URLs and notification taps to one window. The pending route survives cold launch;
+/// a Shortcut's draft stays in this process and only URL routes go through deep-link parsing.
 @MainActor
 @Observable
 public final class AppIntentRouter {
-    public static let shared = AppIntentRouter()
+    public enum Route: Equatable, Sendable {
+        case deepLink(URL)
+        case newChat(NewChatRequest)
+    }
 
-    /// Set by an App Intent, drained by `ContentView`. Holding it (rather than acting
-    /// immediately) lets the view consume it whether the intent fired before the view
-    /// appeared (cold launch) or after (warm launch).
-    public var pendingDeepLink: URL?
-    /// The window `pendingDeepLink` belongs to; nil while no window is known yet, when the first to drain takes it.
-    /// Observed, so a link handed over from a closed window wakes the window it moves to.
+    public static let shared = AppIntentRouter()
+    public private(set) var pendingRoute: Route?
+    /// Nil while no window is known yet, when the first to drain takes it.
+    /// Observed, so a route handed over from a closed window wakes the window it moves to.
     public private(set) var pendingWindow: String?
     /// Window scenes by their session's persistent identifier, most recently active first.
     @ObservationIgnored private(set) var windows: [String] = []
@@ -36,17 +30,25 @@ public final class AppIntentRouter {
         let showing = TalariaDeepLink.sessionID(from: url).map {
             SessionNotificationRefresh.windows(showing: $0, publisherID: TalariaDeepLink.publisherID(from: url))
         } ?? []
+        request(.deepLink(url), showing: showing)
+    }
+
+    public func requestNewChat(_ newChat: NewChatRequest) {
+        request(.newChat(newChat), showing: [])
+    }
+
+    private func request(_ route: Route, showing: Set<String>) {
         pendingWindow = Self.window(showing: showing, recency: windows)
-        pendingDeepLink = url
+        pendingRoute = route
         if windows.count > 1, let pendingWindow, pendingWindow != windows.first { bringForward(pendingWindow) }
     }
 
-    /// The pending deep link, once, to the window it belongs to.
-    public func takeDeepLink(in window: String?) -> URL? {
-        guard let url = pendingDeepLink, pendingWindow == nil || pendingWindow == window else { return nil }
-        pendingDeepLink = nil
+    /// The pending route, once, to the window it belongs to.
+    public func takeRoute(in window: String?) -> Route? {
+        guard let route = pendingRoute, pendingWindow == nil || pendingWindow == window else { return nil }
+        pendingRoute = nil
         pendingWindow = nil
-        return url
+        return route
     }
 
     /// The routing rule: a window showing the event's session takes it, the most recent of them if several; anything
@@ -60,7 +62,7 @@ public final class AppIntentRouter {
         windows.insert(window, at: 0)
     }
 
-    /// A closed window hands its pending deep link to the window now most recently active.
+    /// A closed window hands its pending route to the window now most recently active.
     public func windowDidClose(_ window: String) {
         windows.removeAll { $0 == window }
         if pendingWindow == window { pendingWindow = windows.first }

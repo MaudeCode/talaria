@@ -27,14 +27,14 @@ struct PendingNewChatView: View {
     /// One creation identity across retries and layout handoffs; the server deduplicates diagnostic creations.
     @State private var creationID = UUID().uuidString
     @State private var unconfirmedCreationMessage: String?
-    @State private var draftMessage = ""
+    @State private var draftMessage: String?
     @State private var didStartConversation = false
     /// The chat's screen exists before its session (TAL-636): it starts from this placeholder and
     /// takes on the session the server creates, so the composer never changes.
     @State private var provisionalSession = SessionSummary(title: String(localized: "New Chat"))
 
     init(
-        initialDraft: String = "",
+        initialDraft: String? = nil,
         initialAttachments: [SharedAttachmentImport] = [],
         isExplicit: Bool = true,
         autoStartsVoiceInput: Bool = false,

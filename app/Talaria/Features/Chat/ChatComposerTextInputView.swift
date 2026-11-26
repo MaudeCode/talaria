@@ -139,6 +139,7 @@ struct ComposerKeyboardCommand: Equatable {
 /// subviews are the text, the leading group and the trailing group, in that order.
 struct ComposerCardLayout: Layout {
     var isOneRow: Bool
+    var usesAccessibilityLayout: Bool
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? subviews.reduce(0) { $0 + $1.sizeThatFits(.unspecified).width }
@@ -161,8 +162,10 @@ struct ComposerCardLayout: Layout {
         func frame(x: CGFloat, midY: CGFloat, size: CGSize) -> CGRect {
             CGRect(x: x, y: midY - size.height / 2, width: size.width, height: size.height)
         }
-        if isOneRow {
-            let textWidth = max(0, width - 10 - leading.width - trailing.width - 16)
+        let controlsWidth = leading.width + trailing.width
+        let textWidth = max(0, width - 10 - controlsWidth - 16)
+        // At accessibility sizes, put the controls below the text when they would take more of the row.
+        if isOneRow && (!usesAccessibilityLayout || textWidth >= controlsWidth) {
             let text = CGSize(width: textWidth, height: subviews[0].sizeThatFits(ProposedViewSize(width: textWidth, height: nil)).height)
             let height = max(text.height, leading.height, trailing.height)
             return ([

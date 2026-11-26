@@ -803,7 +803,7 @@ struct MessageComposerView: View {
 
                 // One layout for both arrangements keeps the text view in place in the tree: re-hosting it
                 // would drop the keyboard.
-                ComposerCardLayout(isOneRow: usesOneRowCard) {
+                ComposerCardLayout(isOneRow: usesOneRowCard, usesAccessibilityLayout: usesAccessibilityLayout) {
                     ComposerTextInputView(
                         text: draftBinding,
                         revision: draftWriteRevision,

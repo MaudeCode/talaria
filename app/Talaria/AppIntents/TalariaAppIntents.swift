@@ -2,6 +2,33 @@ import AppIntents
 import Foundation
 import TalariaKit
 
+/// This foreground action is in the app target so it can hand over the draft in memory.
+struct NewChatWithTextIntent: AppIntent {
+    static let title: LocalizedStringResource = "New Chat with Text"
+    static let description = IntentDescription("Open a new chat with an unsent draft.")
+    static let openAppWhenRun = true
+    private static let maximumTextKiB = 100
+
+    @Parameter(title: "Text", requestValueDialog: "What do you want to say?")
+    var text: String
+
+    @Parameter(title: "Profile")
+    var profile: ProfileEntity?
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        guard text.utf8.count <= Self.maximumTextKiB * 1024 else { throw TextTooLarge() }
+        AppIntentRouter.shared.requestNewChat(NewChatRequest(profileName: profile?.id, initialDraft: text))
+        return .result()
+    }
+
+    private struct TextTooLarge: LocalizedError {
+        var errorDescription: String? {
+            String(localized: "Shortcut text must be \(NewChatWithTextIntent.maximumTextKiB) KiB or smaller.")
+        }
+    }
+}
+
 /// "Ask Talaria" — sends a prompt to a new chat and speaks the server's reply without opening the app, so Siri, a
 /// Shortcut, or the Action button can ask and hear the answer (TAL-1470). Shortcuts can chain the reply text.
 struct AskTalariaIntent: AskingTalariaIntent {
@@ -205,6 +232,12 @@ struct TalariaShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "New Chat in Profile",
             systemImageName: "person.crop.circle.badge.plus"
+        )
+        AppShortcut(
+            intent: NewChatWithTextIntent(),
+            phrases: ["New chat with text in \(.applicationName)"],
+            shortTitle: "New Chat with Text",
+            systemImageName: "text.bubble"
         )
     }
 }

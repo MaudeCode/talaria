@@ -130,7 +130,7 @@ final class FixtureApp {
 
     /// Pushes the chat as the session list does; pure canvas fixtures can omit the navigation container.
     func chat(_ session: SessionSummary, viewModel: ChatViewModel? = nil,
-              asNavigationDestination: Bool = true, initialDraft: String = "",
+              asNavigationDestination: Bool = true, initialDraft: String? = nil,
               loadsInitialMessages: Bool = true) -> some View {
         // Fixture streams run in process, so a real device's offline path must not block their restoration.
         let viewModel = viewModel ?? ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL,
