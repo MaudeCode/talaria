@@ -34,7 +34,7 @@ Talaria is a native SwiftUI iPhone app for a self-hosted [Talaria Web](../web/RE
 - **Workspace and Git**: browse and preview workspace files; view status and diffs, stage, commit, switch branches, and fetch, pull, or push.
 - **Memory**: read and edit the agent's notes, user profile, and soul.
 - **Insights**: usage analytics and provider quotas.
-- **Live Activities and notifications**: follow a run on the Lock Screen and in the Dynamic Island. With the optional [Talaria Relay](../relay/README.md) (Sign in with Apple), runs update Live Activities and notifications while the app is closed. Relay receives your server's address, each run's session title and status, and this iPhone's push tokens; never transcripts, commands, or server passwords.
+- **Live Activities and notifications**: follow a run on the Lock Screen and in the Dynamic Island. With the optional [Talaria Relay](../relay/README.md) (Sign in with Apple), runs update Live Activities and notifications while the app is closed. Talaria opts in to frequent Live Activity pushes, subject to the iPhone’s settings and iOS delivery limits. Relay receives your server's address, each run's session title and status, and this iPhone's push tokens; never transcripts, commands, or server passwords.
 - **Widgets**: Home Screen and Lock Screen widgets for provider quotas and pace.
 - **Share extension**: send text, links, images, and files from any app into a new chat draft.
 - **Siri and Shortcuts**: start a new chat, a voice chat, or a chat in a chosen profile.
