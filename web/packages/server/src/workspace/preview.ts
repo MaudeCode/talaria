@@ -75,6 +75,42 @@ export function previewTarget(dir: string, rel: string): string | null {
   }
 }
 
+const REPORT_THEME_KEYS = ['--background', '--foreground', '--card', '--muted', '--muted-foreground', '--border', '--primary', '--primary-foreground', '--font-sans', '--font-mono'] as const
+const REPORT_COLOR = /^(?:#[0-9a-f]{3,8}|[a-z]+|(?:rgb[a]?|hsl[a]?|oklch|oklab|color)\([a-z0-9.,%+ /-]+\))$/i
+const REPORT_FONT = /^[a-z0-9 "'_,.-]+$/i
+
+/** Accept CSS values only, with neither HTML delimiters nor URL, declaration or escape syntax. */
+export function reportThemeTag(raw: string | null): string {
+  if (!raw || raw.length > 2048) return ''
+  let values: unknown
+  try { values = JSON.parse(raw) } catch { return '' }
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return ''
+  const declarations = REPORT_THEME_KEYS.flatMap((name) => {
+    const value = (values as Record<string, unknown>)[name]
+    const pattern = name.startsWith('--font-') ? REPORT_FONT : REPORT_COLOR
+    return typeof value === 'string' && value.length <= 160 && pattern.test(value) ? [`${name}:${value};`] : []
+  })
+  if (declarations.length === 0) return ''
+  return `<style>:where(:root){${declarations.join('')}}</style>`
+}
+
+/** The outer frame owns navigation. Keep same-page fragments local and let standalone reports use native links. */
+export const REPORT_LINK_BRIDGE = `<script>
+if (parent !== window) {
+  const route = (event) => {
+    const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+    const href = anchor?.getAttribute('href');
+    if (!href) return;
+    event.preventDefault();
+    if (!event.isTrusted) return;
+    if (href.startsWith('#')) { location.hash = href; return; }
+    parent.postMessage({type:'talaria-report-link', url:anchor.href}, location.origin);
+  };
+  addEventListener('click', route, true);
+  addEventListener('auxclick', route, true);
+}
+</script>`
+
 /** RFC 4180 rows (quoted fields, doubled quotes, CRLF), skipping blank lines; stops after `limit` rows. */
 export function csvRows(text: string, limit: number): { rows: string[][]; truncated: boolean } {
   const rows: string[][] = []

@@ -13,5 +13,5 @@ import { MeshyModelRefSchema } from './meshy.js'
  *
  * Its own module so `show.ts` (TAL-1968) can use it without importing `views.ts`, which imports the show block ref.
  */
-export const DisplayMediaSchema = z.object({ url: z.string(), name: z.string(), mime: z.string(), kind: z.enum(['image', 'audio', 'video', 'pdf', 'file', 'model']), model: MeshyModelRefSchema.optional() })
+export const DisplayMediaSchema = z.object({ url: z.string(), name: z.string(), mime: z.string(), kind: z.enum(['image', 'audio', 'video', 'pdf', 'file', 'model', 'html']), preview_url: z.string().optional(), model: MeshyModelRefSchema.optional() })
 export type DisplayMedia = z.infer<typeof DisplayMediaSchema>

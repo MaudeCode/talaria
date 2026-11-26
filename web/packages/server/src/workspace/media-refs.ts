@@ -17,6 +17,7 @@ export interface MediaRefResolver {
   workspace: string | null
   /** The app-relative media URL for a local path as written (`~/`, absolute or relative), or null when it is not served. */
   localUrl: (path: string) => string | null
+  htmlPreviewUrl?: (path: string) => string | null
 }
 
 export interface MediaProjection {
@@ -367,7 +368,9 @@ function mediaFor(ref: string, resolver: MediaRefResolver): DisplayMedia | null 
   const url = resolver.localUrl(ref)
   if (!url) return null
   const mime = mimeFor(ref)
-  return { url, name: basename(ref) || ref, mime, kind: kindFor(mime) }
+  const name = basename(ref) || ref
+  const preview = mime === 'text/html' ? resolver.htmlPreviewUrl?.(ref) : null
+  return preview ? { url, name, mime, kind: 'html', preview_url: preview } : { url, name, mime, kind: kindFor(mime) }
 }
 
 export function kindFor(mime: string): DisplayMedia['kind'] {

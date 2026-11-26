@@ -52,6 +52,8 @@ import { meshyDirectives, projectMediaRefs, type MediaProjection, type MeshyDire
 import { projectBindings, type ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
 import { basename, join } from 'node:path'
+import { statSync } from 'node:fs'
+import { previewUrl } from '../workspace/preview.js'
 import type { GatewaySessions } from './gateway-sessions.js'
 import { personMaySee as ownerVisibleTo } from '../auth/person.js'
 
@@ -284,7 +286,7 @@ export interface SessionServiceDeps {
   /** Python `commit_session_memory` (fire-and-forget): the cached Agent flushes memory for a session the user left. */
   commitSessionMemory?: (sid: string) => Promise<void>
   /** TAL-186: the `/api/media` allow-list the transcript media projection rewrites against; without it nothing local is rewritten. */
-  media?: { access: MediaAccessBase; localIo: (profile: string | null) => boolean; serverOwner: () => Promise<boolean> }
+  media?: { access: MediaAccessBase; localIo: (profile: string | null) => boolean; serverOwner: () => Promise<boolean>; signingKey: () => Buffer }
 }
 
 /** TAL-536: the most of a dead run's journal stale-stream cleanup reads (Python's recovery window). */
@@ -400,10 +402,20 @@ export class SessionService {
       return url
     }
     const workspace = s.workspace.trim() || null
+    const htmlPreviewUrl = (path: string): string | null => {
+      if (!media || !anchor || !workspace) return null
+      try {
+        const target = mediaRefTarget(path)
+        if (!anchor(target, target, false)) return null
+        const stat = statSync(target)
+        if (!stat.isFile() || stat.size > 5 * 1024 * 1024) return null
+        return previewUrl(media.signingKey(), workspace, target)
+      } catch { return null }
+    }
     // A scene's final answer usually repeats its row's text: each distinct text is parsed once.
     const projected = new Map<string, MediaProjection | null>()
     return (text) => {
-      if (!projected.has(text)) projected.set(text, projectMediaRefs(text, { workspace, localUrl }))
+      if (!projected.has(text)) projected.set(text, projectMediaRefs(text, { workspace, localUrl, htmlPreviewUrl }))
       return projected.get(text) ?? null
     }
   }

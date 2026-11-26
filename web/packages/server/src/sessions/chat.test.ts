@@ -1,6 +1,6 @@
 import { filterAsync } from '../util.js'
 import { sessionPath, sessionDirectory, useJsonStorage } from '../test/storage.js'
-import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -1284,6 +1284,34 @@ describe('chat turns through the sidecar', () => {
     const served = await s.get(`/${url(join(ws, 'shot.png')).slice(2)}`)
     expect(served.status).toBe(200)
     expect(served.headers.get('content-type')).toBe('image/png')
+  })
+
+  it('projects a folder-authorized delivered HTML report as a sandboxed preview', async () => {
+    const sid = await newSession(s)
+    const workspace = realpathSync(s.workspace)
+    const folder = join(workspace, 'delivered-reports')
+    mkdirSync(folder)
+    const report = join(folder, 'chat-report.htm')
+    const large = join(folder, 'large.html')
+    writeFileSync(report, '<!doctype html><p>Report</p>')
+    writeFileSync(large, '')
+    truncateSync(large, 5 * 1024 * 1024 + 1)
+    writeFileSync(join(workspace, 'other-report.html'), '<p>Different folder</p>')
+    const reply = `MEDIA:${report} MEDIA:${large}`
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: reply }]))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'Render a report' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const messages = ((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[]
+    const media = messages.find((message) => message.role === 'assistant')?._media as Json[]
+    expect(media[0]).toMatchObject({ name: 'chat-report.htm', kind: 'html', preview_url: expect.any(String) as unknown })
+    const page = new URL(String(media[0]?.preview_url), `${s.base}/`)
+    const preview = await s.get(page.pathname)
+    expect(preview.status).toBe(200)
+    expect(preview.headers.get('content-security-policy')).toContain("connect-src 'none'")
+    expect(await preview.text()).toContain('<p>Report</p>')
+    expect((await s.get(page.pathname.replace(/[^/]+$/, '..%2Fother-report.html'))).status).toBe(404)
+    expect(media[1]).toMatchObject({ name: 'large.html', kind: 'file' })
+    expect(media[1]).not.toHaveProperty('preview_url')
   })
 
   it.each([{ name: 'short', answer: 'short answer B' }, { name: 'long', answer: 'b'.repeat(6000) }, { name: 'no response', answer: '' }, { name: 'cancelled', answer: '', error: 'Task cancelled by user' }, { name: 'failed', answer: '', error: 'boom' }])('transfers the expanded reply only at terminal settlement (TAL-1114, $name)', async ({ answer: nextReply, error }) => {
