@@ -89,6 +89,26 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(server.backgroundReads.count, 1, "Recovery refreshes background work once, like a manual refresh")
     }
 
+    func testOfflineRecoveryReloadsComposerModels() async throws {
+        let context = try makeOfflineRecoveryContext()
+        let server = ScriptedSessionServer(reachableFromRead: 2)
+        let model = try makeViewModel(sessionSummary: makeSession(model: nil)) { request in
+            if request.url?.path == "/api/profiles", server.sessionReads.count < 2 {
+                throw URLError(.notConnectedToInternet)
+            }
+            return try server.handle(request)
+        }
+        await model.loadMessages(modelContext: context)
+        await model.loadComposerConfiguration()
+        XCTAssertTrue(model.isViewingCachedData)
+        XCTAssertTrue(model.modelCatalogGroups.isEmpty)
+
+        await model.recoverWhenServerReturns(modelContext: context, sleep: RecordingRetryTicks(allowed: 1).sleep)
+
+        XCTAssertFalse(model.isViewingCachedData)
+        XCTAssertEqual(model.modelCatalogGroups.flatMap(\.models).map(\.id), ["recovered-model"])
+    }
+
     /// TAL-454: offline, the chat shows the branch link its last detail cached; the server's next answer replaces it.
     func testOfflineChatShowsTheCachedBranchLinkUntilTheServerAnswers() async throws {
         let context = try makeOfflineRecoveryContext()
@@ -230,6 +250,16 @@ private final class ScriptedSessionServer: @unchecked Sendable {
         case "/api/background/tasks":
             _ = backgroundReads.increment()
             return apiTestJSONResponse(#"{"session_id":"session-abc","agent_available":true,"tasks":[]}"#, for: request)
+        case "/api/profiles":
+            return apiTestJSONResponse(#"{"profiles":[]}"#, for: request)
+        case "/api/models":
+            return apiTestJSONResponse(#"{"default_model":"recovered-model","groups":[{"name":"Fixture","models":[{"id":"recovered-model","name":"Recovered model"}]}]}"#, for: request)
+        case "/api/reasoning":
+            return apiTestJSONResponse(#"{"reasoning_effort":"medium"}"#, for: request)
+        case "/api/workspaces":
+            return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
+        case "/api/commands":
+            return apiTestJSONResponse(#"{"commands":[]}"#, for: request)
         default:
             XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
             throw URLError(.badURL)
