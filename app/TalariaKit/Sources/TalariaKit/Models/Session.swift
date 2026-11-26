@@ -157,7 +157,7 @@ public struct SessionBulkResult: Decodable, Equatable, Sendable {
     public let sessionId: String?
     public let ok: Bool?
     public let error: String?
-    /// A delete that removed the chat here but not the Agent's own record.
+    /// The Agent delete committed. The next delete retries pending transcript file cleanup.
     public let stateDbCleanupFailed: Bool?
 
     enum CodingKeys: String, CodingKey { case sessionId, ok, error, stateDbCleanupFailed }

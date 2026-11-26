@@ -1206,23 +1206,18 @@ public final class SessionListViewModel {
             }
         }
         guard scope == resourceGeneration else { return [] }
-        var messages: [String] = []
         let failedIDs = sessionIDs.filter { selectedSessionsByID[$0] != nil }
         if !failedIDs.isEmpty {
             let failure = results.first { $0.ok != true }?.error
                 ?? actionErrorMessage
                 ?? String(localized: "The server did not report a result.")
-            messages.append(String(
+            actionErrorMessage = String(
                 localized: "Failed for \(failedIDs.count) of \(sessionIDs.count) chats: \(failure)"
-            ))
-        } else if selectedSessionsByID.isEmpty {
-            isSelectingSessions = false
+            )
+        } else {
+            actionErrorMessage = nil
+            if selectedSessionsByID.isEmpty { isSelectingSessions = false }
         }
-        let keptByAgent = results.filter { $0.ok == true && $0.stateDbCleanupFailed == true }.count
-        if keptByAgent > 0 {
-            messages.append(String(localized: "The Agent kept its copy of \(keptByAgent) deleted chats, so they may reappear."))
-        }
-        actionErrorMessage = messages.isEmpty ? nil : messages.joined(separator: "\n\n")
 
         claimCount += 1
         for id in sessionIDs where pendingChanges["session:\(id)"] != nil {
