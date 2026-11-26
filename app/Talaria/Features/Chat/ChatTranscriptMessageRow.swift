@@ -46,7 +46,12 @@ struct ChatTranscriptMessageRow: View {
         if let activity = message.talariaActivity, message.backgroundUpdate == nil {
             MarkerMessageCardView(activity: activity, stateID: activity.id, messageID: message.messageId)
         } else if let markerKind = message.markerKind {
-            MarkerMessageCardView(kind: markerKind, content: message.markerBody ?? message.content, stateID: message.messageId ?? "index:\(visibleIndex)")
+            // A scheduled task's stored content includes the Agent's instructions, which are only for Copy.
+            let body = if case .scheduledTask = markerKind { message.markerBody } else { message.markerBody ?? message.content }
+            MarkerMessageCardView(
+                kind: markerKind, content: body, stateID: message.messageId ?? "index:\(visibleIndex)",
+                excerpt: message.displayExcerpt, copyText: message.content
+            )
         } else if let delivery = message.delivery {
             MarkerMessageCardView(delivery: delivery, excerpt: message.displayExcerpt, stateID: message.messageId ?? "index:\(visibleIndex)")
         } else if let actionContext {

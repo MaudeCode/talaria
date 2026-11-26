@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Scheduled task runs show the job prompt and loaded skills in the chat.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

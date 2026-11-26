@@ -1,7 +1,6 @@
 import Foundation
 
-/// Marker rows the agent writes around context compaction. The server classifies
-/// them and stamps `_marker_kind` (TAL-305); the app only renders that field.
+/// Transcript markers classified by the server's `_marker_kind` field.
 /// TAL-984: the server's `failed_turn` notice (`_notice_kind`, TAL-815) is one too, so it shares every marker exclusion.
 public enum ChatMarkerMessageKind: Equatable, Sendable {
     case contextCompaction
@@ -11,14 +10,17 @@ public enum ChatMarkerMessageKind: Equatable, Sendable {
     case contentRefused(notice: String)
     /// TAL-815: the boundary row closing a turn that failed, with its copy in `content`.
     case failedTurn
+    /// A cron run's prompt with the skills the server reports it loaded.
+    case scheduledTask(skills: [String])
 
     /// The server's `_marker_kind`; an unknown kind renders as an ordinary message.
-    init?(wireValue: String?, refusedNotice: String? = nil) {
+    init?(wireValue: String?, refusedNotice: String? = nil, scheduledTaskSkills: [String]? = nil) {
         switch wireValue {
         case "context_compaction": self = .contextCompaction
         case "preserved_task_list": self = .preservedTaskList
         case "content_refused": self = .contentRefused(notice: refusedNotice ?? "")
         case "failed_turn": self = .failedTurn
+        case "scheduled_task": self = .scheduledTask(skills: scheduledTaskSkills ?? [])
         default: return nil
         }
     }
@@ -35,11 +37,16 @@ public enum ChatMarkerMessageKind: Equatable, Sendable {
         case .preservedTaskList: "preserved_task_list"
         case .contentRefused: "content_refused"
         case .failedTurn: "failed_turn"
+        case .scheduledTask: "scheduled_task"
         }
     }
 
     var refusedNotice: String? {
         if case .contentRefused(let notice) = self { notice } else { nil }
+    }
+
+    var scheduledTaskSkills: [String]? {
+        if case .scheduledTask(let skills) = self { skills } else { nil }
     }
 
     public var title: String {
@@ -52,6 +59,10 @@ public enum ChatMarkerMessageKind: Equatable, Sendable {
             return notice
         case .failedTurn:
             return String(localized: "Response failed")
+        case .scheduledTask(let skills):
+            if skills.isEmpty { return String(localized: "Scheduled task") }
+            let list = ListFormatter.localizedString(byJoining: skills)
+            return String(localized: "Scheduled task with \(list)")
         }
     }
 }
