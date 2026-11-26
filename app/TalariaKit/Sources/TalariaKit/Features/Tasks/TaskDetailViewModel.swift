@@ -22,6 +22,7 @@ public final class TaskDetailViewModel {
     private var optimisticResponseWrapping: CronResponseWrapping?
     private var isUpdatingResponseWrapping = false
     private var wrappingWriteGeneration = 0
+    private var rejectedEditorDraft: CronJobEditorDraft?
 
     public var responseWrapping: CronResponseWrapping? {
         optimisticResponseWrapping ?? job.responseWrapping
@@ -32,9 +33,15 @@ public final class TaskDetailViewModel {
     }
 
     public var editorDraft: CronJobEditorDraft {
-        var draft = CronJobEditorDraft(job: job)
+        var draft = rejectedEditorDraft ?? CronJobEditorDraft(job: job)
         draft.responseWrapping = responseWrapping
         return draft
+    }
+
+    /// Restore a rejected draft once. Canceling the reopened editor discards it.
+    public func takeEditorDraft() -> CronJobEditorDraft {
+        defer { rejectedEditorDraft = nil }
+        return editorDraft
     }
 
     /// Newest-first run history, paged through `GET /api/crons/history`.
@@ -243,7 +250,7 @@ public final class TaskDetailViewModel {
         }
 
         let wrapping = job.responseWrapping == nil ? nil : draft.responseWrapping
-        return await mutateJob(responseWrapping: wrapping) { jobID in
+        let saved = await mutateJob(responseWrapping: wrapping) { jobID in
             try await client.updateCron(
                 jobID: jobID,
                 prompt: draft.trimmedPrompt,
@@ -258,6 +265,11 @@ public final class TaskDetailViewModel {
                 wrapResponse: wrapping
             )
         }
+        // The editor closes optimistically when a wrapping edit is submitted.
+        if draft.responseWrapping != nil {
+            rejectedEditorDraft = saved ? nil : draft
+        }
+        return saved
     }
 
     /// A policy-only edit can save tasks whose script or skills replace a prompt.

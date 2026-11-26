@@ -8,6 +8,7 @@ struct TaskDetailView: View {
 
     @State private var viewModel: TaskDetailViewModel
     @State private var isPresentingEditTask = false
+    @State private var editDraft: CronJobEditorDraft?
     @State private var isConfirmingDelete = false
     @State private var reads = ScreenReads()
     @Environment(\.dismiss) private var dismiss
@@ -107,6 +108,7 @@ struct TaskDetailView: View {
                     }
 
                     Button {
+                        editDraft = viewModel.takeEditorDraft()
                         viewModel.clearActionError()
                         isPresentingEditTask = true
                     } label: {
@@ -132,7 +134,8 @@ struct TaskDetailView: View {
             CronJobEditorSheet(
                 title: String(localized: "Edit Task"),
                 client: viewModel.client,
-                draft: viewModel.editorDraft,
+                draft: editDraft ?? viewModel.editorDraft,
+                baselineDraft: CronJobEditorDraft(job: viewModel.job),
                 saveTitle: String(localized: "Save"),
                 isSaving: viewModel.isMutating,
                 errorMessage: viewModel.actionErrorMessage,

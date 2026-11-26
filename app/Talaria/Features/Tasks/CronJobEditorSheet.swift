@@ -56,6 +56,7 @@ struct CronJobEditorSheet: View {
         title: String,
         client: APIClient,
         draft: CronJobEditorDraft,
+        baselineDraft: CronJobEditorDraft? = nil,
         saveTitle: String,
         isSaving: Bool,
         errorMessage: String?,
@@ -76,7 +77,9 @@ struct CronJobEditorSheet: View {
         self.initialDeliver = draft.deliver
         self.initialProfile = draft.profile
         _draft = State(initialValue: draft)
-        _initialDraft = State(initialValue: draft)
+        var baseline = baselineDraft ?? draft
+        baseline.responseWrapping = draft.responseWrapping
+        _initialDraft = State(initialValue: baseline)
         _catalogs = State(initialValue: CronJobEditorCatalogs(client: client, includesBlueprints: allowsBlueprints))
     }
 

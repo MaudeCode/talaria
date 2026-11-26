@@ -1055,6 +1055,28 @@ final class CronManagementViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testRejectedCombinedWrappingSavePreservesEditsForReopening() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/crons/update")
+            return apiTestJSONResponse(#"{"ok":false,"error":"Task policy was refused."}"#, for: request)
+        }
+        let job = try decodeCronJob(
+            #"{"id":"digest","prompt":"Summarize releases.","schedule_input":"0 7 * * *","wrap_response_supported":true,"wrap_response":true}"#
+        )
+        let viewModel = TaskDetailViewModel(job: job, runningElapsed: nil, server: Self.defaultServerURL, client: client)
+        var submitted = viewModel.editorDraft
+        submitted.prompt = "Summarize releases and known issues."
+        submitted.responseWrapping = .off
+
+        let saved = await viewModel.update(from: submitted)
+
+        XCTAssertFalse(saved)
+        let reopened = viewModel.editorDraft
+        XCTAssertEqual(reopened.prompt, submitted.prompt, "Reopening must restore the unsaved prompt")
+        XCTAssertEqual(reopened.responseWrapping, .on, "Reopening must show the confirmed policy")
+    }
+
+    @MainActor
     func testTaskDetailReconcilesWrappingAfterAnUnknownWriteOutcome() async throws {
         let client = makeClient { request in
             switch (request.httpMethod, request.url?.path) {
