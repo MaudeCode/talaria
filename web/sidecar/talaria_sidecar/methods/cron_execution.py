@@ -44,6 +44,13 @@ def _read_record(home, job_id):
     return record
 
 
+def retained_execution_home(home, job_id):
+    """The execution home a retained record's recovery runs in, or ``None`` (none, or unreadable: recovery refuses)."""
+    with contextlib.suppress(Unverified):
+        record = _read_record(home, job_id)
+        return record and record.get("execution_home")
+
+
 def pending_job(home, job_id):
     """The frozen job keeps an externally deleted execution reachable through Web's list/get preflight."""
     record = _read_record(home, job_id)

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Run now no longer runs a scheduled task on this computer while a plugin runs its profile somewhere else.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
