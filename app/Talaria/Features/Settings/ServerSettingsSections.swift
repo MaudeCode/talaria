@@ -28,6 +28,9 @@ struct ServerSettingsSections: View {
     @Environment(\.settingsScrollAnchor) private var scrollAnchor
 
     var body: some View {
+        if page == .tools, let store {
+            toolsetSections(store)
+        }
         if let store, let settings = store.settings {
             switch page {
             case .tools:
@@ -142,6 +145,33 @@ struct ServerSettingsSections: View {
             switch page {
             case .titles, .liveActivity: row
             default: SettingsSection(title: entry.section) { row }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func toolsetSections(_ store: ServerSettingsStore) -> some View {
+        let rows = store.toolsetCatalog?.toolsets ?? []
+        let available = rows.filter { $0.group == "available" }
+        let unavailable = rows.filter { $0.group == "not_available" }
+        if !available.isEmpty {
+            SettingsSection(title: String(localized: "Toolsets")) {
+                ForEach(available) { item in
+                    SettingsToggleRow(title: item.name, systemImage: "wrench.and.screwdriver",
+                                      isOn: Binding(get: { store.isToolsetEnabled(item) },
+                                                    set: { store.setToolsetDefault(name: item.name, enabled: $0) }),
+                                      accessibilityIdentifier: "settings-tools-toolset-\(item.name)")
+                        .disabled(item.canDeselect != true)
+                }
+            }
+        }
+        if !unavailable.isEmpty {
+            SettingsSection(title: String(localized: "Not available")) {
+                ForEach(unavailable) { item in
+                    SettingsInfoRow(title: item.name, value: item.localizedUnavailableReason)
+                        .disabled(true)
+                        .accessibilityIdentifier("settings-tools-toolset-\(item.name)")
+                }
             }
         }
     }

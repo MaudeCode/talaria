@@ -6,14 +6,95 @@ import XCTest
 final class ServerSettingsStoreTests: XCTestCase {
     private let initial = #"{"agent_approvals":true,"update_channel":"stable","max_tokens":8192,"bot_name":"Hermes"}"#
 
-    private func store(_ handler: @escaping (DeferredMockURLProtocol) -> Void) -> ServerSettingsStore {
+    private func store(acceptsToolsets: Bool = false, _ handler: @escaping (DeferredMockURLProtocol) -> Void) -> ServerSettingsStore {
         let host = "settings-\(UUID().uuidString).test"
-        DeferredMockURLProtocol.setOnRequest(handler, forHost: host)
+        DeferredMockURLProtocol.setOnRequest({ request in
+            if !acceptsToolsets, request.request.url?.path == "/api/toolsets/defaults" {
+                request.complete(withJSON: "{}", statusCode: 404)
+            } else {
+                handler(request)
+            }
+        }, forHost: host)
         addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [DeferredMockURLProtocol.self]
         return ServerSettingsStore(client: APIClient(baseURL: URL(string: "https://\(host)")!,
                                                      session: URLSession(configuration: config)))
+    }
+
+    func testLoadingSettingsReadsProfileToolsetDefaults() async {
+        let paths = LockedTestValue(Set<String>())
+        let model = store(acceptsToolsets: true) { request in
+            let path = request.request.url?.path ?? ""
+            paths.value.insert(path)
+            if path == "/api/settings" {
+                request.complete(withJSON: self.initial)
+            } else {
+                request.complete(withJSON: "{}", statusCode: 404)
+            }
+        }
+
+        await model.loadIfNeeded()
+
+        XCTAssertTrue(paths.value.contains("/api/toolsets/defaults"), "Settings must request the profile toolset catalog")
+    }
+
+    func testToolsetRefusalRollsBackTheOptimisticToggle() async throws {
+        try await assertToolsetWrite(refused: true)
+    }
+
+    func testToolsetTimeoutReadsBackWithoutReplayingTheToggle() async throws {
+        try await assertToolsetWrite(refused: false)
+    }
+
+    private func assertToolsetWrite(refused: Bool) async throws {
+        let initialCatalog = String(decoding: try sharedContractFixture("toolsets"), as: UTF8.self)
+        var saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(initialCatalog.utf8)) as? [String: Any])
+        var rows = try XCTUnwrap(saved["toolsets"] as? [[String: Any]])
+        let index = try XCTUnwrap(rows.firstIndex { $0["name"] as? String == "web" })
+        rows[index]["selected"] = true
+        rows[0]["can_deselect"] = true
+        saved["toolsets"] = rows
+        saved["selected_toolsets"] = ["file", "web"]
+        saved["default_toolsets"] = ["file", "web"]
+        let savedCatalog = String(decoding: try JSONSerialization.data(withJSONObject: saved), as: UTF8.self)
+        let reads = LockedTestValue(0)
+        let writes = DeferredRequests()
+        let arrived = expectation(description: "Toolset PUT reached the transport")
+        let model = store(acceptsToolsets: true) { request in
+            switch (request.request.httpMethod, request.request.url?.path) {
+            case ("GET", "/api/settings"): request.complete(withJSON: "{}")
+            case ("GET", "/api/toolsets/defaults"):
+                reads.value += 1
+                request.complete(withJSON: reads.value == 1 ? initialCatalog : savedCatalog)
+            case ("PUT", "/api/toolsets/defaults"):
+                _ = writes.append(request)
+                arrived.fulfill()
+            default:
+                request.complete(withJSON: "{}", statusCode: 404)
+            }
+        }
+        await model.loadIfNeeded()
+        let web = try XCTUnwrap(model.toolsetCatalog?.toolsets.first { $0.name == "web" })
+        XCTAssertFalse(model.isToolsetEnabled(web))
+        let write = model.setToolsetDefault(name: web.name, enabled: true)
+        XCTAssertTrue(model.isToolsetEnabled(web), "The toggle moves before any server response")
+        await fulfillment(of: [arrived], timeout: 10)
+        guard writes.count == 1 else { return XCTFail("Expected one toolset write") }
+        let put = writes.request(at: 0)
+        if refused {
+            put.complete(withJSON: #"{"error":"Owner only"}"#, statusCode: 403)
+        } else {
+            put.fail(with: URLError(.timedOut))
+        }
+        await write.value
+        let body = try JSONDecoder().decode([String: JSONValue].self, from: XCTUnwrap(apiTestBodyData(from: put.request)))
+        XCTAssertEqual(body, ["name": .string("web"), "enabled": .bool(true)])
+        let confirmed = try XCTUnwrap(model.toolsetCatalog?.toolsets.first { $0.name == "web" })
+        XCTAssertEqual(model.isToolsetEnabled(confirmed), !refused)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertEqual(reads.value, refused ? 1 : 2)
+        XCTAssertEqual(writes.count, 1)
     }
 
     private enum Choice: CaseIterable {

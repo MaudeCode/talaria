@@ -78,7 +78,7 @@ struct ComposerToolsetsSheet: View {
                     ForEach(catalog.toolsets) { item in
                         if item.group == "not_available" || (item.group == nil && item.available != true) {
                             SettingsItemRow(title: item.name, subtitle: item.description, detail: strippedTools(item), accessory: {
-                                Text(item.unavailableReason == "disabled" ? "Disabled by operator" : "Unavailable")
+                                Text(item.localizedUnavailableReason)
                                     .foregroundStyle(.secondary)
                             })
                             .disabled(true)
@@ -166,5 +166,12 @@ struct ComposerToolsetsSheet: View {
             }
             await load()
         }
+    }
+}
+
+
+extension ToolsetChoice {
+    var localizedUnavailableReason: String {
+        unavailableReason == "disabled" ? String(localized: "Disabled by operator") : String(localized: "Unavailable")
     }
 }

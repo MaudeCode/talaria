@@ -7,11 +7,14 @@ import Observation
 @Observable
 public final class ServerSettingsStore {
     public private(set) var confirmedSettings: SettingsResponse?
+    public private(set) var toolsetCatalog: ToolsetsCatalog?
     public private(set) var errorMessage: String?
     public private(set) var isLoading = false
 
     private var overrides: [String: (id: UUID, apply: (inout SettingsResponse) -> Void)] = [:]
-    private var unresolved: Set<UUID> = []
+    private var toolsetOverrides: [String: (id: UUID, enabled: Bool)] = [:]
+    private var unresolved: [UUID: PartialKeyPath<ServerSettingsStore>] = [:]
+    private var toolsetGeneration = 0
     private var generation = 0
     private var pendingWrites = 0
     private var didLoad = false
@@ -25,6 +28,16 @@ public final class ServerSettingsStore {
         guard var result = confirmedSettings else { return nil }
         for patch in overrides.values { patch.apply(&result) }
         return result
+    }
+
+    public var showsTools: Bool {
+        settings?.agentApprovals != nil || toolsetCatalog?.toolsets.contains {
+            $0.group == "available" || $0.group == "not_available"
+        } == true
+    }
+
+    public func isToolsetEnabled(_ item: ToolsetChoice) -> Bool {
+        toolsetOverrides[item.name]?.enabled ?? item.selected ?? false
     }
 
     public func loadIfNeeded() async {
@@ -43,15 +56,43 @@ public final class ServerSettingsStore {
         let current = generation
         isLoading = true
         errorMessage = nil
+        async let toolsets: Void = loadToolsets()
         defer { if generation == current { isLoading = false } }
         do {
             let response = try await client.settings()
             guard generation == current else { return }
             confirmedSettings = response
-            clearResolvedOverrides()
+            clearResolvedOverrides(for: \.confirmedSettings)
         } catch {
             guard generation == current else { return }
             if !APIError.isCancellation(error) { errorMessage = error.localizedDescription }
+        }
+        await toolsets
+    }
+
+    private func loadToolsets() async {
+        toolsetGeneration += 1
+        let current = toolsetGeneration
+        do {
+            let catalog = try await client.toolsetDefaults()
+            guard toolsetGeneration == current else { return }
+            toolsetCatalog = catalog
+            clearResolvedOverrides(for: \.toolsetCatalog)
+        } catch {
+            guard toolsetGeneration == current, !APIError.isCancellation(error) else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    public func setToolsetDefault(name: String, enabled: Bool) -> Task<Void, Never> {
+        let id = UUID()
+        toolsetOverrides[name] = (id, enabled)
+        toolsetGeneration += 1
+        return enqueueWrite(id, snapshot: \.toolsetCatalog) {
+            try await self.client.setToolsetDefault(name: name, enabled: enabled)
+        } reconcile: {
+            try await self.client.toolsetDefaults()
         }
     }
 
@@ -142,6 +183,18 @@ public final class ServerSettingsStore {
         overrides[key] = (id, { $0[keyPath: path] = value })
         generation += 1
         isLoading = false
+        return enqueueWrite(id, snapshot: \.confirmedSettings) {
+            try await self.client.send(endpoint: .settings, method: "POST", body: [key: value])
+        } reconcile: {
+            try await self.client.settings()
+        }
+    }
+
+    private func enqueueWrite<Snapshot>(
+        _ id: UUID, snapshot: ReferenceWritableKeyPath<ServerSettingsStore, Snapshot>,
+        write: @escaping () async throws -> Snapshot,
+        reconcile: @escaping () async throws -> Snapshot
+    ) -> Task<Void, Never> {
         errorMessage = nil
         pendingWrites += 1
         let previous = writeTask
@@ -149,19 +202,19 @@ public final class ServerSettingsStore {
             await previous?.value
             defer { pendingWrites -= 1 }
             do {
-                confirmedSettings = try await client.send(endpoint: .settings, method: "POST", body: [key: value])
+                self[keyPath: snapshot] = try await write()
                 clearOverride(id)
-                clearResolvedOverrides()
+                clearResolvedOverrides(for: snapshot)
             } catch {
                 if APIError.isDefinitiveWriteFailure(error) {
                     clearOverride(id)
                 } else {
                     // Never replay an unknown write. A read determines whether the choice was stored.
                     do {
-                        confirmedSettings = try await client.settings()
+                        self[keyPath: snapshot] = try await reconcile()
                         clearOverride(id)
-                        clearResolvedOverrides()
-                    } catch { unresolved.insert(id) }
+                        clearResolvedOverrides(for: snapshot)
+                    } catch { unresolved[id] = snapshot }
                 }
                 errorMessage = error.localizedDescription
             }
@@ -172,10 +225,11 @@ public final class ServerSettingsStore {
 
     private func clearOverride(_ id: UUID) {
         overrides = overrides.filter { $0.value.id != id }
-        unresolved.remove(id)
+        toolsetOverrides = toolsetOverrides.filter { $0.value.id != id }
+        unresolved.removeValue(forKey: id)
     }
 
-    private func clearResolvedOverrides() {
-        for id in unresolved { clearOverride(id) }
+    private func clearResolvedOverrides(for snapshot: PartialKeyPath<ServerSettingsStore>) {
+        for (id, source) in unresolved where source == snapshot { clearOverride(id) }
     }
 }

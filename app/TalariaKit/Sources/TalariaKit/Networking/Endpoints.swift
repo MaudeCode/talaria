@@ -45,6 +45,7 @@ public enum Endpoint: Sendable {
     case sessionYolo(sessionID: String?)
     case sessionToolsets
     case toolsetsCatalog
+    case toolsetDefaults
     case exportSession(sessionID: String, format: SessionExportFormat)
     case projects
     case createProject
@@ -274,6 +275,8 @@ public enum Endpoint: Sendable {
             return "/api/session/yolo"
         case .toolsetsCatalog:
             return "/api/toolsets"
+        case .toolsetDefaults:
+            return "/api/toolsets/defaults"
         case .sessionToolsets:
             return "/api/session/toolsets"
         case .exportSession:

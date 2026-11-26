@@ -286,6 +286,19 @@ extension APIClient {
         }
     }
 
+    /// Nil means an older server lacks profile default toolsets.
+    public func toolsetDefaults() async throws -> ToolsetsCatalog? {
+        do {
+            return try await send(endpoint: .toolsetDefaults, method: "GET")
+        } catch APIError.http(404, _) {
+            return nil
+        }
+    }
+
+    public func setToolsetDefault(name: String, enabled: Bool) async throws -> ToolsetsCatalog {
+        try await send(endpoint: .toolsetDefaults, method: "PUT", body: ToolsetDefaultUpdate(name: name, enabled: enabled))
+    }
+
     /// Sets the session's toolset override; nil restores the profile's defaults (TAL-631).
     public func setSessionToolsets(sessionID: String, toolsets: [String]?) async throws -> SessionToolsetsResponse {
         try await send(
@@ -298,6 +311,11 @@ extension APIClient {
 
 public struct SessionToolsetsResponse: Decodable, Equatable, Sendable {
     public let enabledToolsets: [String]?
+}
+
+private struct ToolsetDefaultUpdate: Encodable {
+    let name: String
+    let enabled: Bool
 }
 
 private struct SessionToolsetsRequest: Encodable {
