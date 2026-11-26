@@ -136,7 +136,7 @@ struct AboutSettingsView: View {
 
     init(server: URL? = nil, feedback: FeedbackComposer? = nil,
          whatsNew: WhatsNewAnnouncement? = .installed(), defaults: UserDefaults = .standard) {
-        _feedback = State(initialValue: feedback ?? FeedbackComposer(server: server, clientMetadata: .current))
+        _feedback = State(initialValue: feedback ?? .forApp(server: server))
         self.whatsNew = whatsNew
         self.defaults = defaults
     }

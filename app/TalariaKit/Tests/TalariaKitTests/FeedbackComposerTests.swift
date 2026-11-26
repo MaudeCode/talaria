@@ -84,6 +84,94 @@ final class FeedbackComposerTests: XCTestCase {
         XCTAssertTrue(restored.hasUnknownOutcome)
     }
 
+    func testRetriesRecoverTheSameDiagnosticSnapshotAfterRelaunch() async throws {
+        let storage = defaults()
+        let store = makeDiagnosticStore()
+        let now = Date.now
+        let original = recordDiagnostic(in: store, at: now - 60)
+        var requests: [FeedbackRequest] = []
+        let initial = FeedbackComposer(server: server, defaults: storage, clientMetadata: metadata, diagnosticStore: store, submit: {
+            requests.append($0)
+            throw APIError.network(underlying: URLError(.networkConnectionLost))
+        }, options: { self.diagnosticOptions(supported: true) })
+        fill(initial)
+        await initial.loadAttachmentOptions()
+        XCTAssertEqual(initial.diagnosticReports, [original])
+        try await XCTUnwrap(initial.send()).value
+        XCTAssertEqual(requests.map { $0.client?.diagnosticReports }, [[original], [original]])
+        XCTAssertNil(initial.draft.client?.diagnosticReports, "The persisted draft contains report IDs only")
+
+        _ = recordDiagnostic(in: store, at: now)
+        let reopened = FeedbackComposer(server: server, defaults: storage, clientMetadata: metadata, diagnosticStore: store, submit: {
+            requests.append($0)
+            return FeedbackResult(status: "sent", reportId: "synthetic-report")
+        })
+        try await XCTUnwrap(reopened.send()).value
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(requests.first, requests.last)
+    }
+
+    func testServersWithoutDiagnosticSupportStillReceiveFeedback() async throws {
+        let store = makeDiagnosticStore()
+        _ = recordDiagnostic(in: store, at: .now)
+        var submitted: FeedbackRequest?
+        let model = FeedbackComposer(server: server, defaults: defaults(), clientMetadata: metadata, diagnosticStore: store, submit: {
+            submitted = $0
+            return FeedbackResult(status: "sent", reportId: "synthetic-report")
+        }, options: { self.diagnosticOptions(supported: nil) })
+        fill(model)
+        await model.loadAttachmentOptions()
+        XCTAssertTrue(model.diagnosticReports.isEmpty)
+        try await XCTUnwrap(model.send()).value
+        XCTAssertNil(try XCTUnwrap(submitted?.client).diagnosticReports)
+    }
+
+    func testAnEvictedSnapshotRequiresAnExplicitNewReport() async throws {
+        let storage = defaults()
+        let store = makeDiagnosticStore()
+        _ = recordDiagnostic(in: store, at: .now)
+        let initial = FeedbackComposer(server: server, defaults: storage, clientMetadata: metadata, diagnosticStore: store, submit: { _ in
+            throw APIError.network(underlying: URLError(.networkConnectionLost))
+        }, options: { self.diagnosticOptions(supported: true) })
+        fill(initial)
+        await initial.loadAttachmentOptions()
+        try await XCTUnwrap(initial.send()).value
+
+        let reopened = FeedbackComposer(server: server, defaults: storage, clientMetadata: metadata, diagnosticStore: makeDiagnosticStore(),
+                                        submit: { _ in
+            XCTFail("An unknown send must never retry with an incomplete snapshot")
+            return FeedbackResult(status: "sent", reportId: "unexpected")
+        })
+        let originalID = reopened.draft.requestId
+        XCTAssertNil(reopened.send())
+        XCTAssertTrue(reopened.cannotRetryDiagnostics)
+        XCTAssertTrue(reopened.hasUnknownOutcome)
+        reopened.startNewReportAfterDiagnosticsExpired()
+        XCTAssertNotEqual(reopened.draft.requestId, originalID)
+        XCTAssertFalse(reopened.hasUnknownOutcome)
+        XCTAssertEqual(reopened.draft.body, "Synthetic details")
+    }
+
+    private func makeDiagnosticStore() -> FeedbackDiagnosticStore {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return FeedbackDiagnosticStore(directory: directory)
+    }
+
+    @discardableResult
+    private func recordDiagnostic(in store: FeedbackDiagnosticStore, at end: Date) -> FeedbackDiagnosticReport {
+        let report = FeedbackDiagnosticReport(kind: .hang, start: (end - 60).ISO8601Format(), end: end.ISO8601Format(),
+                                              build: "42", frames: [])
+        store.record([report])
+        return report
+    }
+
+    private func diagnosticOptions(supported: Bool?) -> FeedbackOptions {
+        FeedbackOptions(attachments: .init(enabled: false, videoAllowed: false, maxCount: 0, maxImageBytes: 0,
+                                           maxVideoBytes: 0, maxVideoSeconds: 0, acceptedTypes: []),
+                        diagnosticReportsSupported: supported)
+    }
+
     func testDiagnosticsAreVerbatimAndDraftsAreServerScoped() async {
         let text = "Web: synthetic\n  exact spacing\n<redacted>\n"
         let storage = defaults()

@@ -4,6 +4,7 @@ struct SettingsInfoRow: View {
     let title: String
     let value: String
     var valueIsSelectable = false
+    var wrapsValue = false
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -21,7 +22,8 @@ struct SettingsInfoRow: View {
     private var valueText: some View {
         Text(value)
             .foregroundStyle(.secondary)
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
+            .lineLimit(wrapsValue ? nil : (dynamicTypeSize.isAccessibilitySize ? 4 : 2))
+            .fixedSize(horizontal: false, vertical: wrapsValue)
             .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
     }
 }

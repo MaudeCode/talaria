@@ -26,6 +26,7 @@
     ]
   },
   "options": {
+    "diagnosticReportsSupported": true,
     "attachments": {
       "enabled": true,
       "videoAllowed": true,

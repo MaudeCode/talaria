@@ -23,6 +23,8 @@ extension APIClient {
 
     public func submitFeedback(_ request: FeedbackRequest) async throws -> FeedbackResult {
         // This contract uses camelCase; the client's legacy encoder converts keys to snake_case.
+        var request = request
+        if !request.includeDiagnostics { request.client?.diagnosticReports = nil }
         let data = try await sendData(endpoint: .feedbackSubmit, method: "POST", encodedBody: JSONEncoder().encode(request))
         return try decode(FeedbackResult.self, from: data)
     }
@@ -68,6 +70,7 @@ public struct FeedbackAttachmentResult: Decodable, Equatable, Sendable {
 /// `GET /api/feedback/options`: what this server lets its clients attach.
 public struct FeedbackOptions: Decodable, Equatable, Sendable {
     public let attachments: Attachments
+    public let diagnosticReportsSupported: Bool?
 
     public struct Attachments: Decodable, Equatable, Sendable {
         public let enabled: Bool
@@ -88,7 +91,10 @@ public struct FeedbackOptions: Decodable, Equatable, Sendable {
         }
     }
 
-    public init(attachments: Attachments) { self.attachments = attachments }
+    public init(attachments: Attachments, diagnosticReportsSupported: Bool? = nil) {
+        self.attachments = attachments
+        self.diagnosticReportsSupported = diagnosticReportsSupported
+    }
 }
 
 /// One file staged by `POST /api/feedback/attachments`.
@@ -107,12 +113,25 @@ public struct FeedbackClient: Codable, Equatable, Sendable {
     public let appVersion: String
     public let osVersion: String
     public let deviceModel: String
+    public var diagnosticReports: [FeedbackDiagnosticReport]?
 
     public init(appVersion: String, osVersion: String, deviceModel: String) {
         self.appVersion = appVersion
         self.osVersion = osVersion
         self.deviceModel = deviceModel
     }
+}
+
+public struct FeedbackDiagnosticReport: Codable, Equatable, Hashable, Sendable {
+    public enum Kind: String, Codable, Sendable {
+        case crash, hang, cpuException, diskWrite
+    }
+
+    public let kind: Kind
+    public let start: String
+    public let end: String
+    public let build: String
+    public let frames: [String]
 }
 
 /// The same envelope is persisted before sending, including the platform stamp, for idempotent retries.

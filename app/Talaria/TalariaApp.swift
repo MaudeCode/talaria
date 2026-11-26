@@ -182,6 +182,7 @@ struct TalariaApp: App {
         #else
         usesUITestFixture = false
         #endif
+        if !usesUITestFixture { FeedbackDiagnosticStore.startCollection() }
 
         // Same store the `modelContainer(for:)` modifier would open; failure is
         // fatal there too. The offline cache is device-local: the CloudKit

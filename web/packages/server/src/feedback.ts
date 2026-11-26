@@ -69,7 +69,7 @@ export async function feedbackOptions(deps: AppDeps): Promise<z.infer<typeof Fee
   const kinds: readonly string[] = FEEDBACK_ATTACHMENT_LIMITS.tierKinds[tier]
   const types = Object.entries(FEEDBACK_ATTACHMENT_LIMITS.types)
   const maxBytes = (kind: string) => Math.max(...types.filter(([, type]) => type.kind === kind).map(([, type]) => type.maxBytes))
-  return { attachments: {
+  return { diagnosticReportsSupported: tier === 'verified', attachments: {
     enabled: kinds.length > 0, videoAllowed: kinds.includes('video'), maxCount: MAX_ATTACHMENTS, maxVideoCount: kinds.includes('video') ? FEEDBACK_ATTACHMENT_LIMITS.maxVideosPerReport : 0,
     maxImageBytes: maxBytes('image'), maxVideoBytes: maxBytes('video'), maxVideoSeconds: FEEDBACK_ATTACHMENT_LIMITS.maxVideoSeconds,
     acceptedTypes: types.filter(([, type]) => kinds.includes(type.kind)).map(([name]) => FeedbackAttachmentTypeSchema.parse(name)),

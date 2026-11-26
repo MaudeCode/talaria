@@ -10,23 +10,31 @@ final class FeedbackHostedTests: XCTestCase {
     private func model(
         connected: Bool = true,
         attachments: Bool = false,
+        deviceDiagnostics: Bool = false,
         submit: ((FeedbackRequest) async throws -> FeedbackResult)? = nil
     ) -> FeedbackComposer {
         let name = "FeedbackHostedTests.\(UUID())"
         let defaults = UserDefaults(suiteName: name)!
         let staging = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        let diagnosticStore = deviceDiagnostics ? FeedbackDiagnosticStore(directory: staging.appending(path: "Diagnostics")) : nil
+        if let diagnosticStore {
+            let now = Date.now
+            diagnosticStore.record([.init(kind: .hang, start: (now - 60).ISO8601Format(),
+                                          end: now.ISO8601Format(), build: "42", frames: [])])
+        }
         addTeardownBlock {
             defaults.removePersistentDomain(forName: name)
             try? FileManager.default.removeItem(at: staging)
         }
         return FeedbackComposer(
             server: connected ? URL(string: "https://feedback.example.test")! : nil,
-            defaults: defaults, clientMetadata: .current, stagingRoot: staging, submit: submit,
+            defaults: defaults, clientMetadata: .current, stagingRoot: staging, diagnosticStore: diagnosticStore, submit: submit,
             diagnostics: { FeedbackDiagnostics(text: "Web: synthetic\n  Exact diagnostics <redacted>", bytes: 45) },
             options: {
                 FeedbackOptions(attachments: .init(enabled: attachments, videoAllowed: true, maxCount: 5, maxImageBytes: 10_000_000,
                                                    maxVideoBytes: 20_000_000, maxVideoSeconds: 120,
-                                                   acceptedTypes: ["image/png", "image/jpeg", "video/mp4"]))
+                                                   acceptedTypes: ["image/png", "image/jpeg", "video/mp4"]),
+                                diagnosticReportsSupported: deviceDiagnostics)
             },
             upload: { data, type, _ in FeedbackAttachmentStaged(attachmentId: UUID(), contentType: type, bytes: data.count) }
         )
@@ -280,5 +288,41 @@ final class FeedbackHostedTests: XCTestCase {
             XCTAssertEqual(model.draft.kind, "feature")
             window.isHidden = true
         }
+    }
+
+    func testDeviceDiagnosticsOnPhoneInLightMode() async throws { try await checkDeviceDiagnostics("phone-light") }
+    func testDeviceDiagnosticsOnPhoneInDarkMode() async throws { try await checkDeviceDiagnostics("phone-dark") }
+    func testDeviceDiagnosticsAtAccessibilityTextSize() async throws { try await checkDeviceDiagnostics("phone-ax5") }
+    func testDeviceDiagnosticsOnDuoOuter() async throws { try await checkDeviceDiagnostics("duo-outer") }
+    func testDeviceDiagnosticsOnDuoInner() async throws { try await checkDeviceDiagnostics("duo-inner") }
+
+    func testOptingOutHidesTheDeviceDiagnosticsPreview() async throws {
+        let model = model(deviceDiagnostics: true)
+        let window = try hostWindow(FeedbackSheet(model: model))
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Diagnostics"))
+        _ = try await requireElementScrolling(in: window, "Hang Report") { $0.accessibilityLabel?.contains("Hang Report") == true }
+        let toggle = try XCTUnwrap(window.firstView(ofType: UISwitch.self))
+        toggle.setOn(false, animated: false)
+        toggle.sendActions(for: .valueChanged)
+        commitDisplay(of: window)
+        XCTAssertFalse(model.draft.includeDiagnostics)
+        XCTAssertFalse(HostedAccessibility.elements(in: window).contains { $0.accessibilityLabel?.contains("Hang Report") == true })
+        attachHostedScreenshot(window, name: "feedback-device-diagnostics-opt-out")
+    }
+
+    private func checkDeviceDiagnostics(_ name: String) async throws {
+        let variant = try XCTUnwrap(HostedVariant.gallery.first { $0.name == name })
+        let model = model(deviceDiagnostics: true)
+        let window = try hostWindow(FeedbackSheet(model: model), size: variant.size) {
+            $0.userInterfaceStyle = variant.style
+            $0.preferredContentSizeCategory = variant.textSize
+        }
+        HostedAccessibility.activate(try await requireElementScrolling(in: window, "Diagnostics") { $0.accessibilityLabel == "Diagnostics" })
+        _ = try await requireElementScrolling(in: window, "Hang Report") { $0.accessibilityLabel?.contains("Hang Report") == true }
+        _ = try await requireElementScrolling(in: window, "Build 42") { element in
+            element.accessibilityLabel?.contains("Build 42") == true
+                && window.bounds.contains(window.convert(element.accessibilityFrame, from: window.screen.coordinateSpace))
+        }
+        attachHostedScreenshot(window, name: "feedback-device-diagnostics-\(name)")
     }
 }

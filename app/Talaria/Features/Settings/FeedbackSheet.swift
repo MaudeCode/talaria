@@ -10,6 +10,7 @@ struct FeedbackSheet: View {
     static let systemImage = "bubble.and.pencil"
     @Bindable var model: FeedbackComposer
     @State private var diagnosticsExpanded = false
+    @State private var confirmNewReport = false
     @State private var pickedItems: [PhotosPickerItem] = []
     /// Its reference URL is the local file the composer staged.
     @State private var previewItem: TranscriptMediaPreviewItem?
@@ -45,6 +46,9 @@ struct FeedbackSheet: View {
                                     .textSelection(.enabled)
                                     .accessibilityIdentifier("feedback-diagnostics")
                             }
+                            ForEach(model.diagnosticReports, id: \.self) { report in
+                                SettingsInfoRow(title: diagnosticTitle(report.kind), value: diagnosticDetail(report), wrapsValue: true)
+                            }
                             if let error = model.diagnosticsError {
                                 SettingsErrorFootnote(error)
                                 Button("Retry") { Task { await model.loadDiagnostics() } }
@@ -53,7 +57,16 @@ struct FeedbackSheet: View {
                     }
                 }
                 if let error = model.validationError ?? model.error {
-                    Section { SettingsErrorFootnote(error) }
+                    Section {
+                        SettingsErrorFootnote(error)
+                        if model.cannotRetryDiagnostics {
+                            Button { confirmNewReport = true } label: {
+                                Image(systemName: "square.and.pencil")
+                            }
+                            .accessibilityLabel("Start New Report")
+                            .help("Start New Report")
+                        }
+                    }
                 }
             }
             .navigationTitle(Self.title)
@@ -72,6 +85,11 @@ struct FeedbackSheet: View {
                 if diagnosticsExpanded { await model.loadDiagnostics() }
             }
             .task { await model.loadAttachmentOptions() }
+            .confirmationDialog("Start a new report?", isPresented: $confirmNewReport) {
+                Button("Start New Report", role: .destructive) { model.startNewReportAfterDiagnosticsExpired() }
+            } message: {
+                Text("The previous report may already have been sent.")
+            }
             .sheet(item: $previewItem) { item in
                 if let file = URL(string: item.reference.url) {
                     TranscriptMediaPreviewView(localFile: file, item: item)
@@ -84,6 +102,23 @@ struct FeedbackSheet: View {
             }
         }
         .adaptiveFormPresentation()
+    }
+
+    private func diagnosticTitle(_ kind: FeedbackDiagnosticReport.Kind) -> String {
+        switch kind {
+        case .crash: String(localized: "Crash Report")
+        case .hang: String(localized: "Hang Report")
+        case .cpuException: String(localized: "CPU Exception Report")
+        case .diskWrite: String(localized: "Disk Write Report")
+        }
+    }
+
+    private func diagnosticDetail(_ report: FeedbackDiagnosticReport) -> String {
+        let build = String(localized: "Build \(report.build)")
+        guard let start = try? Date.ISO8601FormatStyle().parse(report.start),
+              let end = try? Date.ISO8601FormatStyle().parse(report.end), start <= end else { return build }
+        let window = Date.IntervalFormatStyle(date: .abbreviated, time: .shortened).format(start..<end)
+        return "\(window)\n\(build)"
     }
 
     private var attachmentSection: some View {
@@ -195,6 +230,12 @@ private extension UIApplication {
         return UIGraphicsImageRenderer(bounds: window.bounds).pngData { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
         }
+    }
+}
+
+extension FeedbackComposer {
+    static func forApp(server: URL?) -> FeedbackComposer {
+        FeedbackComposer(server: server, clientMetadata: .current, diagnosticStore: .shared)
     }
 }
 
