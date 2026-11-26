@@ -27,7 +27,8 @@ spec.loader.exec_module(browser)
 sys.path.insert(0, str(SCRIPT.parent))
 import app_test_plan as app_plan  # noqa: E402
 MAX_SPECS = browser.MAX_SPECS
-ALL = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "docker", "relay", "contracts", "tooling"}
+ALL = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "web_agent_image", "docker", "relay",
+       "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "web_sidecar", "relay", "contracts"}
 FIXTURE_SUITES = {"web_server", "web_frontend", "contracts"}
 
@@ -101,7 +102,7 @@ class RoutingTests(unittest.TestCase):
             (["web/sidecar/scripts/suite_runner.py", "web/sidecar/scripts/test.sh"], {"web_sidecar", "tooling"}),
             (["web/sidecar/tests/test_runtime.py", "web/sidecar/scripts/replay_sidecar.py"],
              {"web_server", "web_frontend", "web_sidecar", "contracts"}),
-            (["web/sidecar/agent_dependency.json"], {"web_server", "web_sidecar", "contracts", "docker"}),
+            (["web/sidecar/agent_dependency.json"], {"web_server", "web_sidecar", "contracts", "docker", "web_agent_image"}),
             (["web/sidecar/talaria_sidecar/rpc.py"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["web/packages/server/src/api/auth.ts"], {"web_server", "web_frontend", "contracts"}),
             # Server unit tests are excluded from the built server the frontend and contracts jobs drive.
@@ -168,12 +169,12 @@ class RoutingTests(unittest.TestCase):
             ([".github/actions/web-browser/action.yml"], {"web_frontend", "tooling"}),
             (["scripts/check-docker.py"], {"docker", "tooling"}),
             (["scripts/stamp-release.py", "scripts/test-stamp-release.py"], {"tooling"}),
-            (["scripts/check-agent-compatibility.py"], {"web_server", "web_sidecar", "docker", "tooling"}),
+            (["scripts/check-agent-compatibility.py"], {"web_server", "web_sidecar", "docker", "tooling", "web_agent_image"}),
             (["releases/agent_probe.py"], {"web_server", "web_sidecar", "docker", "tooling"}),
             (["scripts/check-release-agent.py"], {"web_sidecar", "tooling"}),
             (["scripts/test-check-agent-compatibility.py"], {"tooling"}),
             # The support record selects the sidecar suite on every supported Agent release.
-            (["web/sidecar/agent_support.json"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/sidecar/agent_support.json"], {"web_server", "web_frontend", "web_sidecar", "contracts", "web_agent_image"}),
             (["releases/publish.py"], {"tooling"}),
             (["releases/cli.py"], {"contracts", "tooling"}),
             ([".github/workflows/release-set.yml"], {"tooling"}),
@@ -329,6 +330,7 @@ class RoutingTests(unittest.TestCase):
     def test_gate_rejects_missing_or_skipped_required_checks(self):
         job_suites = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"},
                       "web": {"web_server", "web_frontend", "web_sidecar"}, "web-docker": {"docker"},
+                      "web-agent-image": {"web_agent_image"},
                       "relay": {"relay"}, "contracts": {"contracts"}}
         for mask in range(1 << len(ALL)):
             selected = {suite for index, suite in enumerate(sorted(ALL)) if mask & (1 << index)}
@@ -620,7 +622,7 @@ class RealDiffTests(unittest.TestCase):
         # A ci.yml change runs the suites of the jobs and keys it changes (TAL-2461). Column-0 comments, concurrency and
         # the jobs every pull request run executes in full (path detection, the gate and the failure report)
         # need only the tooling checks, as does a removed job, which only stops running. Path detection's outputs feed
-        # every job, so they keep the whole ci.yml route, as do triggers, permissions and added or renamed jobs.
+        # every job, so unmapped outputs keep the whole ci.yml route, as do triggers, permissions and unknown jobs.
         original = ("# Header.\nname: CI\non: push\nconcurrency:\n  group: ci\njobs:\n  changes:\n    runs-on: ubuntu-latest\n"
                     "    outputs:\n      app: x\n    steps:\n      - run: classify\n"
                     "  app-tooling:\n    runs-on: macos-latest\n    steps:\n      - run: old-check\n"
@@ -635,6 +637,10 @@ class RealDiffTests(unittest.TestCase):
             ("the App tooling job", ("old-check", "catalog-check"), {"app_tooling", "tooling"}),
             ("the App job", ("app-tests.yml", "app-tests.yml\n    with: {mode: build}"), {"app", "contracts", "tooling"}),
             ("path detection's outputs", ("app: x", "app: y"), ci),
+            ("the Agent image outputs", ("      app: x", "      app: x\n      web_agent_image: y\n"
+                                          "      web_agent_image_base: z"), {"web_agent_image", "tooling"}),
+            ("the Agent image call", ("  report:", "  web-agent-image:\n    uses: ./.github/workflows/web-verify.yml\n"
+                                      "  report:"), {"web_agent_image", "tooling"}),
             ("the trigger", ("on: push", "on: pull_request"), ci),
             ("a job's name", ("  app-tooling:", "  renamed-tooling:"), ci),
             ("an added job", ("  report:", "  extra:\n    runs-on: ubuntu-latest\n  report:"), ci),
@@ -649,14 +655,22 @@ class RealDiffTests(unittest.TestCase):
                 self.write(workflow, original.replace(old, new, 1))
                 self.assertEqual(self.classify(base, self.commit(name)), expected)
 
-    def test_a_sidecar_workflow_job_change_selects_only_sidecar_and_tooling(self):
+    def test_a_web_workflow_part_change_selects_only_its_suite_and_tooling(self):
         workflow = ".github/workflows/web-verify.yml"
-        original = ("on: workflow_call\njobs:\n  server:\n    runs-on: ubuntu-latest\n"
+        original = ("on:\n  workflow_call:\n    inputs:\n      server:\n        type: boolean\n"
+                    "jobs:\n  server:\n    runs-on: ubuntu-latest\n"
                     "  sidecar:\n    runs-on: ubuntu-latest\n    env:\n      TALARIA_SIDECAR_WORKERS: '4'\n")
         self.write(workflow, original)
         base = self.commit("fixture Web workflow")
-        self.write(workflow, original.replace("'4'", "'2'"))
-        self.assertEqual(self.classify(base, self.commit("cap sidecar workers")), {"web_sidecar", "tooling"})
+        cases = [
+            ("cap sidecar workers", original.replace("'4'", "'2'"), "web_sidecar"),
+            ("add image check", original.replace("jobs:", "      agent_image_base:\n        type: string\njobs:") +
+             "  agent-image:\n    runs-on: ubuntu-latest\n", "web_agent_image"),
+        ]
+        for name, contents, suite in cases:
+            with self.subTest(name=name):
+                self.write(workflow, contents)
+                self.assertEqual(self.classify(base, self.commit(name)), {suite, "tooling"})
 
     def test_check_diff_rejects_whitespace_errors_in_the_checked_range(self):
         self.write("README.md", "base\n")

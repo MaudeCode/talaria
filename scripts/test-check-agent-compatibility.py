@@ -70,6 +70,7 @@ class FakeTools:
         self.stamp = None  # an unlabelled image's build stamp
         self.attempt_digest = None  # the rc.N-<tag> Docker tag's digest
         self.remote_tags = {}  # Agent Git tag -> peeled commit
+        self.history = {}
         self.missing_tags = set()  # Docker tags whose pull fails with pull_error
         self.pull_error = 'failed to resolve reference "{ref}": {ref}: not found'  # Docker's answer for a missing tag
         self.fetched = None
@@ -146,6 +147,8 @@ class FakeTools:
         command = [str(part) for part in command]
         if command[-2:] == ["rev-parse", "HEAD"]:
             return self.head.get(self.fetched, self.fetched.rsplit("/", 1)[-1] if len(self.fetched) == 40 else self.recorded_sha())
+        if command[1:4] == ["-C", str(self.root), "show"]:
+            return self.history[command[-1]]
         if "platform.python_version()" in command[-1]:
             return "3.13.7\n"
         if command[:3] == ["docker", "image", "inspect"]:
@@ -217,6 +220,27 @@ class CheckerTests(unittest.TestCase):
     def main(self, *argv):
         with patch("sys.argv", ["check-agent-compatibility.py", *argv]):
             checker.main()
+
+    def test_pr_image_plan_selects_new_or_changed_releases_and_pin_switches(self):
+        base = "b" * 40
+        for path in ("web/sidecar/agent_support.json", "web/sidecar/agent_dependency.json"):
+            self.tools.history[f"{base}:{path}"] = (self.root / path).read_bytes()
+        _, pinned, other = RELEASES
+        changed = {**other, "image": "docker.io/nousresearch/hermes-agent@sha256:" + "e" * 64}
+        added = {**CANDIDATE, "validatedBy": "TAL-350"}
+        cases = [
+            ("checker only", base, RELEASES, pinned, [pinned]),
+            ("pin switched", base, RELEASES, other, [other]),
+            ("image changed and release added", base, [pinned, changed, added], pinned, [changed, added]),
+            ("no classified diff", "all", RELEASES, pinned, RELEASES),
+        ]
+        for name, since, releases, active, expected in cases:
+            with self.subTest(name=name):
+                self.write(releases, active)
+                self.stdout.seek(0)
+                self.stdout.truncate()
+                self.main("--image-releases-since", since)
+                self.assertEqual(json.loads(self.stdout.getvalue()), [entry["releaseTag"] for entry in expected])
 
     def shim_fixture(self):
         """Two shims: one the oldest supported release (0.21.3) needs, one the middle release (0.21.4) needs."""
