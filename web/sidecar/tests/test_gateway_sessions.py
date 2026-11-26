@@ -1785,7 +1785,7 @@ def handoff_calls(owner):
 
 @pytest.mark.parametrize("action,extra", [("handoff_state", {}), ("handoff_request", {"platform": "telegram"}), ("handoff_fail", {})])
 def test_handoff_needs_a_verified_owner_revision(handoff_owner, action, extra):
-    handoff_owner.endpoint.code_sha = SUPPORTED_REVISIONS[0]
+    handoff_owner.endpoint.code_sha = "3b421578588243f920886e6fe79a6faa87ea026e"  # Agent v0.23.1, whose owner has no handoff
     result = handoff_owner.run(None, {"session_id": "native", "action": action, **extra})
     assert (result["state"], result["reason"]) == ("incompatible", "owner_handoff_unsupported")
     assert handoff_owner.calls == []

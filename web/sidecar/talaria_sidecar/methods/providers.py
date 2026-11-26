@@ -15,7 +15,6 @@ import importlib
 import json
 import logging
 import sqlite3
-import sys
 import threading
 from contextlib import closing
 from pathlib import Path
@@ -70,36 +69,6 @@ def auth_status(provider_id: str | None) -> dict:
     return _plain(status) if isinstance(status, dict) else {"logged_in": bool(status)}
 
 
-def _module_dir(module: Any) -> Path | None:
-    try:
-        return Path(module.__file__).resolve().parent
-    except Exception:  # noqa: BLE001 - namespace/builtin modules have no file
-        return None
-
-
-# The Agent's module-name prefix for provider plugins it imports from a ``$HERMES_HOME`` (``providers._import_plugin_dir``).
-_USER_PLUGIN_MODULE = "_hermes_user_provider_"
-_LOAD_LOCK = threading.Lock()
-_LOAD_ATTEMPTED: set[Path] = set()
-
-
-def _user_plugin_profiles() -> dict[int, tuple[Any, Path]]:
-    """Each registered profile a ``$HERMES_HOME`` provider plugin module holds, with that module's directory."""
-    from providers import list_providers
-    from providers.base import ProviderProfile
-
-    registered = {id(p) for p in list_providers()}
-    out: dict[int, tuple[Any, Path]] = {}
-    for name, module in list(sys.modules.items()):
-        directory = _module_dir(module) if module is not None and name.startswith(_USER_PLUGIN_MODULE) else None
-        if directory is None:
-            continue
-        for value in list(vars(module).values()):
-            if isinstance(value, ProviderProfile) and id(value) in registered:
-                out.setdefault(id(value), (value, directory))
-    return out
-
-
 def _discoverable_plugin_dirs(roots: dict[Path, str]) -> set[Path]:
     """Every provider plugin directory the Agent's per-home discovery may import, beside the enabled *roots*.
 
@@ -148,8 +117,8 @@ def _hosted_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
     return found
 
 
-def _native_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
-    """Resolve enabled directories through the Agent's own per-home registration ownership (Agent 0.23.2+).
+def _native_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list]:
+    """Resolve enabled directories through the Agent's own per-home registration ownership.
 
     That Agent imports each plugin from a frozen per-process copy, so module paths no longer lead back to the
     installed directory. Its home layer records which plugin base module owns each live registration and which
@@ -158,8 +127,6 @@ def _native_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
     import providers
 
     layer = providers._home_layer()
-    if not isinstance(getattr(layer, "owner", None), dict) or not isinstance(getattr(layer, "trees", None), dict):
-        return None  # agent-shim: plugin-registration-ownership
     from hermes_constants import get_hermes_home, hermes_home_key
 
     home_key = hermes_home_key(get_hermes_home())
@@ -176,43 +143,13 @@ def _native_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
     }
 
 
-def _load_plugin(root: Path) -> None:
-    """Load the scoped profile's installed plugin that the process-wide discovery (run under the launch profile) skipped.
-
-    Uses the Agent's own loader, as ``hermes plugins dev`` does, once per directory. On an Agent with one process-wide
-    provider registry, a plugin never displaces a provider that is already registered, so one profile's plugin cannot
-    change what another profile's provider id runs. An Agent with per-home provider layers registers it in this home's
-    layer instead, so the same id is that profile's own provider.
-    """
-    import providers
-
-    with _LOAD_LOCK:
-        if root in _LOAD_ATTEMPTED:
-            return
-        _LOAD_ATTEMPTED.add(root)
-        before = {p.name: p for p in providers.list_providers()}
-        try:
-            providers._import_plugin_dir(root, "user")
-        except Exception:  # noqa: BLE001 - a broken plugin reads as not loaded
-            log.debug("loading provider plugin %s failed", root, exc_info=True)
-            return
-        after = {p.name: p for p in providers.list_providers()}
-        for name, previous in before.items():
-            if after.get(name) is not previous:
-                providers.register_provider(previous)
-
-
 def installed_plugin_profiles() -> list[tuple[str, Any]]:
     """``(manifest name, profile | None)`` for each enabled model-provider plugin installed in the scoped home.
 
     Bundled providers are built-ins, not plugins. Hosted profiles come from the Agent's scoped user registry and
-    directory metadata. In-process profiles come from the Agent's registration ownership where it records one;
-    on older Agents they belong to this home when their module lives in its plugin directories, and a plugin the
-    launch discovery skipped is loaded here.
-    ``None`` means the plugin could not be loaded or attributed: it failed to import, its hosted provider id is
-    ambiguous, or a registration/module name collided in an older process-wide registry.
-    shortcut: without Agent ownership metadata, in-process ownership uses module globals, so an unbound inline
-    profile reads as not loaded there.
+    directory metadata; in-process profiles from the Agent's per-home registration ownership.
+    ``None`` means the plugin could not be loaded or attributed: it failed to import, or its provider id or module
+    name is ambiguous.
     """
     try:
         from hermes_cli.plugins_discovery import _get_disabled_plugins, _get_enabled_plugins, collect_directory_manifests, gate_manifest
@@ -230,24 +167,7 @@ def installed_plugin_profiles() -> list[tuple[str, Any]]:
     known = _hosted_plugin_profiles(roots)
     if known is None:
         known = _native_plugin_profiles(roots)
-    if known is not None:
-        return [(name, p) for root, name in roots.items() for p in (known[root] or [None])]
-
-    def owned() -> dict[Path, list]:  # agent-shim: plugin-registration-ownership
-        found: dict[Path, list] = {root: [] for root in roots}
-        for profile, directory in _user_plugin_profiles().values():
-            root = next((r for r in roots if directory == r or r in directory.parents), None)
-            if root is not None:
-                found[root].append(profile)
-        return found
-
-    found = owned()
-    missing = [root for root, profiles in found.items() if not profiles]
-    if missing:
-        for root in missing:
-            _load_plugin(root)
-        found = owned()
-    return [(name, p) for root, name in roots.items() for p in (found[root] or [None])]
+    return [(name, p) for root, name in roots.items() for p in (known[root] or [None])]
 
 
 def _unavailable_plugin(provider_id: str) -> bool:

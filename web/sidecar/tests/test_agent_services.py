@@ -1316,7 +1316,7 @@ def test_native_gated_dashboard_accepts_owner_local_retirement_session(tmp_path,
     from conftest import AGENT_PYTHON, isolated_env, SIDECAR_ROOT
     home = tmp_path / 'home'
     home.mkdir()
-    script = '''import inspect, os
+    script = '''import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 from plugins.dashboard_auth import basic
@@ -1393,9 +1393,8 @@ if source=='dotenv':
   assert recovery._ready(owed,ledger), 'recovery must authenticate with the same owner credentials'
   original=(home/'.env').read_text()
   invalids=[original.replace(secret,'wrong synthetic signing key!'),'']
-  # Credential-bound Agents end every session when the owner password rotates.  # agent-shim: dashboard-credential-binding
-  if 'credential_id' in inspect.signature(basic.BasicAuthProvider).parameters:
-   invalids+=[original.replace('disposable-password','rotated-password'),original.replace('disposable-password','')]
+  # The Agent ends every session when the owner password rotates.
+  invalids+=[original.replace('disposable-password','rotated-password'),original.replace('disposable-password','')]
   for invalid in invalids:
    (home/'.env').write_text(invalid)
    try: recovery._wait_ready(owed,ledger)
@@ -1428,7 +1427,7 @@ def test_native_lifecycle_credentials_are_scoped_and_preserve_decoding(tmp_path)
     from conftest import isolated_env, SIDECAR_ROOT
     home = tmp_path / 'home'
     home.mkdir()
-    script = r'''import base64, inspect, os, threading
+    script = r'''import base64, os, threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -1455,7 +1454,6 @@ def check(home, raw, username='owner', **credential):
  verified=provider.verify_session(access_token=token) if token else None
  assert verified and verified.user_id==username, 'owner credential resolution disagrees with native auth'
  return provider
-bound='credential_id' in inspect.signature(basic.BasicAuthProvider).parameters
 password={'PASSWORD':'"owner password"'}
 files(root,{'USERNAME':'owner','SECRET':'short!',**password})
 assert session(root) is None, 'a key the native provider refuses must not mint a session'
@@ -1476,10 +1474,9 @@ digest=basic.hash_password('hashed password')
 files(root,{'USERNAME':'owner','SECRET':'synthetic hashed signing key!','PASSWORD_HASH':digest},
       'dashboard:\n  basic_auth:\n    password: config plaintext password\n')
 check(root,'synthetic hashed signing key!',password_hash=digest)
-if bound:
- # Credential-bound Agents need the owner's credential; a session minted without it could never verify.
- files(root,{'USERNAME':'owner','SECRET':'synthetic hashed signing key!'})
- assert session(root) is None, 'credential-bound session minted without owner credential'
+# The Agent needs the owner's credential; a session minted without it could never verify.
+files(root,{'USERNAME':'owner','SECRET':'synthetic hashed signing key!'})
+assert session(root) is None, 'session minted without owner credential'
 files(root,{'USERNAME':'owner','SECRET':'synthetic scope-only signing key!',**password})
 env_loader._SECRET_SOURCE_VALUES_BY_HOME[str(root.resolve())]={prefix+'SECRET':'file-backed external signing key!'}
 env_loader._APPLIED_HOMES.add(str(root.resolve()))
@@ -1495,7 +1492,7 @@ files(root,{'ALIAS':'"profile alias synthetic signing key!"'},
       'dashboard:\n  basic_auth:\n    username: owner\n    password: owner password\n    secret: ${HERMES_DASHBOARD_BASIC_AUTH_ALIAS}\n')
 check(root,'profile alias synthetic signing key!')
 for values in ({},{'USERNAME':'owner'},{'SECRET':'synthetic scope-only signing key!'},
-               *([{'USERNAME':'owner','SECRET':'synthetic scope-only signing key!'}] if bound else [])):
+               {'USERNAME':'owner','SECRET':'synthetic scope-only signing key!'}):
  files(root,values)
  assert session(root) is None, 'updater credentials leaked into an owner session'
 (root/'.env').unlink()

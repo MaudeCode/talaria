@@ -1021,9 +1021,9 @@
       "reason": "Supported-Agent write order: the release's names and .env writer, observed at the moment the key lands, must never meet a config.yaml that routes it to the old endpoint.",
       "cases": [""]
     },
-    "tests/test_config_write.py::test_config_set_keeps_credentials_inline_without_native_references": {
+    "tests/test_config_write.py::test_config_set_refuses_an_entered_key_without_native_references": {
       "layer": "compatibility",
-      "reason": "The config-secret-refs shim: a save through the installed Agent writer keeps the key inline when the Agent lacks config_secret_refs.",
+      "reason": "Real config.set through the installed Agent writer with its credential-reference module unimportable: the save is refused before config.yaml or .env changes, so an entered key never lands inline.",
       "cases": [""]
     },
     "tests/test_config_write.py::test_config_set_preserves_comments_quotes_order_and_removals": {
@@ -1309,7 +1309,7 @@
     },
     "tests/test_cron_parity.py::test_wrap_response_round_trips_clears_and_refuses_malformed_values": {
       "layer": "compatibility",
-      "reason": "The Agent's cron.jobs create_job and update_job accept, clear and refuse a per-task wrap_response, and a refused update leaves the record unchanged; an Agent without the field reports no capability and stores nothing. Disposable store.",
+      "reason": "The Agent's cron.jobs create_job and update_job accept, clear and refuse a per-task wrap_response, and a refused update leaves the record unchanged. Disposable store.",
       "cases": [
         ""
       ]
@@ -1333,7 +1333,7 @@
     },
     "tests/test_cron_parity.py::test_mutations_refuse_what_the_agents_cron_guards_refuse": {
       "layer": "compatibility",
-      "reason": "TAL-2297: create and update reach the supported Agent's own prompt scanner, provider/base_url origin check and Bot Chat profile check (modules that moved in 0.23.2) under the owning profile's providers config, and a refusal leaves the real jobs.json bytes and run claim untouched. Synthetic providers and targets; no scheduler or vendor request.",
+      "reason": "TAL-2297: create and update reach the supported Agent's own prompt scanner, provider/base_url origin check and Bot Chat profile check under the owning profile's providers config, and a refusal leaves the real jobs.json bytes and run claim untouched. Synthetic providers and targets; no scheduler or vendor request.",
       "cases": [
         ""
       ]

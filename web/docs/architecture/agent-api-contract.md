@@ -89,16 +89,16 @@ mutable reference, or a pin outside the set. Promoting a newer release replaces
 the oldest entry only after the candidate passes.
 
 The optional `nativeContracts` section records exact boot revisions proven for an
-additional native-owner contract, independently of release promotion. TAL-2056
-verifies `served-local-policy-v1` on Agent v0.23.1, TAL-2293 on v0.23.2 and
-TAL-2596 on v0.23.3. TAL-1344 verifies `image-attach-v1`, the owner's
+additional native-owner contract, independently of release promotion. TAL-2293
+verifies `served-local-policy-v1` on Agent v0.23.2, TAL-2596 on v0.23.3 and
+TAL-2736 on v0.23.4. TAL-1344 verifies `image-attach-v1`, the owner's
 `image.attach_bytes` staging and digest-checked `prompt.submit` attachments, on all
 three releases. The sidecar admits served canonical sessions
 only when private control discovery reports one of those revisions and the authenticated owner's profile,
 instance, authority epoch and session capabilities match. A local checkout or
 package version cannot authorize the connection. Missing or unreadable evidence retains
 `served_profile_sessions_unavailable`. Diagnostic creation remains dedicated-only.
-TAL-2641 records `session-handoff-v1` for v0.23.2 and v0.23.3, whose owners serve
+TAL-2641 records `session-handoff-v1` for v0.23.2 and v0.23.3, and TAL-2736 for v0.23.4, whose owners serve
 `handoff.request`, `handoff.state` and `handoff.fail` with their durable-work fence;
 on any other revision the sidecar refuses a handoff as `owner_handoff_unsupported`
 before calling the owner, and Web shows the chat's handoff as unavailable.
@@ -246,8 +246,8 @@ Agent v0.22.2, retired from the support set by TAL-1511, had these observed upst
 limitations: task-relative SSH configuration approval could be bypassed, explicit
 MCP budgets could be shortened by the executor's generic deadline, and transcript
 growth did not lift structural compression backoff. Those are Agent behaviors;
-Talaria does not patch, vendor or wrap the Agent to change them. TAL-2596 retires
-v0.23.0; the retained v0.23.1, v0.23.2 and v0.23.3 releases show none of these
+Talaria does not patch, vendor or wrap the Agent to change them. TAL-2736 retires
+v0.23.1; the retained v0.23.2, v0.23.3 and v0.23.4 releases show none of these
 limitations.
 
 Candidate and canary probes, and supported releases from v0.22.1 onward, also

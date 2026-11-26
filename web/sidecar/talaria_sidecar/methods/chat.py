@@ -1900,13 +1900,10 @@ def _is_compression_start(lower: str) -> bool:
 
 
 def _is_marked_compaction(kind: str, message) -> bool:
-    """TAL-2290: Agent v0.23.2+ marks real compaction progress on the producer's object (``CompactionProgressText``),
+    """TAL-2290: the Agent marks real compaction progress on the producer's object (``CompactionProgressText``),
     including a context engine's reworded lines, and ``compaction_status_kind`` reads that mark. ``str()`` drops it, so
-    this gets the original object. Releases without the classifier rely on the wording markers alone."""
-    try:
-        from agent.conversation_compression import compaction_status_kind
-    except ImportError:  # agent-shim: compaction-progress-kind
-        return False
+    this gets the original object."""
+    from agent.conversation_compression import compaction_status_kind
     return compaction_status_kind(kind, message) == "compacting"
 
 

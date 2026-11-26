@@ -163,10 +163,11 @@ def assert_config_writable(profile_home: Path | None = None) -> None:
                        condition="config_write_refused")
 
 
-def _drop_other_access(path: str) -> None:  # agent-shim: config-drop-other-access
-    """Apply the Agent writers' ``drop_other_access`` policy after the target's mode is carried onto the staged file;
-    Agents before v0.23.2 and the parser fallback lack it. Other-access bits go, group bits stay for shared-group
-    homes, and containers keep their deliberate modes. Managed homes never get here (``assert_config_writable``)."""
+def _drop_other_access(path: str) -> None:
+    """Apply the Agent writers' ``drop_other_access`` policy after the target's mode is carried onto the staged file.
+    The parser fallback repairs config.yaml when the Agent's ``hermes_cli`` cannot import, so this uses only the
+    lightweight ``hermes_constants``. Other-access bits go, group bits stay for shared-group homes, and containers keep
+    their deliberate modes. Managed homes never get here (``assert_config_writable``)."""
     if importlib.import_module("hermes_constants")._container_or_chmod_skipped():
         return
     mode = os.stat(path).st_mode & 0o7777
@@ -269,8 +270,9 @@ def _route_entered_credentials(config: dict, target: Path, home: Path) -> tuple[
         return {}, []
     try:
         refs = importlib.import_module("hermes_cli.config_secret_refs")
-    except ImportError:  # agent-shim: config-secret-refs
-        return {}, []
+    except ImportError as exc:  # a broken Agent: never leave an entered key inline in config.yaml
+        raise RpcError("Cannot store the entered key without the Agent's credential references; repair the Agent "
+                       "installation before saving a key.", condition="config_policy_unavailable") from exc
     current = read_config(target)["config"]
     updates: dict[str, str] = {}
     repointed: list[dict] = []

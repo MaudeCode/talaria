@@ -12,7 +12,6 @@ from __future__ import annotations
 import contextlib
 import heapq
 import importlib
-import inspect
 import logging
 import multiprocessing
 import queue
@@ -164,22 +163,12 @@ def _admit_fields(body: dict, allowed: frozenset, verb: str) -> None:
         raise InvalidParams(f"Cron job field(s) cannot be {verb}: {', '.join(refused)}")
 
 
-def _cron_guards():
-    """The installed Agent's own cron admission checks: ``cron.job_args``/``cron.prompt_scan`` from 0.23.2."""
-    try:
-        return importlib.import_module("cron.job_args"), importlib.import_module("cron.prompt_scan")
-    except ModuleNotFoundError as exc:  # agent-shim: cron-guard-modules
-        if exc.name not in ("cron.job_args", "cron.prompt_scan"):
-            raise
-        return importlib.import_module("tools.cronjob_job_args"), importlib.import_module("tools.cronjob_prompt_scan")
-
-
 def _admit_job(effective: dict, touched=None) -> None:
     """Refuse what the Agent's ``cronjob`` tool refuses: a flagged prompt, a stored credential paired with an off-origin
     ``base_url``, a Bot Chat target that does not exist here. Call it under the owning profile's runtime
     (``_owned_store``) so that profile's providers and secrets decide. ``touched`` None (create) checks every field; an
     update checks the prompt and delivery targets it edits, and always the effective provider/base_url pair."""
-    job_args, prompt_scan = _cron_guards()
+    job_args, prompt_scan = importlib.import_module("cron.job_args"), importlib.import_module("cron.prompt_scan")
     prompt = str(effective.get("prompt") or "").strip()
     error = (touched is None or "prompt" in touched) and prompt and prompt_scan._scan_cron_prompt(prompt)
     error = error or job_args._validate_cron_base_url(effective.get("provider"), effective.get("base_url"))
@@ -218,17 +207,8 @@ def _continuity_refs(context_from, continuity: bool) -> list:
     return refs
 
 
-def _wraps_per_task() -> bool:
-    """Whether the installed Agent reads a task's own ``wrap_response`` (0.23.2 and later); older ones read only the
-    global ``cron.wrap_response``."""
-    return "wrap_response" in inspect.signature(_jobs().create_job).parameters  # agent-shim: cron-wrap-response
-
-
 def _field_updates(body: dict, current_context_from=None) -> dict:
     updates = {key: body[key] for key in _PASSTHROUGH_FIELDS + _SCHEDULE_POLICY_FIELDS if key in body}
-    # TAL-2634: an Agent that never reads the key must not store it; a null asks for the default it already applies.
-    if "wrap_response" in updates and not _wraps_per_task() and updates.pop("wrap_response") is not None:
-        raise InvalidParams("This Hermes Agent cannot set output wrapping per task; update it to 0.23.2 or later.")
     if "monitor" in body:
         updates.update(_monitor_storage(body["monitor"]))
     if "continuity" in body:
@@ -243,7 +223,7 @@ def job_for_api(job: dict) -> dict:
     payload["toast_notifications"] = payload.get("toast_notifications") is not False
     payload["monitor"] = payload.get("monitor_url") or payload.get("monitor_script") or ""
     payload["continuity"] = any(str(ref).strip().lower() == "self" for ref in (payload.get("context_from") or []))
-    payload["wrap_response_supported"] = _wraps_per_task()
+    payload["wrap_response_supported"] = True
     # A retained manual execution's record reads paused, but Run now on it is the recovery retry, not a new fire.
     payload["run_now_refusal"] = None if payload.get("recovery_only") else _run_now_refusal(payload)
     return payload
@@ -823,7 +803,7 @@ def register(registry) -> None:
         ids = {job["id"] for job in stored}
         stored.extend(job for jid, job in pending.items() if jid not in ids)
         listed = [job_for_api(job) for job in stored]
-        result: dict = {"jobs": listed, "wrap_response_supported": _wraps_per_task()}
+        result: dict = {"jobs": listed, "wrap_response_supported": True}
         if params.get("probe_store"):
             with _store(home):
                 from cron.store_health import probe_report

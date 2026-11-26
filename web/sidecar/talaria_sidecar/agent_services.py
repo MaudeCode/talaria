@@ -9,7 +9,6 @@ import base64
 import contextlib
 import hashlib
 import http.client
-import inspect
 import ipaddress
 import json
 import math
@@ -583,10 +582,7 @@ def _local_session(entry):
                 pass
         if len(key) < 16:
             return None  # The native provider refuses such a key, so no session can verify.
-        if 'credential_id' not in inspect.signature(basic.BasicAuthProvider).parameters:  # agent-shim: dashboard-credential-binding
-            # Older Agents sign sessions with the resolved secret alone.
-            return basic._sign({'sub': username, 'kind': 'access', 'exp': int(time.time()) + 60}, key)
-        # Credential-bound Agents derive the key from the configured credential; native _settings precedence:
+        # The Agent derives the key from the configured credential; native _settings precedence:
         # an env password wins, then a password_hash, then a config-only plaintext password.
         password_hash = setting('PASSWORD_HASH', 'password_hash')
         credential = setting('PASSWORD') or ('' if password_hash else setting('PASSWORD', 'password'))
