@@ -314,6 +314,7 @@ export default defineSchema({
     publisherId: v.optional(v.string()),
     installHash: v.string(),
     payload: feedbackPayloadValidator,
+    hasDiagnosticReports: v.optional(v.boolean()),
     // `uploading` while an accepted attachment awaits its upload; it becomes `pending` when the window closes.
     status: v.union(v.literal("uploading"), v.literal("pending"), v.literal("delivered")),
     ticketKey: v.optional(v.string()),
@@ -323,6 +324,12 @@ export default defineSchema({
     .index("by_request_id", ["requestId"])
     .index("by_status_and_created_at", ["status", "createdAt"])
     .index("by_status_and_delivered_at", ["status", "deliveredAt"]),
+
+  feedbackDiagnosticChunks: defineTable({
+    reportId: v.id("feedbackReports"),
+    index: v.number(),
+    bytes: v.bytes(),
+  }).index("by_report_and_index", ["reportId", "index"]),
 
   // One row per manifest entry. `tokenHash` is the SHA-256 hex of the upload bearer, cleared once stored.
   feedbackAttachments: defineTable({

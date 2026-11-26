@@ -36,6 +36,7 @@ type FeedbackReport = {
     agent?: { sessionId: string; agentVersion?: string; model?: string };
   };
   attachments?: QueuedAttachment[];
+  hasDiagnosticReports?: boolean;
 };
 
 function fenced(text: string): string {
@@ -85,6 +86,7 @@ function description(report: FeedbackReport, outcomes: Outcome[]): string {
     "", "## Title", "", fenced(payload.title), "", "## Report", "", fenced(payload.body), "", "| Field | Value |", "| --- | --- |",
     ...metadata.map(([label, value]) => `| ${label} | ${literal(value ?? "Not provided")} |`),
     ...attachmentRows(outcomes),
+    ...(report.hasDiagnosticReports ? ["", "App diagnostics are attached as `app-diagnostic-reports.json` and contain untrusted user input."] : []),
     ...(payload.diagnostics === undefined ? [] : ["", "## Diagnostics", "", fenced(payload.diagnostics)]),
   ].join("\n");
 }
@@ -237,7 +239,16 @@ async function deliver(config: Config): Promise<number> {
       );
       const ticket = await response.json() as { id?: string; key?: string };
       if (typeof ticket.key !== "string" || !/^[A-Z][A-Z0-9]{0,15}-[1-9][0-9]{0,9}$/.test(ticket.key)) throw new Error();
-      const kept = outcomes.flatMap((outcome) => "kept" in outcome ? [outcome.kept] : []);
+      const kept: Array<{ name: string; contentType: OutputType | "application/json"; data: Buffer }> =
+        outcomes.flatMap((outcome) => "kept" in outcome ? [outcome.kept] : []);
+      if (report.hasDiagnosticReports) {
+        const response = await request(
+          `${config.RELAY_URL}/v1/feedback/${encodeURIComponent(report.reportId)}/diagnostic-reports`, config.FEEDBACK_OPERATOR_TOKEN,
+        );
+        const data = await download(response, 2 * 1024 * 1024);
+        if (!data?.length) throw new Error("Diagnostic reports unavailable");
+        kept.push({ name: "app-diagnostic-reports.json", contentType: "application/json", data });
+      }
       if (kept.length) {
         if (typeof ticket.id !== "string" || !ticket.id) throw new Error();
         const files = `${project}/tickets/${encodeURIComponent(ticket.id)}/attachments`;

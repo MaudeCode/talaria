@@ -152,7 +152,12 @@ async function prunePass(ctx: MutationCtx) {
     await deleteBlob(ctx, attachment);
     await ctx.db.patch(attachment._id, { status: "missing", storageId: undefined });
   }
-  for (const report of [...deliveredFeedback, ...pendingFeedback]) await deleteAttachments(ctx, report._id);
+  for (const report of [...deliveredFeedback, ...pendingFeedback]) {
+    await deleteAttachments(ctx, report._id);
+    if (report.hasDiagnosticReports && report.status === "pending") {
+      await ctx.scheduler.runAfter(0, internal.feedback.pruneDiagnosticReports, { reportId: report._id });
+    }
+  }
   for (const session of userSessions) {
     revokedDevices += await revokeDevicesForSession(ctx, session.userId, session.sessionId, now);
   }

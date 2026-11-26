@@ -21,3 +21,16 @@ it('mirrors the attachment limits Relay enforces', () => {
   const limits = JSON.parse(readFileSync(new URL('../../../../contracts/fixtures/feedback-attachment-limits.json', import.meta.url), 'utf8')) as unknown
   expect(FEEDBACK_ATTACHMENT_LIMITS).toEqual(limits)
 })
+
+it('accepts bounded diagnostic summaries and rejects extra fields and oversized collections', () => {
+  const report = { kind: 'crash', start: '2026-11-22T00:00:00Z', end: '2026-11-22T01:00:00Z', build: '42', frames: ['Talaria + 128'] }
+  const parse = (diagnosticReports?: unknown) => FeedbackSubmitSchema.safeParse({
+    requestId: '7c9e6679-7425-40de-944b-e07fc1f90ae7', kind: 'bug', body: 'Feedback', includeDiagnostics: true,
+    client: { platform: 'ios', ...(diagnosticReports === undefined ? {} : { diagnosticReports }) },
+  })
+  expect(parse().success).toBe(true)
+  expect(parse(Array(10).fill(report)).success).toBe(true)
+  expect(parse(Array(11).fill(report)).success).toBe(false)
+  expect(parse([{ ...report, filePath: '/private/synthetic' }]).success).toBe(false)
+  expect(parse([{ ...report, frames: ['界'.repeat(700_000)] }]).success).toBe(false)
+})

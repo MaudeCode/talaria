@@ -17,7 +17,7 @@ import {
   sha256Hex,
   verifyPublisherSignature,
 } from "./lib/crypto";
-import { attachmentLimits, matchesAttachmentType, maximumFeedbackBytes, operatorAccess, parseFeedbackReport } from "./lib/feedback";
+import { attachmentLimits, matchesAttachmentType, maximumDiagnosticReportBytes, maximumFeedbackBytes, operatorAccess, parseFeedbackReport, splitFeedbackDiagnostics } from "./lib/feedback";
 import {
   defaultNotificationPreferences,
   isSessionPhase,
@@ -1086,18 +1086,22 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const closed = await feedbackGate(request, false);
     if (closed) return closed;
-    const rawBody = await request.text();
-    if (new TextEncoder().encode(rawBody).byteLength > maximumFeedbackBytes) {
-      return json(400, { error: "body_too_large" });
-    }
+    const body = await readBounded(request, maximumFeedbackBytes + maximumDiagnosticReportBytes + 32);
+    if (!body) return json(400, { error: "body_too_large" });
+    const rawBody = new TextDecoder().decode(body);
+    const rawBytes = body.byteLength;
     let parsed: unknown;
     try {
       parsed = JSON.parse(rawBody);
     } catch {
       return json(400, { error: "invalid_json" });
     }
-    const payload = parseFeedbackReport(parsed);
-    if (!payload) return json(400, { error: "invalid_feedback" });
+    const split = splitFeedbackDiagnostics(parsed);
+    if (split && (split.diagnostics ? new TextEncoder().encode(JSON.stringify(split.report)).byteLength : rawBytes) > maximumFeedbackBytes) {
+      return json(400, { error: "body_too_large" });
+    }
+    const payload = split && parseFeedbackReport(split.report);
+    if (!split || !payload) return json(400, { error: "invalid_feedback" });
     // Any signature header makes this a verified attempt: a bad one is refused, never downgraded.
     const signed = publisherSignatureHeaders.some((header) => request.headers.has(header));
     const publisher = signed ? await authenticatePublisher(ctx, request, rawBody, null) : undefined;
@@ -1106,7 +1110,8 @@ http.route({
     const uploadTokens = (payload.attachments ?? []).map(() => randomToken());
     const result = await ctx.runMutation(internal.feedback.submit, {
       payload,
-      payloadHash: await sha256(JSON.stringify(payload)),
+      diagnosticReports: split.diagnostics,
+      payloadHash: await sha256(JSON.stringify(payload) + (split.diagnostics ? new TextDecoder().decode(split.diagnostics) : "")),
       installHash: await sha256(payload.installId),
       uploadTokenHashes: await Promise.all(uploadTokens.map((token) => sha256Hex(token))),
       attachmentsDisabled: attachmentsDisabled(),
@@ -1148,8 +1153,8 @@ function attachmentPath(request: Request): { reportId: string; index: number } |
   return Number(index) < attachmentLimits.maxAttachments ? { reportId, index: Number(index) } : null;
 }
 
-/** The whole body when it is exactly `bytes` long; reading stops as soon as it runs past. */
-async function readExactly(request: Request, bytes: number): Promise<Uint8Array<ArrayBuffer> | null> {
+/** Read at most `bytes`; cancel as soon as the stream runs past. */
+async function readBounded(request: Request, bytes: number): Promise<Uint8Array<ArrayBuffer> | null> {
   const reader = request.body?.getReader();
   if (!reader) return null;
   const body = new Uint8Array(bytes);
@@ -1164,7 +1169,7 @@ async function readExactly(request: Request, bytes: number): Promise<Uint8Array<
     body.set(value, length);
     length += value.byteLength;
   }
-  return length === bytes ? body : null;
+  return body.subarray(0, length);
 }
 
 function uploadRefusal(status: "unauthorized" | "expired"): Response {
@@ -1187,8 +1192,8 @@ http.route({
     if (slot.status !== "ok") return uploadRefusal(slot.status);
     // Checked before reading, so an oversize or unframed body is refused without buffering it.
     if (request.headers.get("content-length")?.trim() !== String(slot.bytes)) return json(400, { error: "invalid_attachment" });
-    const body = await readExactly(request, slot.bytes);
-    if (!body || await sha256Hex(body) !== slot.sha256 || !matchesAttachmentType(body, slot.contentType)) {
+    const body = await readBounded(request, slot.bytes);
+    if (!body || body.byteLength !== slot.bytes || await sha256Hex(body) !== slot.sha256 || !matchesAttachmentType(body, slot.contentType)) {
       return json(400, { error: "invalid_attachment" });
     }
     const storageId = await ctx.storage.store(new Blob([body], { type: "application/octet-stream" }));
@@ -1213,6 +1218,14 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const closed = await feedbackGate(request, true);
     if (closed) return closed;
+    const parts = pathParts(request);
+    const reportId = parts[2];
+    if (parts.length === 4 && parts[3] === "diagnostic-reports" && reportId) {
+      const chunks = await ctx.runQuery(internal.feedback.getDiagnosticReports, { reportId });
+      return chunks.length ? new Response(new Blob(chunks), {
+        headers: { "content-type": "application/json", "x-content-type-options": "nosniff" },
+      }) : json(404, { error: "not_found" });
+    }
     const target = attachmentPath(request);
     const storageId = target && await ctx.runQuery(internal.feedback.storedAttachment, target);
     const blob = storageId && await ctx.storage.get(storageId);
