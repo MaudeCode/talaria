@@ -33,6 +33,7 @@ import { ConnectorOffers } from './tools/connectors.js'
 import { Groups } from './sessions/groups.js'
 import { HygieneTicker } from './tools/hygiene.js'
 import { PruneAdvice } from './tools/prune-advice.js'
+import { reconcileRuntimeCredentials } from './providers/runtime-env.js'
 import { AgentRestores } from './tools/agent-restore.js'
 import { AgentBackups } from './tools/agent-backup.js'
 import { McpHealthProber } from './tools/mcp-health.js'
@@ -1160,7 +1161,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     updates: null as unknown as UpdateService,
     updateNotifications,
     pruneAdvice,
-    agentRestores: new AgentRestores(config.stateDir, () => sidecar, () => restartBlockers().restart_blocked || deps.updates.blocksNewWork() || profileOps.size > 0),
+    agentRestores: new AgentRestores(
+      config.stateDir, () => sidecar, () => restartBlockers().restart_blocked || deps.updates.blocksNewWork() || profileOps.size > 0,
+      () => reconcileRuntimeCredentials({ env, sidecar: () => sidecar, log }, baseHome),
+    ),
     agentBackups: new AgentBackups({ dir: join(config.stateDir, 'agent-backups'), sidecar: () => sidecar, log, redact: (text) => redactString(text) }),
     gatewayRestarts: null as unknown as GatewayRestartQueue,
     gatewayLifecycle: (home: string) => gatewayLifecycle({

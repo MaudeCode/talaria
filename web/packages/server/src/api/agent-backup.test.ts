@@ -87,6 +87,35 @@ describe('Agent-home backup routes (TAL-2661)', () => {
 })
 
 describe('Agent-home restore routes (TAL-2667)', () => {
+  it('reconciles file-owned credentials before completing a restore and preserves deployment values', async () => {
+    const { s, sidecar } = await boot({
+      OPENAI_API_KEY: 'old-file-key', OPENROUTER_API_KEY: 'old-router-key', ANTHROPIC_API_KEY: 'deployment-key',
+      TALARIA_WEB_HOME_DOTENV_KEYS: 'OPENAI_API_KEY,OPENROUTER_API_KEY',
+    })
+    sidecar.respond('backup.restore_available', () => ({ available: true }))
+    sidecar.respond('backup.restore', () => {
+      writeFileSync(join(s.state, '.env'), 'export OPENROUTER_API_KEY="restored-router-key" # comment\nANTHROPIC_API_KEY=archive-key\n', { mode: 0o600 })
+      return { status: 'restored' }
+    })
+    sidecar.respond('runtime.env', () => ({ ok: true }))
+    const upload = await s.get('/api/agent-backup/restore/upload?name=fixture.zip', {
+      method: 'POST', headers: { 'content-type': 'application/zip' }, body: 'disposable archive',
+    })
+    const id = AgentRestoreStatusSchema.parse(await upload.json()).job!.id
+    await s.get('/api/agent-backup/restore', { method: 'POST', headers: json, body: JSON.stringify({ id, confirmed: true }) })
+    await vi.waitFor(async () => {
+      const status = AgentRestoreStatusSchema.parse(await (await s.get('/api/agent-backup/restore')).json())
+      expect(status.job?.state).toBe('restored')
+    })
+    expect(sidecar.calls.filter(({ method }) => method === 'runtime.env').map(({ params }) => params))
+      .toEqual([{ set: { OPENROUTER_API_KEY: 'restored-router-key' }, unset: ['OPENAI_API_KEY'] }])
+    const env = s.deps.config.env
+    expect(env.OPENAI_API_KEY).toBeUndefined()
+    expect(env.OPENROUTER_API_KEY).toBe('restored-router-key')
+    expect(env.ANTHROPIC_API_KEY).toBe('deployment-key')
+    expect(env.TALARIA_WEB_HOME_DOTENV_KEYS).toBe('OPENROUTER_API_KEY')
+  })
+
   it('keeps recovery custody until a disconnected restore worker has stopped', async () => {
     const { s, sidecar } = await boot()
     let stopped = false

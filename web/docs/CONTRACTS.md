@@ -1019,8 +1019,11 @@ and `confirmed: true`. Repeating a confirmation reads the original outcome.
 Read `GET /api/agent-backup/restore` after an interrupted request. A native
 result can settle an unknown receipt after a restart. The server never
 replays the restore. An unknown receipt keeps custody of its recovery files
-until the native worker fence confirms publication has stopped. Download the owner's private pre-restore snapshot from
-the receipt's `recovery_url` before staging another archive.
+until the native worker fence confirms publication has stopped. Web
+reconciles file-owned launch credentials with the restored root `.env`
+before admitting new chat work. Deployment-supplied values keep precedence.
+Download the owner's private pre-restore snapshot from the receipt's
+`recovery_url` before staging another archive.
 
 The sidecar expands and verifies the archive in disposable storage, takes
 Hermes maintenance reservations, and writes a complete native recovery

@@ -23,10 +23,13 @@ export function assertAgentRestoreScope(ctx: RequestContext): void {
 export class AgentRestores {
   private job: AgentRestoreJob | null = null
   private uploading = false
+  private settlement: Promise<void> | null = null
+  private checkingUnknown = false
+  private reconciledUnknownId: string | null = null
 
   private readonly dir: string
 
-  constructor(private readonly stateDir: string, private readonly sidecar: () => SidecarLike | null, private readonly workActive: () => boolean) {
+  constructor(private readonly stateDir: string, private readonly sidecar: () => SidecarLike | null, private readonly workActive: () => boolean, private readonly reconcileCredentials: () => Promise<void>) {
     // Hermes excludes .cache trees from native backups, including the upload and private staging.
     const dir = this.dir = join(stateDir, '.cache', 'agent-restores')
     mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -35,28 +38,33 @@ export class AgentRestores {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
-    if (this.job?.state === 'running') this.save({ ...this.job, state: this.nativeOutcome(this.job.id) })
+    if (this.job?.state === 'running') this.save({ ...this.job, state: 'unknown' })
     for (const entry of readdirSync(dir)) {
       if (/^[a-f0-9]{32}$/.test(entry) && entry !== this.job?.id) rmSync(join(dir, entry), { recursive: true, force: true })
     }
   }
 
-  blocksNewWork(): boolean { return this.job?.state === 'running' }
+  blocksNewWork(): boolean {
+    if (this.job?.state !== 'unknown') return this.job?.state === 'running'
+    if (this.reconciledUnknownId === this.job.id) return false
+    if (!this.checkingUnknown) {
+      this.checkingUnknown = true
+      void this.status().catch(() => undefined).finally(() => { this.checkingUnknown = false })
+    }
+    return true
+  }
 
   async status(): Promise<AgentRestoreStatus> {
     const unknownId = this.job?.state === 'unknown' ? this.job.id : null
     const capability = await this.capability(unknownId)
     const available = capability.available
-    let job = this.job
-    if (job?.state === 'unknown') {
-      const outcome = this.nativeOutcome(job.id)
-      if (outcome !== 'unknown') {
-        job = { ...job, state: outcome }
-        this.save(job)
-        rmSync(join(this.dir, job.id, INCOMING), { force: true })
-      }
+    const unknown = this.job
+    if (unknown?.state === 'unknown' && unknown.id === unknownId && unknown.id !== this.reconciledUnknownId) {
+      const outcome = this.nativeOutcome(unknown.id)
+      if (outcome !== 'unknown' || capability.replacement_safe === true) await this.settle(unknown, outcome)
     }
-    const replaceable = job?.state !== 'unknown' || (job.id === unknownId && capability.replacement_safe === true)
+    const job = this.job
+    const replaceable = job?.state !== 'unknown' || job.id === this.reconciledUnknownId
     return { available, can_upload: available && !this.uploading && job?.state !== 'running' && replaceable,
       server: hostname(), profile: 'default',
       job: job && { ...job, recovery_url: this.archive(job.id) ? `api/agent-backup/recovery?id=${job.id}` : null,
@@ -150,12 +158,29 @@ export class AgentRestores {
       const result = await sidecar.call('backup.restore', { profile_home: home, scope: 'agent_home', input, output: join(dir, RECOVERY), state_dir: this.stateDir }, { timeoutMs: 2 * 3600_000 })
       state = result.status
     } catch { /* Lost reply: only an explicit native outcome can settle the action. */ }
-    try {
-      this.save({ ...job, state })
-      if (state !== 'unknown') rmSync(input, { force: true })
-    } catch {
-      // A receipt left running on disk reconciles to unknown at restart.
-      this.job = { ...job, state: 'unknown' }
-    }
+    if (state === 'unknown') this.markUnknown(job)
+    else await this.settle(job, state)
+  }
+
+  private markUnknown(job: AgentRestoreJob): void {
+    if (this.job?.id === job.id && this.job.state === 'unknown') return
+    const unknown = { ...job, state: 'unknown' as const }
+    // A receipt left running on disk also resumes as unknown after a restart.
+    try { this.save(unknown) } catch { this.job = unknown }
+  }
+
+  private settle(job: AgentRestoreJob, state: AgentRestoreJob['state']): Promise<void> {
+    if (this.settlement) return this.settlement
+    this.settlement = (async () => {
+      try {
+        if (state === 'restored' || state === 'partial' || state === 'unknown') await this.reconcileCredentials()
+        this.save({ ...job, state })
+        if (state === 'unknown') this.reconciledUnknownId = job.id
+        else rmSync(join(this.dir, job.id, INCOMING), { force: true })
+      } catch {
+        this.markUnknown(job)
+      }
+    })().finally(() => { this.settlement = null })
+    return this.settlement
   }
 }
