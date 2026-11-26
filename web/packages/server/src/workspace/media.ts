@@ -198,20 +198,20 @@ export function previewHeaders(csp: string): Record<string, string> {
   return { 'Content-Security-Policy': csp, 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Permissions-Policy': PREVIEW_PERMISSIONS_POLICY }
 }
 
-export function htmlPreviewWithBlankBase(raw: Buffer): Buffer {
-  return htmlWithHeadTag(raw, '<base target="_blank">')
+function htmlPreviewWithBlankBase(raw: Buffer, headTags: string): Buffer {
+  return htmlWithHeadTag(raw, `<base target="_blank">${headTags}`)
 }
 
 /** Insert `base` as the first `<head>` child, creating the head after any doctype so the page keeps standards mode. */
 export function htmlWithHeadTag(raw: Buffer, base: string): Buffer {
   let text = raw.toString('utf8')
-  if (/<head(?:\s[^>]*)?>/i.test(text)) text = text.replace(/(<head\b[^>]*>)/i, `$1${base}`)
-  else if (/<!doctype[^>]*>/i.test(text)) text = text.replace(/(<!doctype[^>]*>)/i, `$1<head>${base}</head>`)
+  if (/<head(?:\s[^>]*)?>/i.test(text)) text = text.replace(/<head\b[^>]*>/i, (head) => head + base)
+  else if (/<!doctype[^>]*>/i.test(text)) text = text.replace(/<!doctype[^>]*>/i, (doctype) => `${doctype}<head>${base}</head>`)
   else text = `<head>${base}</head>${text}`
   return Buffer.from(text, 'utf8')
 }
 
-export async function serveInlineHtmlPreview(ctx: RequestContext, target: string, cacheControl: string, csp: string, anchorRoot: string | null): Promise<void> {
+export async function serveInlineHtmlPreview(ctx: RequestContext, target: string, cacheControl: string, csp: string, anchorRoot: string | null, headTags = ''): Promise<void> {
   let body: Buffer | null = null
   try {
     const fd = anchorRoot ? openAnchoredFd(anchorRoot, resolvePathLikePython(target), { wantDir: false }) : openSync(target, fsConstants.O_RDONLY)
@@ -219,7 +219,7 @@ export async function serveInlineHtmlPreview(ctx: RequestContext, target: string
       const st = fstatSync(fd)
       if (!st.isFile()) throw Object.assign(new Error('not a file'), { code: 'EISDIR' })
       // The preview is rewritten in memory; anything past the buffering cap is served as a download instead.
-      if (st.size <= HTML_PREVIEW_BUFFER_CAP) body = htmlPreviewWithBlankBase(await readAll(fd, st.size))
+      if (st.size <= HTML_PREVIEW_BUFFER_CAP) body = htmlPreviewWithBlankBase(await readAll(fd, st.size), headTags)
     } finally {
       closeSync(fd)
     }
@@ -666,13 +666,13 @@ function mediaRootDecider(deps: MediaAccessDeps<string | null>): (target: string
  * `mediaRootDecider`, then the file's own directory for a session-token grant. `real` defaults to the target for a
  * caller holding `mediaRefTarget`'s result.
  */
-export function mediaAccessResolver(session: Session | null, deps: MediaAccessDeps<string | null>): (target: string, real?: string) => string | null {
+export function mediaAccessResolver(session: Session | null, deps: MediaAccessDeps<string | null>): (target: string, real?: string, allowSessionToken?: boolean) => string | null {
   const decide = mediaRootDecider(deps)
   const sessionGrants = sessionMediaGrant(session)
-  return (target, real = target) => {
+  return (target, real = target, allowSessionToken = true) => {
     const root = decide(target, real)
     if (root !== undefined) return root
-    return sessionGrants(target, real) ? dirname(target) : null
+    return allowSessionToken && sessionGrants(target, real) ? dirname(target) : null
   }
 }
 

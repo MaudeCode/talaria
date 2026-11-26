@@ -22,7 +22,7 @@ import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { isLoopback } from '../http/origin.js'
 import { truthy } from '../config.js'
 import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, mediaAccessFor, mediaAnchorRoot, mediaTarget, mimeFor, previewHeaders, serveFileBytes, serveInlineHtmlPreview } from '../workspace/media.js'
-import { PREVIEW_CSP, PREVIEW_PREFIX, previewGrantRoot, previewTarget } from '../workspace/preview.js'
+import { PREVIEW_CSP, PREVIEW_PREFIX, previewGrantRoot, previewTarget, reportThemeTag, REPORT_LINK_BRIDGE } from '../workspace/preview.js'
 import { SHOW_FRAME_CSP, SHOW_FRAME_PREFIX } from '../sessions/show.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -219,7 +219,11 @@ export async function handleWorkspacePreview(ctx: RequestContext): Promise<void>
   }
   assertWorkspaceFileAllowed(ctx, target)
   const mime = mimeFor(target)
-  if (mime === 'text/html') (await serveInlineHtmlPreview(ctx, target, 'no-store', PREVIEW_CSP, root))
+  if (mime === 'text/html') {
+    const theme = ctx.query.get('theme')
+    const tags = theme === null ? '' : reportThemeTag(theme) + REPORT_LINK_BRIDGE
+    await serveInlineHtmlPreview(ctx, target, 'no-store', PREVIEW_CSP, root, tags)
+  }
   else (await serveFileBytes(ctx, target, { mime, disposition: 'inline', cacheControl: 'no-store', csp: PREVIEW_CSP, anchorRoot: root }))
 }
 

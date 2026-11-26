@@ -5,7 +5,7 @@
  * elsewhere and are never passed through here as HTML.
  */
 import { use, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Streamdown, defaultRehypePlugins, defaultRemarkPlugins, parseMarkdownIntoBlocks, type AnimateOptions, type LinkSafetyConfig, type LinkSafetyModalProps, type StreamdownProps } from 'streamdown'
+import { Streamdown, defaultRehypePlugins, defaultRemarkPlugins, parseMarkdownIntoBlocks, type AnimateOptions, type LinkSafetyConfig, type StreamdownProps } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
 import { appUrl } from '../../../lib/appRoot'
 import { CodeBlock, LineEndedContext } from './CodeBlock'
@@ -19,9 +19,7 @@ import { LinkCheckContext, type LinkCheck } from './LinkCheckContext'
 import type { MarkdownProps } from './Markdown'
 import { createIncrementalMarkdownParser } from './incrementalMarkdown'
 import 'streamdown/styles.css'
-import { Dialog } from '../../../ui/Dialog'
-import { Button } from '../../../ui/Button'
-import { m } from '../../../paraglide/messages.js'
+import { LinkSafetyDialog } from './LinkSafetyDialog'
 import { ARRIVE_EASE, followHeight, prefersReducedMotion } from '../../../lib/motion'
 
 const STREAM_WORDS = { animation: 'blurIn', sep: 'word', duration: 400, easing: ARRIVE_EASE, stagger: 12, maxBacklogMs: 120 } satisfies AnimateOptions
@@ -94,19 +92,6 @@ const UNANSWERED: LinkCheck = { opens_directly: false, host: null }
 function askServer(check: (url: string) => Promise<LinkCheck>, url: string): Promise<LinkCheck> {
   const timeout = new Promise<LinkCheck>((resolve) => { setTimeout(() => { resolve(UNANSWERED) }, LINK_CHECK_TIMEOUT_MS) })
   return Promise.race([check(url).catch(() => UNANSWERED), timeout])
-}
-
-/** Streamdown's link warning in the app dialog; Base UI owns focus, Escape, and backdrop dismissal. `host` is the server's answer, absent when it gave none. */
-function LinkSafetyDialog({ isOpen, onClose, onConfirm, url, host }: LinkSafetyModalProps & { host: string | null | undefined }) {
-  return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }} title={m.link_safety_title()} description={host ? m.link_safety_description({ host }) : m.link_safety_description_unknown()}>
-      <p className="max-h-32 overflow-y-auto break-all rounded-md border border-border-subtle bg-bg px-3 py-2 font-mono text-xs text-muted">{url}</p>
-      <div className="mt-4 flex justify-end gap-2">
-        <Button onClick={onClose}>{m.cancel()}</Button>
-        <Button variant="primary" onClick={() => { onConfirm(); onClose() }}>{m.link_safety_open()}</Button>
-      </div>
-    </Dialog>
-  )
 }
 
 export default function MarkdownRenderer({ text, streaming = false, fade = false, className, dir = 'auto', liveTurn = false }: MarkdownProps) {

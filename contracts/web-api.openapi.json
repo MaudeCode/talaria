@@ -8376,7 +8376,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -9112,8 +9113,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -9501,8 +9506,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -10070,6 +10079,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -10512,8 +10522,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -10941,8 +10955,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -11939,8 +11957,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -12916,7 +12938,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -16692,7 +16715,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -17428,8 +17452,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -17817,8 +17845,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -18386,6 +18418,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -18828,8 +18861,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -19257,8 +19294,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -20255,8 +20296,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -21232,7 +21277,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -23251,7 +23297,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -23987,8 +24034,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -24376,8 +24427,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -24945,6 +25000,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -25387,8 +25443,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -25816,8 +25876,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -26814,8 +26878,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -27791,7 +27859,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -33134,7 +33203,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -33870,8 +33940,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -34259,8 +34333,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -34828,6 +34906,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -35270,8 +35349,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -35699,8 +35782,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -36697,8 +36784,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -37674,7 +37765,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -40057,7 +40149,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -41314,7 +41407,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -42338,7 +42432,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -43074,8 +43169,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -43463,8 +43562,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -44032,6 +44135,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -44474,8 +44578,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -44903,8 +45011,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -45901,8 +46013,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -46878,7 +46994,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -52102,7 +52219,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -52838,8 +52956,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -53227,8 +53349,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -53796,6 +53922,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -54238,8 +54365,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -54667,8 +54798,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -55665,8 +55800,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -56642,7 +56781,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -58605,7 +58745,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -59341,8 +59482,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -59730,8 +59875,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -60299,6 +60448,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -60741,8 +60891,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -61170,8 +61324,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -62168,8 +62326,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -63145,7 +63307,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -65170,7 +65333,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -65906,8 +66070,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -66295,8 +66463,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -66864,6 +67036,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -67306,8 +67479,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -67735,8 +67912,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -68733,8 +68914,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -69710,7 +69895,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -71733,7 +71919,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -72469,8 +72656,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -72858,8 +73049,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -73427,6 +73622,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -73869,8 +74065,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -74298,8 +74498,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -75296,8 +75500,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -76273,7 +76481,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -78228,8 +78437,12 @@
                                     "video",
                                     "pdf",
                                     "file",
-                                    "model"
+                                    "model",
+                                    "html"
                                   ],
+                                  "type": "string"
+                                },
+                                "preview_url": {
                                   "type": "string"
                                 },
                                 "model": {
@@ -79003,8 +79216,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -80574,8 +80791,12 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
+                                "type": "string"
+                              },
+                              "preview_url": {
                                 "type": "string"
                               },
                               "model": {
@@ -92106,7 +92327,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -92842,8 +93064,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -93231,8 +93457,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -93800,6 +94030,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -94242,8 +94473,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -94671,8 +94906,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -95669,8 +95908,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -96646,7 +96889,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -98784,7 +99028,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -99520,8 +99765,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -99909,8 +100158,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -100478,6 +100731,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -100920,8 +101174,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -101349,8 +101607,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -102347,8 +102609,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -103324,7 +103590,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -104611,7 +104878,8 @@
                                 "video",
                                 "pdf",
                                 "file",
-                                "model"
+                                "model",
+                                "html"
                               ],
                               "type": "string",
                               "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -106059,7 +106327,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -106795,8 +107064,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -107184,8 +107457,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -107753,6 +108030,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -108195,8 +108473,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -108624,8 +108906,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -109622,8 +109908,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -110599,7 +110889,8 @@
                                   "video",
                                   "pdf",
                                   "file",
-                                  "model"
+                                  "model",
+                                  "html"
                                 ],
                                 "type": "string",
                                 "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -113193,7 +113484,8 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
                                           "type": "string",
                                           "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -113882,8 +114174,12 @@
                                                           "video",
                                                           "pdf",
                                                           "file",
-                                                          "model"
+                                                          "model",
+                                                          "html"
                                                         ],
+                                                        "type": "string"
+                                                      },
+                                                      "preview_url": {
                                                         "type": "string"
                                                       },
                                                       "model": {
@@ -114241,8 +114537,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -114918,8 +115218,12 @@
                                                 "video",
                                                 "pdf",
                                                 "file",
-                                                "model"
+                                                "model",
+                                                "html"
                                               ],
+                                              "type": "string"
+                                            },
+                                            "preview_url": {
                                               "type": "string"
                                             },
                                             "model": {
@@ -115347,8 +115651,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -116335,8 +116643,12 @@
                                                     "video",
                                                     "pdf",
                                                     "file",
-                                                    "model"
+                                                    "model",
+                                                    "html"
                                                   ],
+                                                  "type": "string"
+                                                },
+                                                "preview_url": {
                                                   "type": "string"
                                                 },
                                                 "model": {
@@ -117312,7 +117624,8 @@
                                       "video",
                                       "pdf",
                                       "file",
-                                      "model"
+                                      "model",
+                                      "html"
                                     ],
                                     "type": "string",
                                     "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -170348,7 +170661,8 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
                                       "type": "string",
                                       "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
@@ -171084,8 +171398,12 @@
                                                       "video",
                                                       "pdf",
                                                       "file",
-                                                      "model"
+                                                      "model",
+                                                      "html"
                                                     ],
+                                                    "type": "string"
+                                                  },
+                                                  "preview_url": {
                                                     "type": "string"
                                                   },
                                                   "model": {
@@ -171473,8 +171791,12 @@
                                                   "video",
                                                   "pdf",
                                                   "file",
-                                                  "model"
+                                                  "model",
+                                                  "html"
                                                 ],
+                                                "type": "string"
+                                              },
+                                              "preview_url": {
                                                 "type": "string"
                                               },
                                               "model": {
@@ -172042,6 +172364,7 @@
                                                           "name": {},
                                                           "mime": {},
                                                           "kind": {},
+                                                          "preview_url": {},
                                                           "model": {}
                                                         }
                                                       }
@@ -172484,8 +172807,12 @@
                                             "video",
                                             "pdf",
                                             "file",
-                                            "model"
+                                            "model",
+                                            "html"
                                           ],
+                                          "type": "string"
+                                        },
+                                        "preview_url": {
                                           "type": "string"
                                         },
                                         "model": {
@@ -172913,8 +173240,12 @@
                                         "video",
                                         "pdf",
                                         "file",
-                                        "model"
+                                        "model",
+                                        "html"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "preview_url": {
                                       "type": "string"
                                     },
                                     "model": {
@@ -179221,8 +179552,12 @@
                                     "video",
                                     "pdf",
                                     "file",
-                                    "model"
+                                    "model",
+                                    "html"
                                   ],
+                                  "type": "string"
+                                },
+                                "preview_url": {
                                   "type": "string"
                                 },
                                 "model": {

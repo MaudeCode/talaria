@@ -6013,8 +6013,12 @@
                 "video",
                 "pdf",
                 "file",
-                "model"
+                "model",
+                "html"
               ]
+            },
+            "preview_url": {
+              "type": "string"
             },
             "model": {
               "type": "object",

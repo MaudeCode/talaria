@@ -391,7 +391,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     // TAL-2651: a profileless session is the root's, never the active profile's.
     chatKeepsPhones: async (profile) => { try { return await chatKeepsPhoneNumbers(agentConfig, profileHome(profile ?? 'default')) } catch { return false } },
     sidecar: () => sidecar,
-    media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile), serverOwner: requestServerOwner },
+    media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile), serverOwner: requestServerOwner, signingKey: () => auth.signingKey() },
     profileActivity,
     profileDeleting: (profile) => profiles.isDeleting(profile),
     sessionActivity: async (sid, profile, opts) => background.activityPhase(sid, profile, opts),

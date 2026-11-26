@@ -23,7 +23,7 @@ describe('workspace preview route', () => {
     ws = realpathSync(s.workspace)
     const put = (rel: string, text: string) => { writeFileSync(join(ws, rel), text) }
     for (const dir of ['docs/site/img', 'docs/site/.git', 'docs/other', '.git']) mkdirSync(join(ws, dir), { recursive: true })
-    put('docs/site/index.html', '<html><head><link rel="stylesheet" href="app.css"></head><body><script src="app.js"></script></body></html>')
+    put('docs/site/index.html', '<html><head><style>:root{--foreground:blue}</style><link rel="stylesheet" href="app.css"></head><body><script src="app.js"></script></body></html>')
     put('docs/site/app.js', 'document.body.dataset.ran = "1"')
     put('docs/site/img/a.png', 'png')
     put('docs/site/.env', 'SITE_SECRET=1')
@@ -98,6 +98,22 @@ describe('workspace preview route', () => {
     const missing = await s.get(`/workspace-preview/${grant}/.env`)
     expect(missing.status).toBe(404)
     expect(missing.headers.get('content-security-policy') ?? '').not.toContain('allow-popups-to-escape-sandbox')
+  })
+
+  it('adds bounded theme defaults before the report styles', async () => {
+    const { page } = await previewPath('docs/site/index.html')
+    page.searchParams.set('theme', JSON.stringify({
+      '--background': '#123456',
+      '--foreground': 'rgb(2, 3, 4)',
+      '--primary': 'red}</style>',
+      '--font-mono': 'x'.repeat(161),
+      '--unknown': 'pink',
+    }))
+    const html = await (await s.get(page.pathname + page.search)).text()
+    const defaults = ':where(:root){--background:#123456;--foreground:rgb(2, 3, 4);}'
+    expect(html).toContain(defaults)
+    expect(html.indexOf(defaults)).toBeLessThan(html.indexOf(':root{--foreground:blue}'))
+    expect(html).not.toMatch(/--unknown|--primary|--font-mono/)
   })
 
   it('grants name only the folder they were signed for, and expire', () => {
