@@ -125,7 +125,8 @@ with patch.object(catalog, 'fetch_live_catalog', side_effect=AssertionError('Imp
                    {'name': 'Local folder', 'path': str(private)}],
         'routines': [{'name': 'Morning list', 'instruction': 'Run the Weekly review skill.', 'trigger': 'schedule',
                       'schedule_cron': '0 8 * * 1-5', 'timezone': 'America/New_York', 'skills': ['Weekly review']},
-                     {'name': 'Escalations', 'instruction': 'Reproduce it.', 'trigger': 'slack', 'trigger_details': '#escalations'}],
+                     {'name': 'Escalations', 'instruction': 'Reproduce it.', 'trigger': 'slack', 'trigger_details': '#escalations'},
+                     {'name': 'Quarter close', 'instruction': 'Summarize the quarter.', 'trigger': 'schedule', 'schedule_text': 'after the quarter closes'}],
         'apps': [{'name': 'Linear', 'mcp_url': 'https://mcp.example.invalid/mcp'}],
         'mcp_servers': {'export_command': {'command': 'DECOY-COMMAND'}}}]}
     before = snapshot(home)
@@ -135,6 +136,10 @@ with patch.object(catalog, 'fetch_live_catalog', side_effect=AssertionError('Imp
     importable = {item['kind']: item['label'] for item in grok['items'] if item['status'] == 'imported'}
     assert {'memories', 'user-facts', 'skill', 'routine', 'event-routines', 'mcp-servers'} <= importable.keys(), grok
     assert importable['routine'] == 'Routine (paused task)'
+    # Importers 1.2.2 record the import in memory and count an unparsed scheduled routine apart from event routines.
+    if 'needs-schedule' in (plugin / 'grok_bot.py').read_text():
+        assert importable['import-record'] == 'Import record (memory)', grok
+        assert ('needs-schedule', 'skipped') in [(item['kind'], item['status']) for item in grok['items']], grok
     assert grok['stripped_secrets'] == ['grok-bot-export.json: 1 token-like value(s) redacted'], grok
     assert 'DECOY' not in json.dumps(grok) and 'sk-abc' not in json.dumps(grok)
     assert call('apply', receipt=grok['receipt'])['status'] == 'applied'
