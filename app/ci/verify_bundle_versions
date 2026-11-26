@@ -22,3 +22,9 @@ for plist in "${plists[@]}"; do
 done
 
 echo "Verified ${expected_version} (${expected_build}) in ${#plists[@]} release bundles."
+
+frequent_updates="$(plutil -extract NSSupportsLiveActivitiesFrequentUpdates raw -expect bool -o - "${app_path}/Info.plist")"
+if [[ "${frequent_updates}" != "true" ]]; then
+  echo "${app_path}/Info.plist: NSSupportsLiveActivitiesFrequentUpdates must be true." >&2
+  exit 1
+fi

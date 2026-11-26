@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Live Activities can receive more frequent updates during busy sessions when Talaria Relay is enabled.",
+      "highlight": false
+    }
+  ]
+}
