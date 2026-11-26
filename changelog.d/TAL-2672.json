@@ -4,7 +4,10 @@
       "category": "Added",
       "summary": "Talaria Web displays eligible HTML reports inline in settled chat replies, with an option to open the full report in a new tab.",
       "highlight": false,
-      "components": ["web"]
+      "components": [
+        "web"
+      ],
+      "announce": false
     }
   ]
 }
