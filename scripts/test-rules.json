@@ -85,6 +85,15 @@
       },
       "message": "test-audit heavy: use a synthetic resolver to prove the streaming view never starts an HTML preview (docs/testing.md)"
     },
+    "heavy-nested-report-files-picker": {
+      "paths": [
+        "app/TalariaTests/TranscriptMediaRenderingTests.swift"
+      ],
+      "patterns": [
+        "\\bUIDocumentPickerViewController\\b"
+      ],
+      "message": "test-audit heavy: verify the report's original-file request and payload at the App boundary, and use the simulator workflow to check the nested system picker (docs/testing.md)"
+    },
     "clock-day-seconds": {
       "paths": [
         "app/TalariaTests/",

@@ -176,30 +176,35 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         try await captureReport(in: window, frameRoot: sheet.view, name: "delivered-html-expanded")
     }
 
-    func testExpandedReportExportsTheOriginalHTMLOnDemand() async throws {
+    func testExpandedReportRequestsTheOriginalHTMLOnDemand() async throws {
         let server = try reportServer()
-        let window = try hostWindow(reportTranscript(server: server, state: ReportState()))
+        let state = ReportState()
+        let window = try hostWindow(reportTranscript(server: server, state: state))
         let sheet = try await openReport(in: window)
         _ = try await mountedReport(in: sheet.view)
         XCTAssertFalse(server.requests.contains { $0.path.hasPrefix("/api/media?") })
         let export = try await requireElement(in: window, label: "Export media")
         try await captureReport(in: window, frameRoot: sheet.view, name: "delivered-html-expanded-export-action")
         XCTAssertTrue(HostedAccessibility.activate(export))
-        let picker = await presentedController(in: window, timeout: 10) { $0 is UIDocumentPickerViewController }
-        XCTAssertNotNil(picker, "Export opened the system file picker")
+        let failed = await awaitCondition { state.mediaError != nil }
+        XCTAssertTrue(failed, "The App received the original-file failure")
+        XCTAssertEqual((state.mediaError as? APIError)?.privacySafeLogCategory, "http.404")
         XCTAssertEqual(server.requests.filter { $0.path.hasPrefix("/api/media?") }.map(\.path),
                        ["/api/media?path=%2Ftalaria-contract%2Fout%2Fsummary.html&session_id=contract-media-session"])
         window.rootViewController?.dismiss(animated: false)
         let dismissed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
-        XCTAssertTrue(dismissed, "The export and preview sheets finished dismissing before teardown")
+        XCTAssertTrue(dismissed, "The export alert and preview finished dismissing before teardown")
     }
 
     private func openReport(in window: UIWindow) async throws -> UIViewController {
         _ = try await mountedReport(in: window)
         let expand = try await requireElement(in: window, label: "Expand report")
         XCTAssertTrue(expand.accessibilityActivate())
-        let presented = await presentedController(in: window)
-        return try XCTUnwrap(presented)
+        let presented = await presentedController(in: window, timeout: 10) { controller in
+            controller.viewIfLoaded?.window != nil && controller.transitionCoordinator == nil
+                && !controller.isBeingPresented && !controller.isBeingDismissed
+        }
+        return try XCTUnwrap(presented, "The media preview finished presenting")
     }
 
     func testStreamingDeliveredHTMLKeepsTheDownloadRow() async throws {
@@ -282,9 +287,6 @@ final class TranscriptMediaRenderingTests: XCTestCase {
 
     private func reportServer(height: Int = 200) throws -> LoopbackHTTPServer {
         try LoopbackHTTPServer { request in
-            if request.path == "/api/media?path=%2Ftalaria-contract%2Fout%2Fsummary.html&session_id=contract-media-session" {
-                return .init(status: 200, headers: ["Content-Type": "text/html"], body: Data("<h1>Original report</h1>".utf8))
-            }
             guard let url = URLComponents(string: request.path),
                   url.path == "/workspace-preview/example-grant/summary.html",
                   let theme = url.queryItems?.first(where: { $0.name == "theme" })?.value,
@@ -325,6 +327,7 @@ final class TranscriptMediaRenderingTests: XCTestCase {
 private final class ReportState {
     var dark = false
     var openedLinks: [URL] = []
+    @ObservationIgnored var mediaError: Error?
     @ObservationIgnored var previewLookups = 0
 }
 
@@ -357,7 +360,7 @@ private struct ReportTranscript: View {
         .transcriptLinks { url in state.openedLinks.append(url); return .handled }
         .sheet(item: $selected) { item in
             TranscriptMediaPreviewView(server: client.baseURL, item: item, reportURL: client.transcriptHTMLPreviewURL(for: item.reference),
-                                       onReportLink: { state.openedLinks.append($0) }, onAPIError: { _ in })
+                                       onReportLink: { state.openedLinks.append($0) }, onAPIError: { state.mediaError = $0 })
         }
     }
 }
