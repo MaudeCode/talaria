@@ -386,11 +386,13 @@ export class SessionService {
   async mediaProjector(s: Session): Promise<(text: string) => MediaProjection | null> {
     const media = this.deps.media
     // TAL-2205: the viewer's authority, as `/api/media` applies it; a visible session is in the viewer's profile.
-    const access = media ? await resolveMediaAccess(mediaAccessFor(media.access, await media.serverOwner(), s.profile ?? null, s.session_id)) : null
+    const serverOwner = media ? await media.serverOwner() : false
+    const access = media ? await resolveMediaAccess(mediaAccessFor(media.access, serverOwner, s.profile ?? null, s.session_id)) : null
+    const localIo = media?.localIo(s.profile) ?? false
     const served = new Map<string, string | null>()
     let anchor: ReturnType<typeof mediaAccessResolver> | null = null
     const localUrl = (path: string): string | null => {
-      if (!media?.localIo(s.profile) || !access) return null
+      if (!localIo || !access) return null
       if (served.has(path)) return served.get(path) ?? null
       let url: string | null = null
       try {
@@ -402,14 +404,18 @@ export class SessionService {
       return url
     }
     const workspace = s.workspace.trim() || null
+    // Media access can authorize the report alone. A restricted viewer must also be able to use its workspace.
+    const previewWorkspace = !serverOwner && workspace && localIo
+      ? await this.deps.workspaces.resolveTrusted(workspace, s.profile, serverOwner).catch(() => null)
+      : workspace
     const htmlPreviewUrl = (path: string): string | null => {
-      if (!media || !anchor || !workspace) return null
+      if (!media || !anchor || !previewWorkspace) return null
       try {
         const target = mediaRefTarget(path)
         if (!anchor(target, target, false)) return null
         const stat = statSync(target)
         if (!stat.isFile() || stat.size > 5 * 1024 * 1024) return null
-        return previewUrl(media.signingKey(), workspace, target)
+        return previewUrl(media.signingKey(), previewWorkspace, target)
       } catch { return null }
     }
     // A scene's final answer usually repeats its row's text: each distinct text is parsed once.

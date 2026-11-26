@@ -12,6 +12,7 @@ import { str } from '../util.js'
 import { sanitizeMessagesForApi } from './merge.js'
 import { UNSETTLED_TODO_KEY } from './todo.js'
 import { Session } from './session.js'
+import { SessionService } from './service.js'
 import { JsonJournalWriter } from './storage/json-journal.js'
 import { settler } from '../test/turns.js'
 
@@ -1312,6 +1313,27 @@ describe('chat turns through the sidecar', () => {
     expect((await s.get(page.pathname.replace(/[^/]+$/, '..%2Fother-report.html'))).status).toBe(404)
     expect(media[1]).toMatchObject({ name: 'large.html', kind: 'file' })
     expect(media[1]).not.toHaveProperty('preview_url')
+  })
+
+  it('keeps the report chip for a viewer without workspace authority', async () => {
+    const folder = join(realpathSync(s.workspace), '..', 'owner-only-reports')
+    mkdirSync(folder)
+    const report = join(folder, 'restricted.html')
+    writeFileSync(report, '<p>Report</p>')
+    const session = new Session({ session_id: 'restricted-report', workspace: folder, messages: [{ role: 'assistant', content: `MEDIA:${report}` }] }, { workspace: folder, model: null })
+    const service = new SessionService({
+      ...s.deps.sessions.deps,
+      media: {
+        access: { ...s.deps.mediaAccess, extraRoots: folder },
+        localIo: () => true,
+        serverOwner: () => Promise.resolve(false),
+        signingKey: () => s.deps.auth.signingKey(),
+      },
+    })
+    const project = await service.mediaProjector(session)
+    const media = project(`MEDIA:${report}`)?.media[0]
+    expect(media).toMatchObject({ name: 'restricted.html', kind: 'file' })
+    expect(media).not.toHaveProperty('preview_url')
   })
 
   it.each([{ name: 'short', answer: 'short answer B' }, { name: 'long', answer: 'b'.repeat(6000) }, { name: 'no response', answer: '' }, { name: 'cancelled', answer: '', error: 'Task cancelled by user' }, { name: 'failed', answer: '', error: 'boom' }])('transfers the expanded reply only at terminal settlement (TAL-1114, $name)', async ({ answer: nextReply, error }) => {
