@@ -23,6 +23,7 @@ public struct FeedbackAttachment: Codable, Equatable, Identifiable, Sendable {
     }
 
     var thumbnailName: String { "\(id.uuidString).thumbnail.jpg" }
+    var isVideo: Bool { contentType.hasPrefix("video/") }
 }
 
 /// Device-local feedback draft and optimistic presentation. The server owns diagnostics and delivery.
@@ -129,7 +130,12 @@ public final class FeedbackComposer {
         attachmentOptions?.enabled == true && isEditable
     }
 
-    public var videoAllowed: Bool { attachmentsEnabled && attachmentOptions?.videoAllowed == true }
+    public var videoAllowed: Bool {
+        guard attachmentsEnabled, attachmentOptions?.videoAllowed == true else { return false }
+        // Older servers publish only videoAllowed.
+        guard let limit = attachmentOptions?.maxVideoCount else { return true }
+        return attachments.count(where: \.isVideo) < limit
+    }
 
     /// How many more files the server's `maxCount` lets the user add.
     public var remainingAttachmentSlots: Int {
@@ -220,7 +226,7 @@ public final class FeedbackComposer {
         let file = stagingDirectory.appendingPathComponent(attachment.fileName)
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
         return TranscriptMediaReference(url: file.absoluteString, name: Self.displayName(for: attachment), mime: attachment.contentType,
-                                        mediaKind: attachment.contentType.hasPrefix("video/") ? .video : .image)
+                                        mediaKind: attachment.isVideo ? .video : .image)
     }
 
     public func removeAttachment(_ id: UUID) {

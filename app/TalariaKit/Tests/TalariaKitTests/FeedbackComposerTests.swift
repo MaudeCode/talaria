@@ -301,6 +301,35 @@ final class FeedbackComposerTests: XCTestCase {
         XCTAssertNil(capped.addImage(photo), "maxCount bounds the attachments")
     }
 
+    func testAFullVideoSlotStopsOfferingVideosUntilTheClipIsRemoved() async throws {
+        let root = try stagingRoot()
+        let clip = root.appendingPathComponent("pending.mov")
+        let photo = try XCTUnwrap(TestImages.jpegData(width: 40, height: 30))
+        let options = try JSONDecoder().decode(FeedbackOptions.self, from: Data("""
+            {"attachments":{"enabled":true,"videoAllowed":true,"maxCount":5,"maxVideoCount":1,
+              "maxImageBytes":10000000,"maxVideoBytes":20000000,"maxVideoSeconds":120,
+              "acceptedTypes":["image/jpeg","video/mp4"]}}
+            """.utf8))
+        let model = await attachmentComposer(root: root, options: options)
+        XCTAssertTrue(model.videoAllowed)
+        // Adding reserves the slot before encoding or uploading can complete.
+        let firstVideo = try XCTUnwrap(model.addVideo(at: clip))
+        let attachedClip = try XCTUnwrap(model.attachments.first)
+
+        XCTAssertFalse(model.videoAllowed, "The picker must offer only photos at the video limit")
+        let extraVideo = model.addVideo(at: clip)
+        XCTAssertNil(extraVideo, "Adding directly must also respect the video limit")
+        let image = model.addImage(photo)
+        XCTAssertNotNil(image)
+        XCTAssertEqual(model.attachments.last?.contentType, "image/jpeg")
+
+        model.removeAttachment(attachedClip.id)
+        XCTAssertTrue(model.videoAllowed)
+        await firstVideo.value
+        await extraVideo?.value
+        await image?.value
+    }
+
     func testPhotosAreReencodedWithoutLocationAndCapped() async throws {
         let root = try stagingRoot()
         var uploads: [(data: Data, type: String)] = []

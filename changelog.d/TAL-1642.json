@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The feedback picker offers photos only when your report has reached its video limit.",
+      "highlight": false,
+      "announce": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

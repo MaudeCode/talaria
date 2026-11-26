@@ -73,14 +73,16 @@ public struct FeedbackOptions: Decodable, Equatable, Sendable {
         public let enabled: Bool
         public let videoAllowed: Bool
         public let maxCount: Int
+        public let maxVideoCount: Int?
         public let maxImageBytes: Int
         public let maxVideoBytes: Int
         public let maxVideoSeconds: Int
         public let acceptedTypes: [String]
 
-        public init(enabled: Bool, videoAllowed: Bool, maxCount: Int, maxImageBytes: Int, maxVideoBytes: Int,
-                    maxVideoSeconds: Int, acceptedTypes: [String]) {
+        public init(enabled: Bool, videoAllowed: Bool, maxCount: Int, maxVideoCount: Int? = nil,
+                    maxImageBytes: Int, maxVideoBytes: Int, maxVideoSeconds: Int, acceptedTypes: [String]) {
             self.enabled = enabled; self.videoAllowed = videoAllowed; self.maxCount = maxCount
+            self.maxVideoCount = maxVideoCount
             self.maxImageBytes = maxImageBytes; self.maxVideoBytes = maxVideoBytes
             self.maxVideoSeconds = maxVideoSeconds; self.acceptedTypes = acceptedTypes
         }

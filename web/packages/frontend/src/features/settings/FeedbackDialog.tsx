@@ -82,7 +82,10 @@ const jobs = new Map<string, { abort: AbortController; done: Promise<Settled> }>
 /** The picked file's identity per chip, so picking or pasting it again adds no second chip. */
 const sources = new Map<string, string>()
 const sourceKey = (f: File) => `${f.name}:${String(f.size)}:${String(f.lastModified)}`
-const isVideo = (f: File) => f.type.startsWith('video/')
+const isVideoType = (type: string) => type.startsWith('video/')
+const isVideo = (file: File) => isVideoType(file.type)
+const remainingVideoSlots = (files: readonly PendingFile[], limits: FeedbackLimits) =>
+  (limits.maxVideoCount ?? Infinity) - files.filter((file) => isVideo(file.file)).length
 
 /** Change or drop a chip wherever its report now lives: the form, or a held report waiting to send. */
 function patchFile(key: string, change: Partial<PendingFile> | null, notice?: string): void {
@@ -151,7 +154,7 @@ function addFiles(incoming: Iterable<File>, limits: FeedbackLimits): void {
   const unsupported = picked.find((f) => !(f.type.startsWith('image/') || (limits.videoAllowed && isVideo(f))))
   const files = picked.filter((f) => f !== unsupported && (f.type.startsWith('image/') || (limits.videoAllowed && isVideo(f))))
   if (draft.files.length + files.length > limits.maxCount) { update({ notice: m.feedback_attachment_limit({ n: limits.maxCount }) }); return }
-  if (draft.files.filter((f) => isVideo(f.file)).length + files.filter(isVideo).length > limits.maxVideoCount) { update({ notice: m.feedback_video_limit({ n: limits.maxVideoCount }) }); return }
+  if (files.filter(isVideo).length > remainingVideoSlots(draft.files, limits)) { update({ notice: m.feedback_video_limit({ n: limits.maxVideoCount }) }); return }
   const chips = files.map((file): PendingFile => ({ key: randomUuid(), file, status: 'compressing' }))
   edit({ files: [...draft.files, ...chips] }, unsupported ? m.feedback_attachment_unsupported({ name: unsupported.name }) : null)
   for (const chip of chips) { sources.set(chip.key, sourceKey(chip.file)); stage(chip.key, chip.file, limits, true) }
@@ -293,7 +296,8 @@ export function FeedbackDialog() {
   const picker = useRef<HTMLInputElement>(null)
   const options = useQuery({ queryKey: keys.feedbackOptions, queryFn: api.fetchFeedbackOptions, enabled: open, staleTime: 60_000 })
   const limits = options.data?.attachments.enabled && options.data.attachments.maxCount > 0 ? options.data.attachments : null
-  const accept = limits?.acceptedTypes.filter((type) => limits.videoAllowed || !type.startsWith('video/')).join(',')
+  const videoAllowed = limits && limits.videoAllowed && remainingVideoSlots(draft.files, limits) > 0
+  const accept = limits?.acceptedTypes.filter((type) => videoAllowed || !isVideoType(type)).join(',')
   const ready = /\S/.test(draft.body) && !draft.files.some((f) => f.status === 'error')
   const onPaste = (e: ClipboardEvent<HTMLFormElement>) => {
     const files = Array.from(e.clipboardData.items).filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter((f): f is File => !!f)
