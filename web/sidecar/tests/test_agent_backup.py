@@ -190,6 +190,18 @@ def test_a_held_native_backup_lock_reports_busy(hermes_home) -> None:
     assert not out.exists()
 
 
+def test_restore_fence_seals_only_after_the_last_worker_handle_closes(tmp_path) -> None:
+    with backup.backup_restore.worker_fence(tmp_path) as launcher:
+        worker_fd = os.dup(launcher.fileno())
+    try:
+        assert not backup.backup_restore.seal_worker(tmp_path)
+    finally:
+        os.close(worker_fd)
+    assert backup.backup_restore.seal_worker(tmp_path)
+    with backup.backup_restore.worker_fence(tmp_path) as delayed:
+        assert delayed.read() == b"sealed"
+
+
 def test_restore_reports_unavailable_without_the_native_contract(root, monkeypatch) -> None:
     def missing():
         raise ImportError("Agent restore helper unavailable")
@@ -231,7 +243,7 @@ def test_native_restore_recovers_config_and_sessions_with_a_private_undo_archive
     with zipfile.ZipFile(recovery) as archive:
         assert archive.read("config.yaml") == b"model:\n  default: before/restore\n"
         assert not any("agent-restores" in name for name in archive.namelist())
-    assert sorted(os.listdir(folder)) == [incoming.name, recovery.name, "result.json"]
+    assert sorted(os.listdir(folder)) == [incoming.name, recovery.name, "result.json", "worker.lock"]
 
 
 @requires_agent

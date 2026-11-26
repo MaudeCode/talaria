@@ -1018,7 +1018,8 @@ not change the Agent. Confirm the receipt with `POST /api/agent-backup/restore`
 and `confirmed: true`. Repeating a confirmation reads the original outcome.
 Read `GET /api/agent-backup/restore` after an interrupted request. A native
 result can settle an unknown receipt after a restart. The server never
-replays the restore. Download the owner's private pre-restore snapshot from
+replays the restore. An unknown receipt keeps custody of its recovery files
+until the native worker fence confirms publication has stopped. Download the owner's private pre-restore snapshot from
 the receipt's `recovery_url` before staging another archive.
 
 The sidecar expands and verifies the archive in disposable storage, takes

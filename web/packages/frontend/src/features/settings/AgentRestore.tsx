@@ -8,6 +8,7 @@ import { keys } from '../../api/queryKeys'
 import { downloadFromApp } from '../../lib/appRoot'
 import { StatusDot } from '../../ui/Badge'
 import { ConfirmDialog } from '../../ui/Dialog'
+import { RowContextMenu } from '../../ui/Menu'
 import { RowActionButtons } from '../../ui/RowActionsMenu'
 import { showErrorToast } from '../toast/errorToast'
 import { SettingAction } from './SettingsRows'
@@ -31,7 +32,10 @@ export function AgentRestoreRow() {
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const status = useQuery({
     queryKey: keys.agentRestore, queryFn: api.fetchAgentRestore,
-    refetchInterval: (query) => query.state.data?.job?.state === 'running' ? 1000 : false,
+    refetchInterval: (query) => {
+      const data = query.state.data
+      return data?.job?.state === 'running' || (data?.job?.state === 'unknown' && !data.can_upload) ? 1000 : false
+    },
   })
   const set = (next: AgentRestoreStatus) => qc.setQueryData(keys.agentRestore, next)
   const reconcile = (error: unknown) => {
@@ -57,14 +61,16 @@ export function AgentRestoreRow() {
   ]
   return (
     <>
-      <SettingAction label={m.system_agent_restore()} icon={RotateCcw} detail={job && <StatusDot state={job.state === 'restored' ? 'ok' : 'idle'} wrap>{OUTCOME[job.state]()}</StatusDot>}>
-        <input type="file" accept=".zip,application/zip" hidden ref={input} onChange={(event) => {
-          const file = event.currentTarget.files?.[0]
-          event.currentTarget.value = ''
-          if (file) upload.mutate(file)
-        }} />
-        <RowActionButtons actions={actions} />
-      </SettingAction>
+      <input type="file" accept=".zip,application/zip" hidden ref={input} onChange={(event) => {
+        const file = event.currentTarget.files?.[0]
+        event.currentTarget.value = ''
+        if (file) upload.mutate(file)
+      }} />
+      <RowContextMenu label={m.system_agent_restore()} actions={actions} trigger={
+        <div><SettingAction label={m.system_agent_restore()} icon={RotateCcw} detail={job && <StatusDot state={job.state === 'restored' ? 'ok' : 'idle'} wrap>{OUTCOME[job.state]()}</StatusDot>}>
+          <RowActionButtons actions={actions} />
+        </SettingAction></div>
+      } />
       <ConfirmDialog open={!!job?.can_confirm && job.id === confirmId} onOpenChange={(open) => { if (!open) setConfirmId(null) }}
         title={m.system_agent_restore_confirm_title()} description={m.system_agent_restore_confirm_description({ file: job?.file_name ?? '', server: data.server, profile: data.profile })}
         confirmLabel={m.system_agent_restore_confirm_title()} cancelLabel={m.cancel()} danger onConfirm={() => { if (confirmId) confirm.mutate(confirmId) }} />

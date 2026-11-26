@@ -87,6 +87,33 @@ describe('Agent-home backup routes (TAL-2661)', () => {
 })
 
 describe('Agent-home restore routes (TAL-2667)', () => {
+  it('keeps recovery custody until a disconnected restore worker has stopped', async () => {
+    const { s, sidecar } = await boot()
+    let stopped = false
+    sidecar.respond('backup.restore_available', ({ reconcile_output }) => ({
+      available: true, ...(reconcile_output ? { replacement_safe: stopped } : {}),
+    }))
+    sidecar.respond('backup.restore', ({ output }) => {
+      writeFileSync(output, 'recovery', { mode: 0o600 })
+      return { status: 'unknown' }
+    })
+    const upload = () => s.get('/api/agent-backup/restore/upload?name=fixture.zip', {
+      method: 'POST', headers: { 'content-type': 'application/zip' }, body: 'disposable archive',
+    })
+    const first = AgentRestoreStatusSchema.parse(await (await upload()).json())
+    const id = first.job!.id
+    await s.get('/api/agent-backup/restore', { method: 'POST', headers: json, body: JSON.stringify({ id, confirmed: true }) })
+    const status = async () => AgentRestoreStatusSchema.parse(await (await s.get('/api/agent-backup/restore')).json())
+    await vi.waitFor(async () => { expect((await status()).job?.state).toBe('unknown') })
+    expect((await status()).can_upload).toBe(false)
+    expect((await upload()).status).toBe(409)
+    expect(await (await s.get(`/api/agent-backup/recovery?id=${id}`)).text()).toBe('recovery')
+    stopped = true
+    expect((await status()).can_upload).toBe(true)
+    expect((await status()).job?.state).toBe('unknown')
+    expect((await upload()).status).toBe(200)
+  })
+
   it('stages without restoring, confirms exactly once, and exposes a private recovery snapshot on partial restore', async () => {
     const { s, sidecar } = await boot()
     sidecar.respond('backup.restore_available', () => ({ available: true }))

@@ -46,6 +46,9 @@ test('Agent-home restore asks before publishing and displays the recovery action
     await dialog.getByRole('button', { name: 'Restore Agent home' }).click()
     await expect(page.getByText('Some data may have changed. Download the recovery backup.')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Download recovery backup' })).toBeVisible()
+    await page.getByText('Agent home restore', { exact: true }).click({ button: 'right' })
+    await expect(page.getByRole('menuitem', { name: 'Download recovery backup' })).toBeVisible()
+    await page.keyboard.press('Escape')
     if (process.env.TALARIA_RESTORE_SHOTS && info.project.name === 'desktop') {
       await page.getByRole('button', { name: 'Download recovery backup' }).scrollIntoViewIfNeeded()
       await page.screenshot({ animations: 'disabled', path: resolve(process.env.TALARIA_RESTORE_SHOTS, 'restore-recovery.png') })

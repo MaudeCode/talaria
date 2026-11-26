@@ -15586,6 +15586,9 @@
     "properties": {
       "available": {
         "type": "boolean"
+      },
+      "replacement_safe": {
+        "type": "boolean"
       }
     },
     "required": [

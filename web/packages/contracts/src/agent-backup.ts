@@ -80,7 +80,10 @@ export const AgentRestoreConfirmSchema = z.object({ id: AgentBackupIdSchema, con
 
 /** The sidecar runs the Agent's own command for the root `profile_home`, writing `output` in a private directory the server created. */
 export const AGENT_BACKUP_METHODS = {
-  'backup.restore_available': { params: z.object({}), result: z.object({ available: z.boolean() }) },
+  'backup.restore_available': {
+    params: z.object({ reconcile_output: z.string().min(1).optional() }),
+    result: z.object({ available: z.boolean(), replacement_safe: z.boolean().optional() }),
+  },
   'backup.restore': {
     params: z.object({ profile_home: z.string().min(1), scope: AgentBackupScopeSchema, input: z.string().min(1), output: z.string().min(1), state_dir: z.string().min(1) }),
     result: z.object({ status: AgentRestoreOutcomeSchema }),

@@ -44,7 +44,9 @@ export class AgentRestores {
   blocksNewWork(): boolean { return this.job?.state === 'running' }
 
   async status(): Promise<AgentRestoreStatus> {
-    const available = await this.available()
+    const unknownId = this.job?.state === 'unknown' ? this.job.id : null
+    const capability = await this.capability(unknownId)
+    const available = capability.available
     let job = this.job
     if (job?.state === 'unknown') {
       const outcome = this.nativeOutcome(job.id)
@@ -54,15 +56,19 @@ export class AgentRestores {
         rmSync(join(this.dir, job.id, INCOMING), { force: true })
       }
     }
-    return { available, can_upload: available && !this.uploading && job?.state !== 'running',
+    const replaceable = job?.state !== 'unknown' || (job.id === unknownId && capability.replacement_safe === true)
+    return { available, can_upload: available && !this.uploading && job?.state !== 'running' && replaceable,
       server: hostname(), profile: 'default',
       job: job && { ...job, recovery_url: this.archive(job.id) ? `api/agent-backup/recovery?id=${job.id}` : null,
         can_confirm: available && !this.uploading && job.state === 'staged' } }
   }
 
   async stage(body: AsyncIterable<Buffer>, fileName: string): Promise<AgentRestoreStatus> {
-    if (!await this.available()) throw new HttpError(409, 'Agent-home restore is unavailable.')
-    if (this.uploading || this.job?.state === 'running') throw new HttpError(409, 'Another restore is in progress.')
+    const status = await this.status()
+    if (!status.available) throw new HttpError(409, 'Agent-home restore is unavailable.')
+    if (!status.can_upload || this.uploading || this.job?.state === 'running' || status.job?.id !== this.job?.id) {
+      throw new HttpError(409, 'Another restore may still be in progress.')
+    }
     this.uploading = true
     const id = randomBytes(16).toString('hex')
     const folder = join(this.dir, id)
@@ -117,10 +123,11 @@ export class AgentRestores {
     return { dir, path, name: 'hermes-pre-restore-backup.zip' }
   }
 
-  private async available(): Promise<boolean> {
+  private async capability(unknownId: string | null): Promise<{ available: boolean; replacement_safe?: boolean | undefined }> {
     try {
-      return (await this.sidecar()?.call('backup.restore_available', {}, { timeoutMs: 5000 }))?.available === true
-    } catch { return false }
+      const params = unknownId ? { reconcile_output: join(this.dir, unknownId, RECOVERY) } : {}
+      return await this.sidecar()?.call('backup.restore_available', params, { timeoutMs: 5000 }) ?? { available: false }
+    } catch { return { available: false } }
   }
 
   private nativeOutcome(id: string): AgentRestoreJob['state'] {

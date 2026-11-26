@@ -28,7 +28,7 @@ _DONE = re.compile(r"^(\d+)/(\d+) files")
 _BUSY = "another Hermes backup is already running"
 
 
-def _output_path(raw: object) -> Path:
+def _output_path(raw: object, *, allow_existing: bool = False) -> Path:
     """The archive path: a new ``.zip`` in an existing owner-only directory of this user. The default Web state directory
     lies inside the Agent home; the command never archives its own output or staging."""
     if not isinstance(raw, str) or not raw.endswith(".zip") or not os.path.isabs(raw):
@@ -43,7 +43,7 @@ def _output_path(raw: object) -> Path:
     # POSIX modes and owners only; Windows has neither, and its directory keeps the state directory's ACL.
     if os.name != "nt" and (parent.st_uid != os.getuid() or stat.S_IMODE(parent.st_mode) & 0o077):
         raise InvalidParams("output directory must be a private directory owned by the sidecar user")
-    if os.path.lexists(out):
+    if not allow_existing and os.path.lexists(out):
         raise InvalidParams("output already exists")
     return out
 
@@ -127,8 +127,13 @@ def create(home: Path, out: Path, ctx: CallContext) -> dict:
 
 def register(registry) -> None:
     @registry.method("backup.restore_available")
-    def restore_available(_ctx: CallContext, _params: dict) -> dict:
-        return {"available": backup_restore.supported()}
+    def restore_available(_ctx: CallContext, params: dict) -> dict:
+        available = backup_restore.supported()
+        requested = params.get("reconcile_output")
+        if not available or requested is None:
+            return {"available": available}
+        output = _output_path(requested, allow_existing=True)
+        return {"available": available, "replacement_safe": backup_restore.seal_worker(output.parent.resolve())}
 
     @registry.method("backup.restore")
     def restore_(ctx: CallContext, params: dict) -> dict:
@@ -155,18 +160,22 @@ def register(registry) -> None:
         env["PYTHONPATH"] = os.pathsep.join(path for path in sys.path if path)
         env["TMPDIR"] = str(output.parent)
         try:
-            with subprocess.Popen(backup_restore.command(home, incoming, output, state_dir), stdin=subprocess.DEVNULL,
-                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env) as proc:
-                while True:
-                    try:
-                        stdout, _ = proc.communicate(timeout=0.25)
-                        break
-                    except subprocess.TimeoutExpired:
-                        if ctx.cancelled:
-                            proc.kill()
-                            return {"status": "unknown"}
-            if proc.returncode == 0:
-                return json.loads(stdout)
+            with backup_restore.worker_fence(output.parent) as fence:
+                if fence.read(1):
+                    return {"status": "unknown"}
+                with subprocess.Popen(backup_restore.command(home, incoming, output, state_dir, fence.fileno()), stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env,
+                                      pass_fds=(fence.fileno(),)) as proc:
+                    while True:
+                        try:
+                            stdout, _ = proc.communicate(timeout=0.25)
+                            break
+                        except subprocess.TimeoutExpired:
+                            if ctx.cancelled:
+                                proc.kill()
+                                return {"status": "unknown"}
+                if proc.returncode == 0:
+                    return json.loads(stdout)
         except (OSError, ValueError):
             pass
         return {"status": "unknown"}

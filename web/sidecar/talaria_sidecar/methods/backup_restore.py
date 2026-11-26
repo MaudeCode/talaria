@@ -84,8 +84,35 @@ def _restrict_linux(roots: tuple[Path, ...]) -> None:
         os.close(ruleset)
 
 
-def command(home: Path, incoming: Path, output: Path, state_dir: Path) -> list[str]:
-    cmd = [sys.executable, "-B", "-m", "talaria_sidecar.methods.backup_restore", str(home), str(incoming), str(output), str(state_dir)]
+@contextlib.contextmanager
+def worker_fence(folder: Path):
+    """Reserve the receipt until both the launcher and its child close their copies of this descriptor."""
+    import fcntl
+
+    with _directory(folder) as directory:
+        fd = os.open("worker.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600, dir_fd=directory)
+        with os.fdopen(fd, "r+b") as fence:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise OSError("Unsafe restore worker fence")
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            yield fence
+
+
+def seal_worker(folder: Path) -> bool:
+    """Once no worker holds the fence, prevent a delayed RPC from starting one."""
+    try:
+        with worker_fence(folder) as fence:
+            fence.write(b"sealed")
+            fence.flush()
+            os.fsync(fence.fileno())
+    except OSError:
+        return False
+    return True
+
+
+def command(home: Path, incoming: Path, output: Path, state_dir: Path, worker_fd: int) -> list[str]:
+    cmd = [sys.executable, "-B", "-m", "talaria_sidecar.methods.backup_restore", str(home), str(incoming), str(output), str(state_dir), str(worker_fd)]
     if sys.platform != "darwin":
         return cmd
     roots = " ".join(f"(subpath {json.dumps(str(path), ensure_ascii=False)})" for path in (home, output.parent))
@@ -204,7 +231,11 @@ def _restore(home: Path, incoming: Path, output: Path, state_dir: Path) -> dict:
 
 def _main() -> None:
     reply = sys.stdout
-    home, incoming, output, state_dir = map(Path, sys.argv[1:])
+    home, incoming, output, state_dir = map(Path, sys.argv[1:-1])
+    worker = os.fstat(int(sys.argv[-1]))
+    lock = (output.parent / "worker.lock").lstat()
+    if (worker.st_dev, worker.st_ino) != (lock.st_dev, lock.st_ino):
+        raise OSError("Restore worker did not inherit its receipt fence")
     os.umask(0o077)
     with open(os.devnull, "w") as discard, contextlib.redirect_stdout(discard), contextlib.redirect_stderr(discard):
         result = _restore(home, incoming, output, state_dir)
