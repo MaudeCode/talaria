@@ -15,6 +15,10 @@ struct SessionListView: View {
     private let hasWaitingSharedImport: Bool
     private let openNextSharedImport: () -> Void
     @Binding private var pendingDeepLinkedSessionID: String?
+    @Binding private var pendingBotChat: TalariaDeepLink.BotChat?
+    private let hasQueuedBotChat: Bool
+    @State private var openingBotChat = false
+    @State private var openingBotChatTip: String?
     @Binding private var pendingDestination: SessionListUtilityDestination?
     @Binding private var opensProviderQuotaWidgetSettings: Bool
     @Binding private var requestedNewChat: NewChatRequest?
@@ -188,6 +192,8 @@ struct SessionListView: View {
         hasWaitingSharedImport: Bool = false,
         openNextSharedImport: @escaping () -> Void = {},
         pendingDeepLinkedSessionID: Binding<String?> = .constant(nil),
+        pendingBotChat: Binding<TalariaDeepLink.BotChat?> = .constant(nil),
+        hasQueuedBotChat: Bool = false,
         pendingDestination: Binding<SessionListUtilityDestination?> = .constant(nil),
         opensProviderQuotaWidgetSettings: Binding<Bool> = .constant(false),
         requestedNewChat: Binding<NewChatRequest?> = .constant(nil),
@@ -204,6 +210,8 @@ struct SessionListView: View {
         self.openNextSharedImport = openNextSharedImport
         self.draftStore = draftStore ?? .shared
         _pendingDeepLinkedSessionID = pendingDeepLinkedSessionID
+        _pendingBotChat = pendingBotChat
+        self.hasQueuedBotChat = hasQueuedBotChat
         _pendingDestination = pendingDestination
         _opensProviderQuotaWidgetSettings = opensProviderQuotaWidgetSettings
         _requestedNewChat = requestedNewChat
@@ -239,6 +247,7 @@ struct SessionListView: View {
             )
         )
         let hasExplicitRoute = pendingSharedImport.wrappedValue != nil
+            || pendingBotChat.wrappedValue != nil || hasQueuedBotChat
             || requestedNewChat.wrappedValue != nil
             || opensProviderQuotaWidgetSettings.wrappedValue || hasWaitingSharedImport
             || AppIntentRouter.shared.pendingDeepLink != nil
@@ -445,6 +454,7 @@ struct SessionListView: View {
                 // resolved from local data; only explicit deep links can navigate here.
                 await SessionListLoad.initial(
                     resolvePendingDeepLink: {
+                        await openPendingBotChatIfNeeded()
                         await openPendingDeepLinkedSessionIfNeeded()
                     },
                     refreshSessionsAndActiveProfile: {
@@ -462,6 +472,12 @@ struct SessionListView: View {
                     content: true,
                     depth: 5
                 )
+            }
+            .task(id: scenePhase == .active ? viewModel.botChatWidgetAvatarPaths : [:]) {
+                guard scenePhase == .active else { return }
+                let paths = viewModel.botChatWidgetAvatarPaths
+                guard !paths.isEmpty else { return }
+                await viewModel.refreshBotChatWidgetAvatars(paths)
             }
             .task(id: activeSessionMonitorTaskID) {
                 let taskID = activeSessionMonitorTaskID
@@ -555,6 +571,9 @@ struct SessionListView: View {
             }
             .onChange(of: pendingDeepLinkedSessionID) {
                 Task { await openPendingDeepLinkedSessionIfNeeded() }
+            }
+            .onChange(of: pendingBotChat) {
+                Task { await openPendingBotChatIfNeeded() }
             }
             .onChange(of: pendingDestination) {
                 openPendingDestinationIfNeeded()
@@ -912,14 +931,17 @@ struct SessionListView: View {
     /// A linked chat still resolving shows the transcript's loading presentation, never New Chat (TAL-2564).
     @ViewBuilder
     private var conversationRoot: some View {
-        if let destination = navigationState.destination {
-            navigationDestination(destination, rootHasAppeared: conversationRootHasAppeared)
-        } else if navigationState.awaitsLinkedSession(pendingID: pendingDeepLinkedSessionID) {
+        let awaitsBotChat = hasQueuedBotChat || pendingBotChat != nil
+            || (openingBotChatTip != nil && navigationState.destination?.selectedSessionID != openingBotChatTip)
+        if awaitsBotChat || navigationState.awaitsLinkedSession(pendingID: pendingDeepLinkedSessionID) {
             ChatTranscriptLoadingSkeletonView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.chat)
+                .navigationTitle(awaitsBotChat ? String(localized: "Bot Chat") : "")
                 // The linked chat is not a new empty one, so the stack keeps its compose action.
                 .onAppear { chatShowsEmptyTranscript = false }
+        } else if let destination = navigationState.destination {
+            navigationDestination(destination, rootHasAppeared: conversationRootHasAppeared)
         } else {
             navigationDestination(.newChat(emptyChatRoute), rootHasAppeared: conversationRootHasAppeared)
         }
@@ -2428,6 +2450,26 @@ struct SessionListView: View {
             await openDeepLinkedSession(id: sessionID)
             navigationState.finishDeepLinkedSessionLoad(id: sessionID)
             guard !Task.isCancelled else { return }
+        }
+    }
+
+    private func openPendingBotChatIfNeeded() async {
+        guard !openingBotChat, pendingBotChat?.publisherID == server.absoluteString else { return }
+        openingBotChat = true
+        defer { openingBotChat = false }
+        while !Task.isCancelled, let request = pendingBotChat, request.publisherID == server.absoluteString {
+            let openRevision = navigationState.openRevision
+            let tip = await viewModel.switchToBotChat(profileName: request.profileName)
+            guard !Task.isCancelled, case let .loggedIn(activeServer) = authManager.state, activeServer == server else { return }
+            guard pendingBotChat == request else { continue }
+            pendingBotChat = nil
+            if let tip, navigationState.openRevision == openRevision {
+                openingBotChatTip = tip
+                pendingDeepLinkedSessionID = tip
+                await openPendingDeepLinkedSessionIfNeeded()
+                openingBotChatTip = nil
+            }
+            await loadSessions(includingActiveProfile: true)
         }
     }
 

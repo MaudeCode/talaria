@@ -1,5 +1,6 @@
 import XCTest
 import AppIntents
+import WidgetKit
 @testable import Talaria
 @testable import TalariaKit
 
@@ -17,6 +18,24 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
 
     func testIntentOpensAppWhenRun() {
         XCTAssertTrue(NewChatInProfileIntent.openAppWhenRun)
+    }
+
+    func testMediumBotChatWidgetEntryPreservesTheFourProfileLinksInSlotOrder() throws {
+        let publisher = "https://widget.example.test/talaria"
+        let profiles = try ["research", "default", "workspace", "coding"].map { name in
+            let url = try XCTUnwrap(TalariaDeepLink.botChatURL(profileName: name, publisherID: publisher))
+            return ProfileEntity(id: url.absoluteString, name: name, subtitle: nil)
+        }
+        let configuration = NewChatWidgetConfigurationIntent()
+        configuration.botProfile = profiles[0]
+        configuration.secondBotProfile = profiles[1]
+        configuration.thirdBotProfile = profiles[2]
+        configuration.fourthBotProfile = profiles[3]
+
+        let entry = NewChatWidgetEntry(configuration: configuration, family: .systemMedium)
+        let routes = entry.botLinks.compactMap(TalariaDeepLink.botChat(from:))
+        XCTAssertEqual(routes.map(\.profileName), profiles.map(\.name))
+        XCTAssertEqual(routes.map(\.publisherID), Array(repeating: publisher, count: profiles.count))
     }
 
     @MainActor

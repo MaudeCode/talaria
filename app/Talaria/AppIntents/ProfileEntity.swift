@@ -56,11 +56,14 @@ extension ProfileEntityCache {
 /// still populated when the background fetch can't authenticate. Both paths degrade to an
 /// empty list rather than throwing, which the system renders as an empty picker (#339).
 struct ProfileEntityQuery: EntityQuery {
+    var botChatOnly = false
+
     /// A profile the server no longer lists resolves to a stand-in named by its identifier, so a configured widget
     /// keeps the user's choice instead of WidgetKit silently swapping it for the active profile (TAL-50). The server
     /// then refuses the deleted profile on the first Send.
     func entities(for identifiers: [ProfileEntity.ID]) async throws -> [ProfileEntity] {
-        Self.resolve(identifiers, in: await ProfileEntityProvider.currentEntities())
+        if botChatOnly { return identifiers.compactMap(Self.resolveBotChatProfile) }
+        return Self.resolve(identifiers, in: await ProfileEntityProvider.currentEntities())
     }
 
     static func resolve(_ identifiers: [ProfileEntity.ID], in current: [ProfileEntity]) -> [ProfileEntity] {
@@ -68,7 +71,22 @@ struct ProfileEntityQuery: EntityQuery {
     }
 
     func suggestedEntities() async throws -> [ProfileEntity] {
-        await ProfileEntityProvider.currentEntities()
+        if botChatOnly {
+            return ProfileEntityCache.shared.loadProfiles().compactMap { profile in
+                guard profile.hasBotChat == true, let publisher = profile.publisherID,
+                      let link = TalariaDeepLink.botChatURL(profileName: profile.id, publisherID: publisher)
+                else { return nil }
+                return ProfileEntity(id: link.absoluteString, name: profile.name, subtitle: profile.subtitle)
+            }
+        }
+        return await ProfileEntityProvider.currentEntities()
+    }
+
+    private static func resolveBotChatProfile(_ id: String) -> ProfileEntity? {
+        guard let url = URL(string: id), let route = TalariaDeepLink.botChat(from: url) else { return nil }
+        let profile = ProfileEntityCache.shared.loadBotChatProfiles(publisherID: route.publisherID)
+            .first { $0.id == route.profileName }
+        return ProfileEntity(id: id, name: profile?.name ?? route.profileName, subtitle: profile?.subtitle)
     }
 }
 
@@ -90,23 +108,18 @@ enum ProfileEntityProvider {
         // profiles) so a stale list can't linger. A *failed* fetch (nil) leaves the cache
         // untouched, so a transient network/auth blip falls back to the last-known profiles
         // instead of emptying the picker.
-        if let live = try? await fetchLiveProfiles() {
-            ProfileEntityCache.shared.save(live)
-            if !live.isEmpty { return live.compactMap(ProfileEntity.init) }
+        guard let client = await MainActor.run(body: { makeClient() }) else {
+            ProfileEntityCache.shared.save([])
+            return []
         }
-        return ProfileEntityCache.shared.loadEntities()
+        guard let response = try? await client.profiles() else { return ProfileEntityCache.shared.loadEntities() }
+        let profiles = response.profiles ?? []
+        ProfileEntityCache.shared.save(profiles, publisherID: client.baseURL.absoluteString)
+        return profiles.compactMap(ProfileEntity.init)
     }
 
     /// The saved server's client; nil when none is configured. The UI-test fixture substitutes its own server.
     @MainActor static var makeClient: () -> APIClient? = { AppIntentServer.saved()?.client() }
-
-    /// Best-effort live fetch against the saved server. Returns `[]` (not an error) when no
-    /// server is configured; a network/auth failure throws so the caller falls back to cache.
-    private static func fetchLiveProfiles() async throws -> [ProfileSummary] {
-        guard let client = await MainActor.run(body: { makeClient() }) else { return [] }
-        let response = try await client.profiles()
-        return response.profiles ?? []
-    }
 
     @MainActor private static var didRefreshAppShortcutsThisLaunch = false
 

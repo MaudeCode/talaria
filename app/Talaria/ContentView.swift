@@ -19,6 +19,8 @@ struct ContentView: View {
     /// App-wide: `TalariaApp` imports shares once for every window.
     @State private var sharedImports: SharedImportRouter
     @State private var pendingDeepLinkedSessionID: String?
+    @State private var pendingBotChat: TalariaDeepLink.BotChat?
+    @State private var botChatServerUnavailable = false
     /// A widget's quota account or a push's decision review, pushed once above the current screen.
     @State private var pendingDestination: SessionListUtilityDestination?
     @State private var opensProviderQuotaWidgetSettings = false
@@ -60,6 +62,7 @@ struct ContentView: View {
             && authManager.pendingReauthentication == nil
             && sharedImports.pendingImport == nil && !sharedImports.hasWaitingImport
             && pendingDeepLinkedSessionID == nil && pendingDestination == nil
+            && pendingBotChat == nil && !botChatServerUnavailable
             && !opensProviderQuotaWidgetSettings && pendingNewChatRequest == nil && pendingAddServer == nil
             && intentRouter.pendingDeepLink == nil
             && !appLock.isLocked && appLock.queuedDeepLinks.isEmpty
@@ -68,6 +71,11 @@ struct ContentView: View {
     var body: some View {
         content
             .sheet(item: $pendingAddServer) { AddServerView(authManager: authManager, prefill: $0) }
+            .alert("Bot Chat", isPresented: $botChatServerUnavailable) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("The server for this Bot Chat is no longer available.")
+            }
             .whatsNewPresentation(whatsNew.presentation(in: window), defaults: whatsNew.defaults)
             .task(id: leavesRoomForWhatsNew) {
                 guard leavesRoomForWhatsNew else { return }
@@ -150,6 +158,8 @@ struct ContentView: View {
                 hasWaitingSharedImport: sharedImports.hasWaitingImport(in: window),
                 openNextSharedImport: { sharedImports.openNext() },
                 pendingDeepLinkedSessionID: $pendingDeepLinkedSessionID,
+                pendingBotChat: $pendingBotChat,
+                hasQueuedBotChat: hasQueuedBotChat,
                 pendingDestination: $pendingDestination,
                 opensProviderQuotaWidgetSettings: $opensProviderQuotaWidgetSettings,
                 requestedNewChat: $pendingNewChatRequest,
@@ -172,6 +182,11 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private var hasQueuedBotChat: Bool {
+        !appLock.isLocked && (intentRouter.pendingWindow == nil || intentRouter.pendingWindow == sceneID)
+            && intentRouter.pendingDeepLink.flatMap(TalariaDeepLink.botChat(from:)) != nil
     }
 
     /// Every external route enters here, so a locked app holds it until unlock.
@@ -251,6 +266,18 @@ struct ContentView: View {
 
         if TalariaDeepLink.isNewChatURL(url) {
             pendingNewChatRequest = NewChatRequest(autoStartsVoiceInput: false)
+            return
+        }
+
+        if let botChat = TalariaDeepLink.botChat(from: url) {
+            if let account = authManager.servers.first(where: { $0.urlString == botChat.publisherID }) {
+                authManager.switchActiveServer(to: account)
+            }
+            guard case let .loggedIn(server) = authManager.state, server.absoluteString == botChat.publisherID else {
+                botChatServerUnavailable = true
+                return
+            }
+            pendingBotChat = botChat
             return
         }
 

@@ -146,6 +146,7 @@ public enum TalariaDeepLink {
     /// item (like `sessionURL`'s `id`) rather than in the host, so it can carry spaces and
     /// non-ASCII safely via percent-encoding.
     static let newChatInProfileHost = "new-chat-profile"
+    static let botChatHost = "bot-chat"
 
     /// Query-item name carrying the profile's server name.
     static let profileQueryItem = "profile"
@@ -181,6 +182,33 @@ public enum TalariaDeepLink {
 
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// A saved server and its profile. The canonical session is looked up when the link opens.
+    public struct BotChat: Equatable, Sendable {
+        public let profileName: String
+        public let publisherID: String
+    }
+
+    public static func botChatURL(profileName: String, publisherID: String) -> URL? {
+        let profile = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !profile.isEmpty, let publisher = normalizedPublisherID(publisherID) else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = botChatHost
+        components.queryItems = [URLQueryItem(name: profileQueryItem, value: profile),
+                                 URLQueryItem(name: "publisher", value: publisher)]
+        return components.url
+    }
+
+    public static func botChat(from url: URL) -> BotChat? {
+        guard url.scheme?.lowercased() == scheme, url.host?.lowercased() == botChatHost,
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              let profile = items.first(where: { $0.name == profileQueryItem })?.value?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !profile.isEmpty,
+              let publisher = normalizedPublisherID(items.first { $0.name == "publisher" }?.value)
+        else { return nil }
+        return BotChat(profileName: profile, publisherID: publisher)
     }
 
     /// TAL-2326: an app page a transcript row opens: Tasks (scheduled jobs), Skills, or Settings › Tools.

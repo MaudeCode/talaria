@@ -44,6 +44,8 @@ struct UITestFixtureEnvironment {
     /// composer report it and retry (TAL-636).
     nonisolated static let failFirstSessionCreationArgument = "--ui-test-fail-first-session-creation"
     nonisolated static let forkSessionArgument = "--ui-test-fork-session"
+    nonisolated static let botChatArgument = "--ui-test-bot-chat"
+    nonisolated static let holdBotChatProfileSwitchArgument = "--ui-test-hold-bot-chat-profile-switch"
     /// Holds a deep link's read of the fork chat until the test releases it, so the chat swaps in from a reply that
     /// lands after its request, as on a real network (TAL-2384).
     nonisolated static let holdDeepLinkedForkArgument = "--ui-test-hold-deep-linked-fork"
@@ -506,6 +508,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     /// The session's toolsets as the fixture saved them (TAL-631); nil is the profile's defaults.
     private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
     private static let profileState = OSAllocatedUnfairLock(initialState: (rows: [[String: JSONValue]](), active: "fixture-profile"))
+    static var activeFixtureProfile: String { profileState.withLock { $0.active } }
     private static let serverSettings = OSAllocatedUnfairLock(initialState: [String: JSONValue]())
     private static let modelPreferences = OSAllocatedUnfairLock(initialState: (favorites: ["fixture-provider": Set(["fixture-model"])], hidden: [String: Set<String>]()))
     private static let auxiliarySelections = OSAllocatedUnfairLock(initialState: [String: (model: String?, provider: String?, effort: String?, writesReasoning: Bool)]())
@@ -666,6 +669,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
         let holdsSessionRemoval = Self.sessionRemovalPaths.contains(url.path)
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionRemovalArgument)
         let holdsPanel = Self.isFullWidthPanelLoad(url) && Self.panelScenario == UITestFixtureEnvironment.panelLoadingArgument
+        let holdsBotChatProfileSwitch = url.path == "/api/profile/switch"
+            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdBotChatProfileSwitchArgument)
         let holdsDeepLinkedFork = url.path == "/api/session"
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdDeepLinkedForkArgument)
             && URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems.map {
@@ -677,7 +682,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 $0.contains(URLQueryItem(name: "session_id", value: Self.forkSessionID)) && !$0.contains(URLQueryItem(name: "messages", value: "0"))
             } == true
         if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel || holdsPanel || holdsSessionRemoval
-            || holdsAnchorScene || holdsDeepLinkedFork || holdsForkTranscript || holdsRelayRevocation {
+            || holdsAnchorScene || holdsDeepLinkedFork || holdsForkTranscript || holdsRelayRevocation || holdsBotChatProfileSwitch {
             UITestFixtureHold.shared.hold(request: request) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -725,7 +730,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
             .queryItems?.first(where: { $0.name == "session_id" })?.value {
             Self.targetedDirectoryReads.withLock { $0.append(sessionID) }
         }
-        let contentType = url.path.hasSuffix("/stream") ? "text/event-stream" : "application/json"
+        let avatar = url.path == "/api/profile/avatar"
+        let contentType = avatar ? "image/png" : url.path.hasSuffix("/stream") ? "text/event-stream" : "application/json"
         let listFailure = url.path == "/api/sessions"
             ? Self.sessionListFailures.withLock { $0.isEmpty ? nil : $0.removeFirst() }
             : nil
@@ -741,6 +747,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         let refusesSignIn = Self.refusesSignIn(request)
         let statusCode: Int
         if refusesSignIn { statusCode = 401 }
+        else if avatar, url.query != "name=fixture-work" { statusCode = 404 }
         else if case .status(let code) = listFailure { statusCode = code }
         else if Self.isFullWidthPanelLoad(url), Self.panelScenario == UITestFixtureEnvironment.panelUnavailableArgument { statusCode = 503 }
         else if refusesLogs { statusCode = 403 }
@@ -1007,6 +1014,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
             ])
         case "/api/projects":
             return json(["projects": []])
+        case "/api/profile/avatar":
+            return transcriptMediaImage
         case "/api/profiles", "/api/profile/update", "/api/profile/delete", "/api/profile/switch":
             return profileState.withLock { state in
                 if state.rows.isEmpty {
@@ -1027,6 +1036,23 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 }
                 let body = requestJSON(request)
                 let name = body["name"] as? String ?? ""
+                if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.botChatArgument) {
+                    if !state.rows.contains(where: { $0["name"] == .string("fixture-code") }) {
+                        state.rows.append(contentsOf: [
+                            ["name": .string("fixture-code"), "display_name": .string("Coding Bot")],
+                            ["name": .string("fixture-write"), "display_name": .string("Writing Bot")]
+                        ])
+                    }
+                    for index in state.rows.indices {
+                        let work = state.rows[index]["name"] == .string("fixture-work")
+                        let tip = work && url.path == "/api/profile/switch" ? forkSessionID : "\(sessionID)-\(index + 2)"
+                        state.rows[index]["canonical_session"] = .object(["session_id": .string(sessionID), "tip_session_id": .string(tip)])
+                        if work && url.path == "/api/profiles" {
+                            state.rows[index]["has_avatar"] = .bool(true)
+                            state.rows[index]["avatar_url"] = .string("./api/profile/avatar?name=fixture-work")
+                        }
+                    }
+                }
                 if url.path == "/api/profile/update", let index = state.rows.firstIndex(where: { $0["name"] == .string(name) }) {
                     for key in ["display_name", "description"] {
                         if let value = body[key] as? String { state.rows[index][key] = .string(value) }

@@ -158,9 +158,9 @@ final class FixtureApp {
     }
 
     /// The App's root, whose auth state picks onboarding or the session list, as a launch does.
-    func root() -> some View {
+    func root(intentRouter: AppIntentRouter = AppIntentRouter()) -> some View {
         // Its own router: the test host's ContentView drains the shared one.
-        ContentView(authManager: environment.authManager, draftStore: environment.draftStore, intentRouter: AppIntentRouter())
+        ContentView(authManager: environment.authManager, draftStore: environment.draftStore, intentRouter: intentRouter)
             .environment(\.scenePhase, .active)
             .modelContainer(cache)
     }

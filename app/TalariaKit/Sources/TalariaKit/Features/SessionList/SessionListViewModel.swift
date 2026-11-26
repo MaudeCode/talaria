@@ -626,9 +626,24 @@ public final class SessionListViewModel {
             return false
         }
 
-        guard profileName != activeProfileName else {
-            return true
+        guard profileName != activeProfileName else { return true }
+        return await switchActiveProfile(named: profileName, fallbackProfile: profile) != nil
+    }
+
+    /// Even the active profile is switched to explicitly so the server supplies a fresh canonical tip.
+    public func switchToBotChat(profileName: String) async -> String? {
+        actionErrorMessage = nil
+        guard let response = await switchActiveProfile(named: profileName) else {
+            actionErrorMessage = activeProfileErrorMessage
+            return nil
         }
+        let tip = response.botChatTip(for: profileName)
+        if tip == nil { actionErrorMessage = ProfileSwitchResponse.botChatUnavailableMessage }
+        return tip
+    }
+
+    private func switchActiveProfile(named profileName: String, fallbackProfile: ProfileSummary? = nil) async -> ProfileSwitchResponse? {
+        guard !isSwitchingActiveProfile else { return nil }
 
         activeProfileGeneration += 1
         isSwitchingActiveProfile = true
@@ -644,7 +659,7 @@ public final class SessionListViewModel {
             let response = try await client.switchProfile(name: profileName)
             if let error = Self.nonEmpty(response.error) {
                 activeProfileErrorMessage = error
-                return false
+                return nil
             }
 
             let resolvedName = Self.nonEmpty(response.active) ?? profileName
@@ -657,19 +672,19 @@ public final class SessionListViewModel {
             )
             applyActiveProfile(
                 profileResponse,
-                fallbackProfile: profile,
+                fallbackProfile: fallbackProfile,
                 fallbackDefaultModel: response.defaultModel
             )
             // Selected chats belong to the old profile; the server would refuse them now.
             isSelectingSessions = false
             selectedSessionsByID = [:]
-            return true
+            return response
         } catch {
-            guard !APIError.isCancellation(error) else { return false }
+            guard !APIError.isCancellation(error) else { return nil }
 
             lastError = error
             activeProfileErrorMessage = error.localizedDescription
-            return false
+            return nil
         }
     }
 
@@ -1800,8 +1815,8 @@ public final class SessionListViewModel {
         // A nil `profiles` (field absent/undecoded) is left untouched — tolerant decoding — but
         // an explicit empty list is forwarded so `save([])` can clear a stale picker if the
         // server ever reports none.
-        if let profiles = response.profiles {
-            let changed = ProfileEntityCache.shared.save(profiles)
+        if !isSwitchingActiveProfile, let profiles = response.profiles {
+            let changed = ProfileEntityCache.shared.save(profiles, publisherID: server.absoluteString)
             PlatformHooks.refreshProfileShortcuts(changed)
         }
 
@@ -1831,6 +1846,29 @@ public final class SessionListViewModel {
             ?? profile?.displayName
         activeProfileModel = Self.nonEmpty(profile?.model) ?? Self.nonEmpty(fallbackDefaultModel)
         activeProfileProvider = Self.nonEmpty(profile?.provider)
+    }
+
+    public var botChatWidgetAvatarPaths: [String: String] {
+        Dictionary(profileOptions.compactMap { profile in
+            guard let name = profile.normalizedName, let path = profile.botChatAvatarPath else { return nil }
+            return (name, path)
+        }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The foreground app fetches protected avatars and shares only downsampled image bytes with WidgetKit.
+    public func refreshBotChatWidgetAvatars(_ paths: [String: String]) async {
+        let cache = ProfileEntityCache.shared
+        let publisher = server.absoluteString
+        var images = cache.botChatAvatars(publisherID: publisher)
+        for (name, path) in paths {
+            guard !Task.isCancelled else { return }
+            if let data = try? await client.profileAvatarData(from: path),
+               let thumbnail = await ImagePreviewDownsampler.uploadImage(from: data, maxPixelSize: 144) {
+                images[name] = thumbnail.data
+            }
+        }
+        guard !Task.isCancelled else { return }
+        cache.saveBotChatAvatars(images, publisherID: publisher)
     }
 
     private func removeConfirmedRows(_ ids: [String], clearTranscript: Bool = false, modelContext: ModelContext?) {

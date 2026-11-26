@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Open a profile's Bot Chat directly from the Home Screen widget, with room for four profiles in the medium size.",
+      "highlight": false,
+      "announcement": {
+        "title": "Bot Chat widgets",
+        "description": "Open a profile's Bot Chat in one tap from your Home Screen.",
+        "icon": "chat"
+      }
+    }
+  ]
+}
