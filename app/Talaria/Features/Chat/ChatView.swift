@@ -141,6 +141,7 @@ struct ChatView: View {
     @AppStorage(ChatScrollToBottomButtonSide.storageKey) private var scrollToBottomButtonSideRawValue = ChatScrollToBottomButtonSide.right.rawValue
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsFilesButton = true
     @AppStorage(SectionVisibilitySettings.chatGitKey) private var showsGitControls = true
+    @AppStorage(SectionVisibilitySettings.chatScreenKey) private var isScreenEnabled = true
 
     /// The chat's session. A new chat starts with a provisional one, without an ID, and takes on
     /// the session the server creates in place (TAL-636).
@@ -213,6 +214,7 @@ struct ChatView: View {
     @State private var openedDecisionReviewID: String?
     /// TAL-1997: the terminal a `terminal_open` card pushed over the chat; nil while none is open.
     @State private var openedTerminal: TerminalFollowModel?
+    @State private var showsAgentScreen = false
     @State private var removedForkedSession: SessionSummary?
     @State private var editContext: MessageActionContext?
     @State private var editDraft = ""
@@ -990,6 +992,7 @@ struct ChatView: View {
                 nativeChatToolbarItem(.chatGoal, from: actions)
                 nativeChatToolbarItem(.chatFiles, from: actions)
                 nativeChatToolbarItem(.chatCompanionPage, from: actions)
+                nativeChatToolbarItem(.chatScreen, from: actions)
                 nativeChatToolbarItem(.chatGit, from: actions)
                 nativeChatToolbarItem(.chatBackgroundTasks, from: actions)
                 nativeChatToolbarItem(.chatQueuedMessages, from: actions)
@@ -1083,6 +1086,13 @@ struct ChatView: View {
         if showsGitControls, viewModel.hasSession, gitAvailabilityViewModel.hasRepository {
             add(.chatGit) { gitActionsMenu }
         }
+        if offersAgentScreen {
+            add(.chatScreen, accessibilityIdentifier: "chat-open-screen") {
+                Button(action: openAgentScreen) { Label("Screen", systemImage: "display") }
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
+                    .help("Screen")
+            }
+        }
         if viewModel.showsBackgroundWorkEntry {
             add(.chatBackgroundTasks, badgeCount: viewModel.pinnedBackgroundTaskCount) {
                 Button(action: backgroundTasksAction) { Label("Background tasks", systemImage: "square.3.layers.3d") }
@@ -1109,6 +1119,15 @@ struct ChatView: View {
             }
         }
         return buttons
+    }
+
+    private var offersAgentScreen: Bool {
+        isScreenEnabled && !viewModel.isViewingCachedData && viewModel.screen?.available == true
+    }
+
+    private func openAgentScreen() {
+        guard offersAgentScreen, viewModel.hasSession else { return }
+        presentPreviewRestoringComposerFocusIfNeeded { showsAgentScreen = true }
     }
 
     /// A wide chat, or one the split view widens for it, toggles the Files inspector beside it; a narrower one
@@ -1579,6 +1598,14 @@ struct ChatView: View {
 
     private var chatWithSheets: some View {
         chatWithNavigation
+            .sheet(isPresented: $showsAgentScreen, onDismiss: restoreComposerFocusAfterPreviewIfNeeded) {
+                if let id = viewModel.streamCoordinatorSessionID {
+                    AgentScreenView(client: viewModel.client, sessionID: id)
+                }
+            }
+            .onChange(of: isScreenEnabled) { _, enabled in
+                if !enabled { showsAgentScreen = false }
+            }
             .fullScreenCover(item: $selectableResponseText) { selectableText in
                 SelectableTextPresentationView(selection: selectableText)
             }
@@ -2459,10 +2486,13 @@ struct ChatView: View {
     /// (TAL-1478). The caller supplies the screen reads its fetches run under.
     fileprivate struct ToolResultActions: ViewModifier {
         let chat: ChatView
+        @State private var openScreen = ChatEnvironmentAction<Void, Void> { _ in }
 
         func body(content: Content) -> some View {
             let viewModel = chat.viewModel
-            content
+            openScreen.handler = { _ in chat.openAgentScreen() }
+            return content
+                .environment(\.chatOpenScreen, chat.offersAgentScreen ? openScreen : nil)
                 .transcriptLinks(perform: chat.handleTranscriptLink)
                 .environment(\.chatTranscriptMedia, ChatTranscriptMedia(
                     cacheNamespace: chat.transcriptMediaCacheNamespace,

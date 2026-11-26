@@ -366,6 +366,7 @@ public final class ChatViewModel {
     public private(set) var sessionGoal: SessionGoal?
     /// TAL-1965: the session's newest open decision review; nil hides its composer chip.
     public private(set) var sessionDecisionReview: DecisionReviewRef?
+    public private(set) var screen: AgentScreen?
     /// The server's display choice, with only this user's write shown optimistically.
     public var showsReasoning: Bool { requestedReasoningDisplay ?? serverShowsReasoning ?? true }
     private var serverShowsReasoning: Bool?
@@ -375,7 +376,7 @@ public final class ChatViewModel {
     @ObservationIgnored private var reasoningDisplayReadFloor = 0
     /// Mirrors the list-row merge rule: the server's `read_only` replaces the
     /// seeded flag; a detail that omits it keeps it. A load passes the notices count it fetched at.
-    private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil, connectionChangesAtFetch: Int? = nil, reasoningReadGeneration: Int? = nil) {
+    private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil, connectionChangesAtFetch: Int? = nil, sessionReadGeneration: Int? = nil) {
         if let session, let rowAccess = accessPendingVerification {
             // A detail naming another session leaves this one locked: the list opens that session instead.
             guard session.sessionId == nil || session.sessionId == sessionID else { return }
@@ -394,7 +395,7 @@ public final class ChatViewModel {
             serverPlaceLabel = session.placeLabel
         }
         if let show = session?.showReasoning,
-           reasoningReadGeneration.map({ $0 > reasoningDisplayReadFloor }) ?? true {
+           sessionReadGeneration.map({ $0 > reasoningDisplayReadFloor }) ?? true {
             serverShowsReasoning = show
             if reasoningDisplayWrite == nil { requestedReasoningDisplay = nil }
         }
@@ -406,6 +407,10 @@ public final class ChatViewModel {
         }
         sessionGoal = session?.goal
         sessionDecisionReview = session?.decisionReview
+        // Full detail can remove the Screen. Partial mutation and terminal envelopes leave it alone.
+        if sessionReadGeneration != nil || session?.screen != nil {
+            screen = session?.screen
+        }
         if let session, session.statesEnabledToolsets, toolsetsWriteTask == nil {
             sessionToolsets = SessionToolsets(names: session.enabledToolsets)
         }
@@ -2252,7 +2257,7 @@ extension ChatViewModel {
                     else { continue }
                     Self.insertLocalOptimisticMessage(message, into: &mergedMessages)
                 }
-                applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, connectionChangesAtFetch: connectionChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
+                applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, connectionChangesAtFetch: connectionChangesAtFetch, sessionReadGeneration: loadRequestGeneration)
                 serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
                 loadedClearGeneration = session?.clearGeneration
                 let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
@@ -2287,7 +2292,7 @@ extension ChatViewModel {
             streamCoordinator.applySessionActivityPhase(session?.activityPhase)
             // After load arbitration only: a superseded response must not leave its
             // read-only flag behind once its transcript has been rejected.
-            applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, connectionChangesAtFetch: connectionChangesAtFetch, reasoningReadGeneration: loadRequestGeneration)
+            applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch, connectionChangesAtFetch: connectionChangesAtFetch, sessionReadGeneration: loadRequestGeneration)
             serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
             loadedClearGeneration = session?.clearGeneration
             if !hasReadServerTranscript, let session {
@@ -6853,6 +6858,7 @@ extension ChatViewModel {
             isHidden: payload.isHidden
         )
         call.timerStart = payload.startedAt
+        call.screenAction = payload.screenAction
         call.displayFlags = payload.displayFlags
         liveAssistantActivity.appendTool(
             call,
@@ -6937,6 +6943,7 @@ extension ChatViewModel {
                 processID: payload.processID
             )
             call.displayFlags = payload.displayFlags
+            call.screenAction = payload.screenAction
             liveAssistantActivity.appendTool(
                 call,
                 groupID: payload.groupID,

@@ -89,7 +89,7 @@ Titles and descriptions are single-line plain text, at most 40 and 120
 characters. Icons are the keys in `../contracts/whats-new.schema.json`
 (`sparkles`, `chat`, `voice`, `attachment`, `search`, `notifications`,
 `automation`, `model`, `appearance`, `speed`, `reliability`, `security`, `sync`,
-`share`, `settings`, `accessibility`); each client maps a key to its own symbol
+`share`, `settings`, `accessibility`, `display`); each client maps a key to its own symbol
 in its accent color. An announced entry must include `app` or `web`, and each
 component shows only the rows its `components` select. The schema is generated
 from `web/packages/contracts`; the generator reads its icons and limits from it.

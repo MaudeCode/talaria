@@ -264,12 +264,15 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
     public var displayFlags = ToolDisplayFlags()
     /// TAL-2341: the server's `activity_unnamed`: a Live Activity does not name this call.
     public var activityUnnamed = false
+    /// A live tool row the server marked with an Open screen action.
+    public private(set) var screenAction = false
 
     enum CodingKeys: String, CodingKey {
         case opensRaw = "opens_raw"
         case mediaInDetails = "media_in_details"
         case showsCard = "shows_card"
         case activityUnnamed = "activity_unnamed"
+        case screenAction = "screen_action"
         case groupID = "group_id"
         case group
         case startedAt = "started_at"
@@ -339,6 +342,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        screenAction = (try? container.decodeIfPresent(Bool.self, forKey: .screenAction)) == true
         eventType = container.decodeLossyStringIfPresent(forKey: .eventType)
         name = container.decodeLossyStringIfPresent(forKey: .name)
         preview = container.decodeLossyStringIfPresent(forKey: .preview)

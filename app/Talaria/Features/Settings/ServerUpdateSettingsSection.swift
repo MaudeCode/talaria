@@ -6,6 +6,7 @@ struct ServerUpdateSettingsSection: View {
     @Environment(ServerSettingsStore.self) private var settingsStore: ServerSettingsStore?
     @Bindable var authManager: AuthManager
     let server: URL
+    @AppStorage(SectionVisibilitySettings.chatScreenKey) private var showsScreen = true
 
     @State private var isLoading = false
     @State private var serverVersion: String?
@@ -48,6 +49,8 @@ struct ServerUpdateSettingsSection: View {
                     SettingsInfoRow(title: SettingsIndex.systemUpdateSummary.title,
                                     value: String(localized: "Not Available on This Server"))
                 }
+                SettingsToggleRow(title: SettingsIndex.systemScreen.title, systemImage: "display", isOn: $showsScreen,
+                                  accessibilityIdentifier: SettingsIndex.systemScreen.id)
             }
         }
         .task { await loadServerSettings() }

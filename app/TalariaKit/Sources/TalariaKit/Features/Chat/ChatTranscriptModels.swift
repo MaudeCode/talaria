@@ -165,6 +165,7 @@ public struct AssistantTurnLayout: Equatable, Sendable {
         merged.progress = live.progress
         merged.isHidden = live.isHidden
         merged.displayFlags = live.displayFlags
+        merged.screenAction = live.screenAction
         return merged
     }
 }
@@ -612,6 +613,7 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
                 // TAL-2340: a running call keeps the server's start its timer counts from.
                 enriched.timerStart = toolCall.timerStart ?? resolved.timerStart
                 enriched.displayFlags = toolCall.displayFlags
+                enriched.screenAction = toolCall.screenAction
                 toolCalls[toolIndex] = enriched
             }
             rows[rowIndex].content = .tools(toolCalls)

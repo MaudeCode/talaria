@@ -44,6 +44,7 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
     public var timerStart: Double?
     /// TAL-2341: how the server's Tool calls settings show this call.
     public var displayFlags = ToolDisplayFlags()
+    public var screenAction = false
 
     public init(
         id: String = "live-tool-\(UUID().uuidString)",

@@ -28,6 +28,7 @@ extension ToolCall {
             processID: payload.processID ?? processID
         )
         call.displayFlags = payload.displayFlags
+        call.screenAction = screenAction || payload.screenAction
         return call
     }
 }

@@ -3,6 +3,8 @@ import TalariaKit
 
 struct ToolActivityGroupView: View {
     let group: ToolCallGroup
+    var isLive = false
+    @Environment(\.chatOpenScreen) private var openScreen
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -17,6 +19,7 @@ struct ToolActivityGroupView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .environment(\.chatOpenScreen, isLive ? openScreen : nil)
         .accessibilityElement(children: .contain)
     }
 }

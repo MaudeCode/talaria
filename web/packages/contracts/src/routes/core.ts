@@ -109,7 +109,7 @@ export type ReleaseInfo = z.infer<typeof ReleaseInfoSchema>
  */
 export const WhatsNewIconSchema = z.enum([
   'sparkles', 'chat', 'voice', 'attachment', 'search', 'notifications', 'automation', 'model',
-  'appearance', 'speed', 'reliability', 'security', 'sync', 'share', 'settings', 'accessibility',
+  'appearance', 'speed', 'reliability', 'security', 'sync', 'share', 'settings', 'accessibility', 'display',
 ])
 // Single-line plain text without surrounding whitespace, as the release-note generator authors it.
 const SingleLine = (max: number) => z.string().min(1).max(max).regex(/^\S(?:[^\u0000-\u001f]*\S)?$/)

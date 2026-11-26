@@ -229,6 +229,9 @@ Live Activities and widgets, Siri and Shortcuts, data and storage, and about.
 group. A setting stored on the device sits in a group whose section help says
 so.
 
+The App's Screen switch sits in Server › System with the capability it controls.
+Its visibility preference is stored on this device.
+
 ## 12. Settings and forms
 
 On Web, a Settings page is the section heading (`SettingsSection`) and a column of

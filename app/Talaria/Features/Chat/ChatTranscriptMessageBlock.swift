@@ -434,7 +434,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                     id: row.id,
                     anchorMessageID: transcriptMessage.anchorID,
                     toolCalls: toolCalls
-                ))
+                ), isLive: layout.isLive)
             }
         case .steering:
             EmptyView()

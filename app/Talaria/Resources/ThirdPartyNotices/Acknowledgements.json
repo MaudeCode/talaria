@@ -1,5 +1,6 @@
 [
   { "name": "Talaria", "files": ["Talaria-LICENSE.txt"] },
+  { "name": "Hermex RFB client", "version": "2.2.0", "files": ["Hermex-LICENSE.txt"] },
   { "name": "Highlightr", "package": "highlightr", "version": "2.3.0", "files": ["Highlightr-LICENSE.txt"] },
   { "name": "highlight.js", "version": "11.11.1", "files": ["highlightjs-LICENSE.txt"] },
   { "name": "KeychainAccess", "package": "keychainaccess", "version": "4.2.2", "files": ["KeychainAccess-LICENSE.txt"] },

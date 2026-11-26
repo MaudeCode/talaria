@@ -978,6 +978,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
     public let goal: SessionGoal?
     /// TAL-1964: the session's newest open decision review; nil when none is open.
     public let decisionReview: DecisionReviewRef?
+    /// The profile's Bot Screen. Only full session details carry it.
+    public let screen: AgentScreen?
     /// Server-resolved visibility. Reasoning arrives only when shown; nil preserves older-server presentation.
     public let showReasoning: Bool?
     public let messages: [ChatMessage]?
@@ -1055,6 +1057,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
         case clearGeneration
         case goal
         case decisionReview
+        case screen
         case showReasoning
         case messages
         case toolCalls
@@ -1074,6 +1077,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         showReasoning = container.decodeLossyBoolIfPresent(forKey: .showReasoning)
+        screen = try? container.decodeIfPresent(AgentScreen.self, forKey: .screen)
         sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
         title = container.decodeLossyStringIfPresent(forKey: .title)
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)

@@ -1,4 +1,5 @@
 import Darwin
+import os
 import SwiftData
 import SwiftUI
 import UIKit
@@ -9,6 +10,117 @@ import XCTest
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
+    func testChatHeaderFollowsServerScreenAvailability() async throws {
+        let fixture = try FixtureApp(for: self)
+        let summary = SessionSummary(sessionId: "screen-session", title: "Screen fixture")
+        let responses = [
+            #"{"session":{"session_id":"screen-session","screen":{"available":false,"state":"unsupported","control":"agent","install_command":null},"messages":[{"role":"assistant","content":"Screen unavailable","message_id":"before"}]}}"#,
+            #"{"session":{"session_id":"screen-session","screen":{"available":true,"state":"running","control":"agent","install_command":null},"messages":[{"role":"assistant","content":"Desktop is ready","message_id":"after"}]}}"#
+        ]
+        let index = OSAllocatedUnfairLock(initialState: 0)
+        let stream = ScriptedSSEStreamingClient()
+        let model = try makeScriptedChatViewModel(streamClient: stream, sessionSummary: summary) { request in
+            guard request.url?.path == "/api/session" else { return apiTestJSONResponse("{}", for: request) }
+            let response = index.withLock { value in
+                let response = responses[min(value, responses.count - 1)]
+                value += 1
+                return response
+            }
+            return apiTestJSONResponse(response, for: request)
+        }
+        defer {
+            model.suspendStreamForNavigation()
+            model.cleanupPollingTasks()
+            stream.stop()
+        }
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: URL(string: "https://example.test")!, onAPIError: { _ in },
+                     loadsInitialMessages: false, viewModel: model)
+        }.modelContainer(fixture.cache))
+        await model.loadMessages()
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("Screen unavailable") == true }
+        XCTAssertFalse(HostedAccessibility.elements(in: window).contains { HostedAccessibility.identifier(of: $0) == "chat-open-screen" })
+
+        await model.loadMessages()
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("Desktop is ready") == true }
+        _ = try await requireElement(in: window, "The session offers a Screen button") {
+            HostedAccessibility.identifier(of: $0) == "chat-open-screen"
+        }
+    }
+
+    func testScreenSettingHidesTheHeaderAndLiveToolAction() async throws {
+        let fixture = try FixtureApp(for: self)
+        let suite = "screen-display-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let summary = SessionSummary(sessionId: "screen-live", title: "Screen demo")
+        let stream = ScriptedSSEStreamingClient()
+        let model = try makeScriptedChatViewModel(streamClient: stream, sessionSummary: summary) { request in
+            switch request.url?.path {
+            case "/api/session":
+                return apiTestJSONResponse(#"{"session":{"session_id":"screen-live","screen":{"available":true,"state":"running","control":"agent","install_command":null},"messages":[{"role":"assistant","content":"Desktop is ready.","message_id":"hello"}]}}"#, for: request)
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"screen-live","stream_id":"screen-turn"}"#, for: request)
+            case "/api/chat/stream/status":
+                return apiTestJSONResponse(#"{"active":true,"stream_id":"screen-turn"}"#, for: request)
+            default:
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        defer {
+            model.suspendStreamForNavigation()
+            model.cleanupPollingTasks()
+            stream.stop()
+            ChatViewModel.resetActiveStreamSnapshotsForTesting()
+        }
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: URL(string: "https://example.test")!, onAPIError: { _ in },
+                     loadsInitialMessages: false, viewModel: model)
+        }.modelContainer(fixture.cache).defaultAppStorage(defaults))
+        await model.loadMessages()
+        _ = try await requireElement(in: window, "Screen starts enabled") {
+            HostedAccessibility.identifier(of: $0) == "chat-open-screen"
+        }
+        let started = await model.sendMessage("Look at the desktop.")
+        XCTAssertTrue(started)
+        stream.emit(SSEEventDecoder.decode(eventType: "tool", data: #"{"id":"live-computer","name":"computer_use","kind":"computer","screen_action":true}"#))
+        _ = try await requireElement(in: window, "A live computer row offers Open screen") {
+            HostedAccessibility.identifier(of: $0) == "tool-open-screen-live-computer"
+        }
+        attachHostedScreenshot(window, name: "screen-live-entry-points")
+        defaults.set(false, forKey: SectionVisibilitySettings.chatScreenKey)
+        let hidden = await awaitNoElement(in: window) {
+            let id = HostedAccessibility.identifier(of: $0)
+            return id == "chat-open-screen" || id == "tool-open-screen-live-computer"
+        }
+        XCTAssertTrue(hidden, "The Screen switch hides both entry points")
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("computer") == true }
+        attachHostedScreenshot(window, name: "screen-live-hidden-by-setting")
+    }
+
+    func testScreenShowsTheInstallCommandFromTheServer() async throws {
+        let fixture = try FixtureApp(for: self)
+        let summary = SessionSummary(sessionId: "screen-install", title: "Screen demo")
+        let install = "sudo apt-get install -y tigervnc-standalone-server xfce4"
+        let model = try makeScriptedChatViewModel(streamClient: ScriptedSSEStreamingClient(), sessionSummary: summary) { request in
+            guard request.url?.path == "/api/session" else { return apiTestJSONResponse("{}", for: request) }
+            return apiTestJSONResponse("""
+            {"session":{"session_id":"screen-install","screen":{"available":true,"state":"not_installed","control":"agent","install_command":"\(install)"},"messages":[]}}
+            """, for: request)
+        }
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: URL(string: "https://example.test")!, onAPIError: { _ in },
+                     loadsInitialMessages: false, viewModel: model)
+        }.modelContainer(fixture.cache), size: HostedSize.phone)
+        await model.loadMessages()
+        let open = try await requireElement(in: window, "The server offers Screen even when it is not installed") {
+            HostedAccessibility.identifier(of: $0) == "chat-open-screen"
+        }
+        XCTAssertTrue(HostedAccessibility.activate(open))
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains(install) == true }
+        attachHostedScreenshot(window, name: "screen-install-command")
+    }
+
     func testReasoningHideClearsRetainedLiveContentAndTitles() async throws {
         let fixture = try FixtureApp(for: self)
         let stream = ScriptedSSEStreamingClient()
