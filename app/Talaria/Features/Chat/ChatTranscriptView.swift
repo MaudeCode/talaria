@@ -617,6 +617,9 @@ struct ChatTranscriptView: View {
                                  || scrollPositionController.isNavigating || scrollPositionController.isPreservingPosition
                                  || scrollPositionController.isUserInteracting)
                         onUpdateScrollMetrics(reported)
+                        if reported.permitsFollowChanges && reported.didScrollWithoutGesture {
+                            onReaderMoved { scrollPositionController.readingAnchorRowID }
+                        }
                     }
 
                     ChatVerticalScrollAxisGuard()

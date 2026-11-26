@@ -8,6 +8,8 @@ struct ChatScrollMetrics: Equatable {
     /// A scroll with no gesture carried the reader away from the bottom since
     /// the last delivered report; see `ChatScrollPolicy.ScrollAwayTracker`.
     let movedAwayFromBottom: Bool
+    /// A gesture-free offset change outside programmatic navigation and layout holds.
+    let didScrollWithoutGesture: Bool
     let distanceFromTop: CGFloat
     /// Controlled reader motion still reports geometry without changing follow intent.
     var permitsFollowChanges = true

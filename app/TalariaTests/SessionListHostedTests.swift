@@ -13,6 +13,31 @@ final class SessionSearchLandingHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Scroll to latest message")
     }
 
+    func testGestureFreeNavigationKeepsTheReadersNewRowAfterASearchLanding() async throws {
+        let chats = ChatViewModelCache()
+        let window = try await openSearchHit("history prompt 1874", chats: chats)
+        try await requireMatchedMessage(in: window)
+        let ready = await awaitCondition {
+            window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator?.scrollPositionController?.isIdle == true
+        }
+        XCTAssertTrue(ready, "The search placement must finish before the reader navigates")
+        let start = try XCTUnwrap(readingRow(in: window))
+        let scroll = try XCTUnwrap(mountedTranscriptScrollView(in: window))
+        let session = SessionSummary(sessionId: UITestFixtureURLProtocol.sessionID, title: UITestFixtureURLProtocol.sessionTitle)
+        let chat = chats.chat(for: session, server: UITestFixtureEnvironment.serverURL) {
+            XCTFail("The open chat was made again")
+            return ChatView.makeViewModel(session: session, server: UITestFixtureEnvironment.serverURL)
+        }
+        // UIKit keyboard and accessibility navigation change the offset without starting a pan.
+        scroll.contentOffset.y += scroll.bounds.height / 2
+        let moved = await awaitCondition { self.readingRow(in: window).map { $0 != start } == true }
+        XCTAssertTrue(moved, "The reader must reach a different transcript row")
+        let recorded = await awaitCondition {
+            self.readingRow(in: window).map { $0 != start && chat.readingRowID == $0 } == true
+        }
+        XCTAssertTrue(recorded, "Gesture-free navigation must replace the search anchor with the reader’s row")
+    }
+
     func testTitleHitOpensAtTheLatestMessage() async throws {
         try await assertOpensAtLatest("ui fixture session")
     }
@@ -79,9 +104,9 @@ final class SessionSearchLandingHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Search")
     }
 
-    private func openSearchHit(_ query: String, scenario: [String] = []) async throws -> UIWindow {
+    private func openSearchHit(_ query: String, scenario: [String] = [], chats: ChatViewModelCache? = nil) async throws -> UIWindow {
         let fixture = try FixtureApp([UITestFixtureEnvironment.historyPagingArgument] + scenario, for: self)
-        let window = try hostWindow(fixture.sessionList(), size: HostedSize.phone) { $0.horizontalSizeClass = .compact }
+        let window = try hostWindow(fixture.sessionList(chats: chats), size: HostedSize.phone) { $0.horizontalSizeClass = .compact }
         try await openSidebar(in: window)
         let search = try await requireElement(in: window, label: "Search")
         XCTAssertTrue(HostedAccessibility.activate(search))

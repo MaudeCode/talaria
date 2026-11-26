@@ -4350,7 +4350,6 @@ struct ChatView: View {
             updateDisclosureSettle { $0.cancelOwedFollow() }
         } else {
             retained?.readingRowID = nil
-            retained?.searchLandingRowID = nil
         }
     }
 
@@ -4403,12 +4402,19 @@ struct ChatView: View {
         let wasNearBottom = isScrolledNearBottom
         isScrolledNearBottom = isNearBottom
         if metrics.permitsFollowChanges {
-            handleFollowEvent(.contentScrolled(
-                isAtBottom: ChatScrollPolicy.isAtBottom(distanceFromBottom: metrics.distanceFromBottom),
-                isUserScrolling: metrics.isUserInteracting,
-                movedAwayFromBottom: metrics.movedAwayFromBottom,
-                wasNearBottom: wasNearBottom
-            ))
+            let isAtBottom = ChatScrollPolicy.isAtBottom(distanceFromBottom: metrics.distanceFromBottom)
+            let leftSearchAnchor = metrics.didScrollWithoutGesture && retained?.searchLandingRowID != nil
+            if leftSearchAnchor { retained?.searchLandingRowID = nil }
+            if leftSearchAnchor && isAtBottom {
+                handleFollowEvent(.userScrollEnd(isAtBottom: true))
+            } else {
+                handleFollowEvent(.contentScrolled(
+                    isAtBottom: isAtBottom,
+                    isUserScrolling: metrics.isUserInteracting,
+                    movedAwayFromBottom: metrics.movedAwayFromBottom,
+                    wasNearBottom: wasNearBottom
+                ))
+            }
         }
 
         if isNearBottom {
