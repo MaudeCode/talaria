@@ -3,6 +3,7 @@ import { ExternalLink } from 'lucide-react'
 import { appUrl } from '../../../lib/appRoot'
 import { m } from '../../../paraglide/messages.js'
 import { IconButton } from '../../../ui/Button'
+import { RowContextMenu } from '../../../ui/Menu'
 import { LinkCheckContext } from '../render/LinkCheckContext'
 import { LinkSafetyDialog } from '../render/LinkSafetyDialog'
 
@@ -66,9 +67,14 @@ export function ShowFrame({ url, title, report = false }: { url: string; title: 
   const src = appUrl(url.replace(/^\.\//, ''))
   if (report) src.searchParams.set('theme', theme)
   const open = (destination: string) => { window.open(destination, '_blank', 'noopener,noreferrer') }
+  const content = <SandboxedFrame key={src.href} src={src.href} title={title} report={report} frame={frame} />
+  if (!report) return content
+  const openReport = { label: m.show_open(), run: () => { open(src.href) } }
   return <>
-    {report && <div className="flex justify-end"><IconButton label={m.show_open()} onClick={() => { open(src.href) }}><ExternalLink aria-hidden="true" /></IconButton></div>}
-    <SandboxedFrame key={src.href} src={src.href} title={title} report={report} frame={frame} />
+    <RowContextMenu label={title} actions={[openReport]} trigger={<div>
+      <div className="flex justify-end"><IconButton label={openReport.label} onClick={openReport.run}><ExternalLink aria-hidden="true" /></IconButton></div>
+      {content}
+    </div>} />
     {link && <LinkSafetyDialog isOpen url={link.url} host={link.host} onClose={() => { setLink(null) }} onConfirm={() => { open(link.url) }} />}
   </>
 }
