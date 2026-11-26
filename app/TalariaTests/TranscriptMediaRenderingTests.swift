@@ -148,9 +148,20 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         XCTAssertTrue(measured, "The report replaced its initial height with the measured document height")
         XCTAssertEqual(try XCTUnwrap(web?.bounds.height), 3 * window.safeAreaLayoutGuide.layoutFrame.height, accuracy: 1)
 
-        state.scrollToEnd = true
-        let released = await awaitCondition { web == nil }
-        XCTAssertTrue(released, "The report row stays mounted while its off-screen web view is deallocated")
+        let scroll = try XCTUnwrap(window.firstView(ofType: UIScrollView.self) { $0.isScrollEnabled })
+        let reportBottom = try XCTUnwrap(web.map { $0.convert($0.bounds, to: scroll).maxY })
+        let destination = reportBottom + 1
+        let canReachDestination = await awaitCondition {
+            scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height >= destination
+        }
+        guard canReachDestination else {
+            XCTFail("The transcript has not laid out enough content to scroll past the report")
+            return
+        }
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: destination), animated: false)
+        let released = await awaitCondition { scroll.bounds.minY > reportBottom && web == nil }
+        XCTAssertGreaterThan(scroll.bounds.minY, reportBottom, "The native viewport moved past the report")
+        XCTAssertTrue(released, "The off-screen web view was deallocated (in window: \(web?.window != nil), delegate: \(web?.navigationDelegate != nil))")
     }
 
     func testDeliveredReportExpandsInTheMediaSheet() async throws {
@@ -306,7 +317,6 @@ final class TranscriptMediaRenderingTests: XCTestCase {
 @MainActor @Observable
 private final class ReportState {
     var dark = false
-    var scrollToEnd = false
     var openedLinks: [URL] = []
 }
 
@@ -318,17 +328,14 @@ private struct ReportTranscript: View {
     @State private var selected: TranscriptMediaPreviewItem?
 
     var body: some View {
-        ScrollViewReader { scroll in
-            ScrollView {
-                VStack {
-                    MessageBubbleView(message: message, loadTranscriptMediaData: { _ in nil }, onPreviewTranscriptMedia: {
-                        selected = TranscriptMediaPreviewItem(reference: $0)
-                    }, isStreaming: streaming)
-                    .padding()
-                    Color.clear.frame(height: 20_000).id("end")
-                }
+        ScrollView {
+            VStack {
+                MessageBubbleView(message: message, loadTranscriptMediaData: { _ in nil }, onPreviewTranscriptMedia: {
+                    selected = TranscriptMediaPreviewItem(reference: $0)
+                }, isStreaming: streaming)
+                .padding()
+                Color.clear.frame(height: 20_000)
             }
-            .onChange(of: state.scrollToEnd) { scroll.scrollTo("end", anchor: .bottom) }
         }
         .environment(\.colorScheme, state.dark ? .dark : .light)
         .background(state.dark ? Color.black : Color.white)

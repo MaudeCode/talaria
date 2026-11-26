@@ -54,13 +54,14 @@
         "app/TalariaTests/TranscriptMediaRenderingTests.swift"
       ],
       "patterns": [
-        "\\bawait loadedReport\\(in:"
+        "\\bawait loadedReport\\(in:",
+        "\\bstate\\.scrollToEnd\\s*=\\s*true"
       ],
       "nearby": {
         "lines": 2,
-        "pattern": "\\bweak var web: WKWebView|web\\.scrollView\\.isScrollEnabled|web\\.bounds\\.width"
+        "pattern": "\\bweak var web: WKWebView|web\\.scrollView\\.isScrollEnabled|web\\.bounds\\.width|web\\s*==\\s*nil"
       },
-      "message": "test-audit ready: use mountedReport for report layout and lifetime assertions. Wait for the document only when reading its content (docs/testing.md)"
+      "message": "test-audit ready: use mountedReport for native report layout, and verify viewport movement before asserting teardown. Wait for the document only when reading its content (docs/testing.md)"
     },
     "clock-day-seconds": {
       "paths": [
