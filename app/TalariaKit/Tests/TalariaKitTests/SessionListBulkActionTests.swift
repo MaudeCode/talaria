@@ -60,6 +60,7 @@ final class SessionListBulkActionTests: XCTestCase {
     }
 
     func testBulkDeleteSendsOneRequestAndKeepsOnlyTheFailedChatsSelected() async throws {
+        let refused = SessionSummary(sessionId: "chat-c", canArchive: true, canDelete: true)
         var requests: [(path: String, body: [String: Any]?)] = []
         let viewModel = try makeViewModel { request in
             let path = request.url?.path ?? "nil"
@@ -69,8 +70,8 @@ final class SessionListBulkActionTests: XCTestCase {
                 XCTAssertEqual(request.httpMethod, "POST")
                 return apiTestJSONResponse("""
                 {"results": [
-                  {"session_id": "chat-a", "ok": true, "state_db_cleanup_failed": false},
-                  {"session_id": "chat-c", "ok": false, "status": 409, "error": "Session has an active run; stop it before deleting"},
+                  {"session_id": "chat-a", "ok": true, "state_db_cleanup_failed": true},
+                  {"session_id": "chat-c", "ok": false, "status": 503, "error": "The Agent could not delete this conversation. Try again."},
                   {"session_id": "chat-d", "ok": true, "state_db_cleanup_failed": false}
                 ]}
                 """, for: request)
@@ -78,7 +79,7 @@ final class SessionListBulkActionTests: XCTestCase {
             return apiTestJSONResponse(#"{"sessions": [{"session_id": "chat-c", "title": "Still here"}]}"#, for: request)
         }
         viewModel.beginSelectingSessions()
-        viewModel.toggleSelectAll([another, readOnlyImport, writable])
+        viewModel.toggleSelectAll([another, refused, writable])
 
         let changed = await viewModel.performBulkAction(.delete)
 
@@ -88,9 +89,10 @@ final class SessionListBulkActionTests: XCTestCase {
         XCTAssertEqual(changed.compactMap(\.sessionId).sorted(), ["chat-a", "chat-d"])
         XCTAssertEqual(Array(viewModel.selectedSessionsByID.keys), ["chat-c"])
         XCTAssertTrue(viewModel.isSelectingSessions)
-        let message = try XCTUnwrap(viewModel.actionErrorMessage)
-        XCTAssertTrue(message.contains("1 of 3"), message)
-        XCTAssertTrue(message.contains("Session has an active run"), message)
+        XCTAssertEqual(
+            viewModel.actionErrorMessage,
+            "Failed for 1 of 3 chats: The Agent could not delete this conversation. Try again."
+        )
         XCTAssertFalse(viewModel.isPerformingBulkAction)
     }
 
@@ -147,7 +149,7 @@ final class SessionListBulkActionTests: XCTestCase {
         XCTAssertFalse(viewModel.isSelectingSessions)
     }
 
-    func testADeleteTheAgentKeptIsReportedEvenThoughTheChatLeavesTheList() async throws {
+    func testABulkDeleteWithPendingFileCleanupSucceedsWithoutAnAlert() async throws {
         let viewModel = try makeViewModel { request in
             guard request.url?.path == "/api/sessions/bulk" else { return apiTestJSONResponse(#"{"sessions": []}"#, for: request) }
             return apiTestJSONResponse(#"{"results": [{"session_id": "chat-a", "ok": true, "state_db_cleanup_failed": true}]}"#, for: request)
@@ -158,8 +160,8 @@ final class SessionListBulkActionTests: XCTestCase {
         let changed = await viewModel.performBulkAction(.delete)
 
         XCTAssertEqual(changed.compactMap(\.sessionId), ["chat-a"])
-        let message = try XCTUnwrap(viewModel.actionErrorMessage)
-        XCTAssertTrue(message.contains("may reappear"), message)
+        XCTAssertFalse(viewModel.isSelectingSessions)
+        XCTAssertNil(viewModel.actionErrorMessage)
     }
 
     func testSwitchingProfilesClearsTheSelection() async throws {

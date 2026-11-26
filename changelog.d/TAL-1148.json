@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Successfully deleted chats no longer trigger a warning that they may reappear.",
+      "highlight": false
+    }
+  ]
+}
