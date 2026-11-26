@@ -960,7 +960,7 @@ was refused.
 
 `GET /api/feedback/options` publishes what clients may attach. App clients include
 `client.diagnosticReports` only when this response advertises `diagnosticReportsSupported: true`.
-Attachments are
+This requires a registered Relay publisher. Attachments are
 enabled only when this server is a registered Relay publisher, because Relay
 accepts files only on signed reports; `acceptedTypes`, sizes, `maxVideoCount`
 (zero without video) and the video length limit mirror `contracts/fixtures/feedback-attachment-limits.json`

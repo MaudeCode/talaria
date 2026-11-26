@@ -341,7 +341,7 @@ async function staged(contentType: string, data: Buffer): Promise<string> {
 const other = <T>(run: () => Promise<T>) => s.deps.requestScope.run({ requestProfile: 'default', notificationOwner: 'synthetic-other-member' }, run)
 
 it('advertises diagnostic report support and attachment options from this server\'s Relay tier', async () => {
-  expect(await (await s.get('/api/feedback/options')).json()).toEqual({ diagnosticReportsSupported: true, attachments: { enabled: false, videoAllowed: false, maxCount: 5, maxVideoCount: 0, maxImageBytes: 10_000_000, maxVideoBytes: 20_000_000, maxVideoSeconds: 120, acceptedTypes: [] } })
+  expect(await (await s.get('/api/feedback/options')).json()).toEqual({ diagnosticReportsSupported: false, attachments: { enabled: false, videoAllowed: false, maxCount: 5, maxVideoCount: 0, maxImageBytes: 10_000_000, maxVideoBytes: 20_000_000, maxVideoSeconds: 120, acceptedTypes: [] } })
   expect((await stage('image/png', png())).status).toBe(403)
   expect(stagingFiles()).toEqual([])
   await register()
