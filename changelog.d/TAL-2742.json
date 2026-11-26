@@ -1,0 +1,3 @@
+{
+  "skip": "Repository tooling only. App CI now runs when the feedback contract fixture changes."
+}
