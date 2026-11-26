@@ -121228,6 +121228,10 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "diagnosticReportsSupported": {
+                      "type": "boolean",
+                      "description": "Whether this server accepts client.diagnosticReports on feedback submission."
+                    },
                     "attachments": {
                       "type": "object",
                       "properties": {

@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Include recent crash, hang, and performance reports when you send feedback with diagnostics enabled.",
+      "highlight": false,
+      "components": ["app"],
+      "announcement": {
+        "title": "Device reports in feedback",
+        "description": "Include recent crash and hang reports to help diagnose problems when you send feedback.",
+        "icon": "reliability"
+      }
+    }
+  ]
+}

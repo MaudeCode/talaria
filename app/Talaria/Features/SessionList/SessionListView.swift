@@ -1811,7 +1811,7 @@ struct SessionListView: View {
 
     private func openSidebarFeedback() {
         guard sidebarFeedback?.isSending != true else { return }
-        let model = FeedbackComposer(server: server, clientMetadata: .current)
+        let model = FeedbackComposer.forApp(server: server)
         // Sheets present over an open drawer, so dismissing one returns straight to it (TAL-2250).
         dismissSidebarModals()
         sidebarFeedback = model

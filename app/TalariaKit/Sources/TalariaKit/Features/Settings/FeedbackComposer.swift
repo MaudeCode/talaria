@@ -26,7 +26,7 @@ public struct FeedbackAttachment: Codable, Equatable, Identifiable, Sendable {
     var isVideo: Bool { contentType.hasPrefix("video/") }
 }
 
-/// Device-local feedback draft and optimistic presentation. The server owns diagnostics and delivery.
+/// Device-local feedback draft and optimistic presentation. The server owns delivery.
 @MainActor
 @Observable
 public final class FeedbackComposer {
@@ -36,6 +36,7 @@ public final class FeedbackComposer {
     public private(set) var error: SettingsErrorText?
     public private(set) var diagnosticsText: String?
     public private(set) var diagnosticsError: SettingsErrorText?
+    public private(set) var cannotRetryDiagnostics = false
     public private(set) var hasUnknownOutcome: Bool
     public private(set) var isSending = false
     /// What this server accepts; nil until loaded, and attaching stays hidden unless `enabled`.
@@ -52,6 +53,10 @@ public final class FeedbackComposer {
     private let storageKey: String
     private let cacheGeneration: Int
     private let clientMetadata: FeedbackClient
+    private let diagnosticStore: FeedbackDiagnosticStore?
+    private var localDiagnostics: [FeedbackDiagnosticStore.Entry] = []
+    private var diagnosticReportIDs: [String]
+    private var diagnosticReportsSupported: Bool?
     private let submit: (FeedbackRequest) async throws -> FeedbackResult
     private let diagnostics: () async throws -> FeedbackDiagnostics
     private let loadOptions: () async throws -> FeedbackOptions
@@ -65,10 +70,12 @@ public final class FeedbackComposer {
         let draft: FeedbackRequest
         let hasUnknownOutcome: Bool
         var attachments: [FeedbackAttachment]?
+        var diagnosticReportIDs: [String]?
     }
 
     public init(server: URL?, defaults: UserDefaults = .standard, clientMetadata: FeedbackClient,
                 stagingRoot: URL = FeedbackComposer.defaultStagingRoot,
+                diagnosticStore: FeedbackDiagnosticStore? = nil,
                 submit: ((FeedbackRequest) async throws -> FeedbackResult)? = nil,
                 diagnostics: (() async throws -> FeedbackDiagnostics)? = nil,
                 options: (() async throws -> FeedbackOptions)? = nil,
@@ -76,12 +83,15 @@ public final class FeedbackComposer {
         self.server = server
         self.defaults = defaults
         self.clientMetadata = clientMetadata
+        self.diagnosticStore = diagnosticStore
+        localDiagnostics = diagnosticStore?.recent() ?? []
         storageKey = Self.storageKey(for: server)
         let stagingDirectory = Self.stagingDirectory(for: server, root: stagingRoot)
         self.stagingDirectory = stagingDirectory
         cacheGeneration = server.map { ServerCacheGeneration.current(for: $0) } ?? 0
         let stored = defaults.data(forKey: storageKey).flatMap { try? JSONDecoder().decode(Stored.self, from: $0) }
         draft = stored?.draft ?? FeedbackRequest()
+        diagnosticReportIDs = stored?.diagnosticReportIDs ?? []
         hasUnknownOutcome = stored?.hasUnknownOutcome ?? false
         // A file lost before it was staged cannot be sent; one compressed but not staged waits for Retry.
         attachments = (stored?.attachments ?? []).filter { attachment in
@@ -120,6 +130,7 @@ public final class FeedbackComposer {
 
     public var canSend: Bool {
         isCurrent && server != nil && !isSending
+            && (draft.client != nil || !draft.includeDiagnostics || localDiagnostics.isEmpty || diagnosticReportsSupported != nil)
             && !draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && validationError == nil
             && attachments.allSatisfy { $0.attachmentId != nil }
@@ -173,9 +184,26 @@ public final class FeedbackComposer {
 
     public func loadAttachmentOptions() async {
         guard isCurrent else { return }
-        guard let options = try? await loadOptions() else { return }
+        localDiagnostics = diagnosticStore?.recent() ?? []
+        diagnosticReportsSupported = nil
+        let options = try? await loadOptions()
         guard isCurrent else { return }
-        attachmentOptions = options.attachments
+        if let options { attachmentOptions = options.attachments }
+        diagnosticReportsSupported = options?.diagnosticReportsSupported == true
+    }
+
+    public var diagnosticReports: [FeedbackDiagnosticReport] {
+        guard draft.includeDiagnostics else { return [] }
+        if draft.client != nil {
+            let reports = stampedDiagnostics
+            return reports.count == diagnosticReportIDs.count ? reports.map(\.report) : []
+        }
+        return diagnosticReportsSupported == true ? localDiagnostics.map(\.report) : []
+    }
+
+    private var stampedDiagnostics: [FeedbackDiagnosticStore.Entry] {
+        let entries = Dictionary(uniqueKeysWithValues: localDiagnostics.map { ($0.id, $0) })
+        return diagnosticReportIDs.compactMap { entries[$0] }
     }
 
     /// Rejects a whole input batch before any of its attachments enter the draft.
@@ -262,12 +290,29 @@ public final class FeedbackComposer {
     @discardableResult
     public func send() -> Task<Void, Never>? {
         guard canSend else { return nil }
+        localDiagnostics = diagnosticStore?.recent() ?? []
+        if stampedDiagnostics.count != diagnosticReportIDs.count {
+            if hasUnknownOutcome {
+                cannotRetryDiagnostics = true
+                error = SettingsErrorText(String(localized: "The original device diagnostics are no longer available. The send could not be confirmed."))
+                return nil
+            }
+            startNewReportIfRefused()
+        }
         if draft.client == nil {
             draft.client = clientMetadata
+            draft.client?.diagnosticReports = nil
+            if draft.includeDiagnostics && diagnosticReportsSupported == true {
+                diagnosticReportIDs = localDiagnostics.map(\.id)
+            }
             let ids = attachments.compactMap(\.attachmentId)
             draft.attachmentIds = ids.isEmpty ? nil : ids
         }
-        let request = draft
+        cannotRetryDiagnostics = false
+        var request = draft
+        if !diagnosticReportIDs.isEmpty {
+            request.client?.diagnosticReports = stampedDiagnostics.map(\.report)
+        }
         let previouslyUnknown = hasUnknownOutcome
         hasUnknownOutcome = true
         persist()
@@ -302,6 +347,7 @@ public final class FeedbackComposer {
                     throw APIError.decoding(underlying: CocoaError(.coderReadCorrupt))
                 }
                 draft = FeedbackRequest()
+                diagnosticReportIDs = []
                 hasUnknownOutcome = false
                 defaults.removeObject(forKey: storageKey)
                 clearAttachments()
@@ -342,7 +388,8 @@ public final class FeedbackComposer {
         var replacement = request
         replacement.requestId = UUID()
         replacement.attachmentIds = ids
-        draft = replacement
+        draft.requestId = replacement.requestId
+        draft.attachmentIds = replacement.attachmentIds
         persist()
         return replacement
     }
@@ -353,6 +400,17 @@ public final class FeedbackComposer {
         draft.requestId = UUID()
         draft.client = nil
         draft.attachmentIds = nil
+        diagnosticReportIDs = []
+    }
+
+    /// Only after an explicit choice to start over with an unconfirmed report.
+    public func startNewReportAfterDiagnosticsExpired() {
+        guard isCurrent, cannotRetryDiagnostics, !isSending else { return }
+        hasUnknownOutcome = false
+        cannotRetryDiagnostics = false
+        error = nil
+        startNewReportIfRefused()
+        persist()
     }
 
     private func add(_ attachment: FeedbackAttachment, encode: @escaping (URL) async throws -> Data?) -> Task<Void, Never>? {
@@ -414,7 +472,10 @@ public final class FeedbackComposer {
 
     private func persist() {
         guard isCurrent else { return }
-        if let data = try? JSONEncoder().encode(Stored(draft: draft, hasUnknownOutcome: hasUnknownOutcome, attachments: attachments)) {
+        // Keep diagnostics in their protected, expiring files. Retry references only the original snapshot.
+        let stored = Stored(draft: draft, hasUnknownOutcome: hasUnknownOutcome, attachments: attachments,
+                            diagnosticReportIDs: diagnosticReportIDs.isEmpty ? nil : diagnosticReportIDs)
+        if let data = try? JSONEncoder().encode(stored) {
             defaults.set(data, forKey: storageKey)
         }
     }
@@ -429,6 +490,8 @@ public final class FeedbackComposer {
             composer.draft = FeedbackRequest()
             composer.diagnosticsText = nil
             composer.diagnosticsError = nil
+            composer.diagnosticReportIDs = []
+            composer.cannotRetryDiagnostics = false
             composer.error = nil
             composer.hasUnknownOutcome = false
             composer.isPresented = false

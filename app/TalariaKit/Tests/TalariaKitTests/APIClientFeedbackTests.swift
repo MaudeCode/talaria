@@ -87,6 +87,36 @@ final class APIClientFeedbackTests: APIClientTestCase {
         XCTAssertEqual(result.reportId, "synthetic-report")
     }
 
+    func testFeedbackSubmitsTheSharedDiagnosticReports() async throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("web-feedback")) as? [String: Any])
+        let submit = try XCTUnwrap(fixture["submit"] as? [String: Any])
+        let metadata = try XCTUnwrap(submit["client"] as? [String: Any])
+        let reports = try XCTUnwrap(metadata["diagnosticReports"] as? [[String: Any]])
+        let clientMetadata = try JSONDecoder().decode(FeedbackClient.self, from: JSONSerialization.data(withJSONObject: metadata.merging([
+            "osVersion": "27", "deviceModel": "synthetic",
+        ]) { current, _ in current }))
+        let client = makeClient { request in
+            let body = try apiTestJSONBody(from: request)
+            let client = try XCTUnwrap(body["client"] as? [String: Any])
+            XCTAssertEqual(client["diagnosticReports"] as? [NSDictionary], reports.map { $0 as NSDictionary })
+            return apiTestJSONResponse(#"{"status":"sent","reportId":"r"}"#, for: request)
+        }
+        _ = try await client.submitFeedback(.init(body: "Synthetic details", client: clientMetadata))
+    }
+
+    func testOptingOutOmitsDiagnosticReportsEvenIfTheClientCarriesThem() async throws {
+        var metadata = FeedbackClient(appVersion: "1", osVersion: "27", deviceModel: "synthetic")
+        metadata.diagnosticReports = [.init(kind: .hang, start: "2026-11-22T00:00:00Z",
+                                            end: "2026-11-22T01:00:00Z", build: "42", frames: [])]
+        let client = makeClient { request in
+            let body = try apiTestJSONBody(from: request)
+            let client = try XCTUnwrap(body["client"] as? [String: Any])
+            XCTAssertNil(client["diagnosticReports"])
+            return apiTestJSONResponse(#"{"status":"sent","reportId":"r"}"#, for: request)
+        }
+        _ = try await client.submitFeedback(.init(body: "Synthetic details", includeDiagnostics: false, client: metadata))
+    }
+
     func testFeedbackOptionsDecodeTheSharedVideoLimit() async throws {
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("web-feedback")) as? [String: Any])
         let options = try XCTUnwrap(fixture["options"] as? [String: Any])
@@ -99,6 +129,7 @@ final class APIClientFeedbackTests: APIClientTestCase {
         }
         let response = try await client.feedbackOptions()
         XCTAssertEqual(response.attachments.maxVideoCount, limit)
+        XCTAssertEqual(response.diagnosticReportsSupported, try XCTUnwrap(options["diagnosticReportsSupported"] as? Bool))
     }
 
     func testFeedbackAttachmentUploadOptionsAndPerAttachmentResults() async throws {
@@ -129,7 +160,9 @@ final class APIClientFeedbackTests: APIClientTestCase {
                 return apiTestJSONResponse(#"{"status":"sent","reportId":"r","attachments":[{"attachmentId":"\#(staged.uuidString.lowercased())","status":"sent"},{"attachmentId":"\#(refused.uuidString.lowercased())","status":"refused","reason":"tier"}]}"#, for: request)
             }
         }
-        let options = try await client.feedbackOptions().attachments
+        let response = try await client.feedbackOptions()
+        let options = response.attachments
+        XCTAssertNil(response.diagnosticReportsSupported, "Older servers omit diagnostic report support")
         XCTAssertNil(options.maxVideoCount, "Older servers omit the video limit")
         XCTAssertEqual(options, .init(enabled: true, videoAllowed: false, maxCount: 5, maxImageBytes: 10_000_000,
                                       maxVideoBytes: 20_000_000, maxVideoSeconds: 120, acceptedTypes: ["image/png", "image/jpeg"]))
