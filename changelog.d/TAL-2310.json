@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Choose whether a scheduled task wraps its delivered response.",
+      "highlight": false,
+      "components": ["app", "web"],
+      "announcement": {
+        "title": "Scheduled response formatting",
+        "description": "Choose whether a scheduled task wraps its delivered response.",
+        "icon": "automation"
+      }
+    }
+  ]
+}

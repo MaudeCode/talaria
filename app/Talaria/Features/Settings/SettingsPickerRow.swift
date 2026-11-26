@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
     let title: String
-    let systemImage: String
+    let systemImage: String?
     @Binding var selection: SelectionValue
     @ViewBuilder let options: Options
     var accessibilityIdentifier: String? = nil
@@ -10,7 +10,7 @@ struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
     var isMenuItem = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    init(title: String, systemImage: String, selection: Binding<SelectionValue>,
+    init(title: String, systemImage: String?, selection: Binding<SelectionValue>,
          accessibilityIdentifier: String? = nil, usesSegmentedControl: Bool = false, isMenuItem: Bool = false,
          @ViewBuilder options: () -> Options) {
         self.title = title
@@ -50,8 +50,14 @@ struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
     }
 
     private var label: some View {
-        SettingsRowLabel(title: title, systemImage: systemImage)
-            .accessibilityHidden(true)
+        Group {
+            if let systemImage {
+                SettingsRowLabel(title: title, systemImage: systemImage)
+            } else {
+                Text(title)
+            }
+        }
+        .accessibilityHidden(true)
     }
 
     private var picker: some View {

@@ -3,7 +3,7 @@ import XCTest
 @testable import Talaria
 import TalariaKit
 
-/// The Tasks list's TAL-810 fields (TAL-835): the unwritable-store banner and a job row's last failure.
+/// The Tasks list and editor render policy and status supplied by the server.
 @MainActor
 final class TasksHostedTests: XCTestCase {
     func testStoreBannerShowsOnlyForAnUnwritableStore() throws {
@@ -66,6 +66,20 @@ final class TasksHostedTests: XCTestCase {
 
         _ = try await requireElement(in: window, label: "No Tasks")
         XCTAssertFalse(HostedAccessibility.labels(in: window).contains { $0.hasPrefix("Scheduled tasks can't run") })
+    }
+
+    func testTaskEditorShowsTheServersResponseWrappingOverride() async throws {
+        let fixture = try FixtureApp(for: self)
+        let job = try decode(CronJob.self, #"{"id":"digest","name":"Digest","prompt":"Summarize releases.","schedule_input":"0 7 * * *","wrap_response_supported":true,"wrap_response":false}"#)
+        let window = try hostWindow(CronJobEditorSheet(
+            title: "Edit Task", client: fixture.client, draft: CronJobEditorDraft(job: job),
+            saveTitle: "Save", isSaving: false, errorMessage: nil, onSave: { _ in false }
+        ))
+        let picker = try await requireElementScrolling(in: window, "The supported task is missing its Wrap Output picker") {
+            HostedAccessibility.identifier(of: $0) == "task-wrap-output"
+        }
+        XCTAssertTrue([picker.accessibilityLabel, picker.accessibilityValue].compactMap { $0 }
+            .contains { $0.localizedCaseInsensitiveContains("Send as Written") })
     }
 
     private func tasksList(_ fixture: FixtureApp) -> some View {

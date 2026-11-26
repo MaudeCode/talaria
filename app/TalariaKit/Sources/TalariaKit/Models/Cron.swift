@@ -112,6 +112,8 @@ public struct CronJob: Decodable, Equatable, Identifiable, Sendable {
     public let modelOptionID: String?
     public let profile: String?
     public let toastNotifications: Bool?
+    /// Absent when the server does not offer a per-task override.
+    public let responseWrapping: CronResponseWrapping?
     /// Server-derived (TAL-296): the status, attention flag, and Resume/Pause choice. Running state comes from the
     /// live status poll and a live list's `running`, never from a (possibly cached) job row.
     let derivedState: String?
@@ -141,6 +143,8 @@ public struct CronJob: Decodable, Equatable, Identifiable, Sendable {
         case modelOptionID = "modelOptionId"
         case profile
         case toastNotifications
+        case wrapResponseSupported
+        case wrapResponse
         case derivedState
         case needsAttention
         case resumable
@@ -168,6 +172,15 @@ public struct CronJob: Decodable, Equatable, Identifiable, Sendable {
         modelOptionID = container.decodeLossyStringIfPresent(forKey: .modelOptionID)
         profile = container.decodeLossyStringIfPresent(forKey: .profile)
         toastNotifications = container.decodeLossyBoolIfPresent(forKey: .toastNotifications)
+        if (try? container.decode(Bool.self, forKey: .wrapResponseSupported)) == true {
+            switch try? container.decode(Bool.self, forKey: .wrapResponse) {
+            case true?: responseWrapping = .on
+            case false?: responseWrapping = .off
+            case nil: responseWrapping = .inherit
+            }
+        } else {
+            responseWrapping = nil
+        }
         derivedState = container.decodeLossyStringIfPresent(forKey: .derivedState)
         needsAttention = container.decodeLossyBoolIfPresent(forKey: .needsAttention)
         resumable = container.decodeLossyBoolIfPresent(forKey: .resumable)
@@ -621,6 +634,22 @@ public enum CronJobStatus: Equatable, Sendable {
     }
 }
 
+/// A nil request field omits the override, while `.inherit` explicitly clears it.
+public enum CronResponseWrapping: Hashable, Sendable, Encodable {
+    case inherit
+    case on
+    case off
+
+    public func encode(to encoder: Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case .inherit: try value.encodeNil()
+        case .on: try value.encode(true)
+        case .off: try value.encode(false)
+        }
+    }
+}
+
 public struct CronJobEditorDraft: Equatable, Sendable {
     public var name: String
     public var prompt: String
@@ -634,6 +663,7 @@ public struct CronJobEditorDraft: Equatable, Sendable {
     public var modelOptionID: String?
     public var profile: String
     public var toastNotifications: Bool
+    public var responseWrapping: CronResponseWrapping?
 
     public init(
         name: String = "",
@@ -645,7 +675,8 @@ public struct CronJobEditorDraft: Equatable, Sendable {
         provider: String = "",
         modelOptionID: String? = nil,
         profile: String = "",
-        toastNotifications: Bool = true
+        toastNotifications: Bool = true,
+        responseWrapping: CronResponseWrapping? = nil
     ) {
         self.name = name
         self.prompt = prompt
@@ -657,6 +688,7 @@ public struct CronJobEditorDraft: Equatable, Sendable {
         self.modelOptionID = modelOptionID
         self.profile = profile
         self.toastNotifications = toastNotifications
+        self.responseWrapping = responseWrapping
     }
 
     public init(job: CronJob) {
@@ -670,7 +702,8 @@ public struct CronJobEditorDraft: Equatable, Sendable {
             provider: job.provider ?? "",
             modelOptionID: job.modelOptionID,
             profile: job.profile ?? "",
-            toastNotifications: job.toastNotifications ?? true
+            toastNotifications: job.toastNotifications ?? true,
+            responseWrapping: job.responseWrapping
         )
     }
 

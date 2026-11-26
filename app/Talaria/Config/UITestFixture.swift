@@ -71,6 +71,7 @@ struct UITestFixtureEnvironment {
     nonisolated static let corruptAgentStorageReason = "Agent session storage (state.db) is damaged: database disk image is malformed."
     /// Serves Tasks with an unwritable cron store, a recovered job's last failure and a job another process runs (TAL-835).
     nonisolated static let unwritableCronStoreArgument = "--ui-test-unwritable-cron-store"
+    nonisolated static let cronResponseWrappingArgument = "--ui-test-cron-response-wrapping"
     /// Lists two running chats and one waiting on an approval ahead of the idle ones, as the server orders them (TAL-1460).
     nonisolated static let runMonitorArgument = "--ui-test-run-monitor"
     /// Reports the hinge partly open to the Chats list, which no simulator pose produces on the Duo's outer display
@@ -560,6 +561,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         sessionListFailures.withLock { $0 = [] }
         answeredPaths.withLock { $0 = [] }
         targetedDirectoryReads.withLock { $0 = [] }
+        cronResponseWrapping.withLock { $0 = false }
         targetedQuotaReads.withLock { $0 = [] }
         transcriptReads = 0
         isSignedIn.withLock { $0 = false }
@@ -1346,7 +1348,9 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return Data("event: stream_end\ndata: {}\n\n".utf8)
         default:
             if url.path.hasPrefix("/api/kanban/") { return kanbanResponseData(for: url) }
-            if url.path.hasPrefix("/api/cron"), UITestFixtureEnvironment.hasUnwritableCronStore || ProcessInfo.processInfo.arguments.contains("--ui-test-cron-blueprints") {
+            if url.path.hasPrefix("/api/cron"), UITestFixtureEnvironment.hasUnwritableCronStore
+                || ProcessInfo.processInfo.arguments.contains("--ui-test-cron-blueprints")
+                || ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.cronResponseWrappingArgument) {
                 return cronResponseData(for: request)
             }
             return json([:])

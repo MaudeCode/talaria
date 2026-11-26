@@ -132,11 +132,15 @@ struct TaskDetailView: View {
             CronJobEditorSheet(
                 title: String(localized: "Edit Task"),
                 client: viewModel.client,
-                draft: CronJobEditorDraft(job: viewModel.job),
+                draft: viewModel.editorDraft,
                 saveTitle: String(localized: "Save"),
                 isSaving: viewModel.isMutating,
                 errorMessage: viewModel.actionErrorMessage,
-                deliveryOptions: viewModel.deliveryOptions
+                deliveryOptions: viewModel.deliveryOptions,
+                onSaveResponseWrapping: { wrapping in
+                    _ = await viewModel.updateResponseWrapping(wrapping)
+                    handleActionResult()
+                }
             ) { draft in
                 let didUpdate = await viewModel.update(from: draft)
                 handleActionResult()
@@ -194,7 +198,7 @@ struct TaskDetailView: View {
 
     @ViewBuilder
     private var actionStatusSection: some View {
-        if viewModel.isMutating {
+        if viewModel.showsMutationProgress {
             HStack(spacing: 8) {
                 ProgressView()
                 Text("Updating task...")
@@ -237,6 +241,10 @@ struct TaskDetailView: View {
                 title: String(localized: "Deliver"),
                 value: viewModel.job.deliver ?? "local"
             )
+
+            if let wrapping = viewModel.responseWrapping {
+                CronJobMetadataRow(title: String(localized: "Wrap Output"), value: wrapping.title)
+            }
 
             if let model = viewModel.job.model, !model.isEmpty {
                 CronJobMetadataRow(title: String(localized: "Model"), value: model)
