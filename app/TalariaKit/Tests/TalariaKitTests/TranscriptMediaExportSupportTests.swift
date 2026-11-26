@@ -22,4 +22,13 @@ final class TranscriptMediaExportSupportTests: XCTestCase {
         XCTAssertEqual(payload.filename, "clip.png")
         XCTAssertTrue(payload.isImage)
     }
+
+    func testHTMLReportUsesAContentTypeTheExportDocumentCanWrite() {
+        let report = TranscriptMediaReference(url: "./api/media", name: "report.html", mime: "text/html", mediaKind: .html)
+        let payload = TranscriptMediaExportSupport.payload(for: report, data: Data("<h1>Report</h1>".utf8))
+
+        XCTAssertEqual(payload.contentType, .html)
+        XCTAssertTrue(ExportedFileDocument.writableContentTypes.contains(payload.contentType),
+                      "The Files exporter must accept the original report's HTML type")
+    }
 }

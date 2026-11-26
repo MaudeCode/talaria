@@ -257,31 +257,219 @@ private struct ShowChartView: View {
     }
 }
 
-/// The block's page in a web view with no stored data. The server's response sandboxes it (`sandbox allow-scripts`,
-/// no network source); the view loads only that one URL and opens nothing else.
-private struct ShowFrameView: UIViewRepresentable {
+/// The inline frame keeps its measured space in the transcript while its web view is off-screen.
+struct InlineReportView<Fallback: View>: View {
     let url: URL
+    let title: String
+    let expand: () -> Void
+    @ViewBuilder let fallback: () -> Fallback
+    @Environment(\.openURL) private var openURL
+    @State private var visible = false
+    @State private var failed = false
+    @State private var contentHeight: CGFloat = 320
+    @State private var viewportHeight: CGFloat = 0
 
-    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
+    var body: some View {
+        if failed {
+            fallback()
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text(title)
+                        .font(AppFont.caption())
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(action: expand) {
+                        Label("Expand report", systemImage: "arrow.up.left.and.arrow.down.right")
+                            .labelStyle(.iconOnly)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Expand report")
+                }
+                Group {
+                    if visible {
+                        ShowFrameView(url: url, openLink: { openURL($0) }, onHeight: { contentHeight = $0 },
+                                      onFailure: { failed = true })
+                    } else {
+                        Color.clear.accessibilityHidden(true)
+                    }
+                }
+                .frame(height: min(max(120, contentHeight), viewportHeight > 0 ? 3 * viewportHeight : 320))
+                .onScrollVisibilityChange(threshold: 0.001) { visible = $0 }
+                .onGeometryChange(for: CGFloat.self) { $0.bounds(of: .scrollView)?.height ?? 0 } action: { viewportHeight = $0 }
+            }
+            .contextMenu {
+                Button("Expand report", systemImage: "arrow.up.left.and.arrow.down.right", action: expand)
+            }
+        }
+    }
+}
+
+/// A server-sandboxed show block or delivered report in a web view with no stored data.
+struct ShowFrameView: UIViewRepresentable {
+    let url: URL
+    var openLink: ((URL) -> Void)? = nil
+    var onHeight: ((CGFloat) -> Void)? = nil
+    var onLoad: (() -> Void)? = nil
+    var onFailure: (() -> Void)? = nil
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(HeaderLogoColor.storageKey) private var accentHex = HeaderLogoColor.defaultHex
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        if openLink != nil {
+            let controller = configuration.userContentController
+            controller.add(context.coordinator, contentWorld: .defaultClient, name: "report")
+            controller.addUserScript(WKUserScript(source: Self.reportScript(measureHeight: onHeight != nil),
+                                                  injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
+        }
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.isOpaque = false
-        view.load(URLRequest(url: url))
+        view.allowsLinkPreview = openLink == nil
+        view.scrollView.isScrollEnabled = onHeight == nil
         return view
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {}
+    func updateUIView(_ view: WKWebView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.openLink = openLink
+        coordinator.onHeight = onHeight
+        coordinator.onLoad = onLoad
+        coordinator.onFailure = onFailure
+        let loadURL = openLink == nil ? url : themedURL
+        guard coordinator.requestedURL != loadURL else { return }
+        coordinator.requestedURL = loadURL
+        coordinator.admitsInitialLoad = true
+        var request = URLRequest(url: loadURL)
+        request.httpShouldHandleCookies = false
+        coordinator.navigation = view.load(request)
+    }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        let url: URL
-        init(url: URL) { self.url = url }
+    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
+        view.navigationDelegate = nil
+        coordinator.requestedURL = nil
+        coordinator.admitsInitialLoad = false
+        coordinator.navigation = nil
+        coordinator.openLink = nil
+        coordinator.onHeight = nil
+        coordinator.onLoad = nil
+        coordinator.onFailure = nil
+        view.stopLoading()
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "report", contentWorld: .defaultClient)
+    }
+
+    private var themedURL: URL {
+        let traits = UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light)
+        func css(_ color: UIColor) -> String {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            color.resolvedColor(with: traits).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            let channels = [red, green, blue].map { Int((min(max(0, $0), 1) * 255).rounded()) }
+            return String(format: "#%02x%02x%02x", channels[0], channels[1], channels[2])
+        }
+        let variables = [
+            "--background": css(.systemBackground), "--foreground": css(.label),
+            "--card": css(.secondarySystemBackground), "--muted": css(.tertiarySystemBackground),
+            "--muted-foreground": css(.secondaryLabel), "--border": css(.separator),
+            "--primary": HeaderLogoColor.normalizedHex(accentHex) ?? HeaderLogoColor.defaultHex,
+            "--primary-foreground": HeaderLogoColor.prefersDarkForeground(for: accentHex) ? "#000000" : "#ffffff",
+            "--font-sans": "system-ui", "--font-mono": "ui-monospace",
+        ]
+        // Sorted keys give repeated SwiftUI updates the same URL for an unchanged theme.
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let theme = try? encoder.encode(variables)
+        return url.appending(queryItems: [URLQueryItem(name: "theme", value: theme.map { String(decoding: $0, as: UTF8.self) })])
+    }
+
+    /// The separate content world keeps the bridge out of the report's script namespace.
+    private static func reportScript(measureHeight: Bool) -> String {
+        """
+        const reportBridge = window.webkit.messageHandlers.report;
+        window.addEventListener('click', event => {
+          const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+          if (!anchor) return;
+          event.preventDefault();
+          if (!event.isTrusted) return;
+          const href = anchor.getAttribute('href');
+          if (href.startsWith('#')) { location.hash = href; return; }
+          reportBridge.postMessage({ link: new URL(href, document.baseURI).href });
+        }, true);
+        if (\(measureHeight)) {
+          window.addEventListener('DOMContentLoaded', () => {
+            const body = document.body;
+            if (!body) return;
+            new ResizeObserver(() => {
+              const height = Math.max(body.scrollHeight, body.getBoundingClientRect().bottom) + parseFloat(getComputedStyle(body).marginBottom);
+              reportBridge.postMessage({ height, width: innerWidth });
+            }).observe(body);
+          });
+        }
+        """
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        var requestedURL: URL?
+        var admitsInitialLoad = false
+        var navigation: WKNavigation?
+        var openLink: ((URL) -> Void)?
+        var onHeight: ((CGFloat) -> Void)?
+        var onLoad: (() -> Void)?
+        var onFailure: (() -> Void)?
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-            navigationAction.request.url == url ? .allow : .cancel
+            guard navigationAction.targetFrame?.isMainFrame == true,
+                  let destination = navigationAction.request.url else { return .cancel }
+            if admitsInitialLoad, destination == requestedURL, navigationAction.navigationType == .other {
+                admitsInitialLoad = false
+                return .allow
+            }
+            // A fragment can scroll this document without loading a different page.
+            if openLink != nil, var parts = URLComponents(url: destination, resolvingAgainstBaseURL: false),
+               parts.fragment != nil {
+                parts.fragment = nil
+                if parts.url == requestedURL { return .allow }
+            }
+            return .cancel
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+            guard response.isForMainFrame, response.response.url == requestedURL else { return .cancel }
+            guard openLink != nil else { return .allow }
+            // An expired grant or a file that grew past the preview cap uses the download row.
+            guard let http = response.response as? HTTPURLResponse, http.statusCode == 200,
+                  http.mimeType == "text/html", http.value(forHTTPHeaderField: "Content-Security-Policy")?.hasPrefix("sandbox ") == true
+            else {
+                onFailure?()
+                return .cancel
+            }
+            return .allow
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+            guard navigation === self.navigation, (error as NSError).code != NSURLErrorCancelled else { return }
+            onFailure?()
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            if navigation === self.navigation { onLoad?() }
+        }
+
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any] else { return }
+            if let link = body["link"] as? String, link.utf8.count <= 4096, let url = URL(string: link),
+               ["http", "https", "file", "mailto", "tel"].contains(url.scheme?.lowercased() ?? "") || TalariaDeepLink.isAppURL(url) {
+                openLink?(url)
+            }
+            if let height = body["height"] as? Double, let width = body["width"] as? Double,
+               height.isFinite, height >= 0, width.isFinite, width > 0, let webView = message.webView {
+                onHeight?(ceil(height * webView.bounds.width / width))
+            }
         }
     }
 }

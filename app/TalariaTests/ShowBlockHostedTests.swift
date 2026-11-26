@@ -134,7 +134,7 @@ final class ShowBlockHostedTests: XCTestCase {
     }
 }
 
-private extension UIView {
+extension UIView {
     func firstSubview<View: UIView>(of type: View.Type) -> View? {
         if let match = self as? View { return match }
         return subviews.lazy.compactMap { $0.firstSubview(of: type) }.first

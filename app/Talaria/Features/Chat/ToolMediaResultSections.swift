@@ -8,6 +8,7 @@ struct ChatTranscriptMedia {
     let loadImage: @MainActor (TranscriptMediaReference) async -> Data?
     let loadData: @MainActor (TranscriptMediaReference) async -> Data?
     let preview: @MainActor (TranscriptMediaReference) -> Void
+    var htmlPreviewURL: (@MainActor (TranscriptMediaReference) -> URL?)? = nil
 }
 
 private struct ChatTranscriptMediaKey: EnvironmentKey {

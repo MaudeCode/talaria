@@ -236,6 +236,7 @@ struct ChatView: View {
     @State private var selectableResponseText: SelectableTextPresentation?
     @State private var attachmentPreviewItem: ChatAttachmentPreviewItem?
     @State private var transcriptMediaPreviewItem: TranscriptMediaPreviewItem?
+    @State private var pendingReportLink: URL?
     /// A workspace file a chat link named; shown in the source viewer at its line.
     @State private var openedFileLink: WorkspaceFileLink?
     @State private var openedWebPage: InAppSafariPage?
@@ -636,6 +637,11 @@ struct ChatView: View {
         TranscriptMediaPreviewView(
             server: server,
             item: item,
+            reportURL: viewModel.client.transcriptHTMLPreviewURL(for: item.reference),
+            onReportLink: { url in
+                pendingReportLink = url
+                transcriptMediaPreviewItem = nil
+            },
             onAPIError: onAPIError
         )
     }
@@ -1622,7 +1628,7 @@ struct ChatView: View {
                     restoreComposerFocusAfterPreviewIfNeeded()
                 }
             }
-            .sheet(item: $transcriptMediaPreviewItem, content: transcriptMediaPreviewView)
+            .sheet(item: $transcriptMediaPreviewItem, onDismiss: openPendingReportLink, content: transcriptMediaPreviewView)
             .sheet(item: $openedFileLink, content: fileLinkSheet)
             .sheet(item: $openedWebPage) { page in
                 InAppSafariView(url: page.url).ignoresSafeArea()
@@ -2498,7 +2504,8 @@ struct ChatView: View {
                     cacheNamespace: chat.transcriptMediaCacheNamespace,
                     loadImage: { reference in await viewModel.transcriptMediaThumbnailData(for: reference) },
                     loadData: { reference in await viewModel.transcriptMediaData(for: reference) },
-                    preview: { reference in chat.transcriptMediaPreviewItem = TranscriptMediaPreviewItem(reference: reference) }
+                    preview: { reference in chat.transcriptMediaPreviewItem = TranscriptMediaPreviewItem(reference: reference) },
+                    htmlPreviewURL: { viewModel.client.transcriptHTMLPreviewURL(for: $0) }
                 ))
                 .chatEnvironmentAction(\.chatFullToolResultLoader) { toolCallID in
                     { try await viewModel.fullToolResult(toolCallID: toolCallID) }
@@ -2557,6 +2564,12 @@ struct ChatView: View {
             return .systemAction
         }
         return .handled
+    }
+
+    private func openPendingReportLink() {
+        guard let url = pendingReportLink else { return }
+        pendingReportLink = nil
+        OpenURLAction(handler: handleTranscriptLink)(url)
     }
 
     private func fileLinkSheet(for link: WorkspaceFileLink) -> some View {

@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria displays eligible HTML reports inline in finished chat replies. Tap the expand icon to open the full report.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

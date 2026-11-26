@@ -48,7 +48,7 @@ struct TranscriptMediaUnavailableChip: View {
             "waveform"
         case .video:
             "play.rectangle"
-        case .unsupported:
+        case .html, .unsupported:
             "doc"
         }
     }

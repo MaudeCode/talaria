@@ -6,7 +6,7 @@ import XCTest
 import TalariaKit
 
 /// Set by `TALARIA_TEST_SCREENSHOTS=1 scripts/test-ios`, as a marker in the run's directory.
-private let keepsHostedScreenshots = FileManager.default.fileExists(
+let keepsHostedScreenshots = FileManager.default.fileExists(
     atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent(".codex-tmp/xctest/test-screenshots").path
 )

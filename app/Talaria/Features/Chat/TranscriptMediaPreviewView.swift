@@ -8,7 +8,11 @@ struct TranscriptMediaPreviewView: View {
     let onAPIError: (Error) -> Void
 
     private let item: TranscriptMediaPreviewItem
+    private let reportURL: URL?
+    private let onReportLink: (URL) -> Void
     @State private var viewModel: TranscriptMediaPreviewViewModel
+    @State private var reportIsLoading = true
+    @State private var reportFailed = false
     @State private var exportPayload: FileExportPayload?
     @State private var isExportingMedia = false
     @State private var isSavingToPhotos = false
@@ -19,9 +23,13 @@ struct TranscriptMediaPreviewView: View {
     init(
         server: URL,
         item: TranscriptMediaPreviewItem,
+        reportURL: URL? = nil,
+        onReportLink: @escaping (URL) -> Void = { _ in },
         onAPIError: @escaping (Error) -> Void
     ) {
         self.item = item
+        self.reportURL = reportURL
+        self.onReportLink = onReportLink
         self.onAPIError = onAPIError
         _viewModel = State(
             initialValue: TranscriptMediaPreviewViewModel(
@@ -34,6 +42,8 @@ struct TranscriptMediaPreviewView: View {
     /// Previews a file on this device instead of the server's copy.
     init(localFile: URL, item: TranscriptMediaPreviewItem) {
         self.item = item
+        reportURL = nil
+        onReportLink = { _ in }
         onAPIError = { _ in }
         _viewModel = State(initialValue: TranscriptMediaPreviewViewModel(localFile: localFile, reference: item.reference))
     }
@@ -41,7 +51,17 @@ struct TranscriptMediaPreviewView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if viewModel.isLoading && viewModel.previewData == nil {
+                if let reportURL {
+                    if reportFailed {
+                        unavailableContent(String(localized: "Preview is not available for this media."))
+                    } else {
+                        ShowFrameView(url: reportURL, openLink: onReportLink, onLoad: { reportIsLoading = false },
+                                      onFailure: { reportFailed = true })
+                            .overlay {
+                                if reportIsLoading { ProgressView("Loading media...") }
+                            }
+                    }
+                } else if viewModel.isLoading && viewModel.previewData == nil {
                     ProgressView("Loading media...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let errorMessage = viewModel.errorMessage, viewModel.previewData == nil {
@@ -66,8 +86,12 @@ struct TranscriptMediaPreviewView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
-                        dismiss()
+                    if reportURL != nil {
+                        Button("Close", systemImage: "xmark") { dismiss() }
+                            .labelStyle(.iconOnly)
+                            .help("Close")
+                    } else {
+                        Button("Done") { dismiss() }
                     }
                 }
 
@@ -82,7 +106,7 @@ struct TranscriptMediaPreviewView: View {
                         .accessibilityLabel("Save media to Photos")
                     }
 
-                    if viewModel.canExportMedia {
+                    if reportURL != nil || viewModel.canExportMedia {
                         Button {
                             Task { await exportMedia() }
                         } label: {
@@ -90,13 +114,16 @@ struct TranscriptMediaPreviewView: View {
                         }
                         .disabled(exportActionsAreDisabled)
                         .accessibilityLabel("Export media")
+                        .help("Export media")
                     }
                 }
             }
             .task {
+                guard reportURL == nil else { return }
                 await loadMedia()
             }
             .refreshable {
+                guard reportURL == nil else { return }
                 await loadMedia(force: true)
             }
             .fileExporter(payload: $exportPayload, errorTitle: "Media Action Failed", errorMessage: $errorMessage)
@@ -165,7 +192,7 @@ struct TranscriptMediaPreviewView: View {
             "waveform"
         case .video:
             "play.rectangle"
-        case .unsupported:
+        case .html, .unsupported:
             "doc.questionmark"
         }
     }

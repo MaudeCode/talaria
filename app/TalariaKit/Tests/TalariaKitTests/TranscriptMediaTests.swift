@@ -41,6 +41,28 @@ final class TranscriptMediaTests: XCTestCase {
         XCTAssertNil(message.displayBody)
     }
 
+    func testDeliveredHTMLDecodesTheServerPreview() throws {
+        let report = String(decoding: try sharedContractFixture("delivered-html-media"), as: UTF8.self)
+        let message = try decoder.decode(ChatMessage.self, from: Data("""
+        {"role":"assistant","content":"Report","_display_content":"Report","_media":[\(report)]}
+        """.utf8))
+
+        let media = try XCTUnwrap(message.displayBody?.tiles.first)
+        XCTAssertEqual(media.mediaKind.rawValue, "html")
+        let client = APIClient(baseURL: try XCTUnwrap(URL(string: "https://example.test/talaria")))
+        XCTAssertEqual(client.transcriptHTMLPreviewURL(for: media)?.absoluteString,
+                       "https://example.test/talaria/workspace-preview/example-grant/summary.html")
+    }
+
+    func testDeliveredHTMLLoadsOnlyAFolderScopedServerPreview() throws {
+        let client = APIClient(baseURL: try XCTUnwrap(URL(string: "https://example.test/talaria")))
+        for preview in [nil, "https://other.test/workspace-preview/grant/report.html",
+                        "workspace-preview/grant/..", "workspace-preview/grant/nested%2freport.html", "api/media?path=report.html"] {
+            let report = TranscriptMediaReference(url: "./api/media", name: "report.html", mediaKind: .html, previewURL: preview)
+            XCTAssertNil(client.transcriptHTMLPreviewURL(for: report), preview ?? "An older server did not send a preview")
+        }
+    }
+
     func testServerMediaURLsResolveUnderTheBaseURLAndOnlyHTTPLoads() throws {
         for base in ["https://example.test/talaria", "https://example.test/talaria/"] {
             let client = APIClient(baseURL: try XCTUnwrap(URL(string: base)))

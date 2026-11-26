@@ -4,6 +4,7 @@ public enum TranscriptMediaKind: String, Codable, Equatable, Sendable {
     case image
     case audio
     case video
+    case html
     case unsupported
 
     /// The server's `kind` (`DisplayMedia.kind`); a kind the App does not play (`pdf`, `file`, `model`) is unsupported.
@@ -12,6 +13,7 @@ public enum TranscriptMediaKind: String, Codable, Equatable, Sendable {
         case "image": .image
         case "audio": .audio
         case "video": .video
+        case "html": .html
         default: .unsupported
         }
     }
@@ -25,12 +27,14 @@ public struct TranscriptMediaReference: Codable, Equatable, Identifiable, Sendab
     public let name: String
     public let mime: String
     public let mediaKind: TranscriptMediaKind
+    public let previewURL: String?
 
-    public init(url: String, name: String, mime: String = "application/octet-stream", mediaKind: TranscriptMediaKind) {
+    public init(url: String, name: String, mime: String = "application/octet-stream", mediaKind: TranscriptMediaKind, previewURL: String? = nil) {
         self.url = url
         self.name = name
         self.mime = mime
         self.mediaKind = mediaKind
+        self.previewURL = previewURL
     }
 
     public var id: String {
@@ -78,8 +82,10 @@ public struct TranscriptMediaReference: Codable, Equatable, Identifiable, Sendab
                 if case let .string(value)? = object[key] { return value }
                 return ""
             }
+            let preview = string("preview_url")
             return TranscriptMediaReference(
-                url: url, name: string("name"), mime: string("mime"), mediaKind: TranscriptMediaKind(serverValue: string("kind"))
+                url: url, name: string("name"), mime: string("mime"), mediaKind: TranscriptMediaKind(serverValue: string("kind")),
+                previewURL: preview.isEmpty ? nil : preview
             )
         }
     }

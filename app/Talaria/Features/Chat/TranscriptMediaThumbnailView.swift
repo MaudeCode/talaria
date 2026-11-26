@@ -74,14 +74,9 @@ struct TranscriptMediaThumbnailView: View {
             .buttonStyle(.chatTactile(.thumbnail))
             .accessibilityLabel(String(localized: "Open media video \(reference.displayName)"))
 
-        case .unsupported where loadMediaData != nil:
+        case .html, .unsupported:
             if let loadMediaData {
-                TranscriptMediaFileExportView(
-                    reference: reference,
-                    loadMediaData: {
-                        await loadMediaData(reference)
-                    }
-                )
+                TranscriptMediaFileExportView(reference: reference, loadMediaData: { await loadMediaData(reference) })
             } else {
                 TranscriptMediaUnavailableChip(reference: reference)
             }

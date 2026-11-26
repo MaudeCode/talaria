@@ -106,6 +106,32 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         XCTAssertEqual(recorder.requestCount, 1)
     }
 
+    func testHTMLReportExportFetchesAndPreservesTheOriginalFile() async throws {
+        let recorder = TranscriptMediaPreviewRequestRecorder()
+        let original = Data("<!doctype html><h1>Delivered report</h1>".utf8)
+        let path = "/tmp/delivered report.html"
+        let client = makeClient { request in
+            recorder.record(request)
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/media")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Test-Session"), "authenticated")
+            return self.response(statusCode: 200, data: original, for: request)
+        }
+        let model = TranscriptMediaPreviewViewModel(
+            server: Self.baseURL,
+            reference: Self.serverMedia(path, kind: .html),
+            apiClient: client
+        )
+
+        XCTAssertEqual(recorder.requestCount, 0)
+        let payload = try await model.exportPayload()
+        XCTAssertEqual(payload.data, original)
+        XCTAssertEqual(payload.filename, "delivered report.html")
+        XCTAssertEqual(payload.contentType, .html)
+        XCTAssertEqual(recorder.requestCount, 1)
+        XCTAssertEqual(queryItems(for: try XCTUnwrap(recorder.firstURL))["path"], path)
+    }
+
     func testLoadExternalRemoteImageDoesNotSendServerSessionCookies() async throws {
         let recorder = TranscriptMediaPreviewRequestRecorder()
         let imageData = try XCTUnwrap(Self.imageData())

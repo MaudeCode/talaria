@@ -49,6 +49,51 @@
       ],
       "message": "test-audit snapshot: sample a per-frame check right after each display commit (sampleCommittedLayouts(in:), UIUpdateLink .afterCATransactionCommit), never from a run-loop observer (docs/testing.md)"
     },
+    "ready-report-layout": {
+      "paths": [
+        "app/TalariaTests/TranscriptMediaRenderingTests.swift"
+      ],
+      "patterns": [
+        "\\bawait loadedReport\\(in:",
+        "\\bstate\\.scrollToEnd\\s*=\\s*true"
+      ],
+      "nearby": {
+        "lines": 2,
+        "pattern": "\\bweak var web: WKWebView|web\\.scrollView\\.isScrollEnabled|web\\.bounds\\.width|web\\s*==\\s*nil"
+      },
+      "message": "test-audit ready: use mountedReport for native report layout, and verify viewport movement before asserting teardown. Wait for the document only when reading its content (docs/testing.md)"
+    },
+    "leak-report-webkit-ownership": {
+      "paths": [
+        "app/TalariaTests/TranscriptMediaRenderingTests.swift"
+      ],
+      "patterns": [
+        "\\bweak var web: WKWebView"
+      ],
+      "message": "test-audit leak: verify the App removed the report view and dropped its navigation and callbacks (docs/testing.md)"
+    },
+    "heavy-streaming-report-server": {
+      "paths": [
+        "app/TalariaTests/TranscriptMediaRenderingTests.swift"
+      ],
+      "patterns": [
+        "\\btry reportServer\\("
+      ],
+      "nearby": {
+        "lines": 2,
+        "pattern": "streaming:\\s*true"
+      },
+      "message": "test-audit heavy: use a synthetic resolver to prove the streaming view never starts an HTML preview (docs/testing.md)"
+    },
+    "heavy-nested-report-files-picker": {
+      "paths": [
+        "app/TalariaTests/TranscriptMediaRenderingTests.swift"
+      ],
+      "patterns": [
+        "\\bUIDocumentPickerViewController\\b"
+      ],
+      "message": "test-audit heavy: verify the report's original-file request and payload at the App boundary, and use the simulator workflow to check the nested system picker (docs/testing.md)"
+    },
     "clock-day-seconds": {
       "paths": [
         "app/TalariaTests/",

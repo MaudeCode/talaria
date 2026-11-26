@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import WebKit
 import XCTest
 @testable import Talaria
 @testable import TalariaKit
@@ -99,6 +100,268 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         let button = try await requireElement(in: window, label: "Download report.pdf")
         XCTAssertGreaterThanOrEqual(button.accessibilityFrame.width.rounded(), 44)
         XCTAssertGreaterThanOrEqual(button.accessibilityFrame.height.rounded(), 44)
+    }
+
+    func testDeliveredHTMLTracksTheLiveTheme() async throws {
+        let server = try reportServer()
+        let state = ReportState()
+        let window = try hostWindow(reportTranscript(server: server, state: state))
+        let web = try await mountedReport(in: window)
+        let coordinator = try XCTUnwrap(web.navigationDelegate as? ShowFrameView.Coordinator)
+        let firstNavigation = try XCTUnwrap(coordinator.navigation)
+        let light = try XCTUnwrap(reportTheme(coordinator.requestedURL))
+        XCTAssertEqual(light["--background"], "#ffffff")
+        XCTAssertEqual(light["--foreground"], "#000000")
+        try await captureReport(in: window, name: "delivered-html-phone-light")
+
+        state.dark = true
+        let reloaded = await awaitCondition {
+            guard let navigation = coordinator.navigation else { return false }
+            return navigation !== firstNavigation && self.reportTheme(coordinator.requestedURL)?["--background"] == "#000000"
+        }
+        XCTAssertTrue(reloaded, "The visible report reloaded for the dark App theme")
+        let dark = try XCTUnwrap(reportTheme(coordinator.requestedURL))
+        XCTAssertEqual(dark["--foreground"], "#ffffff")
+        let allowed = Set([
+            "--background", "--foreground", "--card", "--muted", "--muted-foreground", "--border",
+            "--primary", "--primary-foreground", "--font-sans", "--font-mono",
+        ])
+        XCTAssertEqual(Set(light.keys), allowed)
+        XCTAssertEqual(Set(dark.keys), allowed)
+        try await captureReport(in: window, name: "delivered-html-phone-dark")
+    }
+
+    func testAnOffscreenDeliveredReportReleasesItsWebView() async throws {
+        let reportHeight: CGFloat = 3_600
+        let server = try reportServer(height: Int(reportHeight))
+        let state = ReportState()
+        let window = try hostWindow(reportTranscript(server: server, state: state))
+        let web = try await mountedReport(in: window)
+        let coordinator = try XCTUnwrap(web.navigationDelegate as? ShowFrameView.Coordinator)
+        let resize = try XCTUnwrap(coordinator.onHeight)
+        // Drive the frame's resize callback with a long document height while WebKit starts.
+        resize(reportHeight)
+        let measured = await awaitCondition { web.bounds.height > 320 }
+        XCTAssertTrue(measured, "The report replaced its initial height with the measured document height")
+        XCTAssertEqual(web.bounds.height, 3 * window.safeAreaLayoutGuide.layoutFrame.height, accuracy: 1)
+
+        let scroll = try XCTUnwrap(window.firstView(ofType: UIScrollView.self) { $0.isScrollEnabled })
+        let reportBottom = web.convert(web.bounds, to: scroll).maxY
+        let destination = reportBottom + 1
+        let canReachDestination = await awaitCondition {
+            scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height >= destination
+        }
+        guard canReachDestination else {
+            XCTFail("The transcript has not laid out enough content to scroll past the report")
+            return
+        }
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: destination), animated: false)
+        let released = await awaitCondition {
+            scroll.bounds.minY > reportBottom && web.window == nil && web.navigationDelegate == nil
+        }
+        XCTAssertGreaterThan(scroll.bounds.minY, reportBottom, "The native viewport moved past the report")
+        XCTAssertTrue(released, "The App removed the off-screen web view and detached its delegate")
+        XCTAssertNil(window.firstSubview(of: WKWebView.self))
+        XCTAssertNil(coordinator.navigation, "Teardown dropped the App's navigation handle")
+        XCTAssertNil(coordinator.openLink, "Teardown detached the report's actions")
+        XCTAssertNil(coordinator.onHeight, "Teardown detached the report's sizing callback")
+    }
+
+    func testDeliveredReportExpandsInTheMediaSheet() async throws {
+        let server = try reportServer()
+        let window = try hostWindow(reportTranscript(server: server, state: ReportState()))
+        let sheet = try await openReport(in: window)
+        let web = try await mountedReport(in: sheet.view)
+        XCTAssertTrue(web.scrollView.isScrollEnabled)
+        try await captureReport(in: window, frameRoot: sheet.view, name: "delivered-html-expanded")
+    }
+
+    func testExpandedReportRequestsTheOriginalHTMLOnDemand() async throws {
+        let server = try reportServer()
+        let state = ReportState()
+        let window = try hostWindow(reportTranscript(server: server, state: state))
+        let sheet = try await openReport(in: window)
+        _ = try await mountedReport(in: sheet.view)
+        XCTAssertFalse(server.requests.contains { $0.path.hasPrefix("/api/media?") })
+        let export = try await requireElement(in: window, label: "Export media")
+        try await captureReport(in: window, frameRoot: sheet.view, name: "delivered-html-expanded-export-action")
+        XCTAssertTrue(HostedAccessibility.activate(export))
+        let failed = await awaitCondition { state.mediaError != nil }
+        XCTAssertTrue(failed, "The App received the original-file failure")
+        XCTAssertEqual((state.mediaError as? APIError)?.privacySafeLogCategory, "http.404")
+        XCTAssertEqual(server.requests.filter { $0.path.hasPrefix("/api/media?") }.map(\.path),
+                       ["/api/media?path=%2Ftalaria-contract%2Fout%2Fsummary.html&session_id=contract-media-session"])
+        window.rootViewController?.dismiss(animated: false)
+        let dismissed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(dismissed, "The export alert and preview finished dismissing before teardown")
+    }
+
+    private func openReport(in window: UIWindow) async throws -> UIViewController {
+        _ = try await mountedReport(in: window)
+        let expand = try await requireElement(in: window, label: "Expand report")
+        XCTAssertTrue(expand.accessibilityActivate())
+        let presented = await presentedController(in: window, timeout: 10) { controller in
+            controller.viewIfLoaded?.window != nil && controller.transitionCoordinator == nil
+                && !controller.isBeingPresented && !controller.isBeingDismissed
+        }
+        return try XCTUnwrap(presented, "The media preview finished presenting")
+    }
+
+    func testStreamingDeliveredHTMLKeepsTheDownloadRow() async throws {
+        let state = ReportState()
+        let window = try hostWindow(reportTranscript(state: state, streaming: true))
+        _ = try await requireElement(in: window, label: "Download summary.html")
+        XCTAssertEqual(state.previewLookups, 0, "Streaming never resolves the report preview")
+        XCTAssertNil(window.firstSubview(of: WKWebView.self))
+        attachHostedScreenshot(window, name: "delivered-html-download-row")
+    }
+
+    func testDeliveredReportRefusesScriptedLinksAndTopFrameNavigation() async throws {
+        let server = try reportServer()
+        let state = ReportState()
+        let window = try hostWindow(reportTranscript(server: server, state: state))
+        let web = try await loadedReport(in: window)
+        let url = web.url
+        _ = try await web.evaluateJavaScript("document.querySelector('a').click(); location.assign('/outside'); 1")
+        let title = try await web.evaluateJavaScript("document.title") as? String
+        XCTAssertEqual(title, "Release report")
+        XCTAssertEqual(web.url, url)
+        XCTAssertTrue(state.openedLinks.isEmpty)
+        XCTAssertFalse(server.requests.contains { $0.path == "/outside" })
+    }
+
+    func testDeliveredReportFitsTheAccessibilityPhoneLayout() async throws {
+        try await assertReportFits(variant: "phone-ax5")
+    }
+
+    func testDeliveredReportFitsTheDuoOuterLayout() async throws {
+        try await assertReportFits(variant: "duo-outer")
+    }
+
+    func testDeliveredReportFitsTheDuoInnerLayout() async throws {
+        try await assertReportFits(variant: "duo-inner")
+    }
+
+    private func assertReportFits(variant name: String) async throws {
+        let variant = try XCTUnwrap(HostedVariant.gallery.first { $0.name == name })
+        let server = try reportServer()
+        let state = ReportState()
+        state.dark = variant.style == .dark
+        let window = try hostWindow(reportTranscript(server: server, state: state), size: variant.size) {
+            $0.preferredContentSizeCategory = variant.textSize
+        }
+        let web = try await mountedReport(in: window)
+        XCTAssertEqual(web.bounds.width, variant.size.width - 32, accuracy: 1)
+        let expand = try await requireElement(in: window, label: "Expand report")
+        XCTAssertGreaterThanOrEqual(expand.accessibilityFrame.width.rounded(), 44)
+        try await captureReport(in: window, name: "delivered-html-\(name)")
+    }
+
+    private func mountedReport(in root: UIView) async throws -> WKWebView {
+        let mounted = await awaitCondition {
+            guard let web = root.firstSubview(of: WKWebView.self),
+                  let coordinator = web.navigationDelegate as? ShowFrameView.Coordinator else { return false }
+            return coordinator.navigation != nil && coordinator.requestedURL?.path == "/workspace-preview/example-grant/summary.html"
+        }
+        return try XCTUnwrap(mounted ? root.firstSubview(of: WKWebView.self) : nil, "The hosted report scheduled its preview")
+    }
+
+    private func loadedReport(in root: UIView) async throws -> WKWebView {
+        let web = try await mountedReport(in: root)
+        let coordinator = try XCTUnwrap(web.navigationDelegate as? ShowFrameView.Coordinator)
+        let loaded = await awaitCondition { web.url != nil && web.url == coordinator.requestedURL && !web.isLoading }
+        return try XCTUnwrap(loaded ? web : nil, "The report committed its document")
+    }
+
+    private func captureReport(in window: UIWindow, frameRoot: UIView? = nil, name: String) async throws {
+        guard keepsHostedScreenshots else { return }
+        _ = try await loadedReport(in: frameRoot ?? window)
+        attachHostedScreenshot(window, name: name)
+    }
+
+    private func reportTheme(_ url: URL?) -> [String: String]? {
+        guard let url, let raw = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "theme" })?.value else { return nil }
+        return try? JSONDecoder().decode([String: String].self, from: Data(raw.utf8))
+    }
+
+    private func reportServer(height: Int = 200) throws -> LoopbackHTTPServer {
+        try LoopbackHTTPServer { request in
+            guard let url = URLComponents(string: request.path),
+                  url.path == "/workspace-preview/example-grant/summary.html",
+                  let theme = url.queryItems?.first(where: { $0.name == "theme" })?.value,
+                  let values = try? JSONDecoder().decode([String: String].self, from: Data(theme.utf8)),
+                  let background = values["--background"], let foreground = values["--foreground"]
+            else { return .init(status: 404) }
+            let html = """
+            <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Release report</title>
+            <style>
+            :where(:root) { --background: \(background); --foreground: \(foreground); }
+            body { background: var(--background); color: var(--foreground); font-family: system-ui; margin: 12px; min-height: \(height)px }
+            a { color: inherit }
+            </style></head><body>
+            <h2>Release report</h2><p>App, Web and Relay checks passed.</p>
+            <a href="/outside">Read the release notes</a>
+            </body></html>
+            """
+            return .init(status: 200, headers: [
+                "Content-Type": "text/html; charset=utf-8",
+                "Content-Security-Policy": "sandbox allow-scripts allow-popups; default-src 'self' 'unsafe-inline' data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'",
+            ], body: Data(html.utf8))
+        }
+    }
+
+    private func reportTranscript(server: LoopbackHTTPServer? = nil, state: ReportState, streaming: Bool = false) throws -> some View {
+        let report = String(decoding: try sharedContractFixture("delivered-html-media"), as: UTF8.self)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data("""
+        {"role":"assistant","content":"Report ready.","_display_content":"Report ready.","_media":[\(report)]}
+        """.utf8))
+        let baseURL = server?.baseURL ?? URL(string: "http://127.0.0.1:0")!
+        return ReportTranscript(message: message, client: APIClient(baseURL: baseURL), state: state, streaming: streaming)
+    }
+}
+
+@MainActor @Observable
+private final class ReportState {
+    var dark = false
+    var openedLinks: [URL] = []
+    @ObservationIgnored var mediaError: Error?
+    @ObservationIgnored var previewLookups = 0
+}
+
+private struct ReportTranscript: View {
+    let message: ChatMessage
+    let client: APIClient
+    let state: ReportState
+    let streaming: Bool
+    @State private var selected: TranscriptMediaPreviewItem?
+
+    var body: some View {
+        ScrollView {
+            VStack {
+                MessageBubbleView(message: message, loadTranscriptMediaData: { _ in nil }, onPreviewTranscriptMedia: {
+                    selected = TranscriptMediaPreviewItem(reference: $0)
+                }, isStreaming: streaming)
+                .padding()
+                Color.clear.frame(height: 20_000)
+            }
+        }
+        .environment(\.colorScheme, state.dark ? .dark : .light)
+        .background(state.dark ? Color.black : Color.white)
+        .environment(\.chatTranscriptMedia, ChatTranscriptMedia(
+            cacheNamespace: "", loadImage: { _ in nil }, loadData: { _ in nil }, preview: { _ in },
+            htmlPreviewURL: {
+                state.previewLookups += 1
+                return client.transcriptHTMLPreviewURL(for: $0)
+            }
+        ))
+        .transcriptLinks { url in state.openedLinks.append(url); return .handled }
+        .sheet(item: $selected) { item in
+            TranscriptMediaPreviewView(server: client.baseURL, item: item, reportURL: client.transcriptHTMLPreviewURL(for: item.reference),
+                                       onReportLink: { state.openedLinks.append($0) }, onAPIError: { state.mediaError = $0 })
+        }
     }
 }
 
