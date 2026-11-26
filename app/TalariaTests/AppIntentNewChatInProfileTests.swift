@@ -1,5 +1,6 @@
 import XCTest
 import AppIntents
+import WidgetKit
 @testable import Talaria
 @testable import TalariaKit
 
@@ -17,6 +18,24 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
 
     func testIntentOpensAppWhenRun() {
         XCTAssertTrue(NewChatInProfileIntent.openAppWhenRun)
+    }
+
+    func testMediumBotChatWidgetEntryPreservesTheFourProfileLinksInSlotOrder() throws {
+        let publisher = "https://widget.example.test/talaria"
+        let profiles = try ["research", "default", "workspace", "coding"].map { name in
+            let url = try XCTUnwrap(TalariaDeepLink.botChatURL(profileName: name, publisherID: publisher))
+            return ProfileEntity(id: url.absoluteString, name: name, subtitle: nil)
+        }
+        let configuration = NewChatWidgetConfigurationIntent()
+        configuration.botProfile = profiles[0]
+        configuration.secondBotProfile = profiles[1]
+        configuration.thirdBotProfile = profiles[2]
+        configuration.fourthBotProfile = profiles[3]
+
+        let entry = NewChatWidgetEntry(configuration: configuration, family: .systemMedium)
+        let routes = entry.botLinks.compactMap(TalariaDeepLink.botChat(from:))
+        XCTAssertEqual(routes.map(\.profileName), profiles.map(\.name))
+        XCTAssertEqual(routes.map(\.publisherID), Array(repeating: publisher, count: profiles.count))
     }
 
     @MainActor
@@ -47,6 +66,22 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
         XCTAssertEqual(loaded.first?.subtitle, "gpt · openai")
         XCTAssertEqual(loaded.last?.name, "dev")
         XCTAssertNil(loaded.last?.subtitle)
+    }
+
+    func testBotChatPickerKeepsTheServerProfileListWhenACanonicalChatIsMissing() throws {
+        let cache = ProfileEntityCache(defaults: .ephemeral("bot-chat-widget-profiles"))
+        let publisher = "https://widget.example.test/talaria"
+        let profiles = try APIClient.responseDecoder().decode([ProfileSummary].self, from: Data("""
+            [
+              {"name":"workspace","display_name":"Workspace","canonical_session":null},
+              {"name":"research","display_name":"Research","canonical_session":{"session_id":"root","tip_session_id":"tip"}}
+            ]
+            """.utf8))
+        cache.save(profiles, publisherID: publisher)
+
+        let routes = cache.loadBotChatEntities().compactMap { URL(string: $0.id).flatMap(TalariaDeepLink.botChat(from:)) }
+        XCTAssertEqual(routes.map(\.profileName), ["workspace", "research"])
+        XCTAssertEqual(cache.loadBotChatProfiles(publisherID: publisher).map(\.id), ["workspace", "research"])
     }
 
     func testCacheSkipsUnnamedProfiles() throws {

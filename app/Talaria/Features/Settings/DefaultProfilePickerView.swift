@@ -117,10 +117,9 @@ struct DefaultProfilePickerView: View {
                                            displayName: model.profiles.first { $0.name == resolved }?.displayName ?? profile.displayName,
                                            defaultModel: response.defaultModel))
             if openBotChat {
-                guard resolved == name,
-                      let tip = response.profiles?.first(where: { $0.name == name })?.canonicalSession?.tipSessionId,
+                guard let tip = response.botChatTip(for: name),
                       let url = TalariaDeepLink.sessionURL(sessionID: tip, publisherID: server.absoluteString) else {
-                    model.errorMessage = String(localized: "Bot Chat is no longer available for this profile.")
+                    model.errorMessage = ProfileSwitchResponse.botChatUnavailableMessage
                     return
                 }
                 openURL(url)

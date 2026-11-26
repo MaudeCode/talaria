@@ -100,6 +100,19 @@ public struct ProfileSwitchResponse: Decodable, Equatable, Sendable {
     public let defaultModel: String?
     public let defaultWorkspace: String?
     public let error: String?
+
+    public static var botChatUnavailableMessage: String {
+        String(localized: "Bot Chat is no longer available for this profile.")
+    }
+
+    /// The switch reply owns the current tip. A list fetched before or after it can carry a different tip.
+    public func botChatTip(for profileName: String) -> String? {
+        guard (active ?? profileName) == profileName,
+              let tip = profiles?.first(where: { $0.name == profileName })?.canonicalSession?.tipSessionId,
+              !tip.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return tip
+    }
 }
 
 public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Sendable {
@@ -124,6 +137,8 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
     public let pendingWrites: Int?
     public let displayNameOverridden: Bool?
     public let canonicalSession: CanonicalSession?
+    public let hasAvatar: Bool?
+    public let avatarUrl: String?
 
     /// The server's canonical root and current tip, unlike a titled SessionBranchLink.
     public struct CanonicalSession: Decodable, Equatable, Hashable, Sendable {
@@ -135,6 +150,7 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
         case name, path, isDefault, isActive, gatewayRunning, model, provider, hasEnv, skillCount
         case botDisplayName = "displayName"
         case description, canonicalSession, nameDiffers, gatewayMode, totalSkills, enabledSkills, pendingWrites, displayNameOverridden
+        case hasAvatar, avatarUrl
     }
 
     init(name: String?, path: String?, isDefault: Bool?, isActive: Bool?, gatewayRunning: Bool?,
@@ -159,6 +175,8 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
         self.nameDiffers = nameDiffers
         self.description = description
         self.canonicalSession = canonicalSession
+        self.hasAvatar = nil
+        self.avatarUrl = nil
     }
 
     public var displayName: String {
@@ -176,6 +194,10 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
         guard let name else { return nil }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var botChatAvatarPath: String? {
+        hasAvatar == true ? avatarUrl : nil
     }
 }
 

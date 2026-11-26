@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 import XCTest
 @testable import Talaria
-import TalariaKit
+@testable import TalariaKit
 
 /// Overflow priorities must reach real bar items, not just an unused policy table (TAL-478).
 @MainActor
@@ -1074,6 +1074,101 @@ final class SessionListHostedTests: XCTestCase {
             XCTAssertNotEqual(item.title, "More")
             if let menu = item.menu { assertNoMore(menu) }
         }
+    }
+
+    func testBotChatWidgetLinkOnColdLaunchOpensTheSwitchReplyTip() async throws {
+        try await assertBotChatWidgetLinkOpensTheSwitchReplyTip(cold: true)
+    }
+
+    func testBotChatWidgetLinkOnWarmLaunchOpensTheSwitchReplyTip() async throws {
+        try await assertBotChatWidgetLinkOpensTheSwitchReplyTip(cold: false)
+    }
+
+    private func assertBotChatWidgetLinkOpensTheSwitchReplyTip(cold: Bool) async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.botChatArgument, UITestFixtureEnvironment.forkSessionArgument,
+                                      UITestFixtureEnvironment.holdBotChatProfileSwitchArgument], for: self)
+        let link = try botChatFixtureLink()
+        let router = AppIntentRouter()
+        if cold { router.requestDeepLink(link) }
+        let window = try hostWindow(fixture.root(intentRouter: router))
+        if !cold {
+            _ = try await requireElement(in: window, label: "Select model")
+            router.requestDeepLink(link)
+        }
+        let switchInFlight = await awaitCondition {
+            UITestFixtureHold.shared.pendingRequests.contains { $0.url?.path == "/api/profile/switch" }
+        }
+        XCTAssertTrue(switchInFlight, "The widget link must request a switch to fixture-work")
+        guard switchInFlight else { return }
+        let loading = await awaitElement(in: window, label: "Loading messages")
+        XCTAssertNotNil(loading, "An unresolved Bot Chat must show loading while the switch is held")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Send a message to start the conversation."))
+        fixture.releaseHeldLoads()
+        let switched = await awaitCondition {
+            UITestFixtureURLProtocol.activeFixtureProfile == "fixture-work"
+        }
+        XCTAssertTrue(switched, "The widget link must switch to fixture-work")
+        guard switched else { return }
+        _ = try await requireElement(in: window, label: "Fork fixture reply")
+        attachHostedScreenshot(window, name: cold ? "bot-chat-cold-link" : "bot-chat-warm-link")
+    }
+
+    func testBotChatWidgetLinkShowsTheMissingCanonicalChatError() async throws {
+        let fixture = try FixtureApp(for: self)
+        let router = AppIntentRouter()
+        let window = try hostWindow(fixture.root(intentRouter: router))
+        _ = try await requireElement(in: window, label: "Select model")
+        router.requestDeepLink(try botChatFixtureLink())
+        _ = try await requireElement(in: window, label: "Bot Chat is no longer available for this profile.")
+        XCTAssertEqual(UITestFixtureURLProtocol.activeFixtureProfile, "fixture-work")
+        attachHostedScreenshot(window, name: "bot-chat-unavailable")
+    }
+
+    func testBotChatWidgetLinkWaitsForTheSidebarProfileSwitch() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.botChatArgument, UITestFixtureEnvironment.forkSessionArgument,
+                                      UITestFixtureEnvironment.holdBotChatProfileSwitchArgument], for: self)
+        let server = UITestFixtureEnvironment.serverURL
+        let model = SessionListViewModel(server: server, client: fixture.client)
+        let window = try hostWindow(fixture.sessionList(viewModel: model))
+        let profileLoaded = await awaitCondition { model.profileOptions.contains { $0.name == "fixture-code" } }
+        XCTAssertTrue(profileLoaded, "The sidebar must load the profile it will switch to")
+        let codingBot = try XCTUnwrap(model.profileOptions.first { $0.name == "fixture-code" })
+        let sidebarSwitchTask = Task { await model.switchActiveProfile(codingBot) }
+        defer { sidebarSwitchTask.cancel() }
+        func holdsSwitch(to name: String) -> Bool {
+            UITestFixtureHold.shared.pendingRequests.contains {
+                $0.url?.path == "/api/profile/switch" && UITestFixtureURLProtocol.requestJSON($0)["name"] as? String == name
+            }
+        }
+        let sidebarSwitch = await awaitCondition { holdsSwitch(to: "fixture-code") }
+        XCTAssertTrue(sidebarSwitch, "The sidebar must start its profile switch")
+        guard sidebarSwitch else { return }
+
+        fixture.pendingBotChat = try XCTUnwrap(TalariaDeepLink.botChat(from: botChatFixtureLink()))
+        let waiting = await awaitElement(in: window, label: "Loading messages")
+        XCTAssertNotNil(waiting, "The widget route must stay pending while the sidebar switch is held")
+        XCTAssertFalse(holdsSwitch(to: "fixture-work"))
+        if waiting != nil { attachHostedScreenshot(window, name: "bot-chat-waits-for-profile-switch") }
+        fixture.releaseHeldLoads()
+        let switched = await sidebarSwitchTask.value
+        XCTAssertTrue(switched)
+
+        let widgetSwitch = await awaitCondition { holdsSwitch(to: "fixture-work") }
+        XCTAssertTrue(widgetSwitch, "The widget must switch profiles after the sidebar switch completes")
+        guard widgetSwitch else { return }
+        XCTAssertEqual(UITestFixtureURLProtocol.activeFixtureProfile, "fixture-code")
+        fixture.releaseHeldLoads()
+        _ = try await requireElement(in: window, label: "Fork fixture reply")
+        attachHostedScreenshot(window, name: "bot-chat-after-profile-switch")
+    }
+
+    private func botChatFixtureLink() throws -> URL {
+        var link = URLComponents()
+        link.scheme = TalariaDeepLink.newChatURL?.scheme
+        link.host = "bot-chat"
+        link.queryItems = [URLQueryItem(name: "profile", value: "fixture-work"),
+                           URLQueryItem(name: "publisher", value: UITestFixtureEnvironment.serverURL.absoluteString)]
+        return try XCTUnwrap(link.url)
     }
 
     func testPendingPinIsVisibleBeforeTheServerAnswers() async throws {

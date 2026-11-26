@@ -772,6 +772,7 @@ public final class AuthManager {
         // Same-profile recovery preserves navigation and composer state.
         if pendingReauthentication == server { authenticatedIdentityRevision += 1 }
         profileEntityCache.save([])
+        profileEntityCache.clearBotChatProfiles(publisherID: scope)
         clearWidgetSnapshots()
     }
 
@@ -1073,6 +1074,7 @@ public final class AuthManager {
     /// Deletes one server's local auth artifacts — its scoped custom headers and
     /// its cookies — without touching the registry or the global `server_url` key.
     private func clearLocalArtifacts(for server: URL) {
+        profileEntityCache.clearBotChatProfiles(publisherID: server.absoluteString)
         try? keychain.delete(.customHeaders, scope: server.absoluteString)
         try? keychain.delete(.authenticatedProfile, scope: server.absoluteString)
         try? keychain.delete(.serverPassword, scope: server.absoluteString)

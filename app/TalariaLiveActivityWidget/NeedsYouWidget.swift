@@ -183,7 +183,7 @@ extension View {
     func widgetContainerBackground(for family: WidgetFamily) -> some View {
         containerBackground(for: .widget) {
             switch family {
-            case .systemSmall: Color(uiColor: .systemBackground)
+            case .systemSmall, .systemMedium: Color(uiColor: .systemBackground)
             case .accessoryCircular: AccessoryWidgetBackground()
             default: Color.clear
             }

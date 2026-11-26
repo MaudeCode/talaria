@@ -42,6 +42,7 @@ final class FixtureApp {
     /// Released by `tearDown()`, once no work that could reach it is left.
     @ObservationIgnored private(set) var cache: ModelContainer!
     var pendingSessionID: String?
+    var pendingBotChat: TalariaDeepLink.BotChat?
     var requestedNewChat: NewChatRequest?
     var opensQuotaWidgetSettings = false
     var pendingDestination: SessionListUtilityDestination?
@@ -158,9 +159,9 @@ final class FixtureApp {
     }
 
     /// The App's root, whose auth state picks onboarding or the session list, as a launch does.
-    func root() -> some View {
+    func root(intentRouter: AppIntentRouter = AppIntentRouter()) -> some View {
         // Its own router: the test host's ContentView drains the shared one.
-        ContentView(authManager: environment.authManager, draftStore: environment.draftStore, intentRouter: AppIntentRouter())
+        ContentView(authManager: environment.authManager, draftStore: environment.draftStore, intentRouter: intentRouter)
             .environment(\.scenePhase, .active)
             .modelContainer(cache)
     }
@@ -175,6 +176,7 @@ final class FixtureApp {
             hasWaitingSharedImport: hasWaitingSharedImport,
             openNextSharedImport: openNextSharedImport,
             pendingDeepLinkedSessionID: Binding(get: { self.pendingSessionID }, set: { self.pendingSessionID = $0 }),
+            pendingBotChat: Binding(get: { self.pendingBotChat }, set: { self.pendingBotChat = $0 }),
             pendingDestination: Binding(get: { self.pendingDestination }, set: { self.pendingDestination = $0 }),
             opensProviderQuotaWidgetSettings: Binding(get: { self.opensQuotaWidgetSettings }, set: { self.opensQuotaWidgetSettings = $0 }),
             requestedNewChat: Binding(get: { self.requestedNewChat }, set: { self.requestedNewChat = $0 }),

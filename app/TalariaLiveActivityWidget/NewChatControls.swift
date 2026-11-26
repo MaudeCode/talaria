@@ -113,11 +113,66 @@ private func newChatControl(
     .displayName(title)
 }
 
-/// Edit Widget options for `NewChatWidget` (TAL-50). No profile opens a plain new chat in the server's active profile.
+/// Existing widgets keep the New Chat destination and their original profile parameter.
 struct NewChatWidgetConfigurationIntent: WidgetConfigurationIntent {
+    enum Destination: String, AppEnum {
+        case newChat, botChat
+
+        static let typeDisplayRepresentation: TypeDisplayRepresentation = "Open"
+        static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+            .newChat: "New Chat",
+            .botChat: "Bot Chat"
+        ]
+    }
+
     static let title: LocalizedStringResource = "New Chat"
-    static let description = IntentDescription("Open Talaria on a new chat, optionally in a profile.")
+    static let description = IntentDescription("Open a new chat or go straight to a profile's Bot Chat.")
+
+    @Parameter(title: "Open", default: .newChat)
+    var open: Destination
 
     @Parameter(title: "Profile")
     var profile: ProfileEntity?
+
+    @Parameter(title: "Profile", query: ProfileEntityQuery(forBotChatWidget: true))
+    var botProfile: ProfileEntity?
+
+    @Parameter(title: "Second Profile", query: ProfileEntityQuery(forBotChatWidget: true))
+    var secondBotProfile: ProfileEntity?
+
+    @Parameter(title: "Third Profile", query: ProfileEntityQuery(forBotChatWidget: true))
+    var thirdBotProfile: ProfileEntity?
+
+    @Parameter(title: "Fourth Profile", query: ProfileEntityQuery(forBotChatWidget: true))
+    var fourthBotProfile: ProfileEntity?
+
+    static var parameterSummary: some ParameterSummary {
+        Switch(.widgetFamily) {
+            Case(.systemMedium) {
+                Summary {
+                    \.$botProfile
+                    \.$secondBotProfile
+                    \.$thirdBotProfile
+                    \.$fourthBotProfile
+                }
+            }
+            Case(.systemSmall) {
+                Switch(\.$open) {
+                    Case(.botChat) {
+                        Summary {
+                            \.$open
+                            \.$botProfile
+                        }
+                    }
+                    DefaultCase {
+                        Summary {
+                            \.$open
+                            \.$profile
+                        }
+                    }
+                }
+            }
+            DefaultCase { Summary { \.$profile } }
+        }
+    }
 }

@@ -145,6 +145,14 @@ extension APIClient {
         return response
     }
 
+    /// The profiles route supplies a path relative to the server's base, including any proxy prefix.
+    func profileAvatarData(from path: String) async throws -> Data? {
+        let base = baseURL.appendingPathComponent("", isDirectory: true)
+        guard let url = URL(string: path, relativeTo: base)?.absoluteURL,
+              Self.isSameOrigin(url, as: baseURL) else { return nil }
+        return try await downloadData(from: url, using: session, mapsUnauthorized: true)
+    }
+
     public func switchProfile(name: String) async throws -> ProfileSwitchResponse {
         let response: ProfileSwitchResponse = try await send(
             endpoint: .switchProfile,
