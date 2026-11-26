@@ -1105,7 +1105,7 @@ http.route({
     // Any signature header makes this a verified attempt: a bad one is refused, never downgraded.
     const signed = publisherSignatureHeaders.some((header) => request.headers.has(header));
     const publisher = signed ? await authenticatePublisher(ctx, request, rawBody, null) : undefined;
-    if (publisher === null) return json(401, { error: "unauthorized" });
+    if (publisher === null || (split.diagnostics && !publisher)) return json(401, { error: "unauthorized" });
     const now = Date.now();
     const uploadTokens = (payload.attachments ?? []).map(() => randomToken());
     const result = await ctx.runMutation(internal.feedback.submit, {
@@ -1130,6 +1130,8 @@ http.route({
               }
             : {}),
         });
+      case "diagnostics_disabled":
+        return json(400, { error: "attachments_disabled" });
       case "idempotency_conflict":
         return json(409, { error: "idempotency_conflict" });
       case "rate_limited":

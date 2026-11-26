@@ -97,23 +97,29 @@ async function relay() {
 
 describe("feedback intake", () => {
   it("delivers a large diagnostic summary through the authenticated operator route", async () => {
-    const { submit, operator } = await relay();
+    const { submit, signedSubmit, operator, backend } = await relay();
     const diagnosticReports = [{
       kind: "crash", start: "2026-11-22T00:00:00Z", end: "2026-11-22T01:00:00Z",
       build: "42", frames: ["x".repeat(1_100_000)],
     }];
     const payload = report({ client: { platform: "ios", diagnosticReports } });
-    const accepted = await submit(payload);
+    expect((await submit(payload)).status).toBe(401);
+    const accepted = await signedSubmit(payload);
     expect(accepted.status).toBe(202);
     const { reportId } = await accepted.json() as { reportId: string };
     const path = `/v1/feedback/${reportId}/diagnostic-reports`;
     expect((await operator(path, {}, "wrong")).status).toBe(401);
     expect(await (await operator(path)).json()).toEqual(diagnosticReports);
-    expect((await submit(payload)).status).toBe(202);
+    const storedBytes = () => backend.run(async (ctx) => (await ctx.db.query("feedbackAttachmentUsage").first())?.storedBytes ?? 0);
+    const bytes = Buffer.byteLength(JSON.stringify(diagnosticReports));
+    expect(await storedBytes()).toBe(bytes);
+    expect((await signedSubmit(payload)).status).toBe(202);
+    expect(await storedBytes()).toBe(bytes);
     expect((await operator(`/v1/feedback/${reportId}/ack`, {
       method: "POST", body: JSON.stringify({ ticketKey: "TAL-1" }),
     })).status).toBe(200);
     expect((await operator(path)).status).toBe(404);
+    expect(await storedBytes()).toBe(0);
   });
 
   it("accepts the shared fixture as an unverified pending report", async () => {

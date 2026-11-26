@@ -387,7 +387,7 @@ single-card replacement behavior.
 
 ## Feedback reports
 
-Pending reports with App diagnostics expose `hasDiagnosticReports`. The operator token can fetch the JSON from `GET /v1/feedback/{reportId}/diagnostic-reports`. The bridge attaches it to the ticket before acknowledgement. Relay removes its copy on acknowledgement or pending-report expiry.
+Pending reports with App diagnostics expose `hasDiagnosticReports`. The operator token can fetch the JSON from `GET /v1/feedback/{reportId}/diagnostic-reports`. Diagnostic reports require a verified publisher, use the shared attachment byte limits and respect the attachment kill switch. The bridge attaches the JSON to the ticket before acknowledgement. Relay removes its copy on acknowledgement or pending-report expiry.
 
 Talaria Web servers forward user bug reports and feature requests to Relay. An
 in-cluster operator bridge pulls them from the queue below; clients never hold

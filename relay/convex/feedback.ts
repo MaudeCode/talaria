@@ -99,7 +99,9 @@ function diagnosticChunks(ctx: { db: QueryCtx["db"] }, reportId: Id<"feedbackRep
 }
 
 async function deleteDiagnosticReports(ctx: MutationCtx, reportId: Id<"feedbackReports">) {
-  for (const chunk of await diagnosticChunks(ctx, reportId)) await ctx.db.delete(chunk._id);
+  const chunks = await diagnosticChunks(ctx, reportId);
+  for (const chunk of chunks) await ctx.db.delete(chunk._id);
+  if (chunks.length) await addStoredBytes(ctx, -chunks.reduce((bytes, chunk) => bytes + chunk.bytes.byteLength, 0));
 }
 
 export const pruneDiagnosticReports = internalMutation({
@@ -150,12 +152,14 @@ export const submit = internalMutation({
     v.object({ status: v.literal("idempotency_conflict") }),
     v.object({ status: v.literal("rate_limited"), retryAfterMs: v.number() }),
     v.object({ status: v.literal("unauthorized") }),
+    v.object({ status: v.literal("diagnostics_disabled") }),
   ),
   handler: async (ctx, args) => {
     if (args.publisher) {
       const authorized = await authorizePublisherMutation(ctx, args.publisher);
       if (!authorized || authorized === "replay") return { status: "unauthorized" as const };
     }
+    if (args.diagnosticReports && !args.publisher) return { status: "unauthorized" as const };
     const manifest = args.payload.attachments;
     const existing = await ctx.db.query("feedbackReports")
       .withIndex("by_request_id", (query) => query.eq("requestId", args.payload.requestId))
@@ -200,6 +204,17 @@ export const submit = internalMutation({
     // ponytail: the ceiling counts stored bytes plus this admission, not other reports' unfinished uploads;
     // the 600 MB daily budget bounds that overshoot.
     let committed = await storedBytes(ctx);
+    const diagnosticBytes = args.diagnosticReports?.byteLength ?? 0;
+    if (diagnosticBytes) {
+      if (args.attachmentsDisabled) return { status: "diagnostics_disabled" as const };
+      if (committed + diagnosticBytes > storedBytesCeiling) return { status: "rate_limited" as const, retryAfterMs: hour };
+      const diagnosticsBudget = await consumeBudget(ctx, args.now, byteBudgets.map((budget) => ({
+        ...budget, cost: diagnosticBytes,
+      })));
+      if (!diagnosticsBudget.ok) return { status: "rate_limited" as const, retryAfterMs: diagnosticsBudget.retryAfterMs };
+      committed += diagnosticBytes;
+      await addStoredBytes(ctx, diagnosticBytes);
+    }
     const admissions: Admission[] = [];
     for (const [index, entry] of (manifest ?? []).entries()) {
       const kind = attachmentLimits.types[entry.contentType].kind;
