@@ -59,6 +59,8 @@ jobs:
       web_server: ${{ steps.filter.outputs.web_server }}
       web_frontend: ${{ steps.filter.outputs.web_frontend }}
       web_sidecar: ${{ steps.filter.outputs.web_sidecar }}
+      web_agent_image: ${{ steps.filter.outputs.web_agent_image }}
+      web_agent_image_base: ${{ steps.filter.outputs.web_agent_image_base }}
       docker: ${{ steps.filter.outputs.docker }}
       relay: ${{ steps.filter.outputs.relay }}
       contracts: ${{ steps.filter.outputs.contracts }}
@@ -105,23 +107,23 @@ jobs:
             base=$(python3 scripts/main-ci-failure.py base) || base=""
             if [[ -n "$base" ]]; then
               echo "::notice title=Tested range::since $base"
-              python3 scripts/changed-components.py --base="$base" --head="$GITHUB_SHA" --app-plan --no-repeat --tested-worktree \
+              python3 scripts/changed-components.py --base="$base" --head="$GITHUB_SHA" --app-plan --agent-image-plan --no-repeat --tested-worktree \
                 >> "$GITHUB_OUTPUT" 2> >(tee -a "$GITHUB_STEP_SUMMARY" >&2)
             else
               echo "::notice title=Tested range::every suite"
-              python3 scripts/changed-components.py >> "$GITHUB_OUTPUT"
+              python3 scripts/changed-components.py --agent-image-plan >> "$GITHUB_OUTPUT"
             fi
           elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             # A manual run proves the whole pipeline: every suite runs. GitHub Scheduler dispatches one on main daily, the
             # App's full suite (TAL-2544).
-            python3 scripts/changed-components.py >> "$GITHUB_OUTPUT"
+            python3 scripts/changed-components.py --agent-image-plan >> "$GITHUB_OUTPUT"
           else
             # Event base.sha can predate a merged parent PR. Checkout fetched
             # the current base branch, as release-fragment validation also uses.
             # The App test and browser plans read this checkout, the merge commit the jobs test, and explain themselves
             # in the summary.
             python3 scripts/changed-components.py --base="refs/remotes/origin/${PR_BASE_REF}" --head="$PR_HEAD" --merge-base \
-              --app-plan --browser-plan --tested-worktree >> "$GITHUB_OUTPUT" 2> >(tee -a "$GITHUB_STEP_SUMMARY" >&2)
+              --app-plan --browser-plan --agent-image-plan --tested-worktree >> "$GITHUB_OUTPUT" 2> >(tee -a "$GITHUB_STEP_SUMMARY" >&2)
           fi
 
   app-tooling:
@@ -192,6 +194,16 @@ jobs:
       # Every shard unless a pull request's plan narrowed it.
       browser: ${{ needs.changes.result == 'success' && needs.changes.outputs.web_browser || 'full' }}
       browser_specs: ${{ needs.changes.result == 'success' && needs.changes.outputs.web_browser_specs || '[]' }}
+
+  web-agent-image:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.web_agent_image != 'false') }}
+    uses: ./.github/workflows/web-verify.yml
+    with:
+      server: false
+      frontend: false
+      sidecar: false
+      agent_image_base: ${{ needs.changes.result == 'success' && needs.changes.outputs.web_agent_image_base || 'all' }}
 
   web-docker:
     needs: changes
@@ -282,7 +294,7 @@ jobs:
 
   gate:
     name: CI Gate
-    needs: [changes, app, app-tooling, tooling, web, web-docker, relay, contracts]
+    needs: [changes, app, app-tooling, tooling, web, web-agent-image, web-docker, relay, contracts]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

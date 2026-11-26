@@ -13,7 +13,8 @@ import sys
 
 
 
-SUITES = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "docker", "relay", "contracts", "tooling"}
+SUITES = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "web_agent_image", "docker", "relay",
+          "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "web_sidecar", "relay", "contracts"}
 # The sidecar job builds the server too, so the workspace build inputs select it (TAL-1161).
 IMAGE_WORKSPACE_BUILD_INPUTS = tuple(f"packages/{name}/{file}" for name in ("contracts", "server")
@@ -46,6 +47,7 @@ FIXTURE_READERS = {
               "relay-session-started-push.json", "relay-snapshot.json"},
 }
 JOBS = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend", "web_sidecar"},
+        "web-agent-image": {"web_agent_image"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
     # CI owns the App jobs and the Web contract probe's fixture handoff; workflow_overrides narrows a change to the
@@ -82,7 +84,7 @@ SCRIPTS = {
     "check-relay-local.py": {"relay", "tooling"},
     "stamp-release.py": {"tooling"},
     "test-stamp-release.py": {"tooling"},
-    "check-agent-compatibility.py": {"web_server", "web_sidecar", "docker", "tooling"},
+    "check-agent-compatibility.py": {"web_server", "web_sidecar", "web_agent_image", "docker", "tooling"},
     "test-check-agent-compatibility.py": {"tooling"},
     "critical-markdown-check.py": {"tooling"},
     "test-critical-markdown-check.py": {"tooling"},
@@ -235,7 +237,9 @@ def path_suites(path):
             return {"web_server", "web_frontend", "web_sidecar", "contracts"}
         # The Agent pin is baked into the container images and extended by the Compose files: it needs the smoke too.
         if local == "sidecar/agent_dependency.json":
-            return {"web_server", "web_sidecar", "contracts", "docker"}
+            return {"web_server", "web_sidecar", "web_agent_image", "contracts", "docker"}
+        if local == "sidecar/agent_support.json":
+            return {"web_server", "web_frontend", "web_sidecar", "web_agent_image", "contracts"}
         # The sidecar's pytest harness runs only the sidecar suite, here and in the release's Agent gate (TAL-1599).
         if local in ("sidecar/scripts/suite_runner.py", "sidecar/scripts/test.sh"):
             return {"web_sidecar", "tooling"}
@@ -351,8 +355,7 @@ def git_deleted_workflows(base, head):
 # What each part of ci.yml can break, so a change runs only those suites (TAL-2461). Path detection, the gate and the
 # failure report run in full on every pull request, which the tooling checks join; concurrency only schedules runs
 # (scripts/test-ci-concurrency.py), and a removed job only stops running. The contract probe's fixture feeds the App
-# package tests. Any other part, path detection's outputs included since every job reads them, keeps the whole ci.yml
-# route.
+# package tests. Unmapped parts keep the whole ci.yml route.
 CI_PARTS = {
     ("key", "concurrency"): {"tooling"},
     ("job", "changes"): {"tooling"},
@@ -363,25 +366,41 @@ CI_PARTS = {
     ("job", "app"): WORKFLOWS["app-tests.yml"],
     ("job", "contracts"): {"app", "contracts", "tooling"},
     ("job", "web"): WORKFLOWS["web-verify.yml"],
+    ("job", "web-agent-image"): JOBS["web-agent-image"],
+    ("output", "changes", "web_agent_image"): JOBS["web-agent-image"],
+    ("output", "changes", "web_agent_image_base"): JOBS["web-agent-image"],
     ("job", "web-docker"): WORKFLOWS["web-docker-smoke.yml"],
     ("job", "relay"): WORKFLOWS["relay-verify.yml"],
 }
 
 
 def workflow_parts(text):
-    """A workflow's top-level keys, its jobs and each job's outputs as text. Column-0 comments are left out: YAML has no
+    """A workflow's top-level keys, reusable inputs, jobs and outputs as text. Column-0 comments are left out: YAML has no
     other column-0 line starting with #, since a block scalar's content is indented."""
     parts, part, job = {}, None, None
+    workflow_call, call_inputs = False, False
     for line in text.splitlines():
         if line.startswith("#"):
             continue
         if line[:1].strip():
             part, job = ("key", line.split(":")[0]), None
-        elif part in (("key", "jobs"), ("job", job), ("outputs", job)) and re.match(r"  [^\s#]", line):
+            workflow_call = call_inputs = False
+        elif part and part[0] == "input" and re.match(r"  [^\s#]|    [^\s#]", line):
+            part = ("key", "on")
+        if part == ("key", "on") and re.match(r"  [^\s#]", line):
+            workflow_call, call_inputs = line.strip() == "workflow_call:", False
+        elif part == ("key", "on") and workflow_call and re.match(r"    [^\s#]", line):
+            call_inputs = line.strip() == "inputs:"
+        elif call_inputs and re.match(r"      [^\s#]", line):
+            part = ("input", line.split(":")[0].strip())
+        if (part in (("key", "jobs"), ("job", job), ("outputs", job))
+                or (part and part[0] == "output")) and re.match(r"  [^\s#]", line):
             job = line.split(":")[0].strip()
             part = ("job", job)
         elif job and re.match(r"    [^\s#]", line):
             part = ("outputs" if line.split(":")[0].strip() == "outputs" else "job", job)
+        elif job and part[0] in ("outputs", "output") and re.match(r"      [^\s#]", line):
+            part = ("output", job, line.split(":")[0].strip())
         if part:
             parts.setdefault(part, []).append(line)
     return {part: "\n".join(lines).rstrip() for part, lines in parts.items()}
@@ -391,6 +410,8 @@ WORKFLOW_PARTS = {
     ".github/workflows/ci.yml": CI_PARTS,
     ".github/workflows/web-verify.yml": {
         ("job", "sidecar"): {"web_sidecar"},
+        ("job", "agent-image"): JOBS["web-agent-image"],
+        ("input", "agent_image_base"): JOBS["web-agent-image"],
     },
 }
 
@@ -406,9 +427,10 @@ def workflow_overrides(base, head, paths):
         except (OSError, subprocess.CalledProcessError):
             continue
         # A removed job stops running. A job that needed it changes its own part.
-        removed = {part for part in before.keys() - after.keys() if part[0] in ("job", "outputs")}
+        removed = {part for part in before.keys() - after.keys()
+                   if part[0] in ("job", "outputs") or (part[0] == "output" and ("job", part[1]) not in after)}
         changed = {part for part in before.keys() | after.keys() if before.get(part) != after.get(part)} - removed
-        if before.keys() - removed == after.keys() and changed <= routes.keys():
+        if changed <= routes.keys():
             overrides[path] = set().union({"tooling"}, *(routes[part] for part in changed))
     return overrides
 
@@ -485,6 +507,8 @@ def main():
                              "already repeated the ones it added or changed (TAL-2544).")
     parser.add_argument("--browser-plan", action="store_true",
                         help="Also print the pull request's Playwright plan (TAL-2391): none, the changed specs or full.")
+    parser.add_argument("--agent-image-plan", action="store_true",
+                        help="Also print the base commit for Agent image comparison, or 'all' for a full run.")
     parser.add_argument("--tested-worktree", action="store_true",
                         help="Read test identifiers from the checked-out working tree (CI's tested checkout) rather than --head.")
     args = parser.parse_args()
@@ -516,6 +540,7 @@ def main():
         print(f"web_artifact={str(changed).lower()}")
         return
     selected, app_plan, browser_plan = set(SUITES), None, None
+    image_base = "all"
     try:
         if args.local:
             base = git("merge-base", revision(args.base or "origin/main"), "HEAD").decode().strip()
@@ -532,6 +557,8 @@ def main():
             if args.browser_plan and paths:
                 tree = app_test_plan.Tree(None if head is None or args.tested_worktree else head, web_browser_plan.FRONTEND)
                 browser_plan = web_browser_plan.plan(paths, tree, path_suites)
+            if paths:
+                image_base = base
     except (OSError, ValueError, subprocess.CalledProcessError):
         print("Could not classify the complete diff; running all suites.", file=sys.stderr)
         selected, app_plan, browser_plan = set(SUITES), None, None
@@ -547,6 +574,8 @@ def main():
         return
     for suite in sorted(SUITES):
         print(f"{suite}={str(suite in selected).lower()}")
+    if args.agent_image_plan:
+        print(f"web_agent_image_base={image_base}")
     if args.browser_plan:
         browser_plan = browser_plan or web_browser_plan.full("No diff, or one that could not be classified.")
         print(web_browser_plan.describe(browser_plan), file=sys.stderr)

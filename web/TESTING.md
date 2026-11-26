@@ -36,6 +36,13 @@ Sidecar test changes skip the server job, except `sidecar/tests/fixtures/`, whic
 Each Agent job first runs the synthetic runner checks so isolation and cleanup failures surface
 before the longer real-Agent suite.
 
+The Agent image job runs on GitHub-hosted Ubuntu when the support record, active
+pin, or compatibility checker changes. It verifies added or changed release
+identities and a switched active pin. If the identities are unchanged, it
+checks the active pin. The job uses the same checker with `--skip-sidecar-tests`
+and uploads its receipts as `agent-image-verification-*`. CI Gate requires
+the selected job to pass.
+
 A pull request's Playwright jobs follow its browser plan (`scripts/web_browser_plan.py`). A diff whose only
 frontend changes are Vitest tests (`src/**/*.test.ts(x)`) starts no Playwright job. A diff whose only browser
 inputs are spec files under `e2e/`, at most ten and none imported by another file, runs those files on desktop and

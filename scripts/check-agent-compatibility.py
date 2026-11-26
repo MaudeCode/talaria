@@ -54,6 +54,8 @@ FORMATS = {
     "sourceRevision": r"[a-f0-9]{40}",
     "image": r"docker\.io/nousresearch/hermes-agent@sha256:[a-f0-9]{64}",
 }
+SUPPORT_RECORD = "web/sidecar/agent_support.json"
+DEPENDENCY_PIN = "web/sidecar/agent_dependency.json"
 # The mcp extra (shipped in the image via [all]) lets the sidecar suite drive a real stub MCP server.
 SYNC = ["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp"]
 CACHE_SUFFIXES = (".lock", ".ready", ".python", ".pm", ".tmp")
@@ -100,12 +102,12 @@ def stable_identity(entry):
 
 
 def active_pin(root):
-    pin = json.loads((root / "web/sidecar/agent_dependency.json").read_text())
+    pin = json.loads((root / DEPENDENCY_PIN).read_text())
     return stable_identity({**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]})
 
 
 def supported_releases(root):
-    record = json.loads((root / "web/sidecar/agent_support.json").read_text())
+    record = json.loads((root / SUPPORT_RECORD).read_text())
     if not isinstance(record, dict) or set(record) - {"schemaVersion", "releases", "nativeContracts"} or record.get("schemaVersion") != 1 \
             or not isinstance(record.get("releases"), list):
         raise ValueError("invalid Agent support record")
@@ -129,6 +131,21 @@ def supported_releases(root):
     if active_pin(root) not in releases:
         raise ValueError("the active Agent pin is outside the supported releases")
     return releases
+
+
+def image_releases_since(base, releases):
+    if base == "all":
+        return [release["releaseTag"] for release in releases]
+    if not re.fullmatch(r"[a-f0-9]{40}", base):
+        raise ValueError("Agent image comparison needs an exact base commit or 'all'")
+    before = json.loads(subprocess.check_output(["git", "-C", str(ROOT), "show", f"{base}:{SUPPORT_RECORD}"]))
+    previous = {entry["releaseTag"]: stable_identity(entry) for entry in before["releases"]}
+    old_pin = json.loads(subprocess.check_output(["git", "-C", str(ROOT), "show", f"{base}:{DEPENDENCY_PIN}"]))
+    active = active_pin(ROOT)["releaseTag"]
+    changed = [entry["releaseTag"] for entry in releases if previous.get(entry["releaseTag"]) != entry]
+    if active != old_pin["x-talaria"]["releaseTag"] and active not in changed:
+        changed.append(active)
+    return changed or [active]  # A checker-only change still exercises the active pin.
 
 
 def version_key(version):
@@ -506,6 +523,8 @@ def main():
     parser.add_argument("tests", nargs="*", help="Optional sidecar pytest selectors; defaults to the full sidecar suite.")
     selector = parser.add_mutually_exclusive_group()
     selector.add_argument("--list", action="store_true", help="Validate the support record and print its release tags as JSON.")
+    selector.add_argument("--image-releases-since", metavar="BASE",
+                          help="Print release tags for the image job, compared to BASE or 'all' for a full run.")
     selector.add_argument("--release", help="Check this supported release tag.")
     selector.add_argument("--identity", help="Check an unpromoted candidate: JSON with releaseTag, version, sourceRevision and image.")
     selector.add_argument("--main", metavar="SHA", help="Check an exact Agent main commit as a canary.")
@@ -520,10 +539,12 @@ def main():
                        or not re.fullmatch(r"[1-9][0-9]*/[1-9][0-9]*", args.shard)
                        or int(args.shard.split("/")[0]) > int(args.shard.split("/")[1])):
         parser.error("--shard N/M (1 <= N <= M) runs the whole sidecar suite's shard, without selectors or --command")
-    if args.list:
+    if args.list or args.image_releases_since:
         releases = supported_releases(ROOT)
         check_shims(ROOT, [release["version"] for release in releases])
-        print(json.dumps([release["releaseTag"] for release in releases]))
+        tags = image_releases_since(args.image_releases_since, releases) if args.image_releases_since else [
+            release["releaseTag"] for release in releases]
+        print(json.dumps(tags))
         return
     kind, identity = select(args)
     if args.receipt:

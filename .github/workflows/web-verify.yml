@@ -25,6 +25,10 @@ on:
       ref:
         type: string
         default: ""
+      agent_image_base:
+        description: Exact diff base, or 'all' when CI cannot bound the diff. Empty skips the image job.
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -258,6 +262,54 @@ jobs:
         env:
           RELEASES: ${{ needs.agent-releases.outputs.tags }}
         run: python3 scripts/check-release-agent.py --verify-pr-shards --receipts "$RUNNER_TEMP/agent-shards" --releases "$RELEASES"
+
+  agent-image:
+    if: inputs.agent_image_base != ''
+    name: Verify Agent release images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Install uv (the Agent's locked dependency resolver)
+        run: python3 -m pip install --disable-pip-version-check "uv==0.11.3"
+
+      - name: Verify selected images and record receipts
+        working-directory: .
+        shell: bash
+        env:
+          BASE: ${{ inputs.agent_image_base }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$BASE" =~ ^[a-f0-9]{40}$ ]] && ! git cat-file -e "$BASE^{commit}"; then
+            git fetch --no-tags --depth=1 --filter=blob:none origin "$BASE"
+          fi
+          tags=$(python3 scripts/check-agent-compatibility.py --image-releases-since "$BASE" | jq -er '.[]')
+          failed=0
+          while IFS= read -r tag; do
+            receipt="$RUNNER_TEMP/agent-image/$tag.json"
+            if ! python3 scripts/check-agent-compatibility.py --skip-sidecar-tests --release "$tag" --receipt "$receipt" ||
+               ! jq -e '.imageVerified and (.result == "success")' "$receipt"; then
+              failed=1
+            fi
+          done <<< "$tags"
+          exit "$failed"
+
+      - name: Retain Agent image receipts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-image-verification-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/agent-image
+          retention-days: 7
+          if-no-files-found: ignore
 
   frontend-checks:
     if: inputs.frontend
