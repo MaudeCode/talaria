@@ -387,12 +387,14 @@ single-card replacement behavior.
 
 ## Feedback reports
 
+Pending reports with App diagnostics expose `hasDiagnosticReports`. The operator token can fetch the JSON from `GET /v1/feedback/{reportId}/diagnostic-reports`. Diagnostic reports require a verified publisher, use the shared attachment byte limits and respect the attachment kill switch. The bridge attaches the JSON to the ticket before acknowledgement. Relay removes its copy on acknowledgement or pending-report expiry.
+
 Talaria Web servers forward user bug reports and feature requests to Relay. An
 in-cluster operator bridge pulls them from the queue below; clients never hold
 a tracker credential. Every feedback route answers 404 until the deployment sets
 `FEEDBACK_OPERATOR_TOKEN_SHA256`.
 
-`POST /v1/feedback` accepts at most 32 KiB of JSON. The shared example is
+`POST /v1/feedback` accepts at most 32 KiB of report metadata plus optional App diagnostic reports, capped at 10 summaries and 2 MiB of UTF-8 JSON. The shared example is
 `contracts/fixtures/feedback-report.json`.
 
 ```json
@@ -419,6 +421,7 @@ a tracker credential. Every feedback route answers 404 until the deployment sets
 | `body` | 1–8000 characters |
 | `client.platform` | `web` or `ios` |
 | `client.appVersion`, `client.osVersion`, `client.deviceModel` | optional, 1–64 characters |
+| `client.diagnosticReports` | optional projected MetricKit summaries with kind, UTC start/end, build and string frames |
 | `server.webVersion` | 1–64 characters |
 | `server.agentVersion` | optional, 1–64 characters |
 | `diagnostics` | optional, 1–16384 characters |

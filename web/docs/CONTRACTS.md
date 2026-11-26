@@ -921,7 +921,9 @@ error shapes are defined in `packages/contracts/src/routes/settings.ts` and
 `contracts/fixtures/web-feedback.json`. Clients reuse the same UUID `requestId`
 and unchanged form values after an unknown outcome. The server retries transport
 failures once and preserves the redacted server snapshot across retries and restarts.
-Changing a form under an existing request ID returns `invalid`.
+Changing a form under an existing request ID returns `invalid`. App clients may submit
+up to 10 projected MetricKit summaries in `client.diagnosticReports`, limited to
+2 MiB of UTF-8 JSON. The server forwards them to Relay only with `includeDiagnostics` enabled. Relay requires a registered publisher for reports with diagnostic files.
 
 The server owns the install UUID, version stamps and diagnostics. It shares the
 existing publisher key and Relay transport; unregistered installs send unsigned.

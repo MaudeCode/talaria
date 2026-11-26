@@ -93,9 +93,41 @@ async function replayAdmissions(
   return admissions;
 }
 
+function diagnosticChunks(ctx: { db: QueryCtx["db"] }, reportId: Id<"feedbackReports">) {
+  return ctx.db.query("feedbackDiagnosticChunks")
+    .withIndex("by_report_and_index", (q) => q.eq("reportId", reportId)).collect();
+}
+
+async function deleteDiagnosticReports(ctx: MutationCtx, reportId: Id<"feedbackReports">) {
+  const chunks = await diagnosticChunks(ctx, reportId);
+  for (const chunk of chunks) await ctx.db.delete(chunk._id);
+  if (chunks.length) await addStoredBytes(ctx, -chunks.reduce((bytes, chunk) => bytes + chunk.bytes.byteLength, 0));
+}
+
+export const pruneDiagnosticReports = internalMutation({
+  args: { reportId: v.id("feedbackReports") },
+  returns: v.null(),
+  handler: async (ctx, { reportId }) => {
+    await deleteDiagnosticReports(ctx, reportId);
+    return null;
+  },
+});
+
+export const getDiagnosticReports = internalQuery({
+  args: { reportId: v.string() },
+  returns: v.array(v.bytes()),
+  handler: async (ctx, { reportId }) => {
+    const id = ctx.db.normalizeId("feedbackReports", reportId);
+    const report = id ? await ctx.db.get(id) : null;
+    if (report?.status !== "pending" || !report.hasDiagnosticReports) return [];
+    return (await diagnosticChunks(ctx, report._id)).map((chunk) => chunk.bytes);
+  },
+});
+
 export const submit = internalMutation({
   args: {
     payload: feedbackPayloadValidator,
+    diagnosticReports: v.optional(v.bytes()),
     payloadHash: v.string(),
     installHash: v.string(),
     /** SHA-256 hex of a fresh upload token per manifest entry, in manifest order. */
@@ -120,12 +152,14 @@ export const submit = internalMutation({
     v.object({ status: v.literal("idempotency_conflict") }),
     v.object({ status: v.literal("rate_limited"), retryAfterMs: v.number() }),
     v.object({ status: v.literal("unauthorized") }),
+    v.object({ status: v.literal("diagnostics_disabled") }),
   ),
   handler: async (ctx, args) => {
     if (args.publisher) {
       const authorized = await authorizePublisherMutation(ctx, args.publisher);
       if (!authorized || authorized === "replay") return { status: "unauthorized" as const };
     }
+    if (args.diagnosticReports && !args.publisher) return { status: "unauthorized" as const };
     const manifest = args.payload.attachments;
     const existing = await ctx.db.query("feedbackReports")
       .withIndex("by_request_id", (query) => query.eq("requestId", args.payload.requestId))
@@ -170,6 +204,17 @@ export const submit = internalMutation({
     // ponytail: the ceiling counts stored bytes plus this admission, not other reports' unfinished uploads;
     // the 600 MB daily budget bounds that overshoot.
     let committed = await storedBytes(ctx);
+    const diagnosticBytes = args.diagnosticReports?.byteLength ?? 0;
+    if (diagnosticBytes) {
+      if (args.attachmentsDisabled) return { status: "diagnostics_disabled" as const };
+      if (committed + diagnosticBytes > storedBytesCeiling) return { status: "rate_limited" as const, retryAfterMs: hour };
+      const diagnosticsBudget = await consumeBudget(ctx, args.now, byteBudgets.map((budget) => ({
+        ...budget, cost: diagnosticBytes,
+      })));
+      if (!diagnosticsBudget.ok) return { status: "rate_limited" as const, retryAfterMs: diagnosticsBudget.retryAfterMs };
+      committed += diagnosticBytes;
+      await addStoredBytes(ctx, diagnosticBytes);
+    }
     const admissions: Admission[] = [];
     for (const [index, entry] of (manifest ?? []).entries()) {
       const kind = attachmentLimits.types[entry.contentType].kind;
@@ -196,9 +241,19 @@ export const submit = internalMutation({
       publisherId: publisher?.publisherId,
       installHash: args.installHash,
       payload: args.payload,
+      ...(args.diagnosticReports ? { hasDiagnosticReports: true } : {}),
       status: uploading ? "uploading" : "pending",
       createdAt: args.now,
     });
+    // Relay documents are limited to 1 MiB. Keep large diagnostics out of the pending list.
+    if (args.diagnosticReports) {
+      const chunkSize = 512 * 1024;
+      for (let offset = 0; offset < args.diagnosticReports.byteLength; offset += chunkSize) {
+        await ctx.db.insert("feedbackDiagnosticChunks", {
+          reportId, index: offset / chunkSize, bytes: args.diagnosticReports.slice(offset, offset + chunkSize),
+        });
+      }
+    }
     for (const [index, entry] of (manifest ?? []).entries()) {
       const admission = admissions[index]!;
       await ctx.db.insert("feedbackAttachments", {
@@ -284,6 +339,7 @@ export const listPending = internalQuery({
     publisherId: v.optional(v.string()),
     createdAt: v.number(),
     payload: feedbackPayloadValidator,
+    hasDiagnosticReports: v.optional(v.boolean()),
     attachments: v.array(v.object({
       index: v.number(),
       contentType: feedbackAttachmentTypeValidator,
@@ -303,6 +359,7 @@ export const listPending = internalQuery({
       publisherId: report.publisherId,
       createdAt: report.createdAt,
       payload: report.payload,
+      hasDiagnosticReports: report.hasDiagnosticReports,
       attachments: (await attachmentsOf(ctx, report._id)).map(({ index, contentType, bytes, sha256, status, reason }) => ({
         index, contentType, bytes, sha256, status: status === "awaiting" ? "missing" as const : status, reason,
       })),
@@ -353,6 +410,7 @@ export const acknowledge = internalMutation({
     await ctx.db.patch(report._id, { status: "delivered", ticketKey: args.ticketKey, deliveredAt: args.now });
     // The bridge has copied the files by now, so Relay keeps none past delivery.
     await deleteAttachments(ctx, report._id);
+    if (report.hasDiagnosticReports) await deleteDiagnosticReports(ctx, report._id);
     return { status: "delivered" as const };
   },
 });

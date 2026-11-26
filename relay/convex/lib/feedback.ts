@@ -55,6 +55,28 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | nul
   return allowed.includes(value as T) ? value as T : null;
 }
 
+export const maximumDiagnosticReportBytes = 2 * 1024 * 1024;
+
+export function splitFeedbackDiagnostics(value: unknown): { report: unknown; diagnostics?: ArrayBuffer } | null {
+  const { client } = (value ?? {}) as { client?: unknown };
+  if (typeof client !== "object" || client === null || !("diagnosticReports" in client)) return { report: value };
+  const fields = record(client, ["platform", "appVersion", "osVersion", "deviceModel", "diagnosticReports"]);
+  if (!fields) return null;
+  const { diagnosticReports: reports, ...metadata } = fields;
+  if (!Array.isArray(reports) || reports.length > 10) return null;
+  for (const value of reports as unknown[]) {
+    const entry = record(value, ["kind", "start", "end", "build", "frames"]);
+    if (!entry || !oneOf(entry.kind, ["crash", "hang", "cpuException", "diskWrite"] as const)
+      || !text(entry, "build", 64)
+      || ![entry.start, entry.end].every((date) => typeof date === "string"
+        && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z$/.test(date) && Number.isFinite(Date.parse(date)))
+      || !Array.isArray(entry.frames) || !entry.frames.every((frame: unknown) => typeof frame === "string")) return null;
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(reports));
+  if (bytes.byteLength > maximumDiagnosticReportBytes) return null;
+  return { report: { ...(value as Fields), client: metadata }, diagnostics: bytes.buffer };
+}
+
 /** Exactly the v1 report fields, each bounded: an extra field is rejected rather than ignored. */
 export function parseFeedbackReport(value: unknown): FeedbackPayload | null {
   const report = record(value, ["requestId", "installId", "kind", "title", "body", "client", "server", "diagnostics", "attachments", "source", "agent"]);

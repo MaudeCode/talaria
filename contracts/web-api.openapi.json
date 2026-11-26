@@ -121050,6 +121050,52 @@
                         "type": "string",
                         "maxLength": 64,
                         "pattern": "\\S"
+                      },
+                      "diagnosticReports": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "crash",
+                                "hang",
+                                "cpuException",
+                                "diskWrite"
+                              ],
+                              "type": "string"
+                            },
+                            "start": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "end": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "build": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "pattern": "\\S"
+                            },
+                            "frames": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "start",
+                            "end",
+                            "build",
+                            "frames"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Projected MetricKit summaries, up to 10 entries and 2 MiB of UTF-8 JSON in total."
                       }
                     },
                     "required": [

@@ -87,7 +87,7 @@ function report(kind: "bug" | "feature" | "other" = "bug", platform: "web" | "io
   };
 }
 
-async function fixture(reports = [report(), report("feature", "ios")], blobs = new Map<string, Map<number, Buffer>>()) {
+async function fixture(reports = [report(), report("feature", "ios")], blobs = new Map<string, Map<number, Buffer>>(), diagnostics = new Map<string, Buffer>()) {
   const creates: Array<Record<string, unknown>> = [];
   const acks: Array<{ reportId: string; ticketKey: string }> = [];
   const tickets = new Map<string, { id: string; key: string; input: string }>();
@@ -101,6 +101,13 @@ async function fixture(reports = [report(), report("feature", "ios")], blobs = n
       const bytes = blobs.get(decodeURIComponent(file[1]!))?.get(Number(file[2]));
       if (!bytes) { response.writeHead(404).end(); return; }
       response.writeHead(200, { "content-type": "application/octet-stream" }).end(bytes);
+      return;
+    }
+    const reportIdForDiagnostics = /^\/v1\/feedback\/([^/]+)\/diagnostic-reports$/.exec(request.url!);
+    if (request.method === "GET" && reportIdForDiagnostics) {
+      const bytes = diagnostics.get(decodeURIComponent(reportIdForDiagnostics[1]!));
+      if (!bytes) { response.writeHead(404).end(); return; }
+      response.writeHead(200, { "content-type": "application/json" }).end(bytes);
       return;
     }
     response.setHeader("content-type", "application/json");
@@ -159,6 +166,20 @@ async function fixture(reports = [report(), report("feature", "ios")], blobs = n
   };
   return { reports, creates, acks, tickets, uploads, failures, env, run: () => run(env) };
 }
+
+it("uploads the App diagnostics file before acknowledging the report", async () => {
+  const item = { ...report("bug", "ios"), hasDiagnosticReports: true };
+  const bytes = Buffer.from(JSON.stringify([{ kind: "crash", frames: ["frame"] }]));
+  const f = await fixture([item], new Map(), new Map([[item.reportId, bytes]]));
+  f.failures.upload = 1;
+  expect((await f.run()).code).toBe(1);
+  expect(f.acks).toHaveLength(0);
+  expect((await f.run()).code).toBe(0);
+  expect(f.uploads).toEqual([expect.objectContaining({
+    name: "app-diagnostic-reports.json", contentType: "application/json", data: bytes,
+  })]);
+  expect(f.acks).toHaveLength(1);
+});
 
 async function attachedFixture(files: Parameters<typeof attachments>[0]) {
   const item = report();

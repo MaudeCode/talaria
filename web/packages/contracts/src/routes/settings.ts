@@ -34,11 +34,22 @@ export type FeedbackAttachmentType = keyof typeof FEEDBACK_ATTACHMENT_LIMITS.typ
 export const FeedbackAttachmentTypeSchema = z.enum(Object.keys(FEEDBACK_ATTACHMENT_LIMITS.types) as [FeedbackAttachmentType, ...FeedbackAttachmentType[]])
 
 const feedbackText = (max: number) => z.string().max(max).regex(/\S/, 'Must not be blank')
+export const FEEDBACK_DIAGNOSTIC_REPORT_BYTES = 2 * 1024 * 1024
+const FeedbackDiagnosticReportsSchema = z.array(z.strictObject({
+  kind: z.enum(['crash', 'hang', 'cpuException', 'diskWrite']),
+  start: z.iso.datetime(),
+  end: z.iso.datetime(),
+  build: feedbackText(64),
+  frames: z.array(z.string()),
+})).max(10)
+  .refine((reports) => new TextEncoder().encode(JSON.stringify(reports)).byteLength <= FEEDBACK_DIAGNOSTIC_REPORT_BYTES, 'Diagnostic reports exceed 2 MiB')
+  .describe('Projected MetricKit summaries, up to 10 entries and 2 MiB of UTF-8 JSON in total.')
+
 export const FeedbackSubmitSchema = z.strictObject({
   requestId: z.uuid(), kind: z.enum(['bug', 'feature', 'other']),
   title: z.string().max(120).optional().describe('Optional title. When omitted or blank, the server uses the first non-blank line of body, limited to 120 UTF-16 code units.'), body: feedbackText(8000),
   includeDiagnostics: z.boolean(),
-  client: z.strictObject({ platform: z.enum(['web', 'ios']), appVersion: feedbackText(64).optional(), osVersion: feedbackText(64).optional(), deviceModel: feedbackText(64).optional() }),
+  client: z.strictObject({ platform: z.enum(['web', 'ios']), appVersion: feedbackText(64).optional(), osVersion: feedbackText(64).optional(), deviceModel: feedbackText(64).optional(), diagnosticReports: FeedbackDiagnosticReportsSchema.optional() }),
   // Staging issues lowercase IDs and the App re-encodes them in uppercase; one form here means claiming, retry fingerprints and the repeat check agree.
   attachmentIds: z.array(z.uuid().toLowerCase()).min(1).max(FEEDBACK_ATTACHMENT_LIMITS.maxAttachments).refine((ids) => new Set(ids).size === ids.length, 'Must not repeat').optional(),
 })

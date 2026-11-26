@@ -571,3 +571,14 @@ describe('report_issue (TAL-1972)', () => {
     expect(await report({})).toEqual({ error: { condition, ...(condition === 'rate_limited' ? { retry_after_seconds: 42 } : {}) } })
   })
 })
+
+it('forwards App diagnostic reports only with consent and still delivers older submissions', async () => {
+  const diagnosticReports = [{ kind: 'crash', start: '2026-11-22T00:00:00Z', end: '2026-11-22T01:00:00Z', build: '42', frames: ['Talaria + 128'] }]
+  const client = { platform: 'ios', diagnosticReports }
+  expect((await submit({ ...input(), client })).status).toBe(200)
+  expect(calls[0]!.payload.client).toEqual(client)
+  expect((await submit({ ...input(), client, includeDiagnostics: false })).status).toBe(200)
+  expect(calls[1]!.payload.client).toEqual({ platform: 'ios' })
+  expect((await submit()).status).toBe(200)
+  expect(calls[2]!.payload.client).toEqual({ platform: 'web' })
+})

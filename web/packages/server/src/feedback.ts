@@ -261,12 +261,17 @@ async function submitFeedbackSerial(deps: AppDeps, profileHome: string, input: z
         }
       }
       const snapshot = entry?.snapshot ?? { server: ServerStamp.parse({ webVersion: deps.version.slice(0, 64), agentVersion: deps.agentVersion().slice(0, 64) }), ...(input.includeDiagnostics ? { diagnostics: (await feedbackDiagnostics(deps, profileHome)).text } : {}) }
-      const { requestId, kind, body: text, client } = input
+      const { requestId, kind, body: text } = input
+      const { diagnosticReports, ...client } = input.client
       // Keep the submitted envelope for retry fingerprints; only the Relay payload needs a derived title.
       const title = input.title?.trim() ? input.title : text.trim().split(/[\r\n\u2028\u2029]/, 1)[0]!.slice(0, 120).replace(/[\uD800-\uDBFF]$/, '').trimEnd()
       const attachments = manifest.map(({ contentType, bytes, sha256 }) => ({ contentType, bytes, sha256 }))
-      const body = JSON.stringify({ requestId, kind, title, body: text, client, installId: state.installId, ...snapshot, ...(attachments.length ? { attachments } : {}), ...(agent ? { source: 'agent', agent } : {}) })
-      if (Buffer.byteLength(body) > 32 * 1024) throw new HttpFailure(400, 'invalid')
+      const envelope = { requestId, kind, title, body: text, client, installId: state.installId, ...snapshot, ...(attachments.length ? { attachments } : {}), ...(agent ? { source: 'agent', agent } : {}) }
+      const baseBody = JSON.stringify(envelope)
+      if (Buffer.byteLength(baseBody) > 32 * 1024) throw new HttpFailure(400, 'invalid')
+      const body = input.includeDiagnostics && diagnosticReports !== undefined
+        ? JSON.stringify({ ...envelope, client: { ...client, diagnosticReports } })
+        : baseBody
       if (!entry) {
         entry = { requestId, fingerprint, owner, ...(dedupe ? { dedupe } : {}), createdAt: now, expiresAt: now + RECEIPT_RETENTION }
         state.entries.push(entry)
