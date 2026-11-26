@@ -9,7 +9,7 @@ public enum ChatSessionStartResult: Sendable {
 
 public struct PendingNewChatRoute: Identifiable, Hashable, Sendable {
     public let id = UUID()
-    public let initialDraft: String
+    public let initialDraft: String?
     public let initialAttachments: [SharedAttachmentImport]
     /// Explicit compose/intent routes focus the composer; every route waits for Send or Files to create a session.
     public let isExplicit: Bool
@@ -24,7 +24,7 @@ public struct PendingNewChatRoute: Identifiable, Hashable, Sendable {
     public let executionMode: ExecutionMode?
 
     public init(
-        initialDraft: String = "",
+        initialDraft: String? = nil,
         initialAttachments: [SharedAttachmentImport] = [],
         isExplicit: Bool = true,
         autoStartsVoiceInput: Bool = false,

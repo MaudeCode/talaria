@@ -84,12 +84,12 @@ final class AppIntentAskTalariaTests: XCTestCase {
         }
         let shortcuts = TalariaShortcuts.appShortcuts
         let intents = try shortcuts.map { try XCTUnwrap(intent($0)) }
-        XCTAssertEqual(shortcuts.count, 8)
+        XCTAssertEqual(shortcuts.count, 9)
         XCTAssertEqual(
             intents.map { String(describing: type(of: $0)) }.sorted(),
             ["AskTalariaIntent", "ReplyToTalariaIntent", "TalariaStatusIntent",
              "RespondToApprovalByVoiceIntent", "RespondToApprovalByVoiceIntent",
-             "NewChatIntent", "NewChatVoiceIntent", "NewChatInProfileIntent"].sorted()
+             "NewChatIntent", "NewChatVoiceIntent", "NewChatInProfileIntent", "NewChatWithTextIntent"].sorted()
         )
         XCTAssertEqual(
             intents.compactMap { ($0 as? RespondToApprovalByVoiceIntent)?.answer },

@@ -9,11 +9,17 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        await MainActor.run { AppIntentRouter.shared.pendingDeepLink = nil }
+        await MainActor.run {
+            let router = AppIntentRouter.shared
+            _ = router.takeRoute(in: router.pendingWindow)
+        }
     }
 
     override func tearDown() async throws {
-        await MainActor.run { AppIntentRouter.shared.pendingDeepLink = nil }
+        await MainActor.run {
+            let router = AppIntentRouter.shared
+            _ = router.takeRoute(in: router.pendingWindow)
+        }
         try await super.tearDown()
     }
 

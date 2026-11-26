@@ -12,6 +12,8 @@ final class RetainedChat {
     /// Freeze a new chat's mode with its creation identity, including retries and layout handoffs.
     var creationExecutionMode: ExecutionMode?
     var didStartConversation = false
+    /// A route's initial text is applied once, even when a different layout mounts the same composer.
+    var hasAppliedInitialDraft = false
     let rows = ChatTranscriptRowCache()
     /// The composer's editor, kept so a layout replacement hands its focus and selection to the next one (TAL-2565).
     let composerCaret = ComposerCaret()

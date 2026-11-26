@@ -45,9 +45,9 @@ final class WindowRoutingTests: XCTestCase {
 
         router.requestDeepLink(url)
 
-        XCTAssertNil(router.takeDeepLink(in: "A"))
-        XCTAssertEqual(router.takeDeepLink(in: "B"), url)
-        XCTAssertNil(router.takeDeepLink(in: "B"), "handled exactly once")
+        XCTAssertNil(router.takeRoute(in: "A"))
+        XCTAssertEqual(router.takeRoute(in: "B"), .deepLink(url))
+        XCTAssertNil(router.takeRoute(in: "B"), "handled exactly once")
         XCTAssertEqual(broughtForward(), ["B"])
     }
 
@@ -57,8 +57,8 @@ final class WindowRoutingTests: XCTestCase {
 
         for url in [TalariaDeepLink.newChatURL, TalariaDeepLink.sessionURL(sessionID: "s2")] {
             router.requestDeepLink(url)
-            XCTAssertNil(router.takeDeepLink(in: "B"))
-            XCTAssertEqual(router.takeDeepLink(in: "A"), url)
+            XCTAssertNil(router.takeRoute(in: "B"))
+            XCTAssertEqual(router.takeRoute(in: "A"), url.map(AppIntentRouter.Route.deepLink))
         }
         XCTAssertEqual(broughtForward(), [])
     }
@@ -69,7 +69,7 @@ final class WindowRoutingTests: XCTestCase {
 
         for url in [TalariaDeepLink.newChatURL, TalariaDeepLink.sessionURL(sessionID: "s1"), TalariaDeepLink.sessionURL(sessionID: "s2")] {
             router.requestDeepLink(url)
-            XCTAssertEqual(router.takeDeepLink(in: "A"), url)
+            XCTAssertEqual(router.takeRoute(in: "A"), url.map(AppIntentRouter.Route.deepLink))
         }
         XCTAssertEqual(broughtForward(), [])
     }
@@ -79,14 +79,14 @@ final class WindowRoutingTests: XCTestCase {
         let (router, _) = router(windows: ["A", "B"])
         let url = try XCTUnwrap(TalariaDeepLink.sessionURL(sessionID: "s1"))
         router.requestDeepLink(url)
-        XCTAssertNil(router.takeDeepLink(in: "A"))
+        XCTAssertNil(router.takeRoute(in: "A"))
         nonisolated(unsafe) var woke = false
         withObservationTracking { _ = router.pendingWindow } onChange: { woke = true }
 
         router.windowDidClose("B")
 
         XCTAssertTrue(woke, "A already passed on the link, so the handover must wake it")
-        XCTAssertEqual(router.takeDeepLink(in: "A"), url)
+        XCTAssertEqual(router.takeRoute(in: "A"), .deepLink(url))
     }
 
     func testSelectingAChatAnotherWindowShowsBringsThatWindowForward() throws {

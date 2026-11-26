@@ -64,7 +64,7 @@ struct ContentView: View {
             && pendingDeepLinkedSessionID == nil && pendingDestination == nil
             && pendingBotChat == nil && !botChatServerUnavailable
             && !opensProviderQuotaWidgetSettings && pendingNewChatRequest == nil && pendingAddServer == nil
-            && intentRouter.pendingDeepLink == nil
+            && intentRouter.pendingRoute == nil
             && !appLock.isLocked && appLock.queuedDeepLinks.isEmpty
     }
 
@@ -86,28 +86,28 @@ struct ContentView: View {
             // TAL-2388: the router names the one window that handles the URL, which may be another one.
             .onOpenURL { url in
                 intentRouter.requestDeepLink(url)
-                drainPendingIntentDeepLink()
+                drainPendingIntentRoute()
             }
             .background(WindowSceneReader { sceneID = $0 })
-            .onChange(of: sceneID) { drainPendingIntentDeepLink() }
+            .onChange(of: sceneID) { drainPendingIntentRoute() }
             .task {
                 // Cold launch: an App Intent may have queued a deep link before this
                 // view appeared (e.g. Action button "New Chat"). Drain it now (#337).
-                drainPendingIntentDeepLink()
+                drainPendingIntentRoute()
             }
-            .onChange(of: intentRouter.pendingDeepLink) {
-                // Warm launch: the intent set the deep link after the view appeared.
-                drainPendingIntentDeepLink()
+            .onChange(of: intentRouter.pendingRoute) {
+                drainPendingIntentRoute()
             }
             // TAL-2388: a link handed over from a closed window.
-            .onChange(of: intentRouter.pendingWindow) { drainPendingIntentDeepLink() }
+            .onChange(of: intentRouter.pendingWindow) { drainPendingIntentRoute() }
             .onChange(of: appLock.isLocked) {
                 guard !appLock.isLocked else { return }
+                drainPendingIntentRoute()
                 // ponytail: one pending slot, so of several links queued behind the lock for other windows only the
                 // last reaches its window; a queue in the router if that ever matters.
                 for url in appLock.takeQueuedDeepLinks() {
                     intentRouter.requestDeepLink(url)
-                    drainPendingIntentDeepLink()
+                    drainPendingIntentRoute()
                 }
                 Task { await importSharedDraftsUnlessLocked() }
             }
@@ -115,7 +115,7 @@ struct ContentView: View {
             .onChange(of: scenePhase, initial: true) {
                 sharedImports.windowDidChange(window, isInForeground: scenePhase != .background)
                 // A window brought forward for its event takes it once it is back (TAL-2388).
-                drainPendingIntentDeepLink()
+                drainPendingIntentRoute()
             }
             .onDisappear { sharedImports.windowDidChange(window, isInForeground: false) }
             .environment(\.newChatDraftWindow, newChatDraftWindow)
@@ -185,8 +185,9 @@ struct ContentView: View {
     }
 
     private var hasQueuedBotChat: Bool {
-        !appLock.isLocked && (intentRouter.pendingWindow == nil || intentRouter.pendingWindow == sceneID)
-            && intentRouter.pendingDeepLink.flatMap(TalariaDeepLink.botChat(from:)) != nil
+        guard !appLock.isLocked, intentRouter.pendingWindow == nil || intentRouter.pendingWindow == sceneID,
+              case .deepLink(let url)? = intentRouter.pendingRoute else { return false }
+        return TalariaDeepLink.botChat(from: url) != nil
     }
 
     /// Every external route enters here, so a locked app holds it until unlock.
@@ -305,11 +306,14 @@ struct ContentView: View {
         Task { await sharedImports.importIfAvailable() }
     }
 
-    /// Routes a deep link queued by an App Intent through the same `handleOpenURL` parser
-    /// used for external URLs, then clears it so it routes exactly once (#337), in the one window it belongs to (TAL-2388).
-    private func drainPendingIntentDeepLink() {
-        guard let url = intentRouter.takeDeepLink(in: sceneID) else { return }
-        handleOpenURL(url)
+    private func drainPendingIntentRoute() {
+        // Keep Shortcut text in the router while locked. The lock's deep-link queue holds URLs only.
+        if appLock.isLocked, case .newChat? = intentRouter.pendingRoute { return }
+        switch intentRouter.takeRoute(in: sceneID) {
+        case .deepLink(let url): handleOpenURL(url)
+        case .newChat(let request): pendingNewChatRequest = request
+        case nil: break
+        }
     }
 }
 

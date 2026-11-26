@@ -1538,6 +1538,24 @@ final class SessionListHostedTests: XCTestCase {
         }
     }
 
+    func testNewChatRequestOpensAnUnsentDraftInTheChosenProfile() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList())
+        let draft = "  Review this from Shortcuts.\n  "
+        fixture.requestedNewChat = NewChatRequest(profileName: "fixture-work", initialDraft: draft)
+
+        let loaded = await awaitCondition { self.composerDraftText(in: window) == draft }
+        XCTAssertTrue(loaded, "The composer must show the exact unsent Shortcut text")
+        let profile = await awaitElement(in: window) {
+            $0.accessibilityLabel == "Choose profile" && $0.accessibilityValue == "Research Bot"
+        }
+        XCTAssertNotNil(profile, "The composer must show the selected profile")
+        let paths = UITestFixtureURLProtocol.answeredPaths.withLock { $0 }
+        XCTAssertFalse(paths.contains("/api/session/new"))
+        XCTAssertFalse(paths.contains("/api/chat/start"))
+        attachHostedScreenshot(window, name: "shortcut-draft-unsent")
+    }
+
     /// A New Chat whose session fails to start says so in an error notice above the composer, and Send starts it
     /// again with the restored prompt (TAL-1543).
     func testNewChatReportsAFailedStartInANoticeAndSendRetries() async throws {

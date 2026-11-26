@@ -250,7 +250,7 @@ struct SessionListView: View {
             || pendingBotChat.wrappedValue != nil || hasQueuedBotChat
             || requestedNewChat.wrappedValue != nil
             || opensProviderQuotaWidgetSettings.wrappedValue || hasWaitingSharedImport
-            || AppIntentRouter.shared.pendingDeepLink != nil
+            || AppIntentRouter.shared.pendingRoute != nil
         if let session = navigation.sessionToRestore(
             from: list.sessions,
             allowsAutomaticRestore: !hasExplicitRoute,
@@ -2436,7 +2436,7 @@ struct SessionListView: View {
 
         openNewChat(
             PendingNewChatRoute(
-                initialDraft: draft,
+                initialDraft: draft.isEmpty ? nil : draft,
                 initialAttachments: sharedImport.attachments
             )
         )
@@ -2510,6 +2510,7 @@ struct SessionListView: View {
         requestedNewChat = nil
         openNewChat(
             PendingNewChatRoute(
+                initialDraft: request.initialDraft,
                 autoStartsVoiceInput: request.autoStartsVoiceInput,
                 profileName: request.profileName,
                 providerID: request.providerID

@@ -12,11 +12,17 @@ final class AppIntentNewChatTests: XCTestCase {
     // or a thrown error mid-test — so router state can't leak between tests.
     override func setUp() async throws {
         try await super.setUp()
-        await MainActor.run { AppIntentRouter.shared.pendingDeepLink = nil }
+        await MainActor.run {
+            let router = AppIntentRouter.shared
+            _ = router.takeRoute(in: router.pendingWindow)
+        }
     }
 
     override func tearDown() async throws {
-        await MainActor.run { AppIntentRouter.shared.pendingDeepLink = nil }
+        await MainActor.run {
+            let router = AppIntentRouter.shared
+            _ = router.takeRoute(in: router.pendingWindow)
+        }
         try await super.tearDown()
     }
 
@@ -55,7 +61,7 @@ final class AppIntentNewChatTests: XCTestCase {
     func testRouterRecordsDeepLink() {
         let router = AppIntentRouter.shared
         router.requestDeepLink(TalariaDeepLink.newChatURL)
-        XCTAssertEqual(router.pendingDeepLink, TalariaDeepLink.newChatURL)
+        XCTAssertEqual(router.pendingRoute, TalariaDeepLink.newChatURL.map(AppIntentRouter.Route.deepLink))
     }
 
     @MainActor
@@ -63,7 +69,7 @@ final class AppIntentNewChatTests: XCTestCase {
         let router = AppIntentRouter.shared
         router.requestDeepLink(TalariaDeepLink.newChatURL)
         router.requestDeepLink(nil)
-        XCTAssertEqual(router.pendingDeepLink, TalariaDeepLink.newChatURL)
+        XCTAssertEqual(router.pendingRoute, TalariaDeepLink.newChatURL.map(AppIntentRouter.Route.deepLink))
     }
 
     // MARK: - New Chat with Voice (issue #338)

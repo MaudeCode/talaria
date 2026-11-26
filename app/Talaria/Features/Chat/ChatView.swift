@@ -177,6 +177,7 @@ struct ChatView: View {
     /// The row a taken-over transcript reopens at, when its reader had scrolled away from the latest message.
     @State private var restoredReadingRowID: String?
 
+    private let hasInitialDraft: Bool
     @State private var draftMessageStorage = ""
     @State private var draftWriteRevision = 0
     @State private var draftRevision = 0
@@ -312,7 +313,7 @@ struct ChatView: View {
         session: SessionSummary,
         server: URL,
         onAPIError: @escaping (Error) -> Void,
-        initialDraft: String = "",
+        initialDraft: String? = nil,
         initialAttachments: [SharedAttachmentImport] = [],
         loadsInitialMessages: Bool = true,
         autoStartsVoiceInput: Bool = false,
@@ -348,7 +349,9 @@ struct ChatView: View {
         self.makePrimary = makePrimary
         self.closeSecondary = closeSecondary
         self.paneUsesFoldRegions = paneUsesFoldRegions
-        _draftMessageStorage = State(initialValue: initialDraft)
+        let unappliedDraft = retained?.hasAppliedInitialDraft == true ? nil : initialDraft
+        hasInitialDraft = unappliedDraft != nil
+        _draftMessageStorage = State(initialValue: unappliedDraft ?? "")
         _initialAttachments = State(initialValue: initialAttachments)
         let retained = retained ?? RetainedChat(viewModel: viewModel ?? Self.makeViewModel(
             session: session,
@@ -3386,14 +3389,14 @@ struct ChatView: View {
         let persistedDraft = await draftStore.draft(for: draftKey)
         guard !Task.isCancelled else { return }
 
+        let appliesInitialDraft = hasInitialDraft && retained?.hasAppliedInitialDraft != true
+        if appliesInitialDraft { retained?.hasAppliedInitialDraft = true }
         // An edit blocks stale text restoration, but attachment hydration must still finish.
         if draftMessage == textBeforeHydration {
-            if textBeforeHydration.isEmpty {
-                if let persistedDraft, !persistedDraft.text.isEmpty {
-                    draftMessage = persistedDraft.text
-                }
-            } else {
+            if appliesInitialDraft {
                 writeComposerDraft(textBeforeHydration)
+            } else if let persistedDraft {
+                draftMessage = persistedDraft.text
             }
         }
         didHydrateDraft = true

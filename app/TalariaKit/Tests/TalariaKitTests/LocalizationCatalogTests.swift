@@ -429,7 +429,8 @@ final class LocalizationCatalogTests: XCTestCase {
             "Start a voice chat in ${applicationName}",
             "New ${profile} chat in ${applicationName}",
             "Start a new ${profile} chat in ${applicationName}",
-            "New chat in ${profile} on ${applicationName}"
+            "New chat in ${profile} on ${applicationName}",
+            "New chat with text in ${applicationName}"
         ]
 
         XCTAssertEqual(Set(strings.keys), Set(expectedPhrases))

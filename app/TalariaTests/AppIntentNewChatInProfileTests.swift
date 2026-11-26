@@ -8,11 +8,17 @@ import WidgetKit
 final class AppIntentNewChatInProfileTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
-        await MainActor.run { AppIntentRouter.shared.pendingDeepLink = nil }
+        await MainActor.run {
+            let router = AppIntentRouter.shared
+            _ = router.takeRoute(in: router.pendingWindow)
+        }
     }
 
     override func tearDown() async throws {
-        await MainActor.run { AppIntentRouter.shared.pendingDeepLink = nil }
+        await MainActor.run {
+            let router = AppIntentRouter.shared
+            _ = router.takeRoute(in: router.pendingWindow)
+        }
         try await super.tearDown()
     }
 
@@ -44,8 +50,8 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
         intent.profile = ProfileEntity(id: "dev", name: "dev", subtitle: nil)
         _ = try await intent.perform()
         XCTAssertEqual(
-            AppIntentRouter.shared.pendingDeepLink,
-            TalariaDeepLink.newChatInProfileURL(profileName: "dev")
+            AppIntentRouter.shared.pendingRoute,
+            TalariaDeepLink.newChatInProfileURL(profileName: "dev").map(AppIntentRouter.Route.deepLink)
         )
     }
 
