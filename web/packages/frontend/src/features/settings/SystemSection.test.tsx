@@ -1,3 +1,4 @@
+import type { AgentBackupStatus, AgentRestoreStatus } from '@maudecode/talaria-web-contracts'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,6 +17,14 @@ vi.mock('../../api/endpoints', () => ({
   restartAgent: vi.fn(), shutdownServer: vi.fn(), passkeyRegisterOptions: vi.fn(), passkeyRegister: vi.fn(), passkeyDelete: vi.fn(),
   fetchSettings: vi.fn(() => Promise.resolve(settingsState)),
   fetchSystemHealth: vi.fn(() => Promise.resolve({ status: 'ok', display_state: 'ok', display_reason: null })),
+  fetchAgentBackup: vi.fn(() => Promise.resolve({
+    scope: 'agent_home', available: false, unavailable_reason: 'agent_unavailable',
+    server: 'fixture.invalid', profile: 'default', retention_seconds: 3600, job: null,
+  } satisfies AgentBackupStatus)),
+  uploadAgentRestore: vi.fn(), confirmAgentRestore: vi.fn(),
+  fetchAgentRestore: vi.fn(() => Promise.resolve({
+    available: false, can_upload: false, server: 'fixture.invalid', profile: 'default', job: null,
+  } satisfies AgentRestoreStatus)),
   fetchAgentHealth: vi.fn(() => Promise.resolve({ alive: true, display_state: 'ok', display_reason: null })),
   fetchUpdatesCheck: vi.fn(() => Promise.resolve({ cached: true, webui: { behind: 0, state: 'up_to_date', can_apply: false, installed_unverified: false, manual_link: false, target_version: null, summary_available: false }, agent: { behind: 0, state: 'up_to_date', can_apply: false, installed_unverified: false, manual_link: false, target_version: null } })),
   checkUpdatesNow: vi.fn(),
