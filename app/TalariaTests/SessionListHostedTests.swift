@@ -1124,6 +1124,44 @@ final class SessionListHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "bot-chat-unavailable")
     }
 
+    func testBotChatWidgetLinkWaitsForTheSidebarProfileSwitch() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.botChatArgument, UITestFixtureEnvironment.forkSessionArgument,
+                                      UITestFixtureEnvironment.holdBotChatProfileSwitchArgument], for: self)
+        let server = UITestFixtureEnvironment.serverURL
+        let model = SessionListViewModel(server: server, client: fixture.client)
+        let window = try hostWindow(fixture.sessionList(viewModel: model))
+        let profileLoaded = await awaitCondition { model.profileOptions.contains { $0.name == "fixture-code" } }
+        XCTAssertTrue(profileLoaded, "The sidebar must load the profile it will switch to")
+        let codingBot = try XCTUnwrap(model.profileOptions.first { $0.name == "fixture-code" })
+        let sidebarSwitchTask = Task { await model.switchActiveProfile(codingBot) }
+        defer { sidebarSwitchTask.cancel() }
+        func holdsSwitch(to name: String) -> Bool {
+            UITestFixtureHold.shared.pendingRequests.contains {
+                $0.url?.path == "/api/profile/switch" && UITestFixtureURLProtocol.requestJSON($0)["name"] as? String == name
+            }
+        }
+        let sidebarSwitch = await awaitCondition { holdsSwitch(to: "fixture-code") }
+        XCTAssertTrue(sidebarSwitch, "The sidebar must start its profile switch")
+        guard sidebarSwitch else { return }
+
+        fixture.pendingBotChat = try XCTUnwrap(TalariaDeepLink.botChat(from: botChatFixtureLink()))
+        let waiting = await awaitElement(in: window, label: "Loading messages")
+        XCTAssertNotNil(waiting, "The widget route must stay pending while the sidebar switch is held")
+        XCTAssertFalse(holdsSwitch(to: "fixture-work"))
+        if waiting != nil { attachHostedScreenshot(window, name: "bot-chat-waits-for-profile-switch") }
+        fixture.releaseHeldLoads()
+        let switched = await sidebarSwitchTask.value
+        XCTAssertTrue(switched)
+
+        let widgetSwitch = await awaitCondition { holdsSwitch(to: "fixture-work") }
+        XCTAssertTrue(widgetSwitch, "The widget must switch profiles after the sidebar switch completes")
+        guard widgetSwitch else { return }
+        XCTAssertEqual(UITestFixtureURLProtocol.activeFixtureProfile, "fixture-code")
+        fixture.releaseHeldLoads()
+        _ = try await requireElement(in: window, label: "Fork fixture reply")
+        attachHostedScreenshot(window, name: "bot-chat-after-profile-switch")
+    }
+
     private func botChatFixtureLink() throws -> URL {
         var link = URLComponents()
         link.scheme = TalariaDeepLink.newChatURL?.scheme

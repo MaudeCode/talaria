@@ -572,7 +572,7 @@ struct SessionListView: View {
             .onChange(of: pendingDeepLinkedSessionID) {
                 Task { await openPendingDeepLinkedSessionIfNeeded() }
             }
-            .onChange(of: pendingBotChat) {
+            .onChange(of: readyBotChat) {
                 Task { await openPendingBotChatIfNeeded() }
             }
             .onChange(of: pendingDestination) {
@@ -2457,11 +2457,16 @@ struct SessionListView: View {
         }
     }
 
+    /// Keep the widget route pending until the sidebar's profile switch finishes.
+    private var readyBotChat: TalariaDeepLink.BotChat? {
+        viewModel.isSwitchingActiveProfile ? nil : pendingBotChat
+    }
+
     private func openPendingBotChatIfNeeded() async {
-        guard !openingBotChat, pendingBotChat?.publisherID == server.absoluteString else { return }
+        guard !openingBotChat, readyBotChat?.publisherID == server.absoluteString else { return }
         openingBotChat = true
         defer { openingBotChat = false }
-        while !Task.isCancelled, let request = pendingBotChat, request.publisherID == server.absoluteString {
+        while !Task.isCancelled, let request = readyBotChat, request.publisherID == server.absoluteString {
             let openRevision = navigationState.openRevision
             let tip = await viewModel.switchToBotChat(profileName: request.profileName)
             guard !Task.isCancelled, case let .loggedIn(activeServer) = authManager.state, activeServer == server else { return }
