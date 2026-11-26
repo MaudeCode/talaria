@@ -417,6 +417,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     /// Server-redacted excerpt around the content hit; only `/api/sessions/search`
     /// rows with `match_type == "content"` carry it, and older servers omit it.
     public let matchPreview: String?
+    /// The content hit's absolute index in the server's message pagination space.
+    public let matchMessageIdx: Int?
     /// The approval or clarify prompt waiting on the user (TAL-1460); nil when none waits or the server is older.
     public let attention: SessionAttention?
 
@@ -465,6 +467,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         canDuplicate: Bool? = nil,
         matchType: String? = nil,
         matchPreview: String? = nil,
+        matchMessageIdx: Int? = nil,
         attention: SessionAttention? = nil
     ) {
         self.sessionId = sessionId
@@ -511,6 +514,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         self.canDuplicate = canDuplicate
         self.matchType = matchType
         self.matchPreview = matchPreview
+        self.matchMessageIdx = matchMessageIdx
         self.attention = attention
     }
 
@@ -523,7 +527,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         case activeStreamId, isStreaming, isCliSession
         case userMessageCount, hasPendingUserMessage, pendingStartedAt, worktreePath
         case sourceTag, rawSource, sessionSource, sourceLabel, sourceKind
-        case parentSessionId, relationshipType, readOnly, canBranch, accessProvisional, canPin, canArchive, canDelete, canDuplicate, matchType, matchPreview, attention
+        case parentSessionId, relationshipType, readOnly, canBranch, accessProvisional, canPin, canArchive, canDelete, canDuplicate, matchType, matchPreview, matchMessageIdx, attention
     }
 
     /// Lossy field by field, like `SessionDetail` and `ProjectSummary` already
@@ -585,6 +589,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         canDuplicate = container.decodeLossyBoolIfPresent(forKey: .canDuplicate)
         matchType = container.decodeLossyStringIfPresent(forKey: .matchType)
         matchPreview = container.decodeLossyStringIfPresent(forKey: .matchPreview)
+        matchMessageIdx = try? container.decodeIfPresent(Int.self, forKey: .matchMessageIdx)
         attention = try? container.decodeIfPresent(SessionAttention.self, forKey: .attention)
     }
 
@@ -660,6 +665,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         canDuplicate = detail.canDuplicate
         matchType = nil
         matchPreview = nil
+        matchMessageIdx = nil
         // The full session carries no `attention`; the next list load brings it back.
         attention = nil
     }
@@ -712,6 +718,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
             canDuplicate: canDuplicate,
             matchType: matchType,
             matchPreview: matchPreview,
+            matchMessageIdx: matchMessageIdx,
             attention: attention
         )
     }
@@ -777,6 +784,7 @@ extension SessionSummary {
             canDuplicate: canDuplicate ?? row.canDuplicate,
             matchType: matchType ?? row.matchType,
             matchPreview: matchPreview ?? row.matchPreview,
+            matchMessageIdx: matchMessageIdx ?? row.matchMessageIdx,
             attention: attention ?? row.attention
         )
     }

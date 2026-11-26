@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Tap a chat search result to jump to the matching message.",
+      "highlight": false,
+      "announcement": {
+        "title": "Jump to a search match",
+        "description": "Open a chat at the message you found in search.",
+        "icon": "search"
+      }
+    }
+  ]
+}

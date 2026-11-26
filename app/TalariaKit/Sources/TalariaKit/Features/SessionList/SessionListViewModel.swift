@@ -348,6 +348,15 @@ public final class SessionListViewModel {
         return remoteContentSearchPreviews[sessionID]
     }
 
+    public func contentMatchMessageIndex(for session: SessionSummary, searchText: String, selectedProjectID: String?) -> Int? {
+        let query = Self.normalizedSearchQuery(searchText)
+        guard !query.isEmpty, activeRemoteSearch == RemoteSearchScope(query: query, projectID: selectedProjectID),
+              let sessionID = session.sessionId
+        else { return nil }
+        // The displayed row can be the loaded list copy, with fresher metadata and no search fields.
+        return remoteSearchResults?.first { $0.sessionId == sessionID && $0.matchType == "content" }?.matchMessageIdx
+    }
+
     public func scheduledSessionGroups(
         searchText: String,
         selectedProjectID: String?,

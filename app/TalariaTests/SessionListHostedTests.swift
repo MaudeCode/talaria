@@ -4,6 +4,107 @@ import XCTest
 @testable import Talaria
 @testable import TalariaKit
 
+@MainActor
+final class SessionSearchLandingHostedTests: XCTestCase {
+    func testContentHitOpensAtTheOlderMatchingMessage() async throws {
+        let window = try await openSearchHit("history prompt 1874")
+        try await requireMatchedMessage(in: window)
+        attachHostedScreenshot(window, name: "content-search-landing")
+        _ = try await requireElement(in: window, label: "Scroll to latest message")
+    }
+
+    func testTitleHitOpensAtTheLatestMessage() async throws {
+        try await assertOpensAtLatest("ui fixture session")
+    }
+
+    func testMetadataHitOpensAtTheLatestMessage() async throws {
+        try await assertOpensAtLatest("metadata hit")
+    }
+
+    func testContentHitWithoutAnIndexOpensAtTheLatestMessage() async throws {
+        try await assertOpensAtLatest("old server hit")
+    }
+
+    func testOutOfRangeHitOpensAtTheLatestMessage() async throws {
+        try await assertOpensAtLatest("stale hit")
+    }
+
+    func testSelectingAnotherChatCancelsThePendingLanding() async throws {
+        let window = try await openSearchHit("history prompt 1874", scenario: [UITestFixtureEnvironment.holdHistoryPageArgument])
+        let held = await awaitCondition { UITestFixtureHold.shared.pendingCount == 1 }
+        XCTAssertTrue(held, "Opening the search hit must start an older history read")
+        try await showNormalList(in: window)
+        let other = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture Session 01") == true }
+        XCTAssertTrue(HostedAccessibility.activate(other))
+        _ = try await requireElement(in: window, label: "Fixture Session 01 reply")
+        let cancelled = await awaitCondition { !UITestFixtureURLProtocol.hasOpenHistoryPage }
+        XCTAssertTrue(cancelled, "Switching chats must cancel the old transcript's pending page")
+    }
+
+    func testReopeningTheSameChatFromTheNormalListOpensAtTheLatestMessage() async throws {
+        let window = try await openSearchHit("history prompt 1874")
+        try await requireMatchedMessage(in: window)
+        try await showNormalList(in: window)
+        let row = try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        }
+        XCTAssertTrue(HostedAccessibility.activate(row))
+        try await requireLatestMessage(in: window)
+    }
+
+    private func assertOpensAtLatest(_ query: String) async throws {
+        let window = try await openSearchHit(query)
+        try await requireLatestMessage(in: window)
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Could Not Load Messages"))
+    }
+
+    private func requireMatchedMessage(in window: UIWindow) async throws {
+        _ = try await requireElement(in: window, "Opening the content hit must page older history and visibly land at History prompt 1874.") {
+            $0.accessibilityLabel?.hasPrefix("History prompt 1874.") == true
+                && window.bounds.contains(CGPoint(x: $0.accessibilityFrame.midX, y: $0.accessibilityFrame.midY))
+        }
+    }
+
+    private func requireLatestMessage(in window: UIWindow) async throws {
+        _ = try await requireElement(in: window, "The latest reply must be visible") {
+            $0.accessibilityLabel?.hasPrefix("History answer 1999.") == true
+                && window.bounds.contains(CGPoint(x: $0.accessibilityFrame.midX, y: $0.accessibilityFrame.midY))
+        }
+    }
+
+    private func showNormalList(in window: UIWindow) async throws {
+        try await openSidebar(in: window)
+        let close = try await requireElement(in: window, label: "Close search")
+        XCTAssertTrue(HostedAccessibility.activate(close))
+        _ = try await requireElement(in: window, label: "Search")
+    }
+
+    private func openSearchHit(_ query: String, scenario: [String] = []) async throws -> UIWindow {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.historyPagingArgument] + scenario, for: self)
+        let window = try hostWindow(fixture.sessionList(), size: HostedSize.phone) { $0.horizontalSizeClass = .compact }
+        try await openSidebar(in: window)
+        let search = try await requireElement(in: window, label: "Search")
+        XCTAssertTrue(HostedAccessibility.activate(search))
+        let focused = await awaitCondition { window.firstView(ofType: UITextField.self) { $0.isFirstResponder } != nil }
+        XCTAssertTrue(focused, "The sidebar's search field must take focus")
+        let field = try XCTUnwrap(window.firstView(ofType: UITextField.self) { $0.isFirstResponder })
+        field.insertText(query)
+        let answered = await awaitCondition {
+            UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/sessions/search") }
+        }
+        XCTAssertTrue(answered, "The sidebar must search the fixture server")
+        let hit = try await requireElement(in: window, "Missing search hit for \(query)") {
+            guard let label = $0.accessibilityLabel,
+                  label.hasPrefix(UITestFixtureURLProtocol.sessionTitle) else { return false }
+            return !["history prompt 1874", "stale hit", "old server hit"].contains(query)
+                || label.localizedCaseInsensitiveContains(query)
+        }
+        attachHostedScreenshot(window, name: "session-search-result")
+        XCTAssertTrue(HostedAccessibility.activate(hit))
+        return window
+    }
+}
+
 /// Overflow priorities must reach real bar items, not just an unused policy table (TAL-478).
 @MainActor
 final class ToolbarPriorityHostedTests: XCTestCase {
@@ -3674,7 +3775,7 @@ private struct ScenePhasedSessionList: View {
 @MainActor
 private extension XCTestCase {
     var fixtureRowActions: SessionListRowActions {
-        SessionListRowActions(retryLoad: {}, open: { _ in }, togglePinned: { _ in }, archive: { _ in }, delete: { _ in }, rename: { _ in }, duplicate: { _ in }, move: { _, _ in }, createProject: { _ in }, refreshProjects: {}, export: { _, _ in }, stopRun: { _ in })
+        SessionListRowActions(retryLoad: {}, open: { _, _ in }, togglePinned: { _ in }, archive: { _ in }, delete: { _ in }, rename: { _ in }, duplicate: { _ in }, move: { _, _ in }, createProject: { _ in }, refreshProjects: {}, export: { _, _ in }, stopRun: { _ in })
     }
 
     func titleMenu(in window: UIWindow) -> UIMenu? {

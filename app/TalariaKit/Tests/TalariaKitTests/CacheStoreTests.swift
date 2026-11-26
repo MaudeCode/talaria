@@ -121,6 +121,15 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertNil(legacy.recentMessagesOffset)
     }
 
+    func testSearchHitIndexRoundTripsThroughTheSessionCache() throws {
+        let context = try makeContext()
+        let server = URL(string: "https://example.test")!
+        let hit = SessionSummary(sessionId: "cached-hit", matchMessageIdx: 184)
+        try CacheStore.cacheSessions([hit], serverURL: server, in: context)
+        let rows = try CacheStore.cachedSessions(serverURL: server, in: ModelContext(context.container))
+        XCTAssertEqual(try XCTUnwrap(rows.first).matchMessageIdx, 184)
+    }
+
     func testCacheSessionsWritesVisibleSessionsAndRemovesStaleEntries() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!

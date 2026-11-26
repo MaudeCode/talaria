@@ -166,7 +166,7 @@ struct SessionInteractiveRow: View, Equatable {
             if state.isSelectingSessions {
                 viewModel.toggleSelection(session)
             } else {
-                actions.open(session)
+                actions.open(session, searchText)
             }
         } label: {
             HStack(spacing: 12) {

@@ -17,6 +17,7 @@ struct UITestFixtureEnvironment {
     nonisolated static let historyPagingArgument = "--ui-test-history-paging"
     nonisolated static let historyTurnBoundaryArgument = "--ui-test-history-turn-boundary"
     nonisolated static let historyLatencyArgument = "--ui-test-history-latency"
+    nonisolated static let holdHistoryPageArgument = "--ui-test-hold-history-page"
     nonisolated static let largeHistoryWindowArgument = "--ui-test-large-history-window"
     /// Serves a long pasted prompt the server marked `_collapsible` (TAL-452).
     nonisolated static let longPromptArgument = "--ui-test-long-prompt"
@@ -589,6 +590,14 @@ final class UITestFixtureURLProtocol: URLProtocol {
     /// Loads admitted under the current generation that have not ended (TAL-1097).
     private static let openLoads = OSAllocatedUnfairLock<[ObjectIdentifier: UITestFixtureURLProtocol]>(uncheckedState: [:])
     static var openLoadCount: Int { openLoads.withLockUnchecked { $0.count } }
+    static var hasOpenHistoryPage: Bool {
+        openLoads.withLockUnchecked { $0.values.contains { $0.request.url.map(isHistoryPage) == true } }
+    }
+
+    private static func isHistoryPage(_ url: URL) -> Bool {
+        url.path == "/api/session" &&
+            URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "msg_before" } == true
+    }
 
     /// Stops admitting the outgoing hosted test's loads and fails every one still open with a cancellation, held loads
     /// and streams included: a held load answers only a release and a stream outlives its test, so the work awaiting
@@ -683,8 +692,10 @@ final class UITestFixtureURLProtocol: URLProtocol {
             && URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems.map {
                 $0.contains(URLQueryItem(name: "session_id", value: Self.forkSessionID)) && !$0.contains(URLQueryItem(name: "messages", value: "0"))
             } == true
+        let isHistoryPage = Self.isHistoryPage(url)
+        let holdsHistoryPage = isHistoryPage && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdHistoryPageArgument)
         if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel || holdsPanel || holdsSessionRemoval
-            || holdsAnchorScene || holdsDeepLinkedFork || holdsForkTranscript || holdsRelayRevocation || holdsBotChatProfileSwitch {
+            || holdsAnchorScene || holdsDeepLinkedFork || holdsForkTranscript || holdsRelayRevocation || holdsBotChatProfileSwitch || holdsHistoryPage {
             UITestFixtureHold.shared.hold(request: request) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -692,9 +703,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return
         }
 
-        if url.path == "/api/session",
-           ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyLatencyArgument),
-           URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "msg_before" }) == true {
+        if isHistoryPage, ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyLatencyArgument) {
             let stub = OSAllocatedUnfairLock(uncheckedState: self)
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(150)) {
                 let stub = stub.withLockUnchecked { $0 }
@@ -902,11 +911,21 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 ("cron", "show_cron_sessions"), ("webhook", "show_webhook_sessions")
             ].filter { value($0.1) == "0" }.map(\.0)
             let list = (try? JSONSerialization.jsonObject(with: sessionsResponse())) as? [String: Any]
-            let matches = (list?["sessions"] as? [[String: Any]] ?? []).filter { row in
+            let matches = (list?["sessions"] as? [[String: Any]] ?? []).compactMap { row -> [String: Any]? in
                 let rowProject = row["project_id"] as? String
-                if let projectID, projectID == "none" ? rowProject != nil : rowProject != projectID { return false }
-                if let kind = row["source_kind"] as? String, hiddenKinds.contains(kind) { return false }
-                return query.isEmpty || (row["title"] as? String)?.localizedCaseInsensitiveContains(query) == true
+                if let projectID, projectID == "none" ? rowProject != nil : rowProject != projectID { return nil }
+                if let kind = row["source_kind"] as? String, hiddenKinds.contains(kind) { return nil }
+                if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyPagingArgument),
+                   row["session_id"] as? String == sessionID,
+                   ["history prompt 1874", "old server hit", "stale hit", "metadata hit"].contains(query) {
+                    var hit = row
+                    hit["match_type"] = query == "metadata hit" ? "metadata" : "content"
+                    if query == "history prompt 1874" { hit["match_message_idx"] = 1_874 }
+                    if query == "stale hit" { hit["match_message_idx"] = 2_050 }
+                    hit["match_preview"] = query == "history prompt 1874" ? "History prompt 1874." : query
+                    return hit
+                }
+                return query.isEmpty || (row["title"] as? String)?.localizedCaseInsensitiveContains(query) == true ? row : nil
             }
             return json(["sessions": matches, "query": query, "count": matches.count, "sidebar_filtered": true])
         case "/api/sessions/bulk":

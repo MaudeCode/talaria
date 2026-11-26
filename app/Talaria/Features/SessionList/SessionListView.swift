@@ -1462,9 +1462,7 @@ struct SessionListView: View {
     private func navigationDestination(_ destination: SessionNavigationDestination, rootHasAppeared: Bool = false) -> some View {
         switch destination {
         case .session(let session):
-            let retained = chats.chat(for: session, server: server) {
-                ChatView.makeViewModel(session: session, server: server, sessionListOwner: viewModel)
-            }
+            let retained = retainedChat(for: session)
             SessionChatDestination(
                 session: session, server: server, authManager: authManager,
                 draftStore: draftStore, viewModel: viewModel, context: sessionActionContext,
@@ -2137,8 +2135,12 @@ struct SessionListView: View {
             retryLoad: {
                 Task { await refreshSessionsAndActiveProfile() }
             },
-            open: { session in
-                Task { await openSession(session, in: list) }
+            open: { session, rowSearchText in
+                let isSearchHit = !rowSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let matchIndex = viewModel.contentMatchMessageIndex(
+                    for: session, searchText: rowSearchText, selectedProjectID: selectedProjectID
+                )
+                Task { await openSession(session, in: list, isSearchHit: isSearchHit, matchIndex: matchIndex) }
             },
             togglePinned: { session in
                 Task { await togglePinned(session) }
@@ -2638,17 +2640,21 @@ struct SessionListView: View {
         opener.open(target, title, window)
     }
 
-    private func openSession(_ session: SessionSummary, in list: AppSection = .chats, beside: Bool = false) async {
+    private func openSession(
+        _ session: SessionSummary, in list: AppSection = .chats, beside: Bool = false,
+        isSearchHit: Bool = false, matchIndex: Int? = nil
+    ) async {
         // TAL-2388: one chat in one window. Another window already showing it comes forward instead.
         if let id = session.sessionId,
            AppIntentRouter.shared.bringsForwardOtherWindow(showing: id, on: server, from: windowSceneID) { return }
-        await openSession(in: list, beside: beside) { session }
+        await openSession(in: list, beside: beside, isSearchHit: isSearchHit, matchIndex: matchIndex) { session }
     }
 
     /// A failed load stays on the list and surfaces through the action-error alert; a
     /// failed verification shows in the opened chat. A destination chosen meanwhile is
     /// never replaced.
     private func openSession(in list: AppSection = .chats, beside: Bool = false,
+                             isSearchHit: Bool = false, matchIndex: Int? = nil,
                              load: () async -> SessionSummary?) async {
         let trace = sessionOpenTrace.begin()
         var didOpen = false
@@ -2660,7 +2666,7 @@ struct SessionListView: View {
                 didOpen = true
                 sessionOpenTrace.resolve(trace, to: session.sessionId)
                 // Sidebar rows replace the root; section-owned lists push a chat above their list.
-                selectSession(session, in: list, beside: beside)
+                selectSession(session, in: list, beside: beside, isSearchHit: isSearchHit, matchIndex: matchIndex)
             },
             verify: { await viewModel.sessionToOpen(for: $0, modelContext: modelContext) }
         )
@@ -2669,7 +2675,7 @@ struct SessionListView: View {
             break
         case let .replace(session):
             sessionOpenTrace.resolve(trace, to: session.sessionId)
-            selectSession(session, in: list, beside: beside)
+            selectSession(session, in: list, beside: beside, isSearchHit: isSearchHit)
         case .failed:
             sessionOpenTrace.cancel(trace)
             guard !Task.isCancelled else { return }
@@ -2682,7 +2688,16 @@ struct SessionListView: View {
         }
     }
 
-    private func selectSession(_ session: SessionSummary, in list: AppSection = .chats, beside: Bool = false) {
+    private func retainedChat(for session: SessionSummary) -> RetainedChat {
+        chats.chat(for: session, server: server) {
+            ChatView.makeViewModel(session: session, server: server, sessionListOwner: viewModel)
+        }
+    }
+
+    private func selectSession(
+        _ session: SessionSummary, in list: AppSection = .chats, beside: Bool = false,
+        isSearchHit: Bool = false, matchIndex: Int? = nil
+    ) {
         closeAppSidebar {
             if beside {
                 sidebarChatPreview = .init()
@@ -2695,6 +2710,15 @@ struct SessionListView: View {
                 navigationState.pushSectionSession(session)
             } else {
                 navigationState.select(session)
+            }
+            if !beside {
+                let retained = retainedChat(for: session)
+                retained.searchLandingTarget = matchIndex.map { (navigationState.rootRevision, $0) }
+                retained.searchLandingRowID = nil
+                if isSearchHit {
+                    retained.readingRowID = nil
+                    retained.didPlaceUnreadRule = true
+                }
             }
         }
         if !beside { persistLastSelectedSession() }

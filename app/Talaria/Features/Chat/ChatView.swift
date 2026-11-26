@@ -177,6 +177,8 @@ struct ChatView: View {
     @State private var takesOverLiveChat: Bool
     /// The row a taken-over transcript reopens at, when its reader had scrolled away from the latest message.
     @State private var restoredReadingRowID: String?
+    @State private var isResolvingSearchLanding: Bool
+    @State private var searchLandingRowID: String?
 
     private let hasInitialDraft: Bool
     @State private var draftMessageStorage = ""
@@ -369,8 +371,10 @@ struct ChatView: View {
         _retained = State(initialValue: retained)
         _composerCaret = State(initialValue: retained.composerCaret)
         _takesOverLiveChat = State(initialValue: retained.isLive)
-        _restoredReadingRowID = State(initialValue: retained.readingRowID)
-        _followLatch = State(initialValue: ChatScrollPolicy.FollowLatch(isFollowing: retained.readingRowID == nil))
+        let readerRowID = retained.searchLandingRowID ?? retained.readingRowID
+        _restoredReadingRowID = State(initialValue: readerRowID)
+        _followLatch = State(initialValue: ChatScrollPolicy.FollowLatch(isFollowing: readerRowID == nil))
+        _isResolvingSearchLanding = State(initialValue: retained.searchLandingTarget != nil)
     }
 
     static func makeViewModel(
@@ -2431,7 +2435,9 @@ struct ChatView: View {
                 restoredReadingRowID: chat.restoredReadingRowID,
                 onReaderMoved: chat.recordReadingRow,
                 unreadFromMessageID: viewModel.unreadFromMessageID,
-                onPlaceUnreadRule: chat.placeReaderAtUnreadRule
+                onPlaceUnreadRule: chat.placeReaderAtUnreadRule,
+                isResolvingSearchLanding: chat.isResolvingSearchLanding,
+                searchLandingRowID: chat.searchLandingRowID
             )
             .environment(\.chatShowsReasoning, viewModel.showsReasoning)
             .toolResultActions(of: chat)
@@ -2760,6 +2766,8 @@ struct ChatView: View {
     private func handleInitialAppearanceTask() async {
         await hydrateDraftIfNeeded()
         guard !resumesLoadedChat else {
+            await resolveSearchLanding()
+            guard !Task.isCancelled else { return }
             traceTranscriptReady(.retained)
             // The chat is loaded and its work runs already; nothing is fetched again (TAL-1477).
             acknowledgeViewedCompletions()
@@ -2937,6 +2945,7 @@ struct ChatView: View {
         guard viewModel.hasSession else { return }
         if isInitialLoad {
             await viewModel.loadInitialMessages(modelContext: modelContext)
+            await resolveSearchLanding()
         } else if joinsLoadInFlight {
             await viewModel.refreshSession(modelContext: modelContext, isUserRefresh: isUserRefresh)
         } else {
@@ -2955,6 +2964,21 @@ struct ChatView: View {
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
+    }
+
+    private func resolveSearchLanding() async {
+        guard !Task.isCancelled, let retained, let target = retained.searchLandingTarget else { return }
+        let renderID = await viewModel.searchLandingRenderID(at: target.index, modelContext: modelContext)
+        guard !Task.isCancelled, retained.searchLandingTarget?.revision == target.revision else { return }
+        retained.searchLandingTarget = nil
+        if let renderID {
+            let rowID = ChatTranscriptView.containerID(for: renderID)
+            followLatch.isFollowing = false
+            restoredReadingRowID = rowID
+            retained.searchLandingRowID = rowID
+            searchLandingRowID = rowID
+        }
+        isResolvingSearchLanding = false
     }
 
     /// Only the first call ends anything: the launch and this window's open each end once.
@@ -4306,6 +4330,9 @@ struct ChatView: View {
 
     private func handleFollowEvent(_ event: ChatScrollPolicy.FollowEvent) {
         viewModel.handleTranscriptScroll(event)
+        if event == .userScrollBegin || event == .reset { retained?.searchLandingRowID = nil }
+        // A landing may be close enough to the latest message for a layout tick to report the bottom.
+        guard retained?.searchLandingRowID == nil else { return }
         // An explicit jump to the live edge — a send or a scroll-to-bottom tap —
         // overrides a disclosure toggle that is still settling. The suspension
         // exists to protect the position the reader just left, and they have now
@@ -4323,6 +4350,7 @@ struct ChatView: View {
             updateDisclosureSettle { $0.cancelOwedFollow() }
         } else {
             retained?.readingRowID = nil
+            retained?.searchLandingRowID = nil
         }
     }
 
@@ -4335,7 +4363,7 @@ struct ChatView: View {
 
     /// Keeps where the reader is, for the view the navigation may rebuild around it (TAL-1477).
     private func recordReadingRow(_ rowID: () -> String?) {
-        guard let retained else { return }
+        guard let retained, retained.searchLandingRowID == nil else { return }
         retained.readingRowID = followLatch.isFollowing ? nil : rowID()
     }
 

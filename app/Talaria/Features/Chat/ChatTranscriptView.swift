@@ -29,6 +29,7 @@ struct ChatTranscriptView: View {
     @State private var pagesLoadedForUnreadRule = 0
     /// This transcript scrolled to the unread rule, so its own restore of the reader yields to that scroll.
     @State private var didPlaceUnreadRuleHere = false
+    @State private var showsSearchLandingCue = true
     @State private var nativeScrollRevision = 0
     @State private var scrollDestination: (id: String, anchor: UnitPoint, animation: Animation?)?
     @State private var scrollDestinationNeedsMount = false
@@ -149,22 +150,32 @@ struct ChatTranscriptView: View {
     /// The transcript is about to move the reader to the rule's row, named by its container id, away from the latest
     /// message.
     var onPlaceUnreadRule: (String) -> Void = { _ in }
+    var isResolvingSearchLanding = false
+    var searchLandingRowID: String? = nil
 
     private var rowCache: ChatTranscriptRowCache { retainedRowCache ?? ownRowCache }
 
-    var body: some View {
-        if isLoading && messages.isEmpty && clarificationPrompt == nil {
-            ChatTranscriptLoadingSkeletonView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .bottomLeading) {
-                    // A cold open has nothing to paint yet; the check still says the run state is unconfirmed.
-                    if showsRunStateCheck {
-                        RunStatusChip(ChatActiveRunStatusPresentation(kind: .checking), agentName: assistantName)
-                            .padding()
-                            .padding(.bottom, transcriptBottomInsetHeight)
-                    }
+    private var isPlacingSearchResult: Bool {
+        searchLandingRowID != nil && (!didRestoreReadingRow || isPlacingRestoredReader)
+    }
+
+    private var loadingSkeleton: some View {
+        ChatTranscriptLoadingSkeletonView()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .bottomLeading) {
+                // A cold open has nothing to paint yet; the check still says the run state is unconfirmed.
+                if showsRunStateCheck {
+                    RunStatusChip(ChatActiveRunStatusPresentation(kind: .checking), agentName: assistantName)
+                        .padding()
+                        .padding(.bottom, transcriptBottomInsetHeight)
                 }
-                .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.chat)
+            }
+            .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.chat)
+    }
+
+    var body: some View {
+        if isResolvingSearchLanding || (isLoading && messages.isEmpty && clarificationPrompt == nil) {
+            loadingSkeleton
         } else if let errorMessage, messages.isEmpty, clarificationPrompt == nil {
             ContentUnavailableView {
                 Label("Could Not Load Messages", systemImage: "exclamationmark.triangle")
@@ -213,13 +224,20 @@ struct ChatTranscriptView: View {
                             contentWidth: contentWidth,
                             viewportFrame: viewport.frame(in: .global)
                         )
-                        .opacity(isPlacingRestoredReader ? 0 : 1)
+                        .opacity(isPlacingRestoredReader || isPlacingSearchResult ? 0 : 1)
                     }
                     .defaultScrollAnchor(initialScrollAnchor, for: .initialOffset)
                     // A follow scroll ends the initial anchor, but rows above the viewport keep measuring after it; while
                     // the reader follows the latest message, their growth keeps it in view instead of pushing it below
                     // the screen (TAL-2719).
                     .defaultScrollAnchor(isFollowingLatestContent ? .bottom : nil, for: .sizeChanges)
+                    .task(id: isPlacingSearchResult) {
+                        guard searchLandingRowID != nil, !isPlacingSearchResult else { return }
+                        do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                        withAnimation(reduceMotion ? nil : ChatMotion.quickState(reduceMotion: false)) {
+                            showsSearchLandingCue = false
+                        }
+                    }
                     .task(id: readyRevision) {
                         guard !Task.isCancelled, let revision = readyRevision, readyScrollRevision == revision,
                               revision == nativeScrollRevision,
@@ -308,6 +326,11 @@ struct ChatTranscriptView: View {
                 .frame(width: confinesToDivisionPane ? viewport.size.width : nil,
                        height: confinesToDivisionPane ? viewport.size.height : nil, alignment: .topLeading)
                 .background(Color(.systemBackground))
+                .overlay {
+                    if isPlacingSearchResult {
+                        loadingSkeleton.allowsHitTesting(false)
+                    }
+                }
                 // The registered preparation is a copy of this view: one made while following would hold the latest
                 // message through the next width change after the reader scrolled away (TAL-1052).
                 .onChange(of: isFollowingLatestContent) { registerWidthChangePreparation() }
@@ -707,6 +730,11 @@ struct ChatTranscriptView: View {
             .equatable()
 
             row
+                .background {
+                    if searchLandingRowID == Self.containerID(for: transcriptMessage.renderID) {
+                        Color.accentColor.opacity(showsSearchLandingCue ? 0.12 : 0)
+                    }
+                }
 
             if index == displayedTranscriptMessages.count - 1 { transcriptTailContent }
         }, id: Self.containerID(for: transcriptMessage.renderID))
