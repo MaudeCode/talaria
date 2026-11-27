@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Saved workspaces are preserved if an edit runs into a storage read error.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

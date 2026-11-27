@@ -210,8 +210,61 @@ describe('default workspace behind a symlink (TAL-2098)', () => {
   })
 })
 
+const post = (s: Awaited<ReturnType<typeof bootTestServer>>, path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+
+describe('workspace registry mutations', () => {
+  it('refuses to add a workspace after a registry read fails and preserves the saved entries', async () => {
+    const s = await bootTestServer()
+    try {
+      const documents = s.deps.workspaces.deps.documents
+      const root = realpathSync(s.workspace)
+      const entries = [{ path: root, name: 'Home' }, { path: join(root, 'original'), name: 'Original' }]
+      const path = join(root, 'new')
+      mkdirSync(entries[1]!.path)
+      mkdirSync(path)
+      const revision = await documents.put('workspaces', 'default.registry', entries, null)
+      const read = documents.get.bind(documents)
+      let failRead = true
+      vi.spyOn(documents, 'get').mockImplementation((namespace, key, options) => {
+        if (namespace === 'workspaces' && key === 'default.registry' && failRead) {
+          failRead = false
+          return Promise.reject(Object.assign(new Error('Cannot read workspace registry'), { code: 'EIO' }))
+        }
+        return read(namespace, key, options)
+      })
+
+      const response = await post(s, '/api/workspaces/add', { path })
+      expect({ status: response.status, registry: await read('workspaces', 'default.registry') }).toEqual({
+        status: 500,
+        registry: { value: entries, revision },
+      })
+    } finally {
+      await s.close()
+    }
+  })
+
+  it('persists the first workspace when the profile has no registry', async () => {
+    const s = await bootTestServer()
+    try {
+      const documents = s.deps.workspaces.deps.documents
+      const root = realpathSync(s.workspace)
+      const path = join(root, 'new')
+      mkdirSync(path)
+      expect(await documents.get('workspaces', 'default.registry')).toBeNull()
+
+      const response = await post(s, '/api/workspaces/add', { path })
+      expect(response.status).toBe(200)
+      expect((await documents.get('workspaces', 'default.registry'))?.value).toEqual([
+        { path: root, name: 'Home' },
+        { path, name: 'new' },
+      ])
+    } finally {
+      await s.close()
+    }
+  })
+})
+
 describe('workspace list row fields (TAL-2141)', () => {
-  const post = (s: Awaited<ReturnType<typeof bootTestServer>>, path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
   interface Entry { path: string; is_default?: boolean; exists?: boolean; display_path?: string; chat_count?: number }
 
   it('marks the symlinked default, flags a missing folder, writes home as ~ and counts chats', async () => {
