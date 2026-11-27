@@ -174,14 +174,15 @@ export function MemoryPage() {
             <div data-memory-header="">
               <SectionHeader
                 detail={mtime ? `${m.logs_updated()} ${formatDate(mtime)}` : undefined}
-                action={current?.writable && !editing ? <Button variant="ghost" disabled={!!effects['memory-compaction']} onClick={() => setDraft((d) => ({ ...d, [section]: saving[section] ?? { text: shown, revision: section === 'project_context' ? '' : data[`${section}_revision`], profile: data.profile } }))}>{m.edit()}</Button> : undefined}
+                action={current?.writable && !disabled && !editing ? <Button variant="ghost" disabled={!!effects['memory-compaction']} onClick={() => setDraft((d) => ({ ...d, [section]: saving[section] ?? { text: shown, revision: section === 'project_context' ? '' : data[`${section}_revision`], profile: data.profile } }))}>{m.edit()}</Button> : undefined}
               ><span title={path || undefined}>{name}</span></SectionHeader>
             </div>
           } />
+          {disabled && <EmptyState>{m.memory_disabled_hint()}</EmptyState>}
           {editing ? (
             <textarea
               value={text}
-              readOnly={!!effects['memory-compaction']}
+              readOnly={disabled || !!effects['memory-compaction']}
               onChange={(e) => { const value = e.target.value; setDraft((d) => ({ ...d, [section]: { text: value, revision: d[section]?.revision ?? (section === 'project_context' ? '' : data[`${section}_revision`]), profile: d[section]?.profile ?? data.profile } })) }}
               rows={22}
               spellCheck={false}
@@ -194,9 +195,7 @@ export function MemoryPage() {
                 <RowList>{entries.map((entry, i) => <Row key={i} data-memory-entry="" className="border-border-subtle"><Markdown text={entry} /></Row>)}</RowList>
               ) : <Markdown text={shown} />}
             </div>
-          ) : (
-            <EmptyState>{disabled ? m.memory_disabled_hint() : m.context_file_empty()}</EmptyState>
-          )}
+          ) : !disabled && <EmptyState>{m.context_file_empty()}</EmptyState>}
           {conflict[section] && (
             <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-error">
               <span>{conflict[section]}</span>
@@ -207,7 +206,7 @@ export function MemoryPage() {
             <div className="flex flex-wrap gap-2">
               {(section === 'memory' || section === 'user') && <Button disabled={generate.isPending || draft[section] !== undefined || !!effects['memory-compaction'] || !path} onClick={() => { setCompactionError(''); generate.mutate({ context, section, revision: data[`${section}_revision`] }) }}>{generate.isPending ? m.memory_compaction_generating() : m.memory_compaction_action()}</Button>}
               {editing && section !== 'project_context' && <>
-                <Button variant="primary" disabled={conflict[section] !== undefined || write.isPending} onClick={() => save(section)}>{m.save()}</Button>
+                <Button variant="primary" disabled={disabled || conflict[section] !== undefined || write.isPending} onClick={() => save(section)}>{m.save()}</Button>
                 <Button variant="ghost" onClick={() => { setDraft((d) => without(d, section)); setConflict((c) => without(c, section)); if (profileMoved) reloadProfile() }}>{m.cancel()}</Button>
               </>}
             </div>
