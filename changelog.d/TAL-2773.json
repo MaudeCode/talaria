@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Receive separate notifications when several chats need your input at once.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
