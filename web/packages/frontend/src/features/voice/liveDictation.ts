@@ -16,7 +16,7 @@ export interface LiveDictation {
   cancel: () => void
 }
 
-/** TAL-1608: the server's `no_speech` answer for the recording; the composer shows its no-speech notice and keeps the draft. */
+/** No usable final transcript; the composer shows its no-speech notice and keeps the draft. */
 export class NoSpeechError extends Error {
   constructor() {
     super('No speech detected')
@@ -37,7 +37,7 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
   const recorded: Blob[] = []
   const { recorder, audio, tap, source, ws } = await openCapture(media, recorded)
   const early: ArrayBuffer[] = []
-  let final: string | null = null
+  let final: { transcript: string; filtered: boolean; no_speech?: boolean } | null = null
   let failed = false
   let ended = false
   let cancelled = false
@@ -63,7 +63,7 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
     if (event.type === 'partial') {
       if (!failed && final === null) onPartial(event.text)
     } else if (event.type === 'final') {
-      final = event.transcript
+      final = event
       settle()
     } else fail()
   }
@@ -118,14 +118,17 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
         clearTimeout(timer)
         ws.close()
         live()
-        if (final !== null) return final
-        const file = await blob
-        live()
-        if (!file) throw new Error('nothing was recorded')
-        const { transcript, no_speech } = await transcribeRecording(file, `dictation.${extension(file.type)}`, upload.signal)
-        live()
-        if (no_speech) throw new NoSpeechError()
-        return transcript.trim()
+        let result = final
+        if (result === null) {
+          const file = await blob
+          live()
+          if (!file) throw new Error('nothing was recorded')
+          result = await transcribeRecording(file, `dictation.${extension(file.type)}`, upload.signal)
+          live()
+        }
+        const transcript = result.transcript.trim()
+        if (result.filtered || result.no_speech || !transcript) throw new NoSpeechError()
+        return transcript
       })()
       return stopping
     },
@@ -207,7 +210,7 @@ export function dictateLive(onText: (text: string) => void, onEnd: (error: unkno
   }
 }
 
-/** A refused microphone reads as `denied` and the server's no-speech answer as `no_speech`; anything else is a plain error. */
+/** A refused microphone reads as `denied` and an unusable final transcript as `no_speech`; anything else is a plain error. */
 export function liveDictationErrorKind(error: unknown): DictationErrorKind {
   if (error instanceof NoSpeechError) return 'no_speech'
   return error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError') ? 'denied' : 'other'

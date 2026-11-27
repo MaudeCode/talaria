@@ -165,8 +165,29 @@ describe('live dictation (TAL-802)', () => {
     expect((ends[0] as Error).message).toBe('Speech-to-text is unavailable on this server')
   })
 
-  it('reports no speech from the recorded fallback without any text (TAL-1608)', async () => {
-    vi.mocked(api.transcribeRecording).mockResolvedValue({ ok: true, transcript: '', filtered: false, no_speech: true })
+  it.each([
+    { result: 'empty text', transcript: '', filtered: false, partial: false },
+    { result: 'whitespace', transcript: ' \n ', filtered: false, partial: true },
+    { result: 'filtered text', transcript: '', filtered: true, partial: true },
+  ])('reports no speech when the live final has $result', async ({ transcript, filtered, partial }) => {
+    const { handle, texts, ends, ws } = await start()
+    const first = exchange.events[0]
+    if (partial) ws.receive(first)
+    handle.stop()
+    ws.receive({ type: 'final', transcript, filtered, provider: 'openai' })
+    await vi.waitFor(() => { expect(ends).toHaveLength(1) })
+    expect(liveDictationErrorKind(ends[0])).toBe('no_speech')
+    expect(texts).toEqual(partial ? [first?.text] : [])
+    expect(api.transcribeRecording).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { result: 'an explicit no-speech result', transcript: '', filtered: false, no_speech: true },
+    { result: 'empty text', transcript: '', filtered: false, no_speech: false },
+    { result: 'whitespace', transcript: ' \n ', filtered: false, no_speech: false },
+    { result: 'filtered text', transcript: '', filtered: true, no_speech: false },
+  ])('reports no speech when the recorded fallback has $result', async ({ transcript, filtered, no_speech }) => {
+    vi.mocked(api.transcribeRecording).mockResolvedValue({ ok: true, transcript, filtered, no_speech })
     const { handle, texts, ends, ws } = await start()
     ws.receive(exchange.events[0])
     ws.close()
@@ -176,15 +197,6 @@ describe('live dictation (TAL-802)', () => {
     // The partial already shown is the last text: no empty transcript replaces it.
     expect(texts).toEqual([exchange.events[0]?.text])
     expect(api.transcribeRecording).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps a filtered empty transcript an ordinary result, not no speech (TAL-1608)', async () => {
-    vi.mocked(api.transcribeRecording).mockResolvedValue({ ok: true, transcript: '', filtered: true, no_speech: false })
-    const { handle, texts, ends, ws } = await start()
-    ws.close()
-    handle.stop()
-    await vi.waitFor(() => { expect(ends).toEqual([null]) })
-    expect(texts).toEqual([''])
   })
 
   it('cancel closes the stream and releases the microphone without any callback', async () => {

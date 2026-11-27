@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web dictation preserves your composer draft when a recording ends without usable speech.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
