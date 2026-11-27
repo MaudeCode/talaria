@@ -809,10 +809,13 @@ describe('Composer', () => {
     expect(showToast).toHaveBeenCalledWith("Voice input error: STT command provider 'x' exited with code 3", 3000, 'error')
   })
 
-  it.each([
-    ['live', true], ['live', false], ['browser', true], ['browser', false],
-  ] as const)('keeps quotes after late %s dictation results, append: %s', async (backend, append) => {
-    let onText: (text: string) => void = noop
+  async function withDictation(backend: 'live' | 'browser', append: boolean, check: (capture: {
+    box: HTMLTextAreaElement
+    result: (text: string, isFinal?: boolean) => void
+    end: (error: unknown) => void
+    retire: ReturnType<typeof vi.fn>
+  }) => Promise<void>) {
+    let onText: (text: string, isFinal?: boolean) => void = noop
     let onEnd: (error: unknown) => void = noop
     const cancel = vi.fn()
     const stop = vi.fn()
@@ -827,28 +830,63 @@ describe('Composer', () => {
     }
     const view = renderComposer(writable, null, noop, { dictation_append: append })
     try {
-      const box = screen.getByRole('textbox')
+      const box = screen.getByRole<HTMLTextAreaElement>('textbox')
       fireEvent.change(box, { target: { value: 'Note:' } })
       await userEvent.click(await screen.findByRole('button', { name: 'Dictate' }))
       if (backend === 'browser') {
         const result = recognizer.onresult!
         const end = recognizer.onend!
-        onText = (text) => result({ results: [Object.assign([{ transcript: text }], { isFinal: false })] })
+        onText = (text, isFinal = false) => result({ results: [Object.assign([{ transcript: text }], { isFinal })] })
         onEnd = () => end()
       }
-      const lateText = onText, lateEnd = onEnd
-      act(() => { onText('spoken') })
+      await check({ box, result: onText, end: onEnd, retire: backend === 'live' ? cancel : stop })
+    } finally { view.unmount(); supported.mockRestore(); create.mockRestore() }
+  }
+
+  it.each([
+    ['live', true], ['live', false], ['browser', true], ['browser', false],
+  ] as const)('keeps quotes after late %s dictation results, append: %s', async (backend, append) => {
+    await withDictation(backend, append, async ({ box, result, end, retire }) => {
+      act(() => { result('spoken') })
       const expected = `${append ? 'Note: spoken' : 'spoken'}\n\n> Selected\n\n`
       act(() => { returnToComposer('s1', 'Selected', 'quote') })
-      act(() => { lateText('late speech'); lateEnd(null) })
+      act(() => { result('late speech'); end(null) })
       expect(box).toHaveValue(expected)
-      expect(backend === 'live' ? cancel : stop).toHaveBeenCalledOnce()
+      expect(retire).toHaveBeenCalledOnce()
       expect(screen.getByRole('button', { name: 'Dictate' })).toHaveAttribute('aria-pressed', 'false')
       await userEvent.click(screen.getByRole('button', { name: 'Dictate' }))
-      act(() => { lateText('older capture'); lateEnd(null) })
+      act(() => { result('older capture'); end(null) })
       expect(box).toHaveValue(expected)
       expect(screen.getByRole('button', { name: 'Stop dictation' })).toHaveAttribute('aria-pressed', 'true')
-    } finally { view.unmount(); supported.mockRestore(); create.mockRestore() }
+    })
+  })
+
+  it.each(['live', 'browser'] as const)('keeps keyboard edits after partial and final %s dictation results', async (backend) => {
+    await withDictation(backend, true, async ({ box, result, end }) => {
+      act(() => { result('Ship it') })
+      expect(box).toHaveValue('Note: Ship it')
+      await userEvent.click(box)
+      box.setSelectionRange(6, 10)
+      await userEvent.keyboard('Hold')
+      expect(box).toHaveValue('Note: Hold it')
+      act(() => { result('Ship it now') })
+      expect(box).toHaveValue('Note: Hold it')
+      if (backend === 'live') await userEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
+      act(() => { result('Ship it tomorrow', true); end(null) })
+      expect(box).toHaveValue('Note: Hold it')
+      expect(screen.getByRole('button', { name: 'Dictate' })).toHaveAttribute('aria-pressed', 'false')
+    })
+  })
+
+  it('inserts the final browser transcript when the draft was not edited', async () => {
+    await withDictation('browser', false, ({ box, result, end }) => {
+      act(() => { result('Ship it') })
+      expect(box).toHaveValue('Ship it')
+      act(() => { result('Ship it tomorrow', true); end(null) })
+      expect(box).toHaveValue('Ship it tomorrow')
+      expect(screen.getByRole('button', { name: 'Dictate' })).toHaveAttribute('aria-pressed', 'false')
+      return Promise.resolve()
+    })
   })
 
   it('keeps the browser recognizer path when the server reports no streaming (TAL-802)', async () => {

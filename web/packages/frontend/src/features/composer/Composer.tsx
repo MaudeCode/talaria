@@ -311,7 +311,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   // TAL-802: the server's live stream when it reports `streaming`; the browser recognizer otherwise.
   const liveDictation = useRef<LiveDictationHandle | null>(null)
   const liveOffered = !!useTranscribeCapabilityQuery().data?.streaming && liveDictationSupported()
-  const dictationOwner = useRef<object | null>(null)
+  const dictationOwner = useRef<{ edited: boolean } | null>(null)
   const dropDictation = () => {
     dictationOwner.current = null
     liveDictation.current?.cancel()
@@ -344,7 +344,11 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const answerKey = clarify ? JSON.stringify([sessionId, clarify.pending.clarify_id, clarify.step.qid, clarify.inputRevision]) : ''
   const value = clarify ? (answerDraft.key === answerKey ? answerDraft.text : '') : text
   const setValue = (next: string) => {
-    if (!clarify) { setText(next); return }
+    if (!clarify) {
+      if (dictationOwner.current) dictationOwner.current.edited = true
+      setText(next)
+      return
+    }
     setAnswerDraft({ key: answerKey, text: next })
     if (next.trim()) clarify.clearSelection()
   }
@@ -802,11 +806,15 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   const dictationError = (kind: DictationErrorKind, detail: string) => { showToast(kind === 'denied' ? m.mic_denied() : kind === 'no_speech' ? m.mic_no_speech() : kind === 'network' ? m.mic_network() : m.mic_error() + detail, 3000, 'error') }
   const toggleDictation = () => {
     if (dictating) { recognition.current?.stop(); liveDictation.current?.stop(); return }
-    const owner = {}
+    const owner = { edited: false }
     dictationOwner.current = owner
     const base = text
     let written: string | null = null
-    const dictated = (transcript: string) => { if (dictationOwner.current !== owner) return; written = settings?.dictation_append === false ? transcript : `${base}${base && !base.endsWith(' ') ? ' ' : ''}${transcript}`; setText(written) }
+    const dictated = (transcript: string) => {
+      if (dictationOwner.current !== owner || owner.edited) return
+      written = settings?.dictation_append === false ? transcript : `${base}${base && !base.endsWith(' ') ? ' ' : ''}${transcript}`
+      setText(written)
+    }
     if (liveOffered) {
       const handle = dictateLive(dictated, (error) => {
         if (dictationOwner.current !== owner) return
@@ -816,7 +824,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
         const kind = liveDictationErrorKind(error)
         // TAL-1608: the server heard no speech, so a partial still showing gives way to the draft dictation started from;
         // edits made after it stay.
-        if (kind === 'no_speech' && written !== null) { const shown = written; setText((current) => current === shown ? base : current) }
+        if (kind === 'no_speech' && !owner.edited && written !== null) { const shown = written; setText((current) => current === shown ? base : current) }
         dictationError(kind, error instanceof Error ? error.message : '')
       })
       liveDictation.current = handle

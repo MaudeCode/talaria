@@ -297,6 +297,9 @@ to the current draft. The action keeps the draft, attachments and cursor, and ne
 Quoting stops active dictation so later speech results cannot replace the quote.
 Selections over 16,000 characters are left to the browser selection menu.
 
+Editing the draft during dictation keeps your changes. Further speech results from that recording
+leave the draft alone, and you can still stop the recording with the microphone button.
+
 Automatic read-aloud claims each watched reply once across tabs on the same browser origin and app mount,
 account, profile, and session. The browser retains the last 1024 automatic attempts, including interrupted
 attempts. If coordination storage is unavailable, automatic playback stays quiet; **Read aloud** remains

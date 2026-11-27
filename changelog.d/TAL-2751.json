@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Typing in the composer during dictation keeps your edits when more speech results arrive.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
