@@ -1287,6 +1287,23 @@ describe('chat turns through the sidecar', () => {
     expect(served.headers.get('content-type')).toBe('image/png')
   })
 
+  it('ships diagram preview capabilities on settled replies without rewriting their fences', async () => {
+    const sid = await newSession(s)
+    const fixture = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/transcript-diagrams.json', import.meta.url), 'utf8')) as Json
+    const reply = str(fixture.content)
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: reply }]))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Diagrams"', usage: null }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: reply }))
+    const frames = await s.sse('/api/chat/stream?stream_id=' + String(start.stream_id), (f) => f.event === 'stream_end')
+    const doneMessages = ((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[]
+    const full = ((await json(await s.get('/api/session?session_id=' + sid))).session as Json).messages as Json[]
+    for (const messages of [doneMessages, full]) {
+      const settled = messages.find((m) => m.role === 'assistant')
+      expect(settled).toMatchObject(fixture)
+      expect(messages.find((m) => m.role === 'user')).not.toHaveProperty('_diagram_previews')
+    }
+  })
+
   it('projects a folder-authorized delivered HTML report as a sandboxed preview', async () => {
     const sid = await newSession(s)
     const workspace = realpathSync(s.workspace)

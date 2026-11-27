@@ -230,9 +230,14 @@ extension HostedAccessibility {
 
     /// The navigation controller whose visible page shows `item`, as `toolbarItems(in:)` gathers them.
     static func navigationController(showing item: UIBarButtonItem, in window: UIWindow) -> UINavigationController? {
+        navigationController(in: window) { toolbarItems(under: $0).contains(where: { $0 === item }) }
+    }
+
+    static func navigationController(
+        in window: UIWindow, where matches: @escaping (UINavigationController) -> Bool
+    ) -> UINavigationController? {
         func find(_ controller: UIViewController) -> UINavigationController? {
-            if let navigation = controller as? UINavigationController,
-               toolbarItems(under: navigation).contains(where: { $0 === item }) {
+            if let navigation = controller as? UINavigationController, matches(navigation) {
                 return navigation.children.lazy.compactMap(find).first ?? navigation
             }
             return controller.children.lazy.compactMap(find).first

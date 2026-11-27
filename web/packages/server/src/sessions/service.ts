@@ -49,6 +49,7 @@ import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, sha
 import { attachmentKey, attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
 import { mediaAccessFor, mediaAccessResolver, resolveMediaAccess, mediaRefTarget, type MediaAccessBase } from '../workspace/media.js'
 import { meshyDirectives, projectMediaRefs, type MediaProjection, type MeshyDirective } from '../workspace/media-refs.js'
+import { withSceneRowDiagramPreviews, withTranscriptDiagramPreviews } from './display-diagrams.js'
 import { projectBindings, type ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
 import { basename, join } from 'node:path'
@@ -1135,7 +1136,7 @@ export class SessionService {
   async publicSessionDocument(s: Session): Promise<Record<string, unknown>> {
     const document = s.toDocument()
     if (document.talaria_activities) document.talaria_activities = redactNestedMessageContainers(document.talaria_activities, this.deps.redactEnabled())
-    return this.publicProjection(redactSessionData(document, this.deps.redactEnabled()), s.profile)
+    return this.publicProjection(redactSessionData(document, this.deps.redactEnabled()), s.profile, { diagrams: false })
   }
 
   /** How hydrated scenes show for a profile: its reasoning visibility and the Worklog default (TAL-2149). */
@@ -1144,9 +1145,15 @@ export class SessionService {
   }
 
   /** One server decision for history, mutation replies, done frames and export documents. */
-  async publicProjection(payload: Record<string, unknown>, profile: string | null): Promise<Record<string, unknown>> {
+  async publicProjection(payload: Record<string, unknown>, profile: string | null,
+    options: { diagrams?: boolean; activeTurnId?: string | null } = {}): Promise<Record<string, unknown>> {
     const show = await this.deps.showReasoning?.(profile) ?? true
-    return { ...reasoningProjection(payload, show), plan_gauge: payload.plan_gauge ?? null, show_reasoning: show }
+    const projected = reasoningProjection(payload, show)
+    const activeTurnId = str(projected.active_stream_id) || options.activeTurnId || null
+    const messages = options.diagrams !== false && Array.isArray(projected.messages)
+      ? { messages: withTranscriptDiagramPreviews(projected.messages as unknown[], activeTurnId) }
+      : {}
+    return { ...projected, ...messages, plan_gauge: payload.plan_gauge ?? null, show_reasoning: show }
   }
 
   // ── detail ──────────────────────────────────────────────────────────────
@@ -1599,7 +1606,8 @@ export class SessionService {
     if (loadMessages) attachTodoState(sess, msgs)
     const merged = withSessionWireFlags((await this.ownerLocked([meta ? mergeCliSidebarMetadata(sess, meta) : sess]))[0]!, this.deps.runtime.activeStreamIds)
     const publicRow = await this.redactedRow(merged, synth.profile)
-    return this.publicProjection(this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow, synth.profile)
+    const activeTurnId = running ? str(msgs.at(-1)?._turn_id) || null : null
+    return this.publicProjection(this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow, synth.profile, { activeTurnId })
   }
 
   /** Clear persisted streaming flags when no live stream backs them (Python `_clear_stale_stream_state`). */
@@ -3785,7 +3793,8 @@ export class SessionService {
     const redacted = redactValue(result, enabled) as typeof result
     const rows = withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled, session.workspace, session.session_id)
     // `/api/media` serves stored sessions only, so a state.db-only session's rows stay as written, as its detail does.
-    return { ...redacted, rows: stored ? withSceneRowMedia(rows, (await this.mediaProjector(session))) : rows }
+    const display = stored ? withSceneRowMedia(rows, await this.mediaProjector(session)) : rows
+    return { ...redacted, rows: withSceneRowDiagramPreviews(display) }
   }
 
   /** TAL-331: one tool call's whole result, which a limited response clipped (`result_truncated`), redacted like the detail. */

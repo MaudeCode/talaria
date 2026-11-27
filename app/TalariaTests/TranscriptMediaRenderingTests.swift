@@ -11,38 +11,47 @@ import XCTest
 @MainActor
 final class TranscriptMediaRenderingTests: XCTestCase {
     func testSettledDiagramFencesOfferPreview() async throws {
-        let window = try hostWindow(diagramFences(isStreaming: false))
+        let window = try hostWindow(diagramFences(isStreaming: false, projected: true))
         _ = try await requireElement(in: window, label: "Copy code")
-        XCTAssertEqual(elements(named: "View image", in: window).count, 1, "The settled SVG fence offers View image")
-        XCTAssertEqual(elements(named: "View diagram", in: window).count, 1, "The settled Mermaid fence offers View diagram")
+        XCTAssertEqual(elements(named: "View image", in: window).count, 1, "Only the annotated SVG fence offers View image")
+        XCTAssertEqual(elements(named: "View diagram", in: window).count, 1, "The annotated Mermaid fence offers View diagram")
     }
 
     func testStreamingDiagramFencesDoNotOfferPreview() async throws {
-        let window = try hostWindow(diagramFences(isStreaming: true))
+        let window = try hostWindow(diagramFences(isStreaming: true, projected: true))
         _ = try await requireElement(in: window, label: "Copy code")
         XCTAssertEqual(elements(named: "Copy code", in: window).count, 3, "The source fences are mounted")
         XCTAssertTrue(elements(named: "View image", in: window).isEmpty)
         XCTAssertTrue(elements(named: "View diagram", in: window).isEmpty)
     }
 
+    func testDiagramFencesWithoutServerPreviewDataDoNotOfferPreview() async throws {
+        let window = try hostWindow(diagramFences(isStreaming: false, projected: false))
+        _ = try await requireElement(in: window, label: "Copy code")
+        XCTAssertTrue(elements(named: "View image", in: window).isEmpty, "An older server's SVG stays source-only")
+        XCTAssertTrue(elements(named: "View diagram", in: window).isEmpty, "An older server's Mermaid stays source-only")
+    }
+
     func testAClosedFenceInAStreamingReplyDoesNotOfferPreview() async throws {
+        let svg = "<svg/><!--\(String(repeating: " ", count: 6_000))-->"
         let source = """
         ```svg
-        <svg/><!--\(String(repeating: " ", count: 6_000))-->
+        \(svg)
         ```
         The reply is still streaming.
         """
-        let window = try hostWindow(StreamingMarkdownRenderer(content: source))
+        let window = try hostWindow(projectingDiagrams([.init(kind: .svg, source: svg)],
+                                                     in: StreamingMarkdownRenderer(content: source)))
         _ = try await requireElement(in: window, label: "Copy code")
         XCTAssertTrue(elements(named: "View image", in: window).isEmpty,
                       "A sealed Markdown chunk still belongs to the active reply")
     }
 
-    func testSVGPreviewFitsTheSheet() async throws {
+    func testSVGPreviewFitsTheDestination() async throws {
         try await assertSVGPreviewFits(variant: "phone-light")
     }
 
-    func testSVGPreviewFitsTheDarkSheet() async throws {
+    func testSVGPreviewFitsTheDarkDestination() async throws {
         try await assertSVGPreviewFits(variant: "phone-dark")
     }
 
@@ -50,27 +59,30 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         try await assertSVGPreviewFits(variant: "phone-ax5")
     }
 
-    func testSVGPreviewFitsTheDuoCoverSheet() async throws {
+    func testSVGPreviewFitsTheDuoCoverDestination() async throws {
         try await assertSVGPreviewFits(variant: "duo-outer")
     }
 
-    func testSVGPreviewFitsTheDuoInnerSheet() async throws {
+    func testSVGPreviewFitsTheDuoInnerDestination() async throws {
         try await assertSVGPreviewFits(variant: "duo-inner")
     }
 
     private func assertSVGPreviewFits(variant name: String) async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.diagramPreviewsArgument], for: self)
         let variant = try XCTUnwrap(HostedVariant.gallery.first { $0.name == name })
-        let window = try hostWindow(diagramFences(isStreaming: false), size: variant.size) {
+        let preview = TranscriptDiagramPreview(kind: .svg, source: UITestFixtureURLProtocol.previewSVGSource)
+        let window = try hostWindow(NavigationStack {
+            CodeBlockPreviewView(preview: preview, client: fixture.client)
+        }, size: variant.size) {
             $0.preferredContentSizeCategory = variant.textSize
         }
         window.overrideUserInterfaceStyle = variant.style
-        let sheet = try await openPreview(in: window, label: "View image")
         let committed = await awaitCondition {
-            guard let web = sheet.view.firstSubview(of: WKWebView.self) else { return false }
+            guard let web = window.firstSubview(of: WKWebView.self) else { return false }
             return web.url?.scheme == "data" && !web.isLoading
         }
-        let web = try XCTUnwrap(committed ? sheet.view.firstSubview(of: WKWebView.self) : nil,
-                                "The sheet committed the SVG document")
+        let web = try XCTUnwrap(committed ? window.firstSubview(of: WKWebView.self) : nil,
+                                "The navigation destination committed the SVG document")
         XCTAssertFalse(web.configuration.defaultWebpagePreferences.allowsContentJavaScript)
         let sizes = try await web.evaluateJavaScript("""
         [document.images[0].naturalWidth, document.images[0].getBoundingClientRect().width, window.innerWidth]
@@ -79,35 +91,52 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         XCTAssertEqual(numbers.count, 3)
         if numbers.count == 3 {
             XCTAssertGreaterThan(numbers[0], 0, "The SVG decoded into an image")
-            XCTAssertEqual(numbers[1], numbers[2], accuracy: 1, "The image fills the sheet without horizontal overflow")
+            XCTAssertEqual(numbers[1], numbers[2], accuracy: 1, "The image fills the destination without horizontal overflow")
         }
-        attachHostedScreenshot(window, name: "chat-svg-preview-\(name)")
-        try await closeDiagramPreview(in: window)
+        if keepsHostedScreenshots {
+            // WebKit can finish loading before its remote layer has painted in the host window.
+            _ = try await web.takeSnapshot(configuration: nil)
+            attachHostedScreenshot(window, name: "chat-svg-preview-\(name)")
+        }
     }
 
     func testMalformedSVGPreviewPreservesItsSource() async throws {
-        let source = "<svg><path></svg>"
+        let fixture = try FixtureApp([UITestFixtureEnvironment.diagramPreviewsArgument], for: self)
+        let session = try await fixture.session()
+        let source = UITestFixtureURLProtocol.invalidSVGSource
+        let draft = "Keep this draft."
         let copies = recordCopies()
-        let window = try hostWindow(ChatCodeBlock(language: "svg", content: source, isStreaming: false))
-        _ = try await openPreview(in: window, label: "View image")
+        let window = try hostWindow(fixture.chat(session, initialDraft: draft))
+        let code = try await requireElement(in: window, label: source)
+        let button = try action("View image", above: code, in: window)
+        XCTAssertTrue(HostedAccessibility.activate(button))
         _ = try await requireElement(in: window, label: "Could not preview this image.")
         attachHostedScreenshot(window, name: "chat-invalid-svg")
-        try await closeDiagramPreview(in: window)
-        let copy = try await requireElement(in: window, label: "Copy code")
+
+        let navigation = try XCTUnwrap(HostedAccessibility.navigationController(in: window) {
+            $0.viewControllers.count == 3
+        }, "The preview is pushed above the chat in its navigation stack")
+        XCTAssertNotNil(navigation.popViewController(animated: false))
+        let returnedCode = try await requireElement(in: window, label: source)
+        let copy = try action("Copy code", above: returnedCode, in: window)
         XCTAssertTrue(HostedAccessibility.activate(copy))
         XCTAssertEqual(copies.last, source)
+        _ = try await requireElement(in: window) { $0.accessibilityValue == draft }
     }
 
-    func testMermaidParseErrorAppearsInThePreviewSheet() async throws {
+    private func action(_ label: String, above source: NSObject, in window: UIWindow) throws -> NSObject {
+        try XCTUnwrap(elements(named: label, in: window)
+            .filter { $0.accessibilityFrame.midY < source.accessibilityFrame.midY }
+            .max { $0.accessibilityFrame.midY < $1.accessibilityFrame.midY }, "Missing \(label) above the code")
+    }
+
+    func testMermaidParseErrorAppearsInThePreviewDestination() async throws {
         let fixture = try FixtureApp([UITestFixtureEnvironment.diagramPreviewsArgument], for: self)
-        let window = try hostWindow(ChatCodeBlock(language: "mermaid", content: "Invalid diagram", isStreaming: false)
-            .chatEnvironmentAction(\.chatRenderDiagram) { source in
-                { try await fixture.client.renderDiagram(source: source) }
-            })
-        _ = try await openPreview(in: window, label: "View diagram")
+        let preview = TranscriptDiagramPreview(kind: .mermaid, source: UITestFixtureURLProtocol.invalidMermaidSource)
+        let window = try hostWindow(NavigationStack {
+            CodeBlockPreviewView(preview: preview, client: fixture.client)
+        })
         _ = try await requireElement(in: window, label: "Expected a Mermaid diagram.")
-        try await closeDiagramPreview(in: window)
-        _ = try await requireElement(in: window, label: "Copy code")
     }
 
     private func openPreview(in window: UIWindow, label: String) async throws -> UIViewController {
@@ -120,28 +149,34 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         return try XCTUnwrap(sheet, "The preview finished presenting")
     }
 
-    private func closeDiagramPreview(in window: UIWindow) async throws {
-        let close = try await requireElement(in: window, label: "Close")
-        XCTAssertTrue(HostedAccessibility.activate(close))
-        let dismissed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
-        XCTAssertTrue(dismissed, "The preview finished dismissing")
-    }
-
-    private func diagramFences(isStreaming: Bool) -> some View {
-        ChatMarkdownView(content: """
-        ```svg
-        <svg viewBox="0 0 120 60"><rect width="120" height="60" fill="#5979bd"/></svg>
+    private func diagramFences(isStreaming: Bool, projected: Bool) -> some View {
+        let svg = ##"<svg viewBox="0 0 120 60"><rect width="120" height="60" fill="#5979bd"/></svg>"##
+        let mermaid = "flowchart LR\n  A --> B"
+        let markdown = """
+        ```SVG example
+        \(svg)
         ```
 
         ```text
-        Keep the source.
+        \(svg)
         ```
 
         ```mermaid
-        flowchart LR
-          A --> B
+        \(mermaid)
         ```
-        """, colorScheme: .light, isStreaming: isStreaming)
+        """
+        let previews: [TranscriptDiagramPreview]? = projected
+            ? [.init(kind: .svg, source: svg), .init(kind: .mermaid, source: mermaid)] : nil
+        return projectingDiagrams(previews, in: ChatMarkdownView(content: markdown, colorScheme: .light, isStreaming: isStreaming))
+    }
+
+    private func projectingDiagrams(_ previews: [TranscriptDiagramPreview]?, in content: some View) -> some View {
+        content
+            .environment(\.transcriptMediaParagraphImages, TranscriptMediaParagraphImages(
+                display: TranscriptDisplayBody(text: "", media: [], diagramPreviews: previews),
+                cacheNamespace: "https://example.invalid", loadMediaImage: nil, loadMediaData: nil, onPreviewMedia: nil
+            ))
+            .chatEnvironmentAction(\.chatOpenCodeBlockPreview) { _ in }
     }
 
     func testEveryImageTheServerRewroteLoadsThroughTheAuthenticatedLoader() async throws {

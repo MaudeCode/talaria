@@ -384,6 +384,13 @@ export type BackgroundLink = z.infer<typeof BackgroundLinkSchema>
 
 export { DisplayMediaSchema, type DisplayMedia } from './display-media.js'
 
+export const DiagramKindSchema = z.enum(['svg', 'mermaid'])
+export const TranscriptDiagramPreviewSchema = z.object({
+  kind: DiagramKindSchema,
+  source: z.string().describe('The exact code text of a Markdown fence, without its delimiter lines.'),
+})
+export type TranscriptDiagramPreview = z.infer<typeof TranscriptDiagramPreviewSchema>
+
 /** Server-issued presentation only. Neither provenance nor a target grants permission to act. */
 export const TalariaActivitySchema = z.object({
   version: z.literal(1), origin: z.enum(['talaria', 'peer_agent']), id: z.string().min(1),
@@ -416,6 +423,7 @@ export const ActivitySceneRowSchema = z.looseObject({
   disclosure_key: z.string().optional(),
   /** TAL-186: a prose row's `text` with its media references rewritten for display (see `_display_content`), and its media. */
   display_text: z.string().optional(), media: z.array(DisplayMediaSchema).optional(),
+  diagram_previews: z.array(TranscriptDiagramPreviewSchema).optional(),
   tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), result_view: ToolResultViewSchema.nullable().optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable(), background: BackgroundLinkSchema.optional(),
     /** TAL-331: a limited response clipped `result` (originally `result_chars` long); `GET /api/session/tool-result` serves it whole. */
     result_truncated: z.literal(true).optional(), result_chars: z.number().int().nullable().optional(),
@@ -456,6 +464,7 @@ export const ActivitySceneSchema = z.looseObject({
   final_answer_excerpt: z.string().optional().describe("Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."), turn_duration: z.number().nullable().optional(),
   /** TAL-186: `final_answer` with its media references rewritten for display (see `_display_content`), and its media. */
   final_answer_display: z.string().optional(), final_answer_media: z.array(DisplayMediaSchema).optional(),
+  final_answer_diagram_previews: z.array(TranscriptDiagramPreviewSchema).optional(),
   terminal_state: z.string().optional().describe('The turn\'s outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no "Worked" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both.'),
   /** Whether the "Worked" disclosure opens by default: an unsuccessful outcome with work to read, or a running turn. */
   expanded_by_default: z.boolean().optional(),
@@ -553,6 +562,8 @@ export const MessageSchema = z.looseObject({
   _display_text: z.string().optional(),
   /** TAL-186: the media `_display_content` references, in content order. */
   _media: z.array(DisplayMediaSchema).optional(),
+  /** Settled assistant fences with a picture preview. Older clients keep rendering the source. */
+  _diagram_previews: z.array(TranscriptDiagramPreviewSchema).optional(),
   /**
    * TAL-371: an automatic background wakeup (delegation results, background process or watch notice), not a message the
    * user sent. TAL-1990: also the `update_continuation` prompt that continues a chat an Update anyway interrupted

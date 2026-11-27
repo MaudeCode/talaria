@@ -517,6 +517,16 @@ private struct EndpointContract {
 }
 
 final class SharedContractTests: XCTestCase {
+    func testTranscriptDiagramCapabilitiesDecodeFromTheSharedReply() throws {
+        let data = try fixture("transcript-diagrams")
+        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let expected = try XCTUnwrap(raw["_diagram_previews"] as? [[String: String]])
+        let message = try APIClient.responseDecoder().decode(ChatMessage.self, from: data)
+        let previews = try XCTUnwrap(message.displayBody?.diagramPreviews)
+        XCTAssertEqual(previews.map { ["kind": $0.kind.rawValue, "source": $0.source] }, expected)
+        XCTAssertEqual(message.activityScene?.finalAnswerDisplay?.diagramPreviews, previews)
+    }
+
     func testToolsetCatalogDecodesServerPolicy() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

@@ -944,10 +944,14 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return sessionResponse(url)
         case "/api/render/diagram" where request.httpMethod == "POST"
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.diagramPreviewsArgument):
-            let source = (requestJSON(request)["source"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return source == previewDiagramSource
-                ? json(["svg": previewDiagramImage])
-                : json(["error": "Expected a Mermaid diagram."])
+            let body = requestJSON(request)
+            switch (body["kind"] as? String, body["source"] as? String) {
+            case ("svg", previewSVGSource): return json(["svg": previewSVGSource])
+            case ("svg", invalidSVGSource): return json(["error": "Could not preview this image."])
+            case ("mermaid", previewDiagramSource): return json(["svg": previewDiagramImage])
+            case ("mermaid", invalidMermaidSource): return json(["error": "Expected a Mermaid diagram."])
+            default: return json(["error": "Unexpected fixture diagram request."])
+            }
         case "/api/media" where UITestFixtureEnvironment.hasTranscriptMedia:
             return url.query?.contains(".mp3") == true ? transcriptMediaAudio : transcriptMediaImage
         case "/api/background/tasks" where servesOwnerWork:
@@ -1546,7 +1550,13 @@ final class UITestFixtureURLProtocol: URLProtocol {
             var detail = session(id: sessionID, title: sessionTitle)
             detail["messages"] = [
                 ["role": "user", "content": "Show me the diagrams.", "message_id": "diagram-prompt", "_ts": 2_000_000_300],
-                ["role": "assistant", "content": previewFences, "message_id": "diagram-reply", "_ts": 2_000_000_301]
+                ["role": "assistant", "content": previewFences, "message_id": "diagram-reply", "_ts": 2_000_000_301,
+                 "_display_content": previewFences, "_diagram_previews": [
+                    ["kind": "svg", "source": previewSVGSource],
+                    ["kind": "mermaid", "source": previewDiagramSource],
+                    ["kind": "svg", "source": invalidSVGSource],
+                    ["kind": "mermaid", "source": invalidMermaidSource]
+                 ]]
             ] as [[String: Any]]
             return json(["session": detail])
         }
@@ -1771,15 +1781,22 @@ final class UITestFixtureURLProtocol: URLProtocol {
     </svg>
     """
 
-    private static let previewFences = """
-    SVG
-
-    ```svg
-    <svg viewBox="0 0 240 100">
+    static let previewSVGSource = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 100">
       <rect width="240" height="100" fill="#eff6ff"/>
       <circle cx="65" cy="50" r="30" fill="#2563eb"/>
       <path d="M116 74L158 25l46 49Z" fill="#0f766e"/>
     </svg>
+    """
+
+    static let invalidSVGSource = "<svg><path></svg>"
+    static let invalidMermaidSource = "This is not a diagram."
+
+    private static let previewFences = """
+    SVG
+
+    ```svg
+    \(previewSVGSource)
     ```
 
     Mermaid
@@ -1791,13 +1808,13 @@ final class UITestFixtureURLProtocol: URLProtocol {
     Invalid SVG
 
     ```svg
-    <svg><path></svg>
+    \(invalidSVGSource)
     ```
 
     Invalid Mermaid
 
     ```mermaid
-    This is not a diagram.
+    \(invalidMermaidSource)
     ```
     """
 

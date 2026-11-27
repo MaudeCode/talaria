@@ -9,7 +9,7 @@ extension EnvironmentValues {
     /// The room on each side of the transcript's reading column that a wide code block may grow into (TAL-1487).
     @Entry var chatCodeBlockMargin: CGFloat = 0
     @Entry var chatAllowsCodePreview = true
-    @Entry var chatRenderDiagram: ChatEnvironmentAction<String, @MainActor () async throws -> DiagramRenderResponse>?
+    @Entry var chatOpenCodeBlockPreview: ChatEnvironmentAction<TranscriptDiagramPreview, Void>?
 }
 
 struct ChatCodeBlock: View {
@@ -20,12 +20,13 @@ struct ChatCodeBlock: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.chatCodeBlockMargin) private var margin
     @Environment(\.chatAllowsCodePreview) private var allowsCodePreview
+    @Environment(\.transcriptMediaParagraphImages) private var projectedMedia
+    @Environment(\.chatOpenCodeBlockPreview) private var openPreview
     @AppStorage(ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey) private var wrapsCodeBlockLines = false
     @State private var highlightedCode: NSAttributedString?
     @State private var scrollViewportWidth: CGFloat = 0
     @State private var columnWidth: CGFloat = 0
     @State private var naturalCodeWidth: CGFloat = 0
-    @State private var showsPreview = false
 
     private static let codeHorizontalPadding: CGFloat = 16
 
@@ -39,11 +40,11 @@ struct ChatCodeBlock: View {
 
                 Spacer()
 
-                if let preview {
+                if let preview, let openPreview {
                     Button {
-                        showsPreview = true
+                        openPreview(preview)
                     } label: {
-                        Label(preview.action, systemImage: "eye")
+                        Label(preview.kind.action, systemImage: "eye")
                             .labelStyle(.iconOnly)
                             .font(.system(size: 18, weight: .semibold))
                             .frame(minWidth: 44, minHeight: 44)
@@ -51,7 +52,7 @@ struct ChatCodeBlock: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(SwiftUI.Color.primary)
-                    .help(preview.action)
+                    .help(preview.kind.action)
                 }
 
                 Button {
@@ -106,11 +107,6 @@ struct ChatCodeBlock: View {
         // Code (and diff) blocks must never mirror inside an RTL message (#259):
         // the language header, copy/wrap controls, and the source itself stay LTR.
         .forcedLeftToRight()
-        .sheet(isPresented: $showsPreview) {
-            if let preview {
-                CodeBlockPreviewSheet(kind: preview, source: content)
-            }
-        }
     }
 
     /// How far the block grows past each side of its column: up to its lines' natural width, centred, within the
@@ -239,9 +235,11 @@ struct ChatCodeBlock: View {
         return normalized
     }
 
-    private var preview: CodeBlockPreviewSheet.Kind? {
+    private var preview: TranscriptDiagramPreview? {
         guard allowsCodePreview, !isStreaming, let normalizedLanguage else { return nil }
-        return CodeBlockPreviewSheet.Kind(rawValue: normalizedLanguage)
+        return projectedMedia?.display.diagramPreviews?.first {
+            $0.kind.rawValue == normalizedLanguage && $0.source == content
+        }
     }
 
     /// The Copy button's checkmark state, keyed to the latest copy's expiry.
@@ -282,63 +280,49 @@ struct ChatCodeBlock: View {
     }
 }
 
-private struct CodeBlockPreviewSheet: View {
-    enum Kind: String {
-        case svg, mermaid
-
-        var action: LocalizedStringKey {
-            self == .svg ? "View image" : "View diagram"
-        }
-
-        var title: Text {
-            self == .svg ? Text(verbatim: "SVG") : Text("Diagram")
-        }
+private extension TranscriptDiagramPreview.Kind {
+    var action: LocalizedStringKey {
+        self == .svg ? "View image" : "View diagram"
     }
 
-    let kind: Kind
-    let source: String
+    var title: Text {
+        self == .svg ? Text(verbatim: "SVG") : Text("Diagram")
+    }
+}
 
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.chatRenderDiagram) private var renderDiagram
+struct CodeBlockPreviewView: View {
+    let preview: TranscriptDiagramPreview
+    let client: APIClient
+
     @State private var imageURL: URL?
     @State private var frameIsLoading = true
     @State private var failure: String?
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let failure {
-                    ContentUnavailableView {
-                        Label("Could Not Load Media", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(failure)
-                    }
-                } else if let imageURL {
-                    ShowFrameView(url: imageURL, onLoad: { frameIsLoading = false }, onFailure: { imageFailed() })
-                        .accessibilityLabel(kind.title)
-                        .background(.white, ignoresSafeAreaEdges: [])
-                        .overlay {
-                            if frameIsLoading {
-                                progress.environment(\.colorScheme, .light)
-                            }
+        Group {
+            if let failure {
+                ContentUnavailableView {
+                    Label("Could Not Load Media", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(failure)
+                }
+            } else if let imageURL {
+                ShowFrameView(url: imageURL, onLoad: { frameIsLoading = false }, onFailure: { imageFailed() })
+                    .accessibilityLabel(preview.kind.title)
+                    .background(.white, ignoresSafeAreaEdges: [])
+                    .overlay {
+                        if frameIsLoading {
+                            progress.environment(\.colorScheme, .light)
                         }
-                } else {
-                    progress
-                }
+                    }
+            } else {
+                progress
             }
-            .navigationTitle(kind.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .adaptiveNavigationBarBackground()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close", systemImage: "xmark") { dismiss() }
-                        .labelStyle(.iconOnly)
-                        .help("Close")
-                }
-            }
-            .task(id: source) { await loadPreview() }
         }
-        .adaptivePagePresentation()
+        .navigationTitle(preview.kind.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .adaptiveNavigationBarBackground()
+        .task(id: preview) { await loadPreview() }
     }
 
     private var progress: some View {
@@ -350,28 +334,20 @@ private struct CodeBlockPreviewSheet: View {
         imageURL = nil
         frameIsLoading = true
         failure = nil
-        if kind == .svg {
-            showImage(source)
-        } else if let renderDiagram {
-            do {
-                let result = try await renderDiagram(source)()
-                guard !Task.isCancelled else { return }
-                switch result {
-                case .svg(let svg): showImage(svg)
-                case .error(let error): failure = error
-                }
-            } catch {
-                guard !Task.isCancelled, !APIError.isCancellation(error) else { return }
-                failure = error.localizedDescription
+        do {
+            let result = try await client.renderDiagram(preview)
+            guard !Task.isCancelled else { return }
+            switch result {
+            case .svg(let svg):
+                imageURL = ShowFrameView.svgImageURL(svg)
+                if imageURL == nil { imageFailed() }
+            case .error(let error):
+                failure = error
             }
-        } else {
-            failure = String(localized: "Preview is not available for this media.")
+        } catch {
+            guard !Task.isCancelled, !APIError.isCancellation(error) else { return }
+            failure = error.localizedDescription
         }
-    }
-
-    private func showImage(_ svg: String) {
-        imageURL = ShowFrameView.svgImageURL(svg)
-        if imageURL == nil { imageFailed() }
     }
 
     private func imageFailed() {

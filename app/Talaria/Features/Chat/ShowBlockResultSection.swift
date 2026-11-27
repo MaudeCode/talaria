@@ -307,7 +307,7 @@ struct InlineReportView<Fallback: View>: View {
     }
 }
 
-/// A server-sandboxed show block, delivered report or local SVG image in a web view with no stored data.
+/// A server-sandboxed show block, delivered report or prepared SVG image in a web view with no stored data.
 struct ShowFrameView: UIViewRepresentable {
     let url: URL
     var openLink: ((URL) -> Void)? = nil
@@ -367,27 +367,7 @@ struct ShowFrameView: UIViewRepresentable {
         view.configuration.userContentController.removeScriptMessageHandler(forName: "report", contentWorld: .defaultClient)
     }
 
-    static func svgImageURL(_ source: String) -> URL? {
-        let svg = SVGRoot()
-        let parser = XMLParser(data: Data(source.utf8))
-        parser.shouldProcessNamespaces = true
-        parser.shouldReportNamespacePrefixes = true
-        parser.externalEntityResolvingPolicy = .never
-        parser.delegate = svg
-        guard parser.parse(), parser.parserError == nil, svg.name == "svg" else { return nil }
-
-        var image = source
-        if svg.namespace == nil || svg.namespace == "" {
-            // Fences may omit the namespace. Locate the root after any XML prolog to make it a standalone image.
-            guard !svg.declaresDefaultNamespace, let root = source.range(
-                of: #"\A\uFEFF?(?:\s|<\?[\s\S]*?\?>|<!--[\s\S]*?-->)*<svg(?=[\s/>])"#,
-                options: .regularExpression
-            ) else { return nil }
-            image.insert(contentsOf: " xmlns=\"\(SVGRoot.namespaceURI)\"", at: root.upperBound)
-        } else if svg.namespace != SVGRoot.namespaceURI {
-            return nil
-        }
-
+    static func svgImageURL(_ image: String) -> URL? {
         // Image mode disables SVG scripts, interactive links and external resources. The wrapper only sets the layout.
         let encodedImage = Data(image.utf8).base64EncodedString()
         let html = """
@@ -397,24 +377,6 @@ struct ShowFrameView: UIViewRepresentable {
         <img alt="" src="data:image/svg+xml;charset=utf-8;base64,\(encodedImage)">
         """
         return URL(string: "data:text/html;charset=utf-8;base64,\(Data(html.utf8).base64EncodedString())")
-    }
-
-    private final class SVGRoot: NSObject, XMLParserDelegate {
-        static let namespaceURI = "http://www.w3.org/2000/svg"
-        private(set) var name: String?
-        private(set) var namespace: String?
-        private(set) var declaresDefaultNamespace = false
-
-        func parser(_ parser: XMLParser, didStartMappingPrefix prefix: String, toURI uri: String) {
-            if name == nil, prefix.isEmpty { declaresDefaultNamespace = true }
-        }
-
-        func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
-                    qualifiedName: String?, attributes: [String: String]) {
-            guard name == nil else { return }
-            name = elementName
-            namespace = namespaceURI
-        }
     }
 
     private var themedURL: URL {

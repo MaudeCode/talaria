@@ -1,8 +1,8 @@
 import Foundation
 
 extension APIClient {
-    public func renderDiagram(source: String) async throws -> DiagramRenderResponse {
-        try await send(endpoint: .renderDiagram, method: "POST", body: ["source": source])
+    public func renderDiagram(_ preview: TranscriptDiagramPreview) async throws -> DiagramRenderResponse {
+        try await send(endpoint: .renderDiagram, method: "POST", body: preview)
     }
 
     public func startChat(
