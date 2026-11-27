@@ -1,6 +1,6 @@
 /**
  * Browser Web Push channel. VAPID keys and subscriptions live in the document store (secret files under the
- * JSON adapter). Each change diffs every subscribed profile's activity rows against the phase last seen per
+ * JSON adapter). Each change diffs every subscribed profile's activity rows against the state last seen per
  * session and applies the shared alert rule; delivery goes through the vetted, address-pinned fetch because
  * the browser chose the endpoint.
  */
@@ -84,10 +84,18 @@ const parse = (raw: unknown): Subscription[] => raw === undefined || raw === nul
 
 function decodedLength(value: string): number { return /^[A-Za-z0-9_-]+={0,2}$/.test(value) ? Buffer.from(value, 'base64url').length : -1 }
 
+interface SeenActivity {
+  phase: string
+  streamId: ActivityState['streamId']
+  approvalHeadId: string | undefined
+  decision: string | null
+  notices: string[]
+}
+
 export class WebPushChannel implements NotificationChannel {
   readonly id = 'web-push'
-  /** profile → session → effective phase, decision review and agent notice last seen. */
-  private readonly lastPhase = new Map<string, Map<string, { phase: string; decision: string | null; notices: string[] }>>()
+  /** profile → session → last activity state seen by this channel. */
+  private readonly lastSeen = new Map<string, Map<string, SeenActivity>>()
   private readonly inFlight = new Set<Promise<void>>()
   /** TAL-2191: endpoint and session → the last queued notice delivery, so a later pass's notices wait behind it. */
   private readonly noticeQueues = new Map<string, Promise<void>>()
@@ -114,7 +122,7 @@ export class WebPushChannel implements NotificationChannel {
   }
 
   clearDeleted(sid: string): Promise<void> {
-    for (const phases of this.lastPhase.values()) phases.delete(sid)
+    for (const sessions of this.lastSeen.values()) sessions.delete(sid)
     return Promise.resolve()
   }
 
@@ -244,7 +252,7 @@ export class WebPushChannel implements NotificationChannel {
 
   private async pass(change: number | undefined): Promise<void> {
     let subs = await this.subscriptions()
-    if (!subs.length && !this.lastPhase.size) return
+    if (!subs.length && !this.lastSeen.size) return
     const live = await this.deps.liveLogins()
     const valid = (s: Subscription): boolean => (s.login === null || live.has(s.login)) && this.deps.profileExists(s.profile)
     if (subs.some((s) => !valid(s))) {
@@ -254,25 +262,32 @@ export class WebPushChannel implements NotificationChannel {
     const access = new Map<Subscription, PersonAccess | undefined>()
     for (const sub of subs) access.set(sub, await this.deps.personAccessFor?.(sub.login))
     const profiles = new Set(subs.map((s) => s.profile))
-    for (const profile of this.lastPhase.keys()) if (!profiles.has(profile)) this.lastPhase.delete(profile)
+    for (const profile of this.lastSeen.keys()) if (!profiles.has(profile)) this.lastSeen.delete(profile)
     for (const profile of profiles) {
       const rows = await this.deps.activity.states(profile, () => { this.changed() }, change)
-      const previous = this.lastPhase.get(profile)
-      const next = new Map<string, { phase: string; decision: string | null; notices: string[] }>()
+      const previous = this.lastSeen.get(profile)
+      const next = new Map<string, SeenActivity>()
       for (const row of rows) {
         const phase = row.activityPhase ?? row.phase
-        next.set(row.sessionId, { phase, decision: row.decisionReviewId ?? null, notices: (row.agentNotices ?? []).map((notice) => notice.id) })
+        const seen = previous?.get(row.sessionId)
+        // A seen head belongs to this run, including phases where the row has no head.
+        const previousApprovalHeadId = seen && seen.streamId === row.streamId ? seen.approvalHeadId : undefined
+        next.set(row.sessionId, {
+          phase, streamId: row.streamId, approvalHeadId: row.approvalHeadId ?? previousApprovalHeadId,
+          decision: row.decisionReviewId ?? null, notices: (row.agentNotices ?? []).map((notice) => notice.id),
+        })
         if (!previous) continue
-        const seen = previous.get(row.sessionId)
         for (const sub of subs) {
           if (sub.profile !== profile || !personMaySee(access.get(sub), row.ownerPersonId)) continue
-          const kind = alertForTransition(seen?.phase ?? null, { phase, alertEligible: row.alertEligible, decisionReviewId: row.decisionReviewId }, sub.preferences, seen?.decision)
+          const kind = alertForTransition(seen?.phase ?? null, {
+            phase, alertEligible: row.alertEligible, approvalHeadId: row.approvalHeadId, decisionReviewId: row.decisionReviewId,
+          }, sub.preferences, seen?.decision, previousApprovalHeadId)
           if (kind) this.track(this.deliver(sub, row, kind))
           const notices = agentNotifyAlerts(seen?.notices, row.agentNotices)
           if (notices.length) this.queueNotices(sub, row, notices)
         }
       }
-      this.lastPhase.set(profile, next)
+      this.lastSeen.set(profile, next)
     }
   }
 
