@@ -169,7 +169,7 @@ class TestIOSRunnerTest < Minitest::Test
     constructions = hosted.flat_map { |pattern| Dir[File.expand_path(pattern, __dir__)] }.flat_map do |path|
       source = File.read(path, encoding: "UTF-8")
       # Balanced parentheses end each call at its own closing one, whether it spans one line or several.
-      source.enum_for(:scan, /^\s*(?:let \w+ = |return )ChatViewModel(?<args>\((?:[^()]|\g<args>)*\))/).map do
+      source.enum_for(:scan, /^\s*(?:let \w+ = (?:\w+ \?\? )?|return )ChatViewModel(?<args>\((?:[^()]|\g<args>)*\))/).map do
         match = Regexp.last_match
         enclosing_function = source[0...match.begin(0)][/.*\bfunc .*/m].to_s.split(/\bfunc /).last.to_s
         manager = match[:args][/liveActivityManager: ([^,\n]+)/, 1]

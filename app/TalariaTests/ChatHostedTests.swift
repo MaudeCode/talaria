@@ -25,7 +25,7 @@ final class ChatHostedTests: XCTestCase {
             throw URLError(.notConnectedToInternet)
         }]
         let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
-        let model = ChatViewModel(session: session, server: server, client: client, networkPath: nil)
+        let model = fixture.chatViewModel(session, client: client)
         await model.loadMessages(modelContext: fixture.cache.mainContext)
         model.setSendErrorMessage("Fixture send failed.")
 
@@ -40,7 +40,7 @@ final class ChatHostedTests: XCTestCase {
         let fixture = try FixtureApp(for: self)
         let session = try await fixture.session()
         let server = UITestFixtureEnvironment.serverURL
-        let model = ChatViewModel(session: session, server: server, client: fixture.client, networkPath: nil)
+        let model = fixture.chatViewModel(session)
         let draft = "Restored draft"
         let error = "Fixture send failed."
         fixture.environment.draftStore.setDraft(draft, for: .session(server: server, session: session))
@@ -954,7 +954,7 @@ final class ChatHostedTests: XCTestCase {
             """#, for: request)
         }]
         let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
-        let model = ChatViewModel(session: session, server: server, client: client, networkPath: nil)
+        let model = fixture.chatViewModel(session, client: client)
         await model.loadMessages()
         let window = try hostWindow(fixture.chat(session, viewModel: model, loadsInitialMessages: false))
 

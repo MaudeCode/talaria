@@ -128,13 +128,17 @@ final class FixtureApp {
         return try XCTUnwrap(sessions.first { $0.sessionId == sessionID }, "The fixture lists no \(sessionID)")
     }
 
+    func chatViewModel(_ session: SessionSummary, client: APIClient? = nil) -> ChatViewModel {
+        // Fixture streams run in process, so a real device's offline path must not block their restoration.
+        return ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL,
+                             client: client ?? self.client, liveActivityManager: SpyChatLiveActivityManager(), networkPath: nil)
+    }
+
     /// Pushes the chat as the session list does; pure canvas fixtures can omit the navigation container.
     func chat(_ session: SessionSummary, viewModel: ChatViewModel? = nil,
               asNavigationDestination: Bool = true, initialDraft: String? = nil,
               loadsInitialMessages: Bool = true) -> some View {
-        // Fixture streams run in process, so a real device's offline path must not block their restoration.
-        let viewModel = viewModel ?? ChatViewModel(session: session, server: UITestFixtureEnvironment.serverURL,
-                                                  client: client, networkPath: nil)
+        let viewModel = viewModel ?? chatViewModel(session)
         let chat = ChatView(
             session: session,
             server: UITestFixtureEnvironment.serverURL,
