@@ -29,6 +29,8 @@ public struct AuthStatusResponse: Decodable, Sendable {
     /// request (Cloudflare Access, Authentik). Present only when that mode is
     /// on, so nil means "not that kind of server".
     public let trustedAuthEnabled: Bool?
+    /// Owner authority reported by the server. Older servers can omit it.
+    public let canManageServer: Bool?
     /// TAL-48: the server keeps each person's sessions to that person. Older
     /// servers omit it and stay single-user, so nil means no identity UI.
     public let personIsolation: PersonIsolationCapability?
@@ -49,6 +51,7 @@ public struct AuthStatusResponse: Decodable, Sendable {
         oidcNativeHandoffEnabled: Bool? = nil,
         oidcUnavailable: Bool? = nil,
         trustedAuthEnabled: Bool? = nil,
+        canManageServer: Bool? = nil,
         personIsolation: PersonIsolationCapability? = nil,
         person: ServerPerson? = nil
     ) {
@@ -59,6 +62,7 @@ public struct AuthStatusResponse: Decodable, Sendable {
         self.oidcNativeHandoffEnabled = oidcNativeHandoffEnabled
         self.oidcUnavailable = oidcUnavailable
         self.trustedAuthEnabled = trustedAuthEnabled
+        self.canManageServer = canManageServer
         self.personIsolation = personIsolation
         self.person = person
     }

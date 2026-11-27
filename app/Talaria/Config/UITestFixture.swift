@@ -32,6 +32,9 @@ struct UITestFixtureEnvironment {
     nonisolated static let branchedFromArgument = "--ui-test-branched-from"
     /// Serves auth status from a server that keeps sessions per person, with a signed-in person (TAL-48).
     nonisolated static let personIsolationArgument = "--ui-test-person-isolation"
+    nonisolated static let terminalOwnerArgument = "--ui-test-terminal-owner"
+    nonisolated static let terminalMemberArgument = "--ui-test-terminal-member"
+    nonisolated static let terminalLegacyArgument = "--ui-test-terminal-legacy"
     /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
     /// until the test releases it, so "Syncing messages" stays over the cached rows (TAL-436).
     nonisolated static let holdTranscriptReloadsArgument = "--ui-test-hold-transcript-reloads"
@@ -747,8 +750,11 @@ final class UITestFixtureURLProtocol: URLProtocol {
             && ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-first-logs")
             && Self.answeredPaths.withLock { $0.filter { $0 == "/api/logs" }.count == 1 }
         let refusesSignIn = Self.refusesSignIn(request)
+        let refusesTerminal = url.path.hasPrefix("/api/terminal/")
+            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.terminalMemberArgument)
         let statusCode: Int
         if refusesSignIn { statusCode = 401 }
+        else if refusesTerminal { statusCode = 403 }
         else if avatar, url.query != "name=fixture-work" { statusCode = 404 }
         else if case .status(let code) = listFailure { statusCode = code }
         else if Self.isFullWidthPanelLoad(url), Self.panelScenario == UITestFixtureEnvironment.panelUnavailableArgument { statusCode = 503 }
@@ -774,6 +780,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
         }
         if refusesSignIn {
             client?.urlProtocol(self, didLoad: Self.json(["error": "Unauthorized"]))
+        } else if refusesTerminal {
+            client?.urlProtocol(self, didLoad: Self.json(["error": "Owner session required"]))
         } else if refusesLogs {
             client?.urlProtocol(self, didLoad: Self.json(["error": "Fixture log access refused"]))
         } else if refusesRemoval {
@@ -863,8 +871,15 @@ final class UITestFixtureURLProtocol: URLProtocol {
             ])
         case "/api/auth/status" where requiresSignIn:
             return json(["auth_enabled": true, "logged_in": isSignedIn.withLock { $0 }, "password_auth_enabled": true])
+        case "/api/auth/status" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.terminalMemberArgument):
+            return json(["auth_enabled": true, "logged_in": true, "bound_profile": "fixture-profile", "can_manage_server": false])
+        case "/api/auth/status" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.terminalOwnerArgument):
+            return json(["auth_enabled": true, "logged_in": true, "can_manage_server": true])
         case "/api/auth/status":
             return json(["auth_enabled": false, "logged_in": true])
+        case "/api/terminal/read":
+            return json(["terminal_id": "term_fixture", "output": "Checks passed.", "lines": 1, "next_event_id": 1,
+                         "truncated": false, "running": false, "exit_code": 0, "replaces_last_line": false])
         case "/api/auth/login":
             return json(["ok": true])
         case "/api/sessions" where URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
@@ -1458,6 +1473,22 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return json(["session": detail])
         }
         if UITestChatScenario.current != nil { return chatSessionResponse() }
+        if [UITestFixtureEnvironment.terminalOwnerArgument, UITestFixtureEnvironment.terminalMemberArgument,
+            UITestFixtureEnvironment.terminalLegacyArgument].contains(where: ProcessInfo.processInfo.arguments.contains) {
+            var detail = session(id: sessionID, title: sessionTitle)
+            detail["messages"] = [[
+                "role": "assistant", "content": "", "message_id": "terminal-turn", "_ts": 2_000_000_001,
+                "_anchor_activity_scene": [
+                    "version": "activity_scene_v1", "expanded_by_default": true,
+                    "activity_rows": [[
+                        "row_id": "tool:terminal-fixture", "order_index": 0, "role": "tool",
+                        "tool": ["id": "terminal-fixture", "name": "terminal_open", "done": true,
+                                 "result_view": ["terminal": ["terminal_id": "term_fixture", "title": "Run fixture checks", "command": "npm run check"]]]
+                    ]]
+                ]
+            ]]
+            return json(["session": detail])
+        }
         if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyPagingArgument) {
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let end = min(2_000, Int(items.first { $0.name == "msg_before" }?.value ?? "") ?? 2_000)

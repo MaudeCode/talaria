@@ -62,6 +62,49 @@ final class TerminalHostedTests: XCTestCase {
             attachHostedScreenshot(window, name: "terminal-exited-\(name)")
         }
     }
+
+    func testProfileBoundChatShowsTerminalDetailsWithoutOfferingOpen() async throws {
+        let window = try await openChatWithTerminal(UITestFixtureEnvironment.terminalMemberArgument)
+        attachHostedScreenshot(window, name: "terminal-profile-bound")
+        XCTAssertNil(HostedAccessibility.element(in: window, identifier: "terminal-open-term_fixture"),
+                     "A profile-bound session offered Open terminal")
+        let terminalRequests = UITestFixtureURLProtocol.answeredPaths.withLock { paths in
+            paths.filter { $0 == "/api/terminal/read" || $0 == "/api/terminal/output" }
+        }
+        XCTAssertTrue(terminalRequests.isEmpty, "The card started terminal requests: \(terminalRequests)")
+    }
+
+    func testOwnerChatCanOpenReadOnlyTerminal() async throws {
+        let window = try await openChatWithTerminal(UITestFixtureEnvironment.terminalOwnerArgument)
+        let open = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "terminal-open-term_fixture"
+        }
+        attachHostedScreenshot(window, name: "terminal-owner-card")
+        XCTAssertTrue(HostedAccessibility.activate(open))
+        _ = try await requireElement(in: window, label: "Checks passed.")
+        attachHostedScreenshot(window, name: "terminal-owner-output")
+    }
+
+    func testLegacyServerChatStillOffersOpenTerminal() async throws {
+        let window = try await openChatWithTerminal(UITestFixtureEnvironment.terminalLegacyArgument)
+        _ = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "terminal-open-term_fixture"
+        }
+    }
+
+    private func openChatWithTerminal(_ scenario: String) async throws -> UIWindow {
+        let fixture = try FixtureApp([scenario], for: self)
+        await fixture.environment.authManager.refreshActivePerson()
+        let window = try hostWindow(fixture.sessionList())
+        try await openSidebar(in: window)
+        let chat = try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        }
+        XCTAssertTrue(HostedAccessibility.activate(chat))
+        _ = try await requireElement(in: window, label: "Run fixture checks")
+        _ = try await requireElement(in: window, label: "npm run check")
+        return window
+    }
 }
 
 /// The chat's push of an opened terminal (`ChatView.openedTerminal`), around one tool card.

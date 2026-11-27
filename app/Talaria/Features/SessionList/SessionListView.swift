@@ -272,6 +272,7 @@ struct SessionListView: View {
 
     private var sessionListWithPresentations: some View {
         sidebarLayout
+            .environment(authManager)
             .environment(\.sessionActions, sessionActionContext)
             .environment(\.sessionOpenTrace, sessionOpenTrace)
             .onReceive(NotificationCenter.default.publisher(for: .talariaSessionRemovalsChanged, object: viewModel)) { notification in
@@ -448,6 +449,10 @@ struct SessionListView: View {
     private var sessionListWithTasks: some View {
         sessionListWithPresentations
             .background(WindowSceneReader(title: windowTitle))
+            .task(id: scenePhase == .active && !isPresentingSettings) {
+                guard scenePhase == .active, !isPresentingSettings else { return }
+                await authManager.refreshActivePerson()
+            }
             .task {
                 // Start the normal refresh immediately so a slow direct session
                 // request cannot leave the sidebar empty. The launch root was already
@@ -564,7 +569,11 @@ struct SessionListView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .talariaReauthenticated)) { notification in
                 guard notification.object as? URL == server else { return }
-                Task { await refreshSessionsAndActiveProfile() }
+                Task {
+                    async let authStatus: Void = authManager.refreshActivePerson()
+                    await refreshSessionsAndActiveProfile()
+                    await authStatus
+                }
             }
             .onChange(of: pendingSharedImport) {
                 openPendingSharedImportIfNeeded()

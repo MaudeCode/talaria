@@ -113,6 +113,7 @@ struct ChatView: View {
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(AuthManager.self) private var authManager: AuthManager?
     @Environment(\.sessionOpenTrace) private var sessionOpenTrace
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
@@ -1131,6 +1132,10 @@ struct ChatView: View {
         isScreenEnabled && !viewModel.isViewingCachedData && viewModel.screen?.available == true
     }
 
+    private var offersTerminal: Bool {
+        authManager?.canManageServer(on: server) == true
+    }
+
     private func openAgentScreen() {
         guard offersAgentScreen, viewModel.hasSession else { return }
         presentPreviewRestoringComposerFocusIfNeeded { showsAgentScreen = true }
@@ -1591,6 +1596,9 @@ struct ChatView: View {
                 if let openedTerminal {
                     TerminalOutputView(model: openedTerminal)
                 }
+            }
+            .onChange(of: offersTerminal) { _, offered in
+                if !offered { openedTerminal = nil }
             }
             .onChange(of: forkedSession) { _, fork in
                 if fork == nil { reportFilesInspector() }
@@ -2493,10 +2501,15 @@ struct ChatView: View {
     fileprivate struct ToolResultActions: ViewModifier {
         let chat: ChatView
         @State private var openScreen = ChatEnvironmentAction<Void, Void> { _ in }
+        @State private var openTerminal = ChatOpenTerminal { _ in }
 
         func body(content: Content) -> some View {
             let viewModel = chat.viewModel
             openScreen.handler = { _ in chat.openAgentScreen() }
+            openTerminal.handler = { reference in
+                guard chat.offersTerminal else { return }
+                chat.openedTerminal = viewModel.terminalFollowModel(reference)
+            }
             return content
                 .environment(\.chatOpenScreen, chat.offersAgentScreen ? openScreen : nil)
                 .transcriptLinks(perform: chat.handleTranscriptLink)
@@ -2521,9 +2534,7 @@ struct ChatView: View {
                     chat.focusedBackgroundTaskID = taskID
                     chat.showsBackgroundWorkSheet = true
                 }
-                .chatEnvironmentAction(\.chatOpenTerminal) { reference in
-                    chat.openedTerminal = viewModel.terminalFollowModel(reference)
-                }
+                .environment(\.chatOpenTerminal, chat.offersTerminal ? openTerminal : nil)
                 .chatEnvironmentAction(\.chatProposalModel) { proposalID in
                     ProposalCardModel(proposalID: proposalID, client: viewModel.client)
                 }
