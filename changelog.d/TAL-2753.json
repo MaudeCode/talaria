@@ -4,7 +4,15 @@
       "category": "Fixed",
       "summary": "The Files panel hides dotfiles by default and reveals them when you turn on Show hidden files.",
       "highlight": false,
-      "components": ["web"]
+      "components": ["web"],
+      "announce": false
+    },
+    {
+      "category": "Fixed",
+      "summary": "The App keeps dotfiles visible when browsing workspaces on updated Web servers.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
     }
   ]
 }
