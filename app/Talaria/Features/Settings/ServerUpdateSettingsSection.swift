@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ServerUpdateSettingsSection: View {
     @Environment(\.settingsScrollAnchor) private var scrollAnchor
     @Environment(ServerSettingsStore.self) private var settingsStore: ServerSettingsStore?
+    @Environment(UpdateNotificationCenterViewModel.self) private var sharedNotifications: UpdateNotificationCenterViewModel?
     @Bindable var authManager: AuthManager
     let server: URL
     var feedback: FeedbackComposer?
@@ -13,7 +14,10 @@ struct ServerUpdateSettingsSection: View {
     private var feedbackOnScreenshot = SectionVisibilitySettings.defaultFeedbackOnScreenshot
 
     @State private var model: ServerUpdateModel
-    @State private var isConfirmingUpdate = false
+    @State private var localNotifications: UpdateNotificationCenterViewModel
+    @State private var updateTarget: UpdateTarget?
+    @State private var agentConfirmation: UpdatesApplyResponse.AgentConfirmation?
+    @State private var agentConfirmationMessage = ""
     @State private var interruptConfirmation: UpdatesApplyResponse.InterruptConfirmation?
     @State private var isPresentingForcedCheckResult = false
     @State private var summaryRequest: UpdateSummaryRequest?
@@ -29,7 +33,9 @@ struct ServerUpdateSettingsSection: View {
         self.authManager = authManager
         self.server = server
         self.feedback = feedback
-        _model = State(initialValue: ServerUpdateModel(client: APIClient(baseURL: server)))
+        let client = APIClient(baseURL: server)
+        _model = State(initialValue: ServerUpdateModel(client: client))
+        _localNotifications = State(initialValue: UpdateNotificationCenterViewModel(server: server, client: client))
     }
 
     /// Owns the System page so its sheet, alerts and loads attach once, to the page. On a `Group` or `Section` of rows,
@@ -44,8 +50,11 @@ struct ServerUpdateSettingsSection: View {
                     serverStatusPill
                 }
 
-                SettingsValueRow(title: SettingsIndex.systemVersion.title, systemImage: "number") {
-                    serverVersionContent
+                SettingsValueRow(title: SettingsIndex.systemVersion.title, systemImage: "number", hasInteractiveTrailingContent: true) {
+                    HStack(spacing: 12) {
+                        serverVersionContent
+                        updateControl(for: .webui, available: webUpdateAvailable)
+                    }
                 }
 
                 AgentBackupSettingsRow(backup: backup, archiveDownload: archiveDownload, server: server) { backupConfirmation = $0 }
@@ -61,7 +70,7 @@ struct ServerUpdateSettingsSection: View {
                 UpdateSummaryButton(info: model.updateTargets?.webui) {
                     summaryRequest = UpdateSummaryRequest(target: .webui)
                 }
-                serverUpdateAction
+                updateProblem(for: .webui)
                 agentUpdateRows
                 if scrollAnchor == .setting(.systemUpdateSummary),
                    model.updateTargets?.webui?.offersSummary != true, model.updateTargets?.agent?.offersSummary != true {
@@ -78,7 +87,14 @@ struct ServerUpdateSettingsSection: View {
                                   isOn: $feedbackOnScreenshot, accessibilityIdentifier: SettingsIndex.systemFeedbackOnScreenshot.id)
             }
         }
-        .task { await loadServerSettings() }
+        .task(id: notifications.completedUpdateID) {
+            await model.load(settingsStore: settingsStore, postUpdate: notifications.completedUpdateID != nil, onAPIError: handleAPIError)
+        }
+        .updatingPresentation(localNotifications, isEnabled: sharedNotifications == nil, onAPIError: handleAPIError)
+        .task(id: sharedNotifications == nil && localNotifications.needsFastPolling) {
+            guard sharedNotifications == nil, localNotifications.needsFastPolling else { return }
+            await localNotifications.refreshWhileActive(onRefresh: {})
+        }
         .task { await backup.load(on: server) }
         .task(id: backup.poll) { await backup.pollStatus(on: server) }
         .task { await restore.load(on: server) }
@@ -86,7 +102,8 @@ struct ServerUpdateSettingsSection: View {
         .onDisappear {
             archiveDownload.stop()
             interruptConfirmation = nil
-            model.discardInterruptConfirmation()
+            agentConfirmation = nil
+            model.discardConfirmation()
         }
         .sheet(item: $summaryRequest) { request in
             UpdateSummarySheet(
@@ -133,14 +150,29 @@ struct ServerUpdateSettingsSection: View {
             async let restoreStatus: Void = restore.load(on: server)
             _ = await (backupStatus, restoreStatus)
         }
-        .alert("Update server?", isPresented: $isConfirmingUpdate) {
+        .alert(updateTarget == .agent ? String(localized: "Update Hermes Agent?") : String(localized: "Update server?"),
+               isPresented: isConfirmingUpdate, presenting: updateTarget) { target in
             Button("Cancel", role: .cancel) {}
             Button("Update") {
-                Task { await applyServerUpdate() }
+                Task { await applyServerUpdate(target: target) }
             }
-        } message: {
-            // swiftlint:disable:next line_length
-            Text("This pulls the latest Hermes server version and restarts it. Active chats may be interrupted briefly; the app reconnects when the server is back.")
+        } message: { target in
+            if target == .agent {
+                Text("This installs the available Hermes Agent update on the server.")
+            } else {
+                // swiftlint:disable:next line_length
+                Text("This pulls the latest Hermes server version and restarts it. Active chats may be interrupted briefly; the app reconnects when the server is back.")
+            }
+        }
+        .alert("Install Hermes Agent update?", isPresented: isConfirmingAgent(refresh: false), presenting: agentConfirmation) { confirmation in
+            agentConsentActions(confirmation, title: "Install")
+        } message: { _ in
+            Text(agentConfirmationMessage)
+        }
+        .alert("Refresh dashboards and update?", isPresented: isConfirmingAgent(refresh: true), presenting: agentConfirmation) { confirmation in
+            agentConsentActions(confirmation, title: "Refresh and update")
+        } message: { confirmation in
+            Text(agentConsentMessage(confirmation))
         }
         .alert("Interrupt chats and update?", isPresented: isConfirmingInterrupt, presenting: interruptConfirmation) { confirmation in
             Button("Cancel", role: .cancel) { interruptConfirmation = nil }
@@ -167,6 +199,43 @@ struct ServerUpdateSettingsSection: View {
 
     private var isConfirmingBackup: Binding<Bool> {
         Binding(get: { backupConfirmation != nil }, set: { if !$0 { backupConfirmation = nil } })
+    }
+
+    private var notifications: UpdateNotificationCenterViewModel { sharedNotifications ?? localNotifications }
+
+    private var webUpdateAvailable: Bool {
+        model.status.version != nil && model.updateTargets?.webui?.canApply == true
+    }
+
+    private var isConfirmingUpdate: Binding<Bool> {
+        Binding(get: { updateTarget != nil }, set: { if !$0 { updateTarget = nil } })
+    }
+
+    private func isConfirmingAgent(refresh: Bool) -> Binding<Bool> {
+        func isThisOffer() -> Bool {
+            switch agentConfirmation {
+            case .refresh: refresh
+            case .revision: !refresh
+            case nil: false
+            }
+        }
+        // The revision alert can be dismissing as the server offers a dashboard refresh.
+        return Binding(get: isThisOffer, set: { if !$0, isThisOffer() { agentConfirmation = nil } })
+    }
+
+    @ViewBuilder
+    private func agentConsentActions(_ confirmation: UpdatesApplyResponse.AgentConfirmation, title: LocalizedStringKey) -> some View {
+        Button("Cancel", role: .cancel) { model.discardConfirmation() }
+        Button(title, role: .destructive) {
+            agentConfirmation = nil
+            Task { await applyServerUpdate(target: .agent, confirming: confirmation) }
+        }
+    }
+
+    private func agentConsentMessage(_ confirmation: UpdatesApplyResponse.AgentConfirmation) -> String {
+        guard case let .refresh(_, services, revision) = confirmation else { return agentConfirmationMessage }
+        return [agentConfirmationMessage, services.joined(separator: ", "), revision]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 
     private var isConfirmingInterrupt: Binding<Bool> {
@@ -215,7 +284,7 @@ private extension ServerUpdateSettingsSection {
             SettingsButton(SettingsIndex.systemCheckNow.title) {
                 Task { await checkForUpdatesManually() }
             }
-            .disabled(model.isApplying)
+            .disabled(model.isApplying || notifications.isFollowingUpdate)
             .padding(.top, 4)
         }
     }
@@ -259,24 +328,27 @@ private extension ServerUpdateSettingsSection {
         }
     }
 
-    /// The server's pending Agent update, read-only: installed version, status, and its summary.
     @ViewBuilder
     private var agentUpdateRows: some View {
-        if let agent = model.updateTargets?.agent {
-            let status = UpdateNote(agent: agent)
-            SettingsValueRow(title: SettingsIndex.systemHermesAgent.title) {
-                Text(
-                    versionRange(agent.currentVersion, agent.targetVersion)
-                        ?? agent.currentVersion ?? String(localized: "Unknown")
-                )
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
+        let agent = model.updateTargets?.agent
+        if agent != nil || model.agentVersion != nil {
+            SettingsValueRow(title: SettingsIndex.systemHermesAgent.title, hasInteractiveTrailingContent: true) {
+                HStack(spacing: 12) {
+                    Text(model.agentVersion ?? agent?.currentVersion ?? String(localized: "Unknown"))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    updateControl(for: .agent, available: agent?.canApply == true)
+                }
             }
-            updateNoteRow(systemImage: status.systemImage, tint: status.tint, text: status.text,
-                          identifier: "settings-system-status-agent")
-            UpdateSummaryButton(info: agent) {
-                summaryRequest = UpdateSummaryRequest(target: .agent)
+            if let agent {
+                let status = UpdateNote(agent: agent)
+                updateNoteRow(systemImage: status.systemImage, tint: status.tint, text: status.text,
+                              identifier: "settings-system-status-agent")
+                UpdateSummaryButton(info: agent) {
+                    summaryRequest = UpdateSummaryRequest(target: .agent)
+                }
             }
+            updateProblem(for: .agent)
         } else if scrollAnchor == .setting(.systemHermesAgent) {
             SettingsInfoRow(title: SettingsIndex.systemHermesAgent.title, value: String(localized: "Not Available on This Server"))
         }
@@ -294,18 +366,25 @@ private extension ServerUpdateSettingsSection {
     }
 
     @ViewBuilder
-    private var serverUpdateAction: some View {
-        switch model.applyPhase {
-        case .idle:
-            if model.status.version != nil, case .updateAvailable = model.updateTargets?.webuiUpdateState {
-                updateActionButton(title: SettingsIndex.systemUpdate.title)
-            } else if scrollAnchor == .setting(.systemUpdate) {
-                SettingsInfoRow(title: SettingsIndex.systemUpdate.title, value: String(localized: "Not Available on This Server"))
+    private func updateControl(for target: UpdateTarget, available: Bool) -> some View {
+        if available {
+            switch updatePhase(for: target) {
+            case .applying, .idle, .agentConfirmation:
+                updateActionButton(title: target == .webui ? SettingsIndex.systemUpdate.title : String(localized: "Update Hermes Agent"),
+                                   target: target)
+            case .blocked, .failed:
+                EmptyView()
             }
-        case .applying:
-            updateProgressRow(String(localized: "Starting update…"))
-        case .recovering:
-            updateProgressRow(String(localized: "Updating & restarting…"))
+        }
+    }
+
+    private func updatePhase(for target: UpdateTarget) -> ServerUpdateModel.ApplyPhase {
+        model.lastTarget == target ? model.applyPhase : .idle
+    }
+
+    @ViewBuilder
+    private func updateProblem(for target: UpdateTarget) -> some View {
+        switch updatePhase(for: target) {
         case let .blocked(message, confirmation):
             VStack(alignment: .leading, spacing: 10) {
                 updateMessageRow(
@@ -313,7 +392,7 @@ private extension ServerUpdateSettingsSection {
                     systemImage: "clock", tint: .secondary
                 )
                 HStack {
-                    updateActionButton(title: String(localized: "Retry update"))
+                    updateActionButton(title: String(localized: "Retry update"), target: target)
                     if let confirmation {
                         SettingsButton(String(localized: "Update anyway"), systemImage: "exclamationmark.triangle") {
                             interruptConfirmation = confirmation
@@ -326,17 +405,27 @@ private extension ServerUpdateSettingsSection {
         case let .failed(failure):
             VStack(alignment: .leading, spacing: 10) {
                 updateMessageRow(failureMessage(failure), systemImage: "exclamationmark.triangle", tint: .orange)
-                updateActionButton(title: String(localized: "Retry update"))
+                updateActionButton(title: String(localized: "Retry update"), target: target)
+            }
+        case .applying, .idle, .agentConfirmation:
+            if target == .webui, !webUpdateAvailable, scrollAnchor == .setting(.systemUpdate) {
+                SettingsInfoRow(title: SettingsIndex.systemUpdate.title, value: String(localized: "Not Available on This Server"))
             }
         }
     }
 
-    private func updateActionButton(title: String) -> some View {
-        SettingsButton(title) {
-            isConfirmingUpdate = true
+    @ViewBuilder
+    private func updateActionButton(title: String, target: UpdateTarget) -> some View {
+        let button = SettingsButton(title, systemImage: "arrow.up.circle", isLoading: model.isApplying && model.lastTarget == target) {
+            updateTarget = target
         }
-        .disabled(model.isCheckingForUpdates)
-        .padding(.top, 4)
+        .disabled(model.isCheckingForUpdates || model.isApplying || notifications.isFollowingUpdate)
+        .environment(\.settingsIndexPage, nil)
+        if target == .webui {
+            button.indexedSettingsRow(title: title, identifier: SettingsIndex.systemUpdate.id)
+        } else {
+            button
+        }
     }
 
     private func updateProgressRow(_ text: String) -> some View {
@@ -355,10 +444,6 @@ private extension ServerUpdateSettingsSection {
             String(localized: "Could not reach the server to start the update.")
         case let .server(message):
             message.isEmpty ? String(localized: "The update could not be applied.") : message
-        case let .timedOut(serverReachable):
-            serverReachable
-                ? String(localized: "The update is taking longer than expected to finish. Try again in a moment.")
-                : String(localized: "The server didn't come back after the update. Check the server, then retry.")
         }
     }
 
@@ -366,8 +451,17 @@ private extension ServerUpdateSettingsSection {
         await model.load(settingsStore: settingsStore, onAPIError: handleAPIError)
     }
 
-    private func applyServerUpdate(interrupting confirmation: UpdatesApplyResponse.InterruptConfirmation? = nil) async {
-        await model.apply(interrupting: confirmation, settingsStore: settingsStore, onAPIError: handleAPIError)
+    private func applyServerUpdate(
+        target: UpdateTarget = .webui,
+        interrupting confirmation: UpdatesApplyResponse.InterruptConfirmation? = nil,
+        confirming agentConsent: UpdatesApplyResponse.AgentConfirmation? = nil
+    ) async {
+        await model.apply(target: target, interrupting: confirmation, confirming: agentConsent,
+                          notifications: notifications, onAPIError: handleAPIError)
+        if case let .agentConfirmation(offer, message) = model.applyPhase {
+            agentConfirmationMessage = message
+            agentConfirmation = offer
+        }
     }
 
     private func checkForUpdatesManually() async {

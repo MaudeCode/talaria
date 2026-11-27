@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Update Hermes Agent from App Settings and follow both Agent and Talaria Web updates in the Updating sheet.",
+      "highlight": true,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

@@ -295,15 +295,16 @@ extension APIClient {
         )
     }
 
-    /// Applies a pending repo update. The server pulls `--ff-only` and then
-    /// restarts itself, so the caller must tolerate a brief connection outage
-    /// and re-poll afterwards. Defaults to the `webui` target (issue #180 scope;
-    /// no `agent` target or `/force`).
-    public func applyUpdate(target: String = "webui", interruptToken: String? = nil, tabID: String? = nil) async throws -> UpdatesApplyResponse {
+    /// Starts or rejoins an update. The tab ID lets reads recover an apply whose response was lost during a restart.
+    public func applyUpdate(
+        target: String = "webui", interruptToken: String? = nil, tabID: String? = nil,
+        confirmedAgentRevision: String? = nil, agentRefreshToken: String? = nil
+    ) async throws -> UpdatesApplyResponse {
         try await send(
             endpoint: .updatesApply,
             method: "POST",
-            body: UpdateTargetRequest(target: target, interruptToken: interruptToken, tabId: tabID)
+            body: UpdateTargetRequest(target: target, interruptToken: interruptToken, tabId: tabID,
+                                      confirmedAgentRevision: confirmedAgentRevision, agentRefreshToken: agentRefreshToken)
         )
     }
 
@@ -421,6 +422,8 @@ private struct UpdateTargetRequest: Encodable {
     let target: String
     var interruptToken: String?
     var tabId: String?
+    var confirmedAgentRevision: String?
+    var agentRefreshToken: String?
 }
 
 private struct UpdatesCheckForceRequest: Encodable {

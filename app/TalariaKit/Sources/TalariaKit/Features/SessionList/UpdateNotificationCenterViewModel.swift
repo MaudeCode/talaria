@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 @Observable
 public final class UpdateNotificationCenterViewModel {
+    private static let updateTrackingTimeout: Duration = .seconds(600)
     public private(set) var notifications: [UpdateNotificationRecord] = []
     public private(set) var unreadCount = 0
     private(set) var clearableCount = 0
@@ -15,23 +16,106 @@ public final class UpdateNotificationCenterViewModel {
     private(set) var performingActionIDs: Set<String> = []
     public private(set) var isClearing = false
     public private(set) var supportsNotifications = true
+    public private(set) var updating: UpdateNotificationRecord?
+    public private(set) var updateTimedOut = false
+    public private(set) var completedUpdateID: String?
+    public private(set) var updateActionError: String?
 
     private let client: APIClient
+    private var trackedUpdate: TrackedUpdate?
+    private var readGeneration = 0
+    private var scopeID: String?
+    private let now: () -> ContinuousClock.Instant
 
-    public init(server: URL, client: APIClient? = nil) {
+    private struct TrackedUpdate {
+        let tabID = UUID().uuidString
+        var deadline: ContinuousClock.Instant
+        var notificationID: String?
+        var requestSettled = false
+    }
+
+    public convenience init(server: URL, client: APIClient? = nil) {
+        self.init(server: server, client: client, now: { .now })
+    }
+
+    init(server: URL, client: APIClient?, now: @escaping () -> ContinuousClock.Instant) {
         self.client = client ?? APIClient(baseURL: server)
+        self.now = now
+    }
+
+    public var isFollowingUpdate: Bool {
+        trackedUpdate != nil || updating?.presentsDialog == true
+    }
+
+    public var needsFastPolling: Bool {
+        isFollowingUpdate || notifications.contains(where: \.active)
+    }
+
+    func beginUpdate() -> String {
+        let update = TrackedUpdate(deadline: now().advanced(by: Self.updateTrackingTimeout))
+        trackedUpdate = update
+        updateTimedOut = false
+        return update.tabID
+    }
+
+    func followUpdate(tabID: String, notificationID: String?) async {
+        guard trackedUpdate?.tabID == tabID else { return }
+        if let notificationID { trackedUpdate?.notificationID = notificationID }
+        trackedUpdate?.requestSettled = true
+        await refresh()
+    }
+
+    func stopTracking(tabID: String) {
+        guard let trackedUpdate, trackedUpdate.tabID == tabID else { return }
+        readGeneration += 1
+        if updating?.id == trackedUpdate.notificationID { updating = nil }
+        self.trackedUpdate = nil
+    }
+
+    public func closeUpdating() {
+        guard let updating, updating.presentsDialog != true, updating.closeBehavior != .none else {
+            if updating == nil { updateTimedOut = false }
+            return
+        }
+        if updating.closeBehavior == .auto { completedUpdateID = updating.id }
+        if trackedUpdate?.notificationID == updating.id { trackedUpdate = nil }
+        self.updating = nil
+        updateActionError = nil
+    }
+
+    public func resetProfile() {
+        readGeneration += 1
+        scopeID = nil
+        notifications = []
+        unreadCount = 0
+        clearableCount = 0
+        canClear = false
+        trackedUpdate = nil
+        updating = nil
+        updateTimedOut = false
+        updateActionError = nil
+        completedUpdateID = nil
+        errorMessage = nil
+        lastError = nil
     }
 
     @discardableResult
     public func refresh() async -> Bool {
-        guard supportsNotifications else { return false }
+        guard supportsNotifications else { expireTracking(unsupported: true); return false }
+        readGeneration += 1
+        let generation = readGeneration
+        let profile = ActiveServerProfile.switchCount(for: client.baseURL)
+        let tabID = trackedUpdate?.tabID
+        defer { if generation == readGeneration { expireTracking() } }
         do {
-            let response = try await client.updateNotifications()
+            let response = try await client.updateNotifications(tabID: tabID)
+            guard generation == readGeneration, profile == ActiveServerProfile.switchCount(for: client.baseURL), !Task.isCancelled else { return true }
             apply(response)
             errorMessage = nil
             lastError = nil
             return true
         } catch {
+            guard generation == readGeneration, profile == ActiveServerProfile.switchCount(for: client.baseURL) else { return true }
             if Self.isMissingCapability(error) {
                 supportsNotifications = false
                 notifications = []
@@ -40,6 +124,7 @@ public final class UpdateNotificationCenterViewModel {
                 canClear = false
                 errorMessage = nil
                 lastError = nil
+                expireTracking(unsupported: true)
                 return false
             }
             guard !APIError.isCancellation(error) else { return false }
@@ -60,7 +145,7 @@ public final class UpdateNotificationCenterViewModel {
             let continuePolling = await refresh()
             onRefresh()
             guard continuePolling else { return }
-            do { try await sleep(interval) } catch { return }
+            do { try await sleep(needsFastPolling ? .seconds(2) : interval) } catch { return }
         }
     }
 
@@ -111,17 +196,29 @@ public final class UpdateNotificationCenterViewModel {
         let actionKey = "\(notification.id):\(action.id)"
         guard !performingActionIDs.contains(actionKey) else { return }
         performingActionIDs.insert(actionKey)
+        let profile = ActiveServerProfile.switchCount(for: client.baseURL)
+        let generation = readGeneration
+        updateActionError = nil
         defer { performingActionIDs.remove(actionKey) }
         do {
             let updated = try await client.performUpdateNotificationAction(id: notification.id, actionID: action.id)
-            if let index = notifications.firstIndex(where: { $0.id == updated.id }) {
-                notifications[index] = updated
+            guard profile == ActiveServerProfile.switchCount(for: client.baseURL) else { return }
+            if generation == readGeneration {
+                if let index = notifications.firstIndex(where: { $0.id == updated.id }) {
+                    notifications[index] = updated
+                }
+                if updating?.id == updated.id { updating = updated }
             }
             await refresh()
         } catch {
-            guard !APIError.isCancellation(error) else { return }
+            guard profile == ActiveServerProfile.switchCount(for: client.baseURL), !APIError.isCancellation(error) else { return }
+            if !APIError.isDefinitiveWriteFailure(error) { await refresh() }
+            guard profile == ActiveServerProfile.switchCount(for: client.baseURL) else { return }
             errorMessage = error.localizedDescription
             lastError = error
+            if updating?.id == notification.id, updating?.actions.contains(where: { $0.id == action.id }) == true {
+                updateActionError = error.localizedDescription
+            }
         }
     }
 
@@ -145,10 +242,41 @@ public final class UpdateNotificationCenterViewModel {
     }
 
     private func apply(_ response: UpdateNotificationsResponse) {
+        if let scopeID, scopeID != response.scopeId { resetProfile() }
+        scopeID = response.scopeId
         notifications = response.notifications
         unreadCount = response.unreadCount
         clearableCount = response.clearableCount
         canClear = response.canClear
+
+        let knownID = trackedUpdate?.notificationID
+        let tracked = response.tabUpdate ?? notifications.first { $0.id == knownID }
+        if let tracked, trackedUpdate != nil {
+            trackedUpdate?.notificationID = tracked.id
+        }
+        if let tracked, trackedUpdate?.requestSettled == true {
+            updating = tracked
+            switch tracked.closeBehavior {
+            case .auto, .close:
+                trackedUpdate = nil
+            case .none, .restartLater:
+                // The server still knows where the update is. Only a loss of that evidence can time out.
+                trackedUpdate?.deadline = now().advanced(by: Self.updateTrackingTimeout)
+            }
+        } else if let current = updating,
+                  let fresh = notifications.first(where: { $0.id == current.id }) ?? (tracked?.id == current.id ? tracked : nil) {
+            updating = fresh
+        } else if let presenting = notifications.first(where: { $0.presentsDialog == true }) {
+            updating = presenting
+        }
+        if updating != nil { updateTimedOut = false }
+    }
+
+    private func expireTracking(unsupported: Bool = false) {
+        guard let trackedUpdate, trackedUpdate.requestSettled, unsupported || now() >= trackedUpdate.deadline else { return }
+        self.trackedUpdate = nil
+        updating = nil
+        updateTimedOut = true
     }
 
     private static func isMissingCapability(_ error: Error) -> Bool {

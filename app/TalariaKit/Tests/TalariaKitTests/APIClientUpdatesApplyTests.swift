@@ -39,6 +39,14 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         XCTAssertEqual(response.notificationId, "00000000-0000-4000-8000-000000001523")
     }
 
+    func testAgentRefreshOfferIsNotTreatedAsFailure() throws {
+        let response = try APIClient.responseDecoder().decode(
+            UpdatesApplyResponse.self, from: sharedContractFixture("agent-update-refresh")
+        )
+
+        XCTAssertNotEqual(response.outcome, .failed, "The server is asking for consent to refresh its dashboards")
+    }
+
     func testRestartBlockedResponseIsNotTreatedAsFailure() throws {
         let response = try decodeApply("""
         {
@@ -282,77 +290,115 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         XCTAssertLessThanOrEqual(requestCount - 1, 1, "60 s of an idle active app asks at most once")
     }
 
-    func testFollowUpdateReportsSuccessWhenServerFinishesAfterNinetySeconds() async throws {
+    @MainActor
+    func testAnOpenRecoverySurvivesReconnectUntilTheServerReportsSuccess() async throws {
+        let shared = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: sharedContractFixture("update-notifications")) as? [String: Any]
+        )
+        let rows = try XCTUnwrap(shared["notifications"] as? [[String: Any]])
+        let recovering = try XCTUnwrap(rows.first { $0["phase"] as? String == "recovering" })
+        let finished = try XCTUnwrap(rows.first { $0["phase"] as? String == "succeeded" })
+        let id = try XCTUnwrap(recovering["id"] as? String)
+        var result = finished
+        result["id"] = id
+        result["target"] = recovering["target"]
+        result["steps"] = [["id": "agent_ready", "label": "Hermes Agent 2.0.0 is running", "state": "done"]]
+        let finalSteps = try XCTUnwrap(result["steps"] as? [[String: String]])
+        func envelope(_ record: [String: Any]) throws -> String {
+            var reply = shared
+            reply["notifications"] = [record]
+            reply["tab_update"] = NSNull()
+            return String(decoding: try JSONSerialization.data(withJSONObject: reply), as: UTF8.self)
+        }
+        let recoveringResponse = try envelope(recovering)
+        let finishedResponse = try envelope(result)
         var polls = 0
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/update-notifications")
             polls += 1
-            switch polls * 2 {
-            case ..<20: return self.updateNotificationList(phase: "applying", active: true, for: request)
-            case ..<60: return self.updateNotificationList(phase: "restarting", active: true, for: request)
-            case ..<90: throw URLError(.cannotConnectToHost)
-            default: return self.updateNotificationList(phase: "succeeded", active: false, for: request)
-            }
-        }
-
-        let completion = await client.followUpdate(notificationID: Self.updateNotificationID, sleep: { _ in })
-
-        XCTAssertEqual(completion, .succeeded)
-        XCTAssertEqual(polls * 2, 90)
-    }
-
-    func testFollowUpdateKeepsRecoveringActiveAcrossReconnectUntilVerifiedOutcome() async throws {
-        var polls = 0
-        let client = makeClient { request in
-            polls += 1
             switch polls {
-            case 1: return self.updateNotificationList(phase: "recovering", active: true, message: "Attempting recovery", for: request)
+            case 1: return apiTestJSONResponse(recoveringResponse, for: request)
             case 2: throw URLError(.networkConnectionLost)
-            case 3: return self.updateNotificationList(phase: "recovering", active: true, message: "Attempting recovery", for: request)
-            default: return self.updateNotificationList(phase: "succeeded", active: false, message: "Hermes Agent v2.0.0 is running after automatic recovery.", for: request)
+            default: return apiTestJSONResponse(finishedResponse, for: request)
             }
         }
-        let completion = await client.followUpdate(notificationID: Self.updateNotificationID, sleep: { _ in })
-        XCTAssertEqual(completion, .succeeded)
-        XCTAssertEqual(polls, 4)
+        let model = UpdateNotificationCenterViewModel(server: client.baseURL, client: client)
+        let tab = model.beginUpdate()
+        await model.followUpdate(tabID: tab, notificationID: id)
+        XCTAssertEqual(model.updating?.presentsDialog, true)
+        await model.refresh()
+        XCTAssertEqual(model.updating?.presentsDialog, true)
+        XCTAssertFalse(model.updateTimedOut)
+        await model.refresh()
+        XCTAssertEqual(model.updating?.closeBehavior, .auto)
+        XCTAssertEqual(model.updating?.steps?.map(\.label), finalSteps.compactMap { $0["label"] })
     }
 
-    func testFollowUpdateShowsTheServerExplanationOfAFailedPhase() async throws {
-        let client = makeClient { request in
-            self.updateNotificationList(
-                phase: "failed",
-                active: false,
-                message: "The update could not be completed. Open System settings for details.",
-                detail: "The local webui repo has unresolved merge conflicts.",
-                for: request
-            )
+    @MainActor
+    func testDeferredGatewayRestartReopensWhenTheServerPresentsItAgain() async throws {
+        let data = try sharedContractFixture("update-notifications")
+        let shared = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let rows = try XCTUnwrap(shared["notifications"] as? [[String: Any]])
+        let waiting = try XCTUnwrap(rows.first { $0["phase"] as? String == "waiting_for_idle" })
+        let id = try XCTUnwrap(waiting["id"] as? String)
+        var restarting = waiting
+        restarting["phase"] = "restarting"
+        restarting["active"] = true
+        restarting["presents_dialog"] = true
+        restarting["dialog_close"] = "none"
+        restarting["actions"] = []
+        func envelope(_ record: [String: Any]) throws -> String {
+            var reply = shared
+            reply["notifications"] = [record]
+            reply["tab_update"] = NSNull()
+            return String(decoding: try JSONSerialization.data(withJSONObject: reply), as: UTF8.self)
         }
+        let response = LockedTestValue(try envelope(waiting))
+        let client = makeClient { request in
+            XCTAssertEqual(request.httpMethod, "GET", "Restart later changes only the local presentation")
+            return apiTestJSONResponse(response.value, for: request)
+        }
+        let model = UpdateNotificationCenterViewModel(server: client.baseURL, client: client)
+        let tab = model.beginUpdate()
+        await model.followUpdate(tabID: tab, notificationID: id)
+        XCTAssertEqual(model.updating?.closeBehavior, .restartLater)
 
-        let completion = await client.followUpdate(notificationID: Self.updateNotificationID, sleep: { _ in })
+        model.closeUpdating()
+        await model.refresh()
+        XCTAssertNil(model.updating)
 
-        XCTAssertEqual(completion, .failed(message: "The local webui repo has unresolved merge conflicts."))
+        response.value = try envelope(restarting)
+        await model.refresh()
+        XCTAssertEqual(model.updating?.id, id)
+        XCTAssertEqual(model.updating?.closeBehavior, .some(.none))
     }
 
-    private static let updateNotificationID = "00000000-0000-4000-8000-000000000558"
+    @MainActor
+    func testRestartNowUsesTheServerOfferedActionID() async throws {
+        let fixture = try sharedContractFixture("update-notifications")
+        let wire = try APIClient.responseDecoder().decode(UpdateNotificationsResponse.self, from: fixture)
+        let waiting = try XCTUnwrap(wire.notifications.first { $0.phase == "waiting_for_idle" })
+        let action = try XCTUnwrap(waiting.actions.first)
+        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture) as? [String: Any])
+        let rows = try XCTUnwrap(raw["notifications"] as? [[String: Any]])
+        let record = try XCTUnwrap(rows.first { $0["id"] as? String == waiting.id })
+        let response = String(decoding: try JSONSerialization.data(withJSONObject: record), as: UTF8.self)
+        let writes = LockedTestValue<[String]>([])
+        let client = makeClient { request in
+            if request.httpMethod == "GET" {
+                XCTAssertEqual(request.url?.path, "/api/update-notifications")
+                return apiTestJSONResponse(String(decoding: fixture, as: UTF8.self), for: request)
+            }
+            XCTAssertEqual(request.httpMethod, "POST")
+            writes.value.append(try XCTUnwrap(request.url?.path))
+            XCTAssertEqual(try self.requestJSON(request)["perform"] as? Bool, true)
+            return apiTestJSONResponse(response, for: request)
+        }
+        let model = UpdateNotificationCenterViewModel(server: client.baseURL, client: client)
 
-    private func updateNotificationList(
-        phase: String,
-        active: Bool,
-        message: String = "Talaria Web update in progress.",
-        detail: String? = nil,
-        for request: URLRequest
-    ) -> (HTTPURLResponse, Data) {
-        let detailJSON = detail.map { "\"\($0)\"" } ?? "null"
-        return apiTestJSONResponse("""
-        {"scope_id":"scope-a","notifications":[{
-          "id": "\(Self.updateNotificationID)", "kind": "update", "target": "webui", "phase": "\(phase)",
-          "severity": "info", "persistent": false, "requires_acknowledgement": false, "actions": [], "destination": null,
-          "title": "Talaria Web update", "message": "\(message)",
-          "created_at": "2026-10-05T12:00:00Z", "updated_at": "2026-10-05T12:00:00Z", "read_at": null,
-          "acknowledged_at": null, "acknowledged_action_id": null, "verified_revision": null, "verified_version": null,
-          "detail": \(detailJSON), "unread": true, "active": \(active), "requires_interaction": false, "can_dismiss": true
-        }],"unread_count":1,"clearable_count":1,"can_clear":true}
-        """, for: request)
+        await model.perform(action, for: waiting)
+
+        XCTAssertEqual(writes.value, ["/api/update-notifications/\(waiting.id)/actions/\(action.id)"])
     }
 
     private func decodeApply(_ json: String) throws -> UpdatesApplyResponse {

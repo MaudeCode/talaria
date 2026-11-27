@@ -71,6 +71,7 @@ struct UITestFixtureEnvironment {
     nonisolated static let gitRepositoryArgument = "--ui-test-git-repository"
     /// Opens the Chats list with its update notifications sheet up.
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
+    nonisolated static let serverUpdatesArgument = "--ui-test-server-updates"
     /// Reports the Agent's session storage as corrupt on `/api/sessions` (TAL-830).
     nonisolated static let corruptAgentStorageArgument = "--ui-test-corrupt-agent-storage"
     nonisolated static let corruptAgentStorageReason = "Agent session storage (state.db) is damaged: database disk image is malformed."
@@ -519,6 +520,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     private static let profileState = OSAllocatedUnfairLock(initialState: (rows: [[String: JSONValue]](), active: "fixture-profile"))
     static var activeFixtureProfile: String { profileState.withLock { $0.active } }
     private static let serverSettings = OSAllocatedUnfairLock(initialState: [String: JSONValue]())
+    private static let serverUpdate = OSAllocatedUnfairLock<FixtureServerUpdate?>(initialState: nil)
     private static let modelPreferences = OSAllocatedUnfairLock(initialState: (favorites: ["fixture-provider": Set(["fixture-model"])], hidden: [String: Set<String>]()))
     private static let auxiliarySelections = OSAllocatedUnfairLock(initialState: [String: (model: String?, provider: String?, effort: String?, writesReasoning: Bool)]())
     private static let reasoningDefaults = OSAllocatedUnfairLock(initialState: (effort: "medium", thinking: true))
@@ -566,6 +568,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         auxiliarySelections.withLock { $0 = [:] }
         modelPreferences.withLock { $0 = (["fixture-provider": Set(["fixture-model"])], [:]) }
         serverSettings.withLock { $0 = [:] }
+        serverUpdate.withLock { $0 = nil }
         profileState.withLock { $0 = ([], "fixture-profile") }
         sessionListFailures.withLock { $0 = [] }
         answeredPaths.withLock { $0 = [] }
@@ -866,6 +869,107 @@ final class UITestFixtureURLProtocol: URLProtocol {
     private static let relayKeysRevoked = OSAllocatedUnfairLock(initialState: false)
 
     private static let compressionStartedAt = Date().timeIntervalSince1970 - 65
+
+    private struct FixtureServerUpdate {
+        enum Stage { case installing, waiting, restarting, finished, failed }
+        let id = UUID().uuidString.lowercased()
+        static let revision = String(repeating: "b", count: 40)
+        static let token = String(repeating: "c", count: 32)
+        let target: String
+        let tabID: String
+        var stage = Stage.installing
+        var finishAt = ContinuousClock.now.advanced(by: .seconds(5))
+
+        var notification: [String: Any] {
+            let active = stage == .installing || stage == .restarting
+            let agent = target == "agent"
+            let stepID = agent ? "agent_ready" : "ready"
+            let name = agent ? "Hermes Agent" : "Talaria Web"
+            func step(_ id: String, _ label: String, _ state: String) -> [String: String] {
+                ["id": id, "label": label, "state": state]
+            }
+            let installed = step("install", "Installing", "done")
+            let ready = step(stepID, agent ? "Agent responding" : "Ready", "pending")
+            let phase: String
+            let close: String
+            let steps: [[String: String]]
+            let actions: [[String: Any]]
+            switch stage {
+            case .installing:
+                (phase, close, actions) = ("applying", "none", [])
+                steps = [step("install", "Installing", "active"), step("web_restart", "Restarting Talaria Web", "pending"), ready]
+            case .waiting:
+                (phase, close) = ("waiting_for_idle", "restart_later")
+                actions = [["id": "restart_gateway_now-fixture", "label": "Restart now", "style": "destructive", "acknowledges": false]]
+                steps = [installed, step("gateway_wait", "Waiting for 2 gateway tasks", "active"),
+                         step("gateway_restart", "Restarting gateway", "pending"), ready]
+            case .restarting:
+                (phase, close, actions) = ("restarting", "none", [])
+                steps = [installed, step("gateway_restart", "Restarting gateway", "active"), ready]
+            case .finished:
+                (phase, close, actions) = ("succeeded", "auto", [])
+                steps = [installed, step(agent ? "gateway_restart" : "web_restart", agent ? "Restarting gateway" : "Restarting Talaria Web", "done"),
+                         step(stepID, "\(name) 0.0.2-fixture is running", "done")]
+            case .failed:
+                (phase, close, actions) = ("failed", "close", [])
+                steps = [step("install", "Installing", "failed"), ready]
+            }
+            return [
+                "id": id, "target": target, "kind": "update", "phase": phase, "severity": "info", "persistent": false,
+                "requires_acknowledgement": false, "actions": actions, "title": "\(name) update",
+                "message": stage == .failed ? "The synthetic update could not be installed." : "\(name) update",
+                "created_at": "2026-10-18T12:00:00Z", "updated_at": "2026-10-18T12:00:00Z", "unread": false, "active": active,
+                "requires_interaction": false, "can_dismiss": false, "steps": steps, "presents_dialog": active, "dialog_close": close
+            ]
+        }
+    }
+
+    private static var showsServerUpdates: Bool {
+        ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.serverUpdatesArgument)
+    }
+
+    private static func fixtureApplyUpdate(_ request: URLRequest) -> Data {
+        let body = requestJSON(request)
+        guard let target = body["target"] as? String, let tabID = body["tab_id"] as? String else {
+            return json(["ok": false, "message": "Missing update target or tab"])
+        }
+        if target == "agent" {
+            let confirmed = body["confirmed_agent_revision"] as? String == FixtureServerUpdate.revision
+            let refreshed = body["agent_refresh_token"] as? String == FixtureServerUpdate.token
+            if !confirmed || !refreshed {
+                var response: [String: Any] = [
+                    "ok": false, "confirmation_required": true, "candidate_revision": FixtureServerUpdate.revision,
+                    "message": confirmed ? "Active dashboard work may be interrupted by a graceful refresh." : "This revision is outside the checked support window."
+                ]
+                if confirmed { response["refresh_confirmation"] = ["token": FixtureServerUpdate.token, "services": ["synthetic.dashboard"]] }
+                return json(response)
+            }
+        }
+        let update = FixtureServerUpdate(target: target, tabID: tabID)
+        serverUpdate.withLock { $0 = update }
+        return json(["ok": true, "notification_id": update.id])
+    }
+
+    private static func fixtureUpdateNotifications(tabID: String?) -> Data {
+        serverUpdate.withLock { update in
+            if let current = update, current.finishAt <= .now {
+                switch current.stage {
+                case .installing where ProcessInfo.processInfo.arguments.contains("--ui-test-server-update-failure"): update?.stage = .failed
+                case .installing: update?.stage = current.target == "agent" ? .waiting : .finished
+                case .waiting where tabID == nil && ProcessInfo.processInfo.arguments.contains("--ui-test-server-update-deferred"):
+                    update?.stage = .restarting
+                    update?.finishAt = .now.advanced(by: .seconds(5))
+                case .restarting: update?.stage = .finished
+                case .waiting, .finished, .failed: break
+                }
+            }
+            let record = update?.notification
+            return json([
+                "scope_id": "ui-fixture-scope", "notifications": record.map { [$0] } ?? [], "unread_count": 0,
+                "clearable_count": 0, "can_clear": false, "tab_update": (tabID == update?.tabID ? record : nil) as Any? ?? NSNull()
+            ])
+        }
+    }
 
     private static func responseData(for request: URLRequest) -> Data {
         guard let url = request.url else { return json([:]) }
@@ -1332,6 +1436,21 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return json(["pending_count": 0])
         case _ where url.path.hasPrefix(connectionOperationPathPrefix):
             return connectionOperationResponse(request)
+        case "/api/updates/apply" where showsServerUpdates:
+            return fixtureApplyUpdate(request)
+        case "/api/update-notifications" where showsServerUpdates:
+            let tabID = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "tab_id" }?.value
+            return fixtureUpdateNotifications(tabID: tabID)
+        case _ where showsServerUpdates && url.path.hasSuffix("/actions/restart_gateway_now-fixture"):
+            return serverUpdate.withLock { update in
+                guard let current = update, current.stage == .waiting,
+                      url.path == "/api/update-notifications/\(current.id)/actions/restart_gateway_now-fixture" else {
+                    return json(["error": "No gateway restart is waiting"])
+                }
+                update?.stage = .restarting
+                update?.finishAt = .now.advanced(by: .seconds(3))
+                return json(update?.notification ?? [:])
+            }
         case "/api/update-notifications":
             return json(["scope_id": "ui-fixture-scope", "notifications": [], "unread_count": 0, "clearable_count": 0, "can_clear": false])
         case "/api/toolsets":
@@ -1370,12 +1489,16 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 "files": ["agent", "webui", "gateway", "bootstrap"].map { ["id": $0, "exists": $0 != "bootstrap"] as [String: Any] }
             ])
         case "/api/updates/check":
+            let installed = serverUpdate.withLock { $0?.stage == .finished ? $0?.target : nil }
             return json([
-                "webui": ["state": "release_ready", "can_apply": true, "behind": 1,
+                "webui": ["state": installed == "webui" ? "up_to_date" : "release_ready", "can_apply": installed != "webui", "behind": 1,
                           "current_version": "0.0.1-fixture", "target_version": "0.0.2-fixture", "summary_available": true],
-                "agent": ["state": "up_to_date", "current_version": "0.0.1-fixture", "summary_available": false]
+                "agent": showsServerUpdates && installed != "agent"
+                    ? ["state": "release_ready", "can_apply": true, "current_version": "0.0.1-fixture", "target_version": "0.0.2-fixture"]
+                    : ["state": "up_to_date", "current_version": "0.0.1-fixture", "summary_available": false]
             ])
         case "/api/settings":
+            let installed = serverUpdate.withLock { $0?.stage == .finished ? $0?.target : nil }
             return serverSettings.withLock { settings in
                 if settings.isEmpty {
                     settings = [
@@ -1395,6 +1518,10 @@ final class UITestFixtureURLProtocol: URLProtocol {
                         "update_channels": .array([.string("stable"), .string("nightly"), .string("experimental")]),
                         "agent_update_channel": .string("stable"), "ignore_agent_updates": .bool(false)
                     ]
+                }
+                if showsServerUpdates {
+                    settings["agent_version"] = .string(installed == "agent" ? "0.0.2-fixture" : "0.0.1-fixture")
+                    if installed == "webui" { settings["webui_version"] = .string("0.0.2-fixture") }
                 }
                 if request.httpMethod == "POST",
                    let patch = try? JSONDecoder().decode([String: JSONValue].self, from: json(requestJSON(request))) {

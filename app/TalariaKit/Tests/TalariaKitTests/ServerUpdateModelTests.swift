@@ -3,6 +3,84 @@ import XCTest
 
 final class ServerUpdateModelTests: APIClientTestCase {
     @MainActor
+    func testAgentRevisionConsentRetriesWithTheOfferedRevision() async throws {
+        let revision = String(repeating: "b", count: 40)
+        try await assertAgentConfirmationRetry(
+            reply: Data(#"{"ok":false,"confirmation_required":true,"candidate_revision":"\#(revision)","message":"Install this revision?"}"#.utf8),
+            field: "confirmed_agent_revision", value: revision
+        )
+    }
+
+    @MainActor
+    func testAgentDashboardRefreshRetriesWithTheOfferedToken() async throws {
+        let reply = try sharedContractFixture("agent-update-refresh")
+        let wire = try XCTUnwrap(JSONSerialization.jsonObject(with: reply) as? [String: Any])
+        let refresh = try XCTUnwrap(wire["refresh_confirmation"] as? [String: Any])
+        try await assertAgentConfirmationRetry(reply: reply, field: "agent_refresh_token", value: XCTUnwrap(refresh["token"] as? String))
+    }
+
+    @MainActor
+    func testAgentDashboardRefreshPreservesPreviouslyAcceptedRevision() async throws {
+        let refreshReply = try sharedContractFixture("agent-update-refresh")
+        let wire = try XCTUnwrap(JSONSerialization.jsonObject(with: refreshReply) as? [String: Any])
+        let revision = try XCTUnwrap(wire["candidate_revision"] as? String)
+        let refresh = try XCTUnwrap(wire["refresh_confirmation"] as? [String: Any])
+        let token = try XCTUnwrap(refresh["token"] as? String)
+        let revisionReply = #"{"ok":false,"confirmation_required":true,"candidate_revision":"\#(revision)","message":"Install this revision?"}"#
+        let client = makeClient { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/updates/apply")
+            let data = try XCTUnwrap(apiTestBodyData(from: request))
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: String])
+            XCTAssertEqual(body["target"], "agent")
+            if body["confirmed_agent_revision"] != revision {
+                return apiTestJSONResponse(revisionReply, for: request)
+            }
+            if body["agent_refresh_token"] != token {
+                return apiTestJSONResponse(String(decoding: refreshReply, as: UTF8.self), for: request)
+            }
+            return apiTestJSONResponse(#"{"ok":false,"message":"Reached the installation boundary"}"#, for: request)
+        }
+        let notifications = UpdateNotificationCenterViewModel(server: client.baseURL, client: client)
+        let model = ServerUpdateModel(client: client)
+        await model.apply(target: .agent, notifications: notifications)
+        guard case let .agentConfirmation(revisionOffer, _) = model.applyPhase, case .revision = revisionOffer else {
+            return XCTFail("Expected revision consent")
+        }
+        await model.apply(target: .agent, confirming: revisionOffer, notifications: notifications)
+        guard case let .agentConfirmation(refreshOffer, _) = model.applyPhase, case .refresh = refreshOffer else {
+            return XCTFail("Expected dashboard refresh consent")
+        }
+        await model.apply(target: .agent, confirming: refreshOffer, notifications: notifications)
+
+        XCTAssertEqual(model.applyPhase, .failed(.server(message: "Reached the installation boundary")))
+    }
+
+    @MainActor
+    private func assertAgentConfirmationRetry(reply: Data, field: String, value: String) async throws {
+        let writes = LockedTestValue<[[String: String]]>([])
+        let client = makeClient { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/updates/apply")
+            let data = try XCTUnwrap(apiTestBodyData(from: request))
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: String])
+            writes.value.append(body)
+            let response = body[field] == nil ? String(decoding: reply, as: UTF8.self) : #"{"ok":false,"message":"Synthetic refusal"}"#
+            return apiTestJSONResponse(response, for: request)
+        }
+        let notifications = UpdateNotificationCenterViewModel(server: client.baseURL, client: client)
+        let model = ServerUpdateModel(client: client)
+        await model.apply(target: .agent, notifications: notifications)
+        guard case let .agentConfirmation(confirmation, _) = model.applyPhase else { return XCTFail("Expected Agent consent") }
+        await model.apply(target: .agent, confirming: confirmation, notifications: notifications)
+
+        XCTAssertEqual(writes.value.map { $0["target"] }, ["agent", "agent"])
+        XCTAssertEqual(writes.value.map { $0[field] }, [nil, value])
+        let otherField = field == "confirmed_agent_revision" ? "agent_refresh_token" : "confirmed_agent_revision"
+        XCTAssertEqual(writes.value.map { $0[otherField] }, [nil, nil])
+    }
+
+    @MainActor
     func testRestartRefreshCannotReplaceTheConnectedVersionAfterUpdate() async throws {
         let notificationID = "00000000-0000-4000-8000-000000000955"
         let notification = DeferredRequests()
@@ -25,11 +103,9 @@ final class ServerUpdateModelTests: APIClientTestCase {
                 request.complete(withJSON: "{}", statusCode: 404)
             }
         }
-        let noSleep: @Sendable (Duration) async throws -> Void = { _ in }
-        let model = ServerUpdateModel(client: client, follow: { id, tabID in
-            await client.followUpdate(notificationID: id, tabID: tabID, sleep: noSleep)
-        })
-        let updating = Task { await model.apply() }
+        let notifications = UpdateNotificationCenterViewModel(server: client.baseURL, client: client)
+        let model = ServerUpdateModel(client: client)
+        let updating = Task { await model.apply(notifications: notifications) }
         defer { updating.cancel() }
         try await pollUntil { notification.count == 1 }
         guard notification.count == 1 else { return }
@@ -49,6 +125,9 @@ final class ServerUpdateModelTests: APIClientTestCase {
         }]}
         """)
         await updating.value
+        notifications.closeUpdating()
+        XCTAssertEqual(notifications.completedUpdateID, notificationID)
+        await model.load(postUpdate: true)
         XCTAssertEqual(model.status, .connected(version: "2.0.0-fixture"), "The completion must load the new version")
 
         restartRead.request(at: 0).fail(with: URLError(.networkConnectionLost))
@@ -58,39 +137,32 @@ final class ServerUpdateModelTests: APIClientTestCase {
     }
 
     @MainActor
-    func testTimeoutReportsTheFreshSettingsFailureEvenWithAnOlderVersionInTheStore() async {
-        let reachable = LockedTestValue(true)
+    func testUnverifiedUpdateOffersCloseAfterTheTrackingDeadline() async {
         let client = deferredClient { request in
             switch request.request.url?.path {
             case "/api/updates/apply":
-                reachable.value = false
                 request.complete(withJSON: #"{"ok":true,"notification_id":"00000000-0000-4000-8000-000000000955"}"#)
-            case "/api/settings" where reachable.value:
-                request.complete(withJSON: #"{"webui_version":"1.0.0-fixture"}"#)
-            case "/api/settings":
-                request.complete(withJSON: #"{"error":"Restarting"}"#, statusCode: 503)
-            case "/api/toolsets/defaults":
-                request.complete(withJSON: #"{"toolsets":[],"selected_toolsets":[]}"#)
-            case "/api/updates/check" where reachable.value:
-                request.complete(withJSON: #"{"webui":{"state":"release_ready","can_apply":true,"behind":1}}"#)
-            case "/api/updates/check":
-                request.complete(withJSON: #"{"error":"Restarting"}"#, statusCode: 503)
+            case "/api/update-notifications":
+                request.complete(withJSON: #"{"scope_id":"fixture","notifications":[],"unread_count":0,"clearable_count":0,"can_clear":false}"#)
             default:
                 XCTFail("Unexpected request: \(request.request)")
                 request.complete(withJSON: "{}", statusCode: 404)
             }
         }
-        let store = ServerSettingsStore(client: client)
-        let model = ServerUpdateModel(client: client, follow: { id, tabID in
-            await client.followUpdate(notificationID: id, tabID: tabID, timeout: .zero)
-        })
-        await model.load(settingsStore: store)
-        XCTAssertEqual(model.status, .connected(version: "1.0.0-fixture"))
+        var now = ContinuousClock.now
+        let notifications = UpdateNotificationCenterViewModel(server: client.baseURL, client: client, now: { now })
+        let model = ServerUpdateModel(client: client)
+        await model.apply(notifications: notifications)
+        XCTAssertTrue(notifications.isFollowingUpdate)
+        XCTAssertFalse(notifications.updateTimedOut)
 
-        await model.apply(settingsStore: store)
+        now = now.advanced(by: .seconds(600))
+        await notifications.refresh()
 
-        XCTAssertEqual(model.applyPhase, .failed(.timedOut(serverReachable: false)))
-        XCTAssertEqual(model.status, .unavailable)
+        XCTAssertFalse(notifications.isFollowingUpdate)
+        XCTAssertTrue(notifications.updateTimedOut)
+        notifications.closeUpdating()
+        XCTAssertFalse(notifications.updateTimedOut)
     }
 
     @MainActor
@@ -112,13 +184,14 @@ final class ServerUpdateModelTests: APIClientTestCase {
             default: fixture.unexpected(request)
             }
         }
+        let notifications = UpdateNotificationCenterViewModel(server: client.baseURL, client: client)
         let model = ServerUpdateModel(client: client)
-        await model.apply()
+        await model.apply(notifications: notifications)
         let first = try interruptOffer(in: model)
-        let sent = Task { await model.apply(interrupting: first) }
+        let sent = Task { await model.apply(interrupting: first, notifications: notifications) }
         defer { sent.cancel() }
         try await pollUntil { confirmations.count == 1 }
-        await model.apply(interrupting: first)
+        await model.apply(interrupting: first, notifications: notifications)
         XCTAssertEqual(confirmations.count, 1, "A repeat tap cannot send over the in-flight confirmation")
         XCTAssertEqual(fixture.body(for: confirmations.request(at: 0))["interrupt_token"], fixture.token)
         confirmations.request(at: 0).complete(withJSON: changed)
@@ -126,7 +199,7 @@ final class ServerUpdateModelTests: APIClientTestCase {
 
         let refreshed = try interruptOffer(in: model)
         XCTAssertEqual(refreshed.token, replacementToken)
-        await model.apply(interrupting: first)
+        await model.apply(interrupting: first, notifications: notifications)
         XCTAssertEqual(confirmations.count, 1, "A consumed offer cannot be sent again")
         XCTAssertEqual(try interruptOffer(in: model), refreshed)
     }
@@ -139,11 +212,12 @@ final class ServerUpdateModelTests: APIClientTestCase {
             guard request.request.url?.path == "/api/updates/apply" else { return fixture.unexpected(request) }
             _ = requests.append(request)
         }
+        let notifications = UpdateNotificationCenterViewModel(server: client.baseURL, client: client)
         let model = ServerUpdateModel(client: client)
-        let applying = Task { await model.apply() }
+        let applying = Task { await model.apply(notifications: notifications) }
         defer { applying.cancel() }
         try await pollUntil { requests.count == 1 }
-        model.discardInterruptConfirmation()
+        model.discardConfirmation()
         requests.request(at: 0).complete(withJSON: fixture.offer)
         await applying.value
 
@@ -159,12 +233,13 @@ final class ServerUpdateModelTests: APIClientTestCase {
             writes.value += 1
             request.complete(withJSON: fixture.offer)
         }
+        let notifications = UpdateNotificationCenterViewModel(server: client.baseURL, client: client)
         let model = ServerUpdateModel(client: client)
-        await model.apply()
+        await model.apply(notifications: notifications)
         let confirmation = try interruptOffer(in: model)
         ActiveServerProfile.record("another-profile", for: client.baseURL)
         defer { ActiveServerProfile.record(nil, for: client.baseURL) }
-        await model.apply(interrupting: confirmation)
+        await model.apply(interrupting: confirmation, notifications: notifications)
 
         XCTAssertEqual(writes.value, 1)
         XCTAssertEqual(model.applyPhase, .blocked(message: fixture.message))
@@ -209,17 +284,15 @@ final class ServerUpdateModelTests: APIClientTestCase {
             default: fixture.unexpected(request)
             }
         }
-        let noSleep: @Sendable (Duration) async throws -> Void = { _ in }
-        let model = ServerUpdateModel(client: client, follow: { id, tabID in
-            await client.followUpdate(notificationID: id, tabID: tabID, sleep: noSleep)
-        })
-        await model.apply()
+        let notifications = UpdateNotificationCenterViewModel(server: client.baseURL, client: client)
+        let model = ServerUpdateModel(client: client)
+        await model.apply(notifications: notifications)
         let consent = try interruptOffer(in: model)
-        await model.apply(interrupting: consent)
+        await model.apply(interrupting: consent, notifications: notifications)
 
         XCTAssertEqual(writes.value, ["", fixture.token])
-        XCTAssertEqual(model.applyPhase, .idle)
-        XCTAssertEqual(model.status, .connected(version: "2.0.0-fixture"))
+        XCTAssertEqual(notifications.updating?.closeBehavior, .auto)
+        XCTAssertEqual(notifications.updating?.id, "00000000-0000-4000-8000-000000000005")
     }
 
     @MainActor

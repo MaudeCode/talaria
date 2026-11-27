@@ -286,6 +286,7 @@ struct SessionListView: View {
             }
             .onChange(of: viewModel.activeProfileName) {
                 sectionViewModels = SectionViewModels(server: server)
+                updateNotificationViewModel.resetProfile()
             }
             .modifier(hingeReader)
             .sheet(isPresented: $isPresentingSettings, onDismiss: settingsDidDismiss) {
@@ -322,7 +323,12 @@ struct SessionListView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
                 .adaptiveFormPresentation()
+                .updatingPresentation(updateNotificationViewModel, isEnabled: authManager.pendingReauthentication == nil,
+                                      onAPIError: handleUpdateNotificationError(_:))
             }
+            .updatingPresentation(updateNotificationViewModel,
+                                  isEnabled: !isPresentingSettings && !isPresentingUpdateNotifications && authManager.pendingReauthentication == nil,
+                                  onAPIError: handleUpdateNotificationError(_:))
             .sheet(item: $sessionExportShareItem) { item in
                 SessionExportShareSheet(fileURL: item.fileURL)
                     .presentationDetents([.medium, .large])
@@ -1916,7 +1922,11 @@ struct SessionListView: View {
     }
 
     private var updateNotificationRefreshTaskID: String {
-        "\(server.absoluteString)|\(scenePhase == .active)"
+        "\(server.absoluteString)|\(viewModel.activeProfileName ?? "")|\(scenePhase == .active)|\(updateNotificationViewModel.needsFastPolling)"
+    }
+
+    private func handleUpdateNotificationError(_ error: Error) {
+        authManager.handleAPIError(error, server: server)
     }
 
     private func handleUpdateNotificationError() {
@@ -2610,7 +2620,10 @@ struct SessionListView: View {
             }
         }
         .id("\(server.absoluteString)|\(viewModel.activeProfileName ?? "")")
+        .environment(updateNotificationViewModel)
         .feedbackPresentation(feedback, isEnabled: isPresentingSettings && authManager.pendingReauthentication == nil)
+        .updatingPresentation(updateNotificationViewModel, isEnabled: authManager.pendingReauthentication == nil,
+                              onAPIError: handleUpdateNotificationError(_:))
     }
 
     /// NavigationStack does not install a toolbar on its hosted pages; the root and pushed pages share this wrapper.
