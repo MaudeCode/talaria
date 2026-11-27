@@ -44,6 +44,9 @@ import { docx } from '../test/office-fixtures.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 
 let server: TestServer | undefined
+const contract = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/workspace-file-save.json', import.meta.url), 'utf8')) as {
+  text: { path: string; content: string }; office: { path: string; content: string }; conflict: { condition: string; error: string }
+}
 afterEach(async () => {
   faults.at = ''
   faults.triggered = false
@@ -69,8 +72,52 @@ async function fixture() {
     body: ['--b', 'Content-Disposition: form-data; name="session_id"', '', session.session_id, '--b', `Content-Disposition: form-data; name="file"; filename="${filename}"`, 'Content-Type: text/plain', '', 'synthetic', '--b--', ''].join('\r\n'),
     headers: { 'content-type': 'multipart/form-data; boundary=b' },
   })
-  return { ws, path, post, upload, sid: session.session_id, save: (content: string) => post('/api/file/save', { session_id: session.session_id, path: 'valuable.txt', content }) }
+  const read = async (path: string) => {
+    const response = await server!.get(`/api/file?session_id=${session.session_id}&path=${path}`)
+    expect(response.status).toBe(200)
+    return await response.json() as { content: string; revision?: string }
+  }
+  return { ws, path, post, read, upload, sid: session.session_id, save: (content: string) => post('/api/file/save', { session_id: session.session_id, path: 'valuable.txt', content }) }
 }
+
+describe.each([
+  { format: 'text', preview: contract.text, route: '/api/file/save', original: () => Buffer.from(contract.text.content) },
+  { format: 'DOCX', preview: contract.office, route: '/api/file/office-save', original: () => docx(contract.office.content) },
+])('conditional $format save', ({ route, preview, original }) => {
+  const { path } = preview
+
+  it('allows only one of two concurrent saves from the same revision', async () => {
+    const f = await fixture()
+    writeFileSync(join(f.ws, path), await original())
+    const editors = await Promise.all([f.read(path), f.read(path)])
+    const responses = await Promise.all(editors.map((base, index) => f.post(route, {
+      session_id: f.sid, path, content: `Draft ${index + 1}`, base_revision: base.revision,
+    })))
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409])
+    const winner = responses.findIndex((r) => r.ok)
+    expect(await responses[1 - winner]!.json()).toEqual(contract.conflict)
+    expect(editors[0]).toEqual(editors[1])
+    expect(editors[0]).toMatchObject(preview)
+    expect(editors[0].revision).toMatch(/^[a-f0-9]{64}$/)
+    const saved = await f.read(path)
+    expect(saved.content).toBe(`Draft ${winner + 1}`)
+    expect(saved.revision).toMatch(/^[a-f0-9]{64}$/)
+    expect(saved.revision).not.toBe(editors[0].revision)
+  })
+
+  it('returns the committed revision for the next uncontended save', async () => {
+    const f = await fixture()
+    writeFileSync(join(f.ws, path), await original())
+    const base = await f.read(path)
+    const first = await f.post(route, { session_id: f.sid, path, content: 'First edit', base_revision: base.revision })
+    expect(first.status).toBe(200)
+    const body = await first.json() as { revision?: string }
+    expect(body.revision).toMatch(/^[a-f0-9]{64}$/)
+    const second = await f.post(route, { session_id: f.sid, path, content: 'Second edit', base_revision: body.revision })
+    expect(second.status).toBe(200)
+    expect((await f.read(path)).content).toBe('Second edit')
+  })
+})
 
 describe('workspace save preserves the last complete file', () => {
   it.each([
