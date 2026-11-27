@@ -40,6 +40,26 @@ const start = async (page: Page, projectName: string, seed?: (workspace: string)
 
 /** TAL-519: the Files page creates, renames, moves and deletes entries in a real synthetic workspace and shows the server's refusals. */
 test.describe('the Files page', () => {
+  test('shows and hides a real dotfile with the hidden files button', async ({ page }, testInfo) => {
+    const { item, finish } = await start(page, testInfo.project.name, (workspace) => {
+      writeFileSync(join(workspace, '.hidden.txt'), 'hidden')
+    })
+    try {
+      const toggle = page.getByRole('button', { name: 'Show hidden files' })
+      await expect(item('.hidden.txt')).toHaveCount(0)
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await toggle.click()
+      await expect(item('.hidden.txt')).toBeVisible()
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+      await toggle.click()
+      await expect(item('.hidden.txt')).toHaveCount(0)
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await expect(item('seed.txt')).toBeVisible()
+    } finally {
+      await finish()
+    }
+  })
+
   /** Runs `action` from the row menu of `name`. */
   const rowAction = async (page: Page, item: (name: string) => Locator, name: string, action: string) => {
     await item(name).click({ button: 'right' })

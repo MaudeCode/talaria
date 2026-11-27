@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Files panel hides dotfiles by default and reveals them when you turn on Show hidden files.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

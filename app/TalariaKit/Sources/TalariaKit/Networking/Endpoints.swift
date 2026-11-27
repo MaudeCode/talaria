@@ -738,7 +738,8 @@ public enum Endpoint: Sendable {
         case let .backgroundResult(sessionID, taskID):
             return [URLQueryItem(name: "session_id", value: sessionID), URLQueryItem(name: "task_id", value: taskID)]
         case let .directoryList(sessionID, path):
-            var items = [URLQueryItem(name: "session_id", value: sessionID)]
+            // The App's file browser has no visibility toggle and has always shown dotfiles.
+            var items = [URLQueryItem(name: "session_id", value: sessionID), URLQueryItem(name: "show_hidden", value: "1")]
             if let path {
                 items.append(URLQueryItem(name: "path", value: path))
             }

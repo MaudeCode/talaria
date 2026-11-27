@@ -1,0 +1,8 @@
+{
+  "files": [".hidden.txt", "note.txt"],
+  "cases": [
+    {"mode": "omitted", "query": {}, "names": ["note.txt"]},
+    {"mode": "enabled", "query": {"show_hidden": "1"}, "names": [".hidden.txt", "note.txt"]},
+    {"mode": "disabled", "query": {"show_hidden": "0"}, "names": ["note.txt"]}
+  ]
+}

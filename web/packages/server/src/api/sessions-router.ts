@@ -799,7 +799,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       const rel = input.path ?? '.'
       try {
         workspaceFileTarget(ctx, s.workspace, rel)
-        const entries = listDir(s.workspace, rel)
+        const entries = listDir(s.workspace, rel, { showHidden: input.show_hidden === '1' })
         return { source: 'workspace' as const, entries: serializeEntriesForBrowser(entries) as { name: string; path: string; type: 'dir' | 'file' | 'symlink'; workspace_sort_rank: number }[], signature: dirSignature(s.workspace, rel, entries), path: rel, workspace: s.workspace, workspace_recovered: s.recovered }
       } catch (error) {
         throw fileError(error, 404)
