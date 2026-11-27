@@ -26,15 +26,49 @@ it.each(serverNotice)('shared server notice rule: $name', (vector) => {
 // TAL-2157: one composer for the completion's Web Push and the open tab's browser notification.
 it('composes a completion notification from the final answer: plain text, redacted, at most 140 characters', () => {
   const answer = `## Done\n\n**Deployed** the [release](https://example.com/r) with token ghp_abcdefghij0123456789. ${'More detail. '.repeat(20)}`
-  const messages = [{ role: 'user', content: 'ship it' }, { role: 'assistant', content: answer }]
-  const shown = completionNotification('s 1', { title: 'Release', messages }, true)
+  const messages = [{ role: 'user', content: 'ship it', _turn_id: 'release' }, { role: 'assistant', content: answer, _turn_id: 'release' }]
+  const shown = completionNotification('s 1', { title: 'Release', messages }, true, 'release')
   expect(shown.title).toBe('Release')
   expect(shown.url).toBe('/session/s%201')
   expect(shown.body.startsWith('Done Deployed the release with token ghp_ab...6789. More detail.')).toBe(true)
   expect(shown.body.length).toBeLessThanOrEqual(140)
   expect(shown.body.endsWith('…')).toBe(true)
-  // A turn that ended without an answer says it completed; it never reuses an older turn's answer.
-  expect(completionNotification('s', { title: '', messages: [...messages, { role: 'assistant', content: '', tool_calls: [{ id: 't' }] }] }, true)).toEqual({ title: 'Untitled', body: 'Completed', url: '/session/s', tag: 's' })
+})
+
+it.each([
+  { name: 'answerless', reply: [], expected: 'Completed' },
+  { name: 'tool-only', reply: [{ role: 'assistant', content: 'Checking', _turn_id: 'finished', tool_calls: [{ id: 't' }] }, { role: 'tool', content: 'Tool output', _turn_id: 'finished' }], expected: 'Completed' },
+  { name: 'answered', reply: [{ role: 'assistant', content: '**This answer** with ghp_abcdefghij0123456789', _turn_id: 'finished' }], expected: 'This answer with ghp_ab...6789' },
+])('uses only the $name completed run between other answered turns', ({ reply, expected }) => {
+  const messages = [
+    { role: 'user', content: 'First request', _turn_id: 'older' },
+    { role: 'assistant', content: 'The old answer', _turn_id: 'older' },
+    { role: 'user', content: 'Finish this one', _turn_id: 'finished' },
+    ...reply,
+  ]
+  expect(completionNotification('s', { messages }, true, 'finished').body).toBe(expected)
+  messages.push({ role: 'user', content: 'Another request', _turn_id: 'newer' }, { role: 'assistant', content: 'The new answer', _turn_id: 'newer' })
+  expect(completionNotification('s', { messages }, true, 'finished').body).toBe(expected)
+})
+
+it.each([
+  { name: 'an answer', reply: [{ role: 'assistant', content: '**Native answer**' }], expected: 'Native answer' },
+  { name: 'no answer', reply: [], expected: 'Completed' },
+])('bounds a legacy turn with $name to the completed prompt', ({ reply, expected }) => {
+  const messages = [
+    { role: 'user', content: 'First request' },
+    { role: 'assistant', content: 'The old answer' },
+    { role: 'user', content: 'Finish this one', message_id: 'finished' },
+    ...reply,
+    { role: 'user', content: 'Another request', message_id: 'newer' },
+    { role: 'assistant', content: 'The new answer' },
+  ]
+  expect(completionNotification('s', { messages }, true, { promptId: 'finished' }).body).toBe(expected)
+})
+
+it('uses generic completion text when the completed run is missing', () => {
+  const messages = [{ role: 'user', content: 'Another request' }, { role: 'assistant', content: 'An unrelated answer' }]
+  expect(completionNotification('s', { title: '', messages }, true, 'missing')).toEqual({ title: 'Untitled', body: 'Completed', url: '/session/s', tag: 's' })
 })
 
 // TAL-2336: an approval or input alert names the call it waits on; the row's call is already redacted and capped.

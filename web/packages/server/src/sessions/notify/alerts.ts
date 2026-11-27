@@ -5,7 +5,8 @@
 import type { ActivityTool, WebAudioCompletion, WebPushPreferences } from '@maudecode/talaria-web-contracts'
 import { redactString } from '../../redact.js'
 import { markdownPlainText } from '../../text/markdown.js'
-import { bodyExcerpt, finalAnswerOf, isConversationalAssistant } from '../merge.js'
+import { messageTurnId } from '../anchor.js'
+import { bodyExcerpt, finalAnswerOf, isConversationalAssistant, isDict } from '../merge.js'
 
 export type AlertKind = 'approval' | 'input' | 'completion' | 'failure' | 'decision'
 
@@ -27,15 +28,37 @@ export function alertBody(kind: AlertKind, tool: ActivityTool | undefined): stri
 }
 
 export type CompletionNotification = NonNullable<WebAudioCompletion['notification']>
+export interface OwnerCompletionRun { identity: string; promptId: string }
+type CompletedTurn = string | Pick<OwnerCompletionRun, 'promptId'> | null
 const COMPLETION_BODY_MAX = 140
+
+function completedReply(messages: readonly unknown[], turn: CompletedTurn): Record<string, unknown> | undefined {
+  if (!turn) return undefined
+  if (typeof turn === 'string') {
+    return messages.findLast((row): row is Record<string, unknown> => isConversationalAssistant(row) && row._turn_id === turn)
+  }
+  // Native transcripts can lack Web stream IDs. The admission's prompt anchors the same turn boundaries used by chat.
+  const start = messages.findIndex((row) => isDict(row) && row.role === 'user' && row.message_id === turn.promptId)
+  const prompt = messages[start]
+  if (!isDict(prompt)) return undefined
+  const id = messageTurnId(prompt, start, 'legacy:start')
+  let reply: Record<string, unknown> | undefined
+  for (let i = start + 1; i < messages.length; i++) {
+    const row = messages[i]
+    if (!isDict(row)) continue
+    if (messageTurnId(row, i, id) !== id) break
+    if (isConversationalAssistant(row)) reply = row
+  }
+  return reply
+}
 
 /**
  * TAL-2157: a finished reply's notification, for its Web Push and the open tab's browser notification alike: the chat's
  * title, then the start of the turn's final answer as redacted plain text. A turn that ended without an answer says so.
  */
-export function completionNotification(sessionId: string, session: { title?: unknown; messages?: unknown } | null, redact: boolean): CompletionNotification {
+export function completionNotification(sessionId: string, session: { title?: unknown; messages?: unknown } | null, redact: boolean, turn: CompletedTurn): CompletionNotification {
   const title = typeof session?.title === 'string' && session.title.trim() ? redactString(session.title, redact).slice(0, 120) : 'Untitled'
-  const last = Array.isArray(session?.messages) ? session.messages.findLast(isConversationalAssistant) : undefined
+  const last = Array.isArray(session?.messages) ? completedReply(session.messages, turn) : undefined
   const text = markdownPlainText(redactString(last ? finalAnswerOf(last) : '', redact))
   const body = text.length > COMPLETION_BODY_MAX ? `${bodyExcerpt(text, COMPLETION_BODY_MAX - 1)}…` : text
   return { title, body: body || ALERT_BODY.completion, url: `/session/${encodeURIComponent(sessionId)}`, tag: sessionId }

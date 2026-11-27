@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Browser completion notifications show the answer for the reply that finished, or say Completed when it has no answer.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

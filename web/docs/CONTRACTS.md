@@ -333,7 +333,9 @@ acknowledgements, speech preferences or background-process notification settings
 
 Each instruction also carries `notification` (TAL-2157): the chat's title, the start of the turn's final
 answer as redacted plain text of at most 140 characters, the chat's path and its tag. The server builds it
-with the same function as the completion's Web Push payload. With Browser notifications on, permission
+with the same function as the completion's Web Push payload. It selects the completed run by its stream ID,
+or bounds a native transcript turn by its admission prompt. When that turn has no available final answer,
+the body says `Completed`. With Browser notifications on, permission
 granted and the tab hidden, Web shows it through the service worker, tagged with the chat, unless this
 browser holds a push subscription that delivers the same completion.
 
