@@ -45,6 +45,15 @@ async function relay() {
 const alerts = (backend: Backend) => backend.run(async (ctx) =>
   (await ctx.db.query("deliveryJobs").collect()).filter((job) => job.kind === "notification"));
 
+async function pruneDeliveredAlerts(backend: Backend, jobs: Awaited<ReturnType<typeof alerts>>): Promise<Date> {
+  for (const job of jobs) await backend.mutation(internal.delivery.markDelivered, { jobId: job._id, apnsStatus: 200, now });
+  const retryTime = new Date(now);
+  retryTime.setUTCDate(retryTime.getUTCDate() + 8);
+  vi.setSystemTime(retryTime);
+  await backend.mutation(internal.cleanup.prune, {});
+  return retryTime;
+}
+
 // Its thread is the publisher's server thread, never a chat's `["alert", publisher, session]` thread.
 it("alerts each opted-in device of the publisher's owner once, grouped apart from chat alerts", async () => {
   const backend = await relay();
@@ -107,15 +116,26 @@ it("does not re-alert after a lost acknowledgement outlives delivery job retenti
   await runScheduledRecomputes(backend);
   const jobs = await alerts(backend);
   expect(jobs.map((job) => job.deviceId).sort()).toEqual(["device-1", "device-2"]);
-  for (const job of jobs) await backend.mutation(internal.delivery.markDelivered, { jobId: job._id, apnsStatus: 200, now });
-
-  const retryTime = new Date(now);
-  retryTime.setUTCDate(retryTime.getUTCDate() + 8);
-  vi.setSystemTime(retryTime);
-  await backend.mutation(internal.cleanup.prune, {});
+  const retryTime = await pruneDeliveredAlerts(backend, jobs);
   expect(await alerts(backend)).toEqual([]);
 
   await expect(backend.mutation(internal.publishers.acceptServerNotice, { ...notice("retry"), receivedAt: retryTime.valueOf() })).resolves.toEqual({ status: "accepted" });
   await runScheduledRecomputes(backend);
   expect(await alerts(backend)).toEqual([]);
+});
+
+it("keeps one durable receipt per publisher, device and update target across versions", async () => {
+  const backend = await relay();
+  for (const [nonce, id] of [
+    ["web-1", "update_available:webui:web-v2.1.0"],
+    ["web-2", "update_available:webui:web-v2.2.0"],
+    ["agent-1", "update_available:agent:v2.1.0"],
+  ] as const) {
+    await expect(backend.mutation(internal.publishers.acceptServerNotice, notice(nonce, id))).resolves.toEqual({ status: "accepted" });
+  }
+  await runScheduledRecomputes(backend);
+  const jobs = await alerts(backend);
+  expect(jobs).toHaveLength(6);
+  await pruneDeliveredAlerts(backend, jobs);
+  expect(await backend.run((ctx) => ctx.db.query("serverNoticeReceipts").collect())).toHaveLength(4);
 });

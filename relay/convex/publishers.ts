@@ -510,6 +510,7 @@ export const acceptServerNotice = internalMutation({
       publisherId: args.publisherId,
       profileId: args.profileId,
       noticeId: args.noticeId,
+      receivedAt: args.receivedAt,
       title: args.title,
       body: args.body,
       deepLink: args.deepLink,

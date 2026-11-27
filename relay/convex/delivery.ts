@@ -376,6 +376,7 @@ export const enqueueServerNotice = internalMutation({
   args: {
     publisherOwnerUserId: v.string(), publisherId: v.string(), profileId: v.string(),
     noticeId: v.string(), title: v.string(), body: v.string(), deepLink: v.string(),
+    receivedAt: v.optional(v.number()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -383,6 +384,9 @@ export const enqueueServerNotice = internalMutation({
     const grants = await grantsForProfile(ctx, args.publisherOwnerUserId, args.publisherId, args.profileId);
     if (!grants.some((grant) => grant.userId === args.publisherOwnerUserId)) return null;
     const userId = args.publisherOwnerUserId;
+    const target = args.noticeId.startsWith("update_available:webui:") ? "webui"
+      : args.noticeId.startsWith("update_available:agent:") ? "agent" : null;
+    const receivedAt = args.receivedAt ?? now;
     const devices = await ctx.db
       .query("devices")
       .withIndex("by_user_id_and_updated_at", (query) => query.eq("userId", userId))
@@ -391,6 +395,11 @@ export const enqueueServerNotice = internalMutation({
     for (const device of devices) {
       if (!receivesNotifications(device, now) || !serverNoticeAllowed(device.preferences, true)) continue;
       if ((await excludedPublisherIds(ctx, userId, device.deviceId)).has(args.publisherId)) continue;
+      const receipt = target === null ? null : await ctx.db.query("serverNoticeReceipts")
+        .withIndex("by_user_id_and_publisher_id_and_device_id_and_target", (query) =>
+          query.eq("userId", userId).eq("publisherId", args.publisherId).eq("deviceId", device.deviceId).eq("target", target),
+        ).unique();
+      if (receipt && (receipt.noticeId === args.noticeId || receipt.receivedAt > receivedAt)) continue;
       const stateFingerprint = `notification:server:${JSON.stringify([args.publisherId, args.noticeId])}:${device.deviceId}`;
       const existing = await ctx.db
         .query("deliveryJobs")
@@ -399,10 +408,6 @@ export const enqueueServerNotice = internalMutation({
         )
         .first();
       if (existing) continue;
-      const receipt = await ctx.db.query("serverNoticeReceipts")
-        .withIndex("by_user_id_and_state_fingerprint", (query) => query.eq("userId", userId).eq("stateFingerprint", stateFingerprint))
-        .first();
-      if (receipt) continue;
       await enqueueJob(ctx, {
         userId,
         deviceId: device.deviceId,
@@ -420,6 +425,10 @@ export const enqueueServerNotice = internalMutation({
         }),
         stateFingerprint,
         now,
+      });
+      if (receipt) await ctx.db.patch(receipt._id, { noticeId: args.noticeId, receivedAt });
+      else if (target) await ctx.db.insert("serverNoticeReceipts", {
+        userId, publisherId: args.publisherId, deviceId: device.deviceId, target, noticeId: args.noticeId, receivedAt,
       });
     }
     return null;

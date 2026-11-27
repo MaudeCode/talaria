@@ -182,12 +182,7 @@ async function prunePass(ctx: MutationCtx) {
     ...(await orphanedCompletionsPage(ctx)),
   ];
   const uniqueDocuments = [...new Map(documents.map((document) => [document._id, document])).values()];
-  for (const document of uniqueDocuments) {
-    if ("sourceServerNoticeId" in document && document.sourceServerNoticeId !== undefined) {
-      await ctx.db.insert("serverNoticeReceipts", { userId: document.userId, stateFingerprint: document.stateFingerprint });
-    }
-    await ctx.db.delete(document._id);
-  }
+  for (const document of uniqueDocuments) await ctx.db.delete(document._id);
   const affectedUsers = new Set(
     [...sessions, ...expiredActivities].flatMap((session) => session.userId ? [session.userId] : []),
   );
