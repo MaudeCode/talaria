@@ -434,6 +434,10 @@ that address unlocks only its folder, minus dotfiles, until the grant expires.
 to clear the text. An omitted field returns 400 before any replacement.
 `files.create` accepts an omitted `content` field to create an empty file.
 
+For workspace text, `files.read` returns `lines` as the number of LF-delimited
+lines. An empty file has zero lines. A final LF terminates the last line, CRLF
+counts as one separator, and a lone CR stays part of the line.
+
 Workspace text preview and replacement share a 400,000-byte limit. A read
 above the limit returns HTTP 413 with `condition: "file_too_large"`, `max_bytes`
 and `download_allowed: true`. The raw download rechecks access on every

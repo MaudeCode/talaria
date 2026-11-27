@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "File previews report the correct line count for empty files and files that end with a newline.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

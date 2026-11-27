@@ -54,6 +54,26 @@ describe('anchored walk', () => {
   afterAll(() => { rmSync(root, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }) })
   afterEach(() => { vi.restoreAllMocks(); afterLstat.hook = null; afterChmod.hook = null; aroundOpen.before = null })
 
+  it.each([
+    { name: 'empty', content: '', lines: 0 },
+    { name: 'final LF', content: 'hello\n', lines: 1 },
+    { name: 'final CRLF', content: 'hello\r\n', lines: 1 },
+    { name: 'two lines with final LF', content: 'a\nb\n', lines: 2 },
+    { name: 'two lines without final LF', content: 'a\nb', lines: 2 },
+    { name: 'no separator', content: 'hello', lines: 1 },
+    { name: 'blank lines', content: '\na\n\n', lines: 3 },
+    { name: 'CR without LF', content: 'a\rb\r', lines: 1 },
+  ])('reports the logical line count for $name', ({ content, lines }) => {
+    const path = 'line-count.txt'
+    const file = join(root, path)
+    writeFileSync(file, content)
+    try {
+      expect(readFileContent(root, path)).toEqual({ path, content, size: Buffer.byteLength(content), lines })
+    } finally {
+      rmSync(file)
+    }
+  })
+
   describe('readFileContentAsync', () => {
     const parent = (): string => join(root, 'swap')
     let swapped = false
