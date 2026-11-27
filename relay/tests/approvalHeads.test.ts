@@ -51,19 +51,28 @@ async function seed() {
     }
   };
   // Every snapshot is a fresh signed event with a new revision, as Talaria Web's heartbeat publishes them.
-  const publish = async (phase: SessionPhase, head?: string, options: { profileId?: string; alertEligible?: boolean; decision?: string; notices?: AgentNotify[]; status?: number } = {}) => {
+  const publish = async (phase: SessionPhase, head?: string, options: {
+    profileId?: string;
+    alertEligible?: boolean;
+    decision?: string;
+    notices?: AgentNotify[];
+    status?: number;
+    sessions?: { sessionId: string; approvalHeadId?: string; alertEligible?: boolean }[];
+  } = {}) => {
     revision += 1;
     const path = `/v1/publishers/${encodeURIComponent(publisherId)}/profiles/${options.profileId ?? "profile-1"}/snapshot`;
+    const sessions = options.sessions ?? [{
+      sessionId: "session-1", approvalHeadId: head, alertEligible: options.alertEligible,
+      decisionReviewId: options.decision,
+      decisionReviewTitle: options.decision === undefined ? undefined : "Release choices",
+      agentNotices: options.notices,
+    }];
     const body = JSON.stringify({
       snapshotId: `snapshot-${String(revision)}`,
-      states: [{
-        sessionId: "session-1", streamId: "stream-1", eventId: `snapshot:${String(revision)}:session-1`, revision,
-        title: "Private session title", phase, startedAt: now, updatedAt: now + revision, deepLink: "/sessions/session-1",
-        ...(options.alertEligible === undefined ? {} : { alertEligible: options.alertEligible }),
-        ...(head === undefined ? {} : { approvalHeadId: head }),
-        ...(options.decision === undefined ? {} : { decisionReviewId: options.decision, decisionReviewTitle: "Release choices" }),
-        ...(options.notices === undefined ? {} : { agentNotices: options.notices }),
-      }],
+      states: sessions.map((session) => ({
+        ...session, streamId: "stream-1", eventId: `snapshot:${String(revision)}:${session.sessionId}`, revision,
+        title: "Private session title", phase, startedAt: now, updatedAt: now + revision, deepLink: `/sessions/${session.sessionId}`,
+      })),
     });
     const timestamp = String(now / 1000);
     const requestNonce = `nonce-${String(nonce++)}`;
@@ -82,7 +91,10 @@ async function seed() {
   const notifications = async (userId = "user-1") => {
     const rows = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").order("asc").collect());
     return rows.filter((job) => job.userId === userId && job.kind === "notification")
-      .map((job) => ({ id: job._id, payload: JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> } & Record<string, unknown> }));
+      .map((job) => ({
+        id: job._id, deviceId: job.deviceId,
+        payload: JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> } & Record<string, unknown>,
+      }));
   };
   return { backend, publish, notifications };
 }
@@ -179,6 +191,35 @@ describe("agent notices (TAL-1970)", () => {
 });
 
 describe("approval queue heads", () => {
+  it("queues every addressable approval in one snapshot only for subscribed devices and unmuted chats", async () => {
+    const { backend, publish, notifications } = await seed();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1", deviceId: "excluded-phone", label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "production",
+        pushToken: "excluded-token", preferences: { ...defaultNotificationPreferences, notificationsEnabled: true },
+        createdAt: now, updatedAt: now,
+      });
+      await ctx.db.insert("devicePublisherExclusions", { userId: "user-1", deviceId: "excluded-phone", publisherId, createdAt: now });
+    });
+    const sessions = [{ sessionId: "session-1" }, { sessionId: "session-2" }, { sessionId: "muted" }];
+    await publish("running", undefined, { sessions });
+
+    const approvals = { sessions: [
+      { sessionId: "session-1", approvalHeadId: "head-first" },
+      { sessionId: "session-2", approvalHeadId: "head-second" },
+      { sessionId: "muted", approvalHeadId: "head-muted", alertEligible: false },
+    ] };
+    await publish("waiting_for_approval", undefined, approvals);
+    const queued = await notifications();
+    expect(queued).toMatchObject([
+      { deviceId: "user-1-phone", payload: { publisherId, sessionId: "session-1", approvalHeadId: "head-first", deepLink: "/sessions/session-1", aps: { category: "talaria.approval" } } },
+      { deviceId: "user-1-phone", payload: { publisherId, sessionId: "session-2", approvalHeadId: "head-second", deepLink: "/sessions/session-2", aps: { category: "talaria.approval" } } },
+    ]);
+
+    await publish("waiting_for_approval", undefined, approvals);
+    expect(await notifications()).toEqual(queued);
+  });
+
   it("alerts once for each approval that becomes the head while the session keeps waiting", async () => {
     const { publish, notifications } = await seed();
     await publish("running");

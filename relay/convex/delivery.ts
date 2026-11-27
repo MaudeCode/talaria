@@ -741,42 +741,44 @@ export const recompute = internalMutation({
             });
           }
           const alerts = alertsFor(device);
-          // A Time Sensitive alert always arrives as a notification; any other alert already sounded on the activity.
-          const changedAlert = alerts.find(({ alert }) => alert.interruptionLevel)
-            ?? (alertedDevices.has(device.deviceId) ? undefined : alerts[0]);
-          if (!changedAlert) continue;
-          const { alert, state: notificationState } = changedAlert;
-          // An approval alert is keyed by its queue head rather than the snapshot that revealed it, so a later
-          // snapshot of the same head neither drops a retrying delivery nor queues a second alert.
-          // TAL-1966: a decision review alert is keyed by its review, so it is queued once whichever snapshot carried it.
-          const decisionReviewId = alert.deepLink !== undefined ? notificationState.decisionReviewId : undefined;
-          const approvalHeadId = decisionReviewId === undefined && activityPhase(notificationState) === "waiting_for_approval"
-            ? notificationState.approvalHeadId
-            : undefined;
-          await enqueueJob(ctx, {
-            userId: args.userId,
-            deviceId: device.deviceId,
-            kind: "notification",
-            sourcePublisherId: notificationState.publisherId,
-            sourceSessionId: notificationState.sessionId,
-            sourceApprovalHeadId: approvalHeadId,
-            sourceDecisionReviewId: decisionReviewId,
-            request: makeNotification({
-              token: device.pushToken,
-              bundleId: device.bundleId,
-              environment: device.apsEnvironment,
-              alert,
-              row: rowForState(notificationState),
-              // The relay keys a chat by publisher and session (one sessionStates row each); base64url SHA-256 fits APNs' 64-byte limit.
-              threadId: await sha256(JSON.stringify(["alert", notificationState.publisherId, notificationState.sessionId])),
-            }),
-            stateFingerprint: decisionReviewId !== undefined
-              ? `notification:decision:${JSON.stringify([notificationState.publisherId, notificationState.sessionId, notificationState.decisionReviewId])}:${device.deviceId}`
-              : approvalHeadId === undefined
-              ? `notification:${notificationState.eventId}:${device.deviceId}`
-              : `notification:approval:${JSON.stringify([notificationState.publisherId, notificationState.sessionId, approvalHeadId])}:${device.deviceId}`,
-            now,
-          });
+          // Approvals, questions, and decision reviews use standalone notifications. Keep the single passive fallback.
+          const standaloneAlerts = alerts.filter(({ alert }) => alert.interruptionLevel);
+          const notificationAlerts = standaloneAlerts.length > 0 || alertedDevices.has(device.deviceId)
+            ? standaloneAlerts
+            : alerts.slice(0, 1);
+          for (const { alert, state: notificationState } of notificationAlerts) {
+            // An approval alert is keyed by its queue head rather than the snapshot that revealed it, so a later
+            // snapshot of the same head neither drops a retrying delivery nor queues a second alert.
+            // TAL-1966: a decision review alert is keyed by its review, so it is queued once whichever snapshot carried it.
+            const decisionReviewId = alert.deepLink !== undefined ? notificationState.decisionReviewId : undefined;
+            const approvalHeadId = decisionReviewId === undefined && activityPhase(notificationState) === "waiting_for_approval"
+              ? notificationState.approvalHeadId
+              : undefined;
+            await enqueueJob(ctx, {
+              userId: args.userId,
+              deviceId: device.deviceId,
+              kind: "notification",
+              sourcePublisherId: notificationState.publisherId,
+              sourceSessionId: notificationState.sessionId,
+              sourceApprovalHeadId: approvalHeadId,
+              sourceDecisionReviewId: decisionReviewId,
+              request: makeNotification({
+                token: device.pushToken,
+                bundleId: device.bundleId,
+                environment: device.apsEnvironment,
+                alert,
+                row: rowForState(notificationState),
+                // The relay keys a chat by publisher and session (one sessionStates row each); base64url SHA-256 fits APNs' 64-byte limit.
+                threadId: await sha256(JSON.stringify(["alert", notificationState.publisherId, notificationState.sessionId])),
+              }),
+              stateFingerprint: decisionReviewId !== undefined
+                ? `notification:decision:${JSON.stringify([notificationState.publisherId, notificationState.sessionId, notificationState.decisionReviewId])}:${device.deviceId}`
+                : approvalHeadId === undefined
+                ? `notification:${notificationState.eventId}:${device.deviceId}`
+                : `notification:approval:${JSON.stringify([notificationState.publisherId, notificationState.sessionId, approvalHeadId])}:${device.deviceId}`,
+              now,
+            });
+          }
       }
     }
     return null;
