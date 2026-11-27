@@ -12,6 +12,7 @@ const toast = vi.hoisted(() => vi.fn())
 vi.mock('../toast/toast', () => ({ showToast: toast }))
 import * as api from '../../api/endpoints'
 import { FilesPage } from './FilesPage'
+import { requestOpenFile } from './openFileRequest'
 
 const tree = { source: 'workspace' as const, entries: [{ name: 'docs', path: 'docs', is_dir: true, workspace_sort_rank: 1 }, { name: 'a.txt', path: 'a.txt', is_dir: false, size: 3, workspace_sort_rank: 2 }, { name: 'b.txt', path: 'b.txt', is_dir: false, size: 3, workspace_sort_rank: 2 }] }
 const held = () => new Promise<never>(() => undefined)
@@ -34,6 +35,33 @@ beforeEach(() => {
   vi.mocked(api.listDir).mockResolvedValue(tree)
   vi.mocked(api.fetchGitInfo).mockResolvedValue({ git: null })
   vi.mocked(api.readFile).mockImplementation((_sid, path) => Promise.resolve({ content: path === 'a.txt' ? 'Original A' : 'Original B', size: 10, preview: 'text' } as never))
+})
+
+it('opens a transcript file at its line once when the workspace mounts late (TAL-2756)', async () => {
+  vi.mocked(api.readFile).mockResolvedValue({ source: 'workspace', content: 'one\ntwo\nthree', binary: false, size: 13, preview: 'text' })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const page = (workspace: string | undefined) => (
+    <QueryClientProvider client={client}><FilesPage workspace={workspace} sessionId="late-workspace" active /></QueryClientProvider>
+  )
+  const { rerender } = render(page(undefined))
+  act(() => requestOpenFile({ sessionId: 'late-workspace', path: 'b.txt', line: 2 }))
+  expect(screen.getByRole('status')).toHaveTextContent('This chat has no workspace.')
+
+  rerender(page('/w'))
+  const preview = await screen.findByRole<HTMLTextAreaElement>('textbox', { name: 'Preview' })
+  expect(preview).toHaveValue('one\ntwo\nthree')
+  expect(preview.value.slice(preview.selectionStart, preview.selectionEnd)).toBe('two')
+  expect(screen.getByRole('link', { name: 'Download b.txt' })).toBeInTheDocument()
+
+  preview.setSelectionRange(0, 0)
+  rerender(page('/w'))
+  expect(preview.selectionEnd).toBe(0)
+
+  for (const workspace of ['/other', '/w']) {
+    rerender(page(workspace))
+    expect(await screen.findByRole('treeitem', { name: row('b.txt') })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Preview' })).toBeNull()
+  }
 })
 
 describe('file tree writes show their result at once (TAL-1384)', () => {
