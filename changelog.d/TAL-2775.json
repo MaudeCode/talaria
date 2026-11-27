@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Revoking a Relay device ends all of its Live Activity registrations.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

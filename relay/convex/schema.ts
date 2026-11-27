@@ -146,6 +146,7 @@ export default defineSchema({
     pushToStartDeferredAt: v.optional(v.number()),
     preferences: preferencesValidator,
     revokedAt: v.optional(v.number()),
+    activityCleanupAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

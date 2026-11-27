@@ -1704,6 +1704,126 @@ describe("Convex relay state", () => {
     })).resolves.toMatchObject({ status: "ready", kind: "live_activity_update" });
   });
 
+  it("ends every open activity when a device is revoked, including across cleanup batches", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    const userId = "user-1";
+    const deviceId = "device-1";
+    const otherDeviceId = "device-2";
+    const { deviceRow, activities } = await backend.run(async (ctx) => {
+      const insertDevice = (id: string) => ctx.db.insert("devices", {
+        userId, deviceId: id, label: "iPhone", pushToken: `push-${id}`,
+        pushToStartToken: `start-${id}`, pushToStartIssuedAt: now - 1,
+        preferences: defaultNotificationPreferences, createdAt: now - 2, updatedAt: now - 1,
+      });
+      const deviceRow = await insertDevice(deviceId);
+      await insertDevice(otherDeviceId);
+
+      const activities = [];
+      for (const [id, mode, count, endedAt] of [
+        [deviceId, "all_running", 101, now - 1],
+        [deviceId, "all_running", 1, undefined],
+        [deviceId, "per_session", 257, undefined],
+        [otherDeviceId, "per_session", 1, undefined],
+      ] as const) {
+        for (let index = 0; index < count; index += 1) {
+          const activityId = `${id}-${mode}-${endedAt ?? "open"}-${index}`;
+          const rowId = await ctx.db.insert("liveActivities", {
+            userId, deviceId: id, activityId, mode, attributesType: "TalariaAggregateActivityAttributes",
+            ...(mode === "per_session"
+              ? { publisherId: "https://hermes.example", sessionId: "session-1", streamId: activityId }
+              : {}),
+            schemaVersion: 1, activityPushToken: activityId,
+            endedAt, createdAt: now - 2, updatedAt: endedAt ?? now - 2,
+          });
+          activities.push({ rowId, endedAt: endedAt ?? (id === deviceId ? now : undefined) });
+        }
+      }
+      return { deviceRow, activities };
+    });
+
+    const revoke = (at: number) =>
+      backend.mutation(internal.devices.revokeDevice, { userId, deviceId, now: at });
+
+    await expect(revoke(now)).resolves.toEqual({ ok: true });
+    const revokedDevice = await backend.run((ctx) => ctx.db.get(deviceRow));
+    expect(revokedDevice).toMatchObject({ revokedAt: now });
+    expect(revokedDevice?.pushToken).toBeUndefined();
+    expect(revokedDevice?.pushToStartToken).toBeUndefined();
+    const tokenTransfer = await backend.mutation(internal.devices.registerActivity, {
+      userId, deviceId: otherDeviceId, activityId: "reused-token", mode: "all_running",
+      attributesType: "TalariaAggregateActivityAttributes", schemaVersion: 1,
+      activityPushToken: `${deviceId}-per_session-open-256`, seededLocally: true, now,
+    });
+    await expect(revoke(now + 1)).resolves.toEqual({ ok: true });
+    await backend.finishAllScheduledFunctions(vi.runAllTimers);
+    const current = await backend.run((ctx) => Promise.all(activities.map(({ rowId }) => ctx.db.get(rowId))));
+    // Compare only the rows still wrong so a failed regression shows the number left open.
+    expect(current.filter((row, index) =>
+      row === null || row.endedAt !== activities[index]!.endedAt,
+    )).toHaveLength(0);
+    expect(tokenTransfer).toEqual({ ok: false, reason: "ended" });
+  });
+
+  it("finishes revoking old activities before reenrolling a device", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    const userId = "user-1";
+    const deviceId = "device-1";
+    const token = "replacement-session-token";
+    const tokenHash = await sha256(token);
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("relayUsers", {
+        userId, appleSubjectHash: "apple-user-1", createdAt: now, updatedAt: now,
+      });
+      await ctx.db.insert("userSessions", {
+        userId, sessionId: "replacement-session", tokenHash, expiresAt: now + 60_000, createdAt: now,
+      });
+      await ctx.db.insert("devices", {
+        userId, deviceId, sessionId: "original-session", label: "iPhone",
+        preferences: defaultNotificationPreferences, createdAt: now, updatedAt: now,
+      });
+      for (let index = 0; index < 257; index += 1) {
+        await ctx.db.insert("liveActivities", {
+          userId, deviceId, activityId: `old-${index}`, mode: "per_session",
+          publisherId: "https://hermes.example", sessionId: "session-1", streamId: `stream-${index}`,
+          attributesType: "TalariaAggregateActivityAttributes", schemaVersion: 1,
+          activityPushToken: `old-token-${index}`, createdAt: now, updatedAt: now,
+        });
+      }
+    });
+
+    await expect(backend.mutation(internal.devices.revokeDevice, { userId, deviceId, now }))
+      .resolves.toEqual({ ok: true });
+    // Keep the scheduled drain held while a replacement sign-in reenrolls the device.
+    const response = await backend.fetch(`/v1/devices/${deviceId}`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "production",
+        preferences: defaultNotificationPreferences,
+      }),
+    });
+    expect(response.status).toBe(200);
+    const activitiesStillOpen = await backend.run(async (ctx) =>
+      (await ctx.db.query("liveActivities").collect()).filter((activity) => activity.endedAt !== now).length,
+    );
+    expect(activitiesStillOpen).toBe(0);
+
+    const newCard = await backend.mutation(internal.devices.registerActivity, {
+      userId, deviceId, activityId: "new", mode: "all_running", attributesType: "TalariaAggregateActivityAttributes",
+      schemaVersion: 1, activityPushToken: "new-token", seededLocally: true, now,
+    });
+    expect(newCard).toEqual({ ok: true });
+    await backend.finishAllScheduledFunctions(vi.runAllTimers);
+    const current = await backend.run((ctx) => ctx.db.query("liveActivities")
+      .withIndex("by_user_id_and_device_id_and_activity_id", (q) =>
+        q.eq("userId", userId).eq("deviceId", deviceId).eq("activityId", "new"),
+      ).unique());
+    expect(current).toMatchObject({ activityId: "new" });
+    expect(current?.endedAt).toBeUndefined();
+  });
+
   it.each(["sign-out", "expiry"] as const)("%s queries only open activities before revoking session devices", async (trigger) => {
     const backend = testBackend();
     const now = Date.now();
@@ -1806,7 +1926,7 @@ describe("Convex relay state", () => {
           ],
           order: null,
         },
-        operators: [],
+        operators: [{ limit: expect.any(Number) }],
       })),
     ));
   });
