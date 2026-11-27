@@ -2541,6 +2541,9 @@ struct ChatView: View {
                 .chatEnvironmentAction(\.chatShowBlockModel) { blockID in
                     ShowBlockCardModel(blockID: blockID, client: viewModel.client)
                 }
+                .chatEnvironmentAction(\.chatRenderDiagram) { source in
+                    { try await viewModel.client.renderDiagram(source: source) }
+                }
                 .chatEnvironmentAction(\.chatOpenWorkspaceFile) { link in
                     chat.openWorkspaceFile(link)
                 }

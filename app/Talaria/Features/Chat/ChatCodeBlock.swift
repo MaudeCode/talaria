@@ -8,6 +8,8 @@ import TalariaKit
 extension EnvironmentValues {
     /// The room on each side of the transcript's reading column that a wide code block may grow into (TAL-1487).
     @Entry var chatCodeBlockMargin: CGFloat = 0
+    @Entry var chatAllowsCodePreview = true
+    @Entry var chatRenderDiagram: ChatEnvironmentAction<String, @MainActor () async throws -> DiagramRenderResponse>?
 }
 
 struct ChatCodeBlock: View {
@@ -17,11 +19,13 @@ struct ChatCodeBlock: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.chatCodeBlockMargin) private var margin
+    @Environment(\.chatAllowsCodePreview) private var allowsCodePreview
     @AppStorage(ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey) private var wrapsCodeBlockLines = false
     @State private var highlightedCode: NSAttributedString?
     @State private var scrollViewportWidth: CGFloat = 0
     @State private var columnWidth: CGFloat = 0
     @State private var naturalCodeWidth: CGFloat = 0
+    @State private var showsPreview = false
 
     private static let codeHorizontalPadding: CGFloat = 16
 
@@ -34,6 +38,21 @@ struct ChatCodeBlock: View {
                     .font(.subheadline.weight(.semibold))
 
                 Spacer()
+
+                if let preview {
+                    Button {
+                        showsPreview = true
+                    } label: {
+                        Label(preview.action, systemImage: "eye")
+                            .labelStyle(.iconOnly)
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(SwiftUI.Color.primary)
+                    .help(preview.action)
+                }
 
                 Button {
                     wrapsCodeBlockLines.toggle()
@@ -87,6 +106,11 @@ struct ChatCodeBlock: View {
         // Code (and diff) blocks must never mirror inside an RTL message (#259):
         // the language header, copy/wrap controls, and the source itself stay LTR.
         .forcedLeftToRight()
+        .sheet(isPresented: $showsPreview) {
+            if let preview {
+                CodeBlockPreviewSheet(kind: preview, source: content)
+            }
+        }
     }
 
     /// How far the block grows past each side of its column: up to its lines' natural width, centred, within the
@@ -215,6 +239,11 @@ struct ChatCodeBlock: View {
         return normalized
     }
 
+    private var preview: CodeBlockPreviewSheet.Kind? {
+        guard allowsCodePreview, !isStreaming, let normalizedLanguage else { return nil }
+        return CodeBlockPreviewSheet.Kind(rawValue: normalizedLanguage)
+    }
+
     /// The Copy button's checkmark state, keyed to the latest copy's expiry.
     struct CopyConfirmation {
         static let displayDuration: Duration = .seconds(2)
@@ -250,6 +279,103 @@ struct ChatCodeBlock: View {
         logger.info(
             "Syntax highlighting fallback reason=\(reason.rawValue, privacy: .public) languageCategory=\(MarkdownHighlightPolicy.languageLogCategory(for: normalizedLanguage), privacy: .public) characters=\(code.count, privacy: .public) lines=\(MarkdownHighlightPolicy.lineCount(in: code), privacy: .public)"
         )
+    }
+}
+
+private struct CodeBlockPreviewSheet: View {
+    enum Kind: String {
+        case svg, mermaid
+
+        var action: LocalizedStringKey {
+            self == .svg ? "View image" : "View diagram"
+        }
+
+        var title: Text {
+            self == .svg ? Text(verbatim: "SVG") : Text("Diagram")
+        }
+    }
+
+    let kind: Kind
+    let source: String
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.chatRenderDiagram) private var renderDiagram
+    @State private var imageURL: URL?
+    @State private var frameIsLoading = true
+    @State private var failure: String?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let failure {
+                    ContentUnavailableView {
+                        Label("Could Not Load Media", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(failure)
+                    }
+                } else if let imageURL {
+                    ShowFrameView(url: imageURL, onLoad: { frameIsLoading = false }, onFailure: { imageFailed() })
+                        .accessibilityLabel(kind.title)
+                        .background(.white, ignoresSafeAreaEdges: [])
+                        .overlay {
+                            if frameIsLoading {
+                                progress.environment(\.colorScheme, .light)
+                            }
+                        }
+                } else {
+                    progress
+                }
+            }
+            .navigationTitle(kind.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .adaptiveNavigationBarBackground()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                        .labelStyle(.iconOnly)
+                        .help("Close")
+                }
+            }
+            .task(id: source) { await loadPreview() }
+        }
+        .adaptivePagePresentation()
+    }
+
+    private var progress: some View {
+        ProgressView("Loading media...")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func loadPreview() async {
+        imageURL = nil
+        frameIsLoading = true
+        failure = nil
+        if kind == .svg {
+            showImage(source)
+        } else if let renderDiagram {
+            do {
+                let result = try await renderDiagram(source)()
+                guard !Task.isCancelled else { return }
+                switch result {
+                case .svg(let svg): showImage(svg)
+                case .error(let error): failure = error
+                }
+            } catch {
+                guard !Task.isCancelled, !APIError.isCancellation(error) else { return }
+                failure = error.localizedDescription
+            }
+        } else {
+            failure = String(localized: "Preview is not available for this media.")
+        }
+    }
+
+    private func showImage(_ svg: String) {
+        imageURL = ShowFrameView.svgImageURL(svg)
+        if imageURL == nil { imageFailed() }
+    }
+
+    private func imageFailed() {
+        failure = String(localized: "Could not preview this image.")
     }
 }
 

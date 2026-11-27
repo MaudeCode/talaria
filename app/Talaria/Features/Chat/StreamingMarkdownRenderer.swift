@@ -30,6 +30,8 @@ struct StreamingMarkdownRenderer: View {
                 streamingMarkdownContent
             }
         }
+        // Stable chunks may highlight finished fences before the reply itself is settled.
+        .environment(\.chatAllowsCodePreview, false)
         .task(id: content) {
             await Task.yield()
             guard !Task.isCancelled else { return }

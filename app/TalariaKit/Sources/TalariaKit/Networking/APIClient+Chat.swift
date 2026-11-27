@@ -1,6 +1,10 @@
 import Foundation
 
 extension APIClient {
+    public func renderDiagram(source: String) async throws -> DiagramRenderResponse {
+        try await send(endpoint: .renderDiagram, method: "POST", body: ["source": source])
+    }
+
     public func startChat(
         sessionID: String,
         message: String,
@@ -232,6 +236,25 @@ extension APIClient {
     /// TAL-1336: a steering message for one owner subagent the server marked `can_steer`.
     public func steerBackgroundTask(sessionID: String, taskID: String, text: String) async throws -> BackgroundControlResponse {
         try await send(endpoint: .backgroundSteer, method: "POST", body: BackgroundTaskRequest(sessionId: sessionID, taskId: taskID, text: text))
+    }
+}
+
+/// The diagram renderer may return a parse error in a successful HTTP response.
+public enum DiagramRenderResponse: Decodable, Sendable {
+    case svg(String)
+    case error(String)
+
+    private enum CodingKeys: String, CodingKey {
+        case svg, error
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let svg = try container.decodeIfPresent(String.self, forKey: .svg) {
+            self = .svg(svg)
+        } else {
+            self = .error(try container.decode(String.self, forKey: .error))
+        }
     }
 }
 
