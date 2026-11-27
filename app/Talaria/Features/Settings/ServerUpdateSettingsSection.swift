@@ -50,7 +50,7 @@ struct ServerUpdateSettingsSection: View {
                     serverStatusPill
                 }
 
-                SettingsValueRow(title: SettingsIndex.systemVersion.title, systemImage: "number") {
+                SettingsValueRow(title: SettingsIndex.systemVersion.title, systemImage: "number", hasInteractiveTrailingContent: true) {
                     HStack(spacing: 12) {
                         serverVersionContent
                         updateControl(for: .webui, available: webUpdateAvailable)
@@ -332,7 +332,7 @@ private extension ServerUpdateSettingsSection {
     private var agentUpdateRows: some View {
         let agent = model.updateTargets?.agent
         if agent != nil || model.agentVersion != nil {
-            SettingsValueRow(title: SettingsIndex.systemHermesAgent.title) {
+            SettingsValueRow(title: SettingsIndex.systemHermesAgent.title, hasInteractiveTrailingContent: true) {
                 HStack(spacing: 12) {
                     Text(model.agentVersion ?? agent?.currentVersion ?? String(localized: "Unknown"))
                         .foregroundStyle(.secondary)
@@ -414,11 +414,18 @@ private extension ServerUpdateSettingsSection {
         }
     }
 
+    @ViewBuilder
     private func updateActionButton(title: String, target: UpdateTarget) -> some View {
-        SettingsButton(title, systemImage: "arrow.up.circle", isLoading: model.isApplying && model.lastTarget == target) {
+        let button = SettingsButton(title, systemImage: "arrow.up.circle", isLoading: model.isApplying && model.lastTarget == target) {
             updateTarget = target
         }
         .disabled(model.isCheckingForUpdates || model.isApplying || notifications.isFollowingUpdate)
+        .environment(\.settingsIndexPage, nil)
+        if target == .webui {
+            button.indexedSettingsRow(title: title, identifier: SettingsIndex.systemUpdate.id)
+        } else {
+            button
+        }
     }
 
     private func updateProgressRow(_ text: String) -> some View {

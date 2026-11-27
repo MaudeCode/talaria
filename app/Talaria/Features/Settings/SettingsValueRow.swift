@@ -4,14 +4,16 @@ import TalariaKit
 struct SettingsValueRow<Trailing: View, Supplementary: View>: View {
     let title: String
     var systemImage: String? = nil
+    let hasInteractiveTrailingContent: Bool
     @ViewBuilder let trailing: Trailing
     @ViewBuilder let supplementary: Supplementary
 
-    init(title: String, systemImage: String? = nil,
+    init(title: String, systemImage: String? = nil, hasInteractiveTrailingContent: Bool = false,
          @ViewBuilder trailing: () -> Trailing,
          @ViewBuilder supplementary: () -> Supplementary = { EmptyView() }) {
         self.title = title
         self.systemImage = systemImage
+        self.hasInteractiveTrailingContent = hasInteractiveTrailingContent
         self.trailing = trailing()
         self.supplementary = supplementary()
     }
@@ -19,12 +21,16 @@ struct SettingsValueRow<Trailing: View, Supplementary: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let row = VStack(alignment: .leading, spacing: 12) {
             valueRow
             supplementary
         }
         .font(AppFont.subheadline())
-        .indexedSettingsRow(title: title)
+        if hasInteractiveTrailingContent {
+            row
+        } else {
+            row.indexedSettingsRow(title: title)
+        }
     }
 
     private var valueRow: some View {
@@ -49,13 +55,21 @@ struct SettingsValueRow<Trailing: View, Supplementary: View>: View {
         .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
     }
 
+    @ViewBuilder
     private var titleText: some View {
-        Group {
+        let label = Group {
             if let systemImage {
                 SettingsRowLabel(title: title, systemImage: systemImage)
             } else {
                 Text(title).foregroundStyle(.primary)
             }
+        }
+        if hasInteractiveTrailingContent {
+            // An identifier on the entire row would also label its separate trailing control.
+            label.accessibilityElement(children: .combine)
+                .indexedSettingsRow(title: title)
+        } else {
+            label
         }
     }
 }
