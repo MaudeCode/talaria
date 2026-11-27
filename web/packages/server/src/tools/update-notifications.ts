@@ -218,6 +218,8 @@ export class UpdateNotificationStore {
   private revision: string | null = null
   private writes: Promise<void> = Promise.resolve()
   private deliveringRelayNotices = false
+  /** Saved delivery becomes eligible only after this process confirms the version is still available. */
+  private readonly confirmedRelayNotices = new WeakSet<NonNullable<StoredUpdateNotification['relay_notice']>>()
   /** Last check-in per tab refresh notice; kept in memory so polling never rewrites the store. */
   private readonly tabSeen = new Map<string, number>()
   private readonly loadedAt: number
@@ -278,9 +280,13 @@ export class UpdateNotificationStore {
     const title = `${name} update available`
     const message = `${name}${shownVersion(view?.state === 'commits_behind' ? identity.slice(0, 12) : identity)} is available.`
     const hash = createHash('sha256').update(identity).digest('hex')
-    if (row?.notice_text_hash === hash) return null
+    if (row?.notice_text_hash === hash) {
+      if (row.relay_notice) this.confirmedRelayNotices.add(row.relay_notice)
+      return null
+    }
     const notice = { kind: UPDATE_AVAILABLE_KIND, id: `${key}:${identity}`, title, body: message, url: SETTINGS_SYSTEM_URL } as const
     const relayNotice = relayDestinations.length ? { id: notice.id, pending: relayDestinations } : undefined
+    if (relayNotice) this.confirmedRelayNotices.add(relayNotice)
     if (!row) {
       await this.createRow({ owner: '*', profile: 'default', serverOwner: true }, {
         kind: UPDATE_AVAILABLE_KIND, target, phase: 'available', title, message,
@@ -295,7 +301,13 @@ export class UpdateNotificationStore {
     return notice
   }
 
-  hasPendingRelayNotices(): boolean { return this.rows.some((row) => row.relay_notice) }
+  private confirmedRelayNotice(row: StoredUpdateNotification): StoredUpdateNotification['relay_notice'] {
+    return row.relay_notice && this.confirmedRelayNotices.has(row.relay_notice) ? row.relay_notice : undefined
+  }
+
+  hasPendingRelayNotices(target?: UpdateNotificationTarget): boolean {
+    return this.rows.some((row) => (target === undefined || row.target === target) && this.confirmedRelayNotice(row))
+  }
 
   /** Settle each destination separately. Replacing or removing a row invalidates its old delivery pass. */
   async deliverRelayNotices(send: (notice: ServerNotice, destination: string, isCurrent: () => boolean) => Promise<boolean>): Promise<void> {
@@ -305,7 +317,7 @@ export class UpdateNotificationStore {
       for (const row of this.rows) {
         if (!row.relay_notice) continue
         await this.writes.catch(() => this.save())
-        const pending = row.relay_notice
+        const pending = this.confirmedRelayNotice(row)
         if (!pending) continue
         const isCurrent = () => row.relay_notice === pending && this.rows.includes(row)
         const notice = { kind: UPDATE_AVAILABLE_KIND, id: pending.id, title: row.title, body: row.message, url: SETTINGS_SYSTEM_URL } as const

@@ -9,9 +9,9 @@ jobs finish first, and open embedded terminals must be closed before an update;
 new chats receive a retry response while files are changing or restart is pending.
 
 Web saves an available update and its pending Relay destinations together. It retries
-unacknowledged destinations after temporary failures and after a restart, using the
-same notice ID. An update that is withdrawn, installed, or replaced clears its
-pending delivery.
+unacknowledged destinations using the same notice ID. After a restart, it waits
+for an update check to confirm that the saved version is still available. An update
+that is withdrawn, installed, or replaced clears its pending delivery.
 
 When an update you start in Settings is blocked only by this server's own running chats, it offers **Update anyway**
 with the number of chats (TAL-1629). The apply response carries `interrupt_confirmation` (`token`, `runs`,

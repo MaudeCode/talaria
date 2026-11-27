@@ -1332,11 +1332,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     checkEnabled: () => !truthy(env.TALARIA_WEB_TEST_NETWORK_BLOCK) && settings.peekValue('check_for_updates') !== false,
     // TAL-2665: a new available version also pushes once to each server owner's opted-in subscriptions and devices.
     availableNotification: async (target, view) => {
+      const wasPending = updateNotifications.hasPendingRelayNotices(target)
       const notice = await updateNotifications.updateAvailable(target, view, relay.current()?.serverNoticeDestinations())
-      if (notice) {
-        relay.current()?.serverNoticesChanged()
-        void notifications.serverNotice(notice)
-      }
+      if ((notice || !wasPending) && updateNotifications.hasPendingRelayNotices(target)) relay.current()?.serverNoticesChanged()
+      if (notice) void notifications.serverNotice(notice)
     },
     autoNotification: {
       begin: async () => (await updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'webui')).id,

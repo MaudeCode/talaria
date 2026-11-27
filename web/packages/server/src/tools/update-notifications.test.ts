@@ -60,6 +60,11 @@ describe('available update delivery to Relay', () => {
       unavailable = ''
       restarted = await boot()
       await restarted.deps.relay.start()
+      await restarted.deps.relay.current()!.idle()
+      expect(attempts.map(([profile, id]) => [profile, id])).toEqual([[healthy, notice], [failing, notice]])
+      await check(restarted, { state: 'check_failed', can_apply: false })
+      await restarted.deps.relay.current()!.idle()
+      expect(attempts).toHaveLength(2)
       await check(restarted, release('web-v2.0.0'))
       await restarted.deps.relay.current()!.idle()
       expect(attempts.map(([profile, id]) => [profile, id])).toEqual([[healthy, notice], [failing, notice], [failing, notice]])
@@ -202,6 +207,8 @@ describe('UpdateNotificationStore', () => {
     expect(sent).toEqual([['update_available:webui:web-v2.0.0', destinations[0]]])
 
     const restarted = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    expect((await restarted.list(alice)).notifications).toHaveLength(latest ? 1 : 0)
+    if (latest) await restarted.updateAvailable('webui', latest, destinations)
     sent.length = 0
     await restarted.deliverRelayNotices((notice, destination) => {
       sent.push([notice.id, destination])
