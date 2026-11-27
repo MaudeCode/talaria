@@ -314,6 +314,7 @@ public final class AuthManager {
             // The two durable deletions are independent: attempt both, then
             // surface the first failure so neither store outlives the other.
             let cacheResult = Result { try CacheStore.clearCache(for: server, in: cacheContainer.mainContext) }
+            await CacheStore.finishSpotlightWrites(in: cacheContainer)
             try await draftStore.flush()
             try cacheResult.get()
         }

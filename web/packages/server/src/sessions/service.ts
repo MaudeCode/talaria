@@ -1758,7 +1758,17 @@ export class SessionService {
     const listedOwner = (row: Row): string | null => rowOwner(row) ?? resolved.get(str(row.session_id)) ?? null
     const lookups = await withStateDbListingReads(() => this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id))))
     const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(listedOwner(row)) }))
-    return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]), params.detailedRows === true)
+    const rows = [...payload.sessions, ...payload.sidebar_reference_sessions]
+    const workspaceName = await this.workspaceNames(rows)
+    const projects = rows.some((row) => str(row.project_id)) ? await this.deps.projects.load() : []
+    const redact = this.deps.redactEnabled()
+    const projectNames = new Map(projects
+      .filter((project) => params.allProfiles || this.deps.profilesMatch(project.profile ?? null, activeProfile))
+      .map((project) => [project.project_id, redactString(project.name, redact)]))
+    return sessionListResponse(payload, this.deps.runtime, redact, this.deps.now(), (row) => ({
+      workspace_name: workspaceName(row),
+      project_name: projectNames.get(str(row.project_id)) ?? null,
+    }), params.detailedRows === true)
   }
 
   /**
@@ -2306,7 +2316,8 @@ export class SessionService {
     })
     await this.deps.syncTitle(s, 'user')
     this.publish('session_rename', s.profile, s.session_id)
-    return { session: (await this.wireRow(s)) }
+    const session = await this.wireRow(s)
+    return { session, search_title: redactString(str(session.title), this.deps.redactEnabled()) }
   }
 
   // The pin quota is counted across sessions, so the count-and-save transaction runs on one process-wide chain;

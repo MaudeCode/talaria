@@ -1,3 +1,4 @@
+import CoreSpotlight
 import SwiftData
 import SwiftUI
 import TalariaKit
@@ -86,6 +87,10 @@ struct ContentView: View {
             // TAL-2388: the router names the one window that handles the URL, which may be another one.
             .onOpenURL { url in
                 intentRouter.requestDeepLink(url)
+                drainPendingIntentRoute()
+            }
+            .onContinueUserActivity(CSSearchableItemActionType) { activity in
+                TalariaApp.openSpotlightSession(activity, servers: authManager.servers.map(\.id), in: intentRouter)
                 drainPendingIntentRoute()
             }
             .background(WindowSceneReader { sceneID = $0 })
@@ -285,7 +290,7 @@ struct ContentView: View {
         if let sessionID = TalariaDeepLink.sessionID(from: url) {
             if let publisherID = TalariaDeepLink.publisherID(from: url),
                let canonicalPublisherID = TalariaRelayClient.originIdentifier(publisherID),
-               let account = authManager.servers.first(where: {
+               let account = authManager.servers.first(where: { $0.id == publisherID }) ?? authManager.servers.first(where: {
                    TalariaRelayClient.originIdentifier($0.urlString) == canonicalPublisherID
                }) {
                 authManager.switchActiveServer(to: account)

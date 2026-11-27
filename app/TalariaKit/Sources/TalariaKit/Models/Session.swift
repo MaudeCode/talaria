@@ -135,6 +135,18 @@ public struct SessionMutationResponse: Decodable, Sendable {
     public let ok: Bool?
     public let session: SessionSummary?
     public let error: String?
+    /// The rename result's title with the session list's redaction, for device search.
+    public let searchTitle: String?
+
+    private enum CodingKeys: String, CodingKey { case ok, session, error, searchTitle }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decodeIfPresent(Bool.self, forKey: .ok)
+        session = try container.decodeIfPresent(SessionSummary.self, forKey: .session)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+        searchTitle = try? container.decodeIfPresent(String.self, forKey: .searchTitle)
+    }
 }
 
 public enum SessionBulkAction: String, Encodable, Sendable {
@@ -363,6 +375,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
 
     public let sessionId: String?
     public let title: String?
+    /// A confirmed rename's search title, retained until the next authoritative list response.
+    let searchTitle: String?
     public let workspace: String?
     /// The server's label for `workspace` (TAL-303); nil from an older server, which shows none.
     public let workspaceName: String?
@@ -382,6 +396,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     /// The server's sidebar group (`sidebar_group`, TAL-1534); nil from older servers and detail payloads.
     public let sidebarGroup: String?
     public let projectId: String?
+    /// The visible project's name from the server's session list.
+    public let projectName: String?
     public let profile: String?
     public let inputTokens: Int?
     public let outputTokens: Int?
@@ -423,6 +439,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     public init(
         sessionId: String? = nil,
         title: String? = nil,
+        searchTitle: String? = nil,
         workspace: String? = nil,
         workspaceName: String? = nil,
         placeLabel: String? = nil,
@@ -438,6 +455,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         archived: Bool? = nil,
         sidebarGroup: String? = nil,
         projectId: String? = nil,
+        projectName: String? = nil,
         profile: String? = nil,
         inputTokens: Int? = nil,
         outputTokens: Int? = nil,
@@ -469,6 +487,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     ) {
         self.sessionId = sessionId
         self.title = title
+        self.searchTitle = searchTitle
         self.workspace = workspace
         self.workspaceName = workspaceName
         self.placeLabel = placeLabel
@@ -484,6 +503,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         self.archived = archived
         self.sidebarGroup = sidebarGroup
         self.projectId = projectId
+        self.projectName = projectName
         self.profile = profile
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
@@ -518,7 +538,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         case sessionId, title, workspace, workspaceName, placeLabel, model, modelProvider
         case modelOptionID = "modelOptionId"
         case messageCount, createdAt, updatedAt, lastMessageAt, sortTs
-        case pinned, archived, sidebarGroup, projectId, profile
+        case pinned, archived, sidebarGroup, projectId, projectName, profile
         case inputTokens, outputTokens, estimatedCost
         case activeStreamId, isStreaming, isCliSession
         case userMessageCount, hasPendingUserMessage, pendingStartedAt, worktreePath
@@ -540,6 +560,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
         title = container.decodeLossyStringIfPresent(forKey: .title)
+        searchTitle = nil
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)
         workspaceName = container.decodeLossyStringIfPresent(forKey: .workspaceName)
         // Older servers send only the workspace label. An explicit null hides the subtitle.
@@ -558,6 +579,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         archived = container.decodeLossyBoolIfPresent(forKey: .archived)
         sidebarGroup = container.decodeLossyStringIfPresent(forKey: .sidebarGroup)
         projectId = container.decodeLossyStringIfPresent(forKey: .projectId)
+        projectName = container.decodeLossyStringIfPresent(forKey: .projectName)
         profile = container.decodeLossyStringIfPresent(forKey: .profile)
         inputTokens = container.decodeLossyIntIfPresent(forKey: .inputTokens)
         outputTokens = container.decodeLossyIntIfPresent(forKey: .outputTokens)
@@ -614,6 +636,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     public init(from detail: SessionDetail) {
         sessionId = detail.sessionId
         title = detail.title
+        searchTitle = nil
         workspace = detail.workspace
         workspaceName = detail.workspaceName
         placeLabel = detail.placeLabel
@@ -629,6 +652,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         archived = detail.archived
         sidebarGroup = detail.sidebarGroup
         projectId = detail.projectId
+        projectName = nil
         profile = detail.profile
         inputTokens = detail.inputTokens
         outputTokens = detail.outputTokens
@@ -666,10 +690,11 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
 
     /// Mirrors all stored fields so local title patches preserve session-list metadata.
     /// Update this when `SessionSummary` gains a new stored property.
-    public func replacingTitle(with title: String) -> SessionSummary {
+    public func replacingTitle(with title: String, searchTitle: String? = nil, updatedAt: Double? = nil) -> SessionSummary {
         SessionSummary(
             sessionId: sessionId,
             title: title,
+            searchTitle: searchTitle,
             workspace: workspace,
             workspaceName: workspaceName,
             placeLabel: placeLabel,
@@ -678,13 +703,14 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
             modelOptionID: modelOptionID,
             messageCount: messageCount,
             createdAt: createdAt,
-            updatedAt: updatedAt,
+            updatedAt: updatedAt ?? self.updatedAt,
             lastMessageAt: lastMessageAt,
             sortTs: sortTs,
             pinned: pinned,
             archived: archived,
             sidebarGroup: sidebarGroup,
             projectId: projectId,
+            projectName: projectName,
             profile: profile,
             inputTokens: inputTokens,
             outputTokens: outputTokens,
@@ -732,6 +758,7 @@ extension SessionSummary {
         return SessionSummary(
             sessionId: sessionId ?? row.sessionId,
             title: title ?? row.title,
+            searchTitle: searchTitle ?? row.searchTitle,
             workspace: workspace ?? row.workspace,
             // The name labels its own path, so it moves with the workspace it came with.
             workspaceName: workspace != nil ? workspaceName : row.workspaceName,
@@ -750,6 +777,7 @@ extension SessionSummary {
             // pinned or recent group is stale.
             sidebarGroup: sidebarGroup ?? (pinned == nil && archived == nil ? row.sidebarGroup : nil),
             projectId: projectId ?? row.projectId,
+            projectName: projectName ?? (projectId == nil || projectId == row.projectId ? row.projectName : nil),
             profile: profile ?? row.profile,
             inputTokens: inputTokens ?? row.inputTokens,
             outputTokens: outputTokens ?? row.outputTokens,

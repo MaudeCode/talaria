@@ -1530,6 +1530,13 @@
               "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is.",
               "type": "string"
             },
+            "project_name": {
+              "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "workspace_name": {
               "type": [
                 "string",

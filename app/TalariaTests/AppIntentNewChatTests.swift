@@ -1,5 +1,6 @@
 import XCTest
 import AppIntents
+import CoreSpotlight
 @testable import Talaria
 @testable import TalariaKit
 
@@ -27,6 +28,21 @@ final class AppIntentNewChatTests: XCTestCase {
 
     func testIntentOpensAppWhenRun() {
         XCTAssertTrue(NewChatIntent.openAppWhenRun)
+    }
+
+    @MainActor
+    func testSpotlightActivityQueuesTheSessionLinkForItsRegisteredServer() throws {
+        let router = AppIntentRouter()
+        let server = "https://spotlight.test"
+        let link = try XCTUnwrap(TalariaDeepLink.sessionURL(sessionID: "spotlight-chat", publisherID: server))
+        let activity = NSUserActivity(activityType: CSSearchableItemActionType)
+        activity.addUserInfoEntries(from: [CSSearchableItemActivityIdentifier: link.absoluteString])
+
+        TalariaApp.openSpotlightSession(activity, servers: ["https://other.test"], in: router)
+        XCTAssertNil(router.takeRoute(in: nil))
+
+        TalariaApp.openSpotlightSession(activity, servers: [server], in: router)
+        XCTAssertEqual(router.takeRoute(in: nil), .deepLink(link))
     }
 
     /// TAL-1476: each Control Center control runs the intent that opens its own composer.

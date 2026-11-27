@@ -3457,6 +3457,17 @@
                             "type": "string",
                             "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
                           },
+                          "project_name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
+                          },
                           "workspace_name": {
                             "anyOf": [
                               {
@@ -4708,6 +4719,17 @@
                             "type": "string",
                             "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
                           },
+                          "project_name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
+                          },
                           "workspace_name": {
                             "anyOf": [
                               {
@@ -5777,6 +5799,17 @@
                           "match_message_key": {
                             "type": "string",
                             "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
+                          },
+                          "project_name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
                           },
                           "workspace_name": {
                             "anyOf": [
@@ -7154,6 +7187,17 @@
                           "match_message_key": {
                             "type": "string",
                             "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
+                          },
+                          "project_name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
                           },
                           "workspace_name": {
                             "anyOf": [
@@ -29213,6 +29257,10 @@
                         "can_share"
                       ],
                       "additionalProperties": {}
+                    },
+                    "search_title": {
+                      "type": "string",
+                      "description": "TAL-1472: the confirmed title with the same redaction as the session list, for device search."
                     }
                   },
                   "required": [
@@ -30195,6 +30243,17 @@
                         "match_message_key": {
                           "type": "string",
                           "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
+                        },
+                        "project_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
                         },
                         "workspace_name": {
                           "anyOf": [
@@ -31313,6 +31372,17 @@
                         "match_message_key": {
                           "type": "string",
                           "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
+                        },
+                        "project_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
                         },
                         "workspace_name": {
                           "anyOf": [
@@ -32438,6 +32508,17 @@
                         "match_message_key": {
                           "type": "string",
                           "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
+                        },
+                        "project_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
                         },
                         "workspace_name": {
                           "anyOf": [
@@ -40203,6 +40284,17 @@
                               "type": "string",
                               "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
                             },
+                            "project_name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
+                            },
                             "workspace_name": {
                               "anyOf": [
                                 {
@@ -41402,6 +41494,17 @@
                         "match_message_key": {
                           "type": "string",
                           "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
+                        },
+                        "project_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
                         },
                         "workspace_name": {
                           "anyOf": [
@@ -49686,6 +49789,17 @@
                           "type": "string",
                           "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
                         },
+                        "project_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
+                        },
                         "workspace_name": {
                           "anyOf": [
                             {
@@ -50801,6 +50915,17 @@
                         "match_message_key": {
                           "type": "string",
                           "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
+                        },
+                        "project_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
                         },
                         "workspace_name": {
                           "anyOf": [
@@ -83254,6 +83379,17 @@
                           "type": "string",
                           "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
                         },
+                        "project_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
+                        },
                         "workspace_name": {
                           "anyOf": [
                             {
@@ -84368,6 +84504,17 @@
                         "match_message_key": {
                           "type": "string",
                           "description": "TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is."
+                        },
+                        "project_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned."
                         },
                         "workspace_name": {
                           "anyOf": [

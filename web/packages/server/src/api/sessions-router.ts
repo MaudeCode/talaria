@@ -464,7 +464,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
     rename: os.session.rename.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)
       if (!input.title) throw new HttpError(400, 'Missing required field(s): title')
-      return (await ctx.deps.sessions.rename(input.session_id, input.title)) as { session: { session_id: string; title: string } }
+      return (await ctx.deps.sessions.rename(input.session_id, input.title)) as { session: { session_id: string; title: string }; search_title?: string }
     })),
     delete: os.session.delete.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)

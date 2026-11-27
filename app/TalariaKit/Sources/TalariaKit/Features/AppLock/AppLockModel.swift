@@ -89,6 +89,7 @@ public final class AppLockModel {
     private let defaults: UserDefaults
     private let now: @MainActor () -> ContinuousClock.Instant
     private let authenticator: any AppLockAuthenticating
+    @ObservationIgnored var prepareToEnable: @MainActor () async throws -> Void = {}
 
     /// The clock is monotonic, so setting the device's date back cannot shorten the time away.
     public init(
@@ -105,6 +106,7 @@ public final class AppLockModel {
 
     public var method: AppLockMethod { authenticator.method }
     public var switchPosition: Bool { requestedEnabled ?? isEnabled }
+    var suppressesSpotlight: Bool { isEnabled || requestedEnabled == true }
     /// A window's cover is up while the app is locked or that window is not active, so a window in use stays
     /// uncovered while another one is away (TAL-2387).
     public func showsCover(in scene: String) -> Bool { isEnabled && (isLocked || scenePhases[scene] != .active) }
@@ -182,9 +184,15 @@ public final class AppLockModel {
         guard enabled != isEnabled, !isAuthenticating else { return .cancelled }
         isAuthenticating = true
         requestedEnabled = enabled
+        defer {
+            isAuthenticating = false
+            requestedEnabled = nil
+        }
         let result = await authenticator.authenticate(reason: String(localized: "Change the app lock"))
-        isAuthenticating = false
-        requestedEnabled = nil
+        if enabled, result == .succeeded {
+            do { try await prepareToEnable() }
+            catch { return .cancelled }
+        }
         if result == .succeeded || (result == .unavailable && !enabled) {
             store(enabled: enabled)
         }

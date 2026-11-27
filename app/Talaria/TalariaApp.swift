@@ -1,5 +1,6 @@
 import AuthenticationServices
 import BackgroundTasks
+import CoreSpotlight
 import SwiftUI
 import SwiftData
 import UIKit
@@ -146,6 +147,15 @@ struct TalariaCommands: Commands {
 
 @main
 struct TalariaApp: App {
+    static func openSpotlightSession(_ activity: NSUserActivity, servers: [String], in router: AppIntentRouter) {
+        guard activity.activityType == CSSearchableItemActionType,
+              let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+              let url = URL(string: identifier), TalariaDeepLink.sessionID(from: url) != nil,
+              let server = TalariaDeepLink.publisherID(from: url), servers.contains(server)
+        else { return }
+        router.requestDeepLink(url)
+    }
+
     @UIApplicationDelegateAdaptor(TalariaAppDelegate.self) private var appDelegate
     @State private var authManager: AuthManager
     /// Read once per launch: an update's What's New waits here until the screen is free (TAL-182).
@@ -179,8 +189,11 @@ struct TalariaApp: App {
             : nil
         uiTestFixture = fixture
         usesUITestFixture = fixture != nil
+        let indexesSpotlight = Bundle.main.bundleIdentifier?.hasSuffix(".xctest") != true
+            || (usesUITestFixture && arguments.contains("--ui-test-spotlight"))
         #else
         usesUITestFixture = false
+        let indexesSpotlight = true
         #endif
         if !usesUITestFixture { FeedbackDiagnosticStore.startCollection() }
 
@@ -194,6 +207,7 @@ struct TalariaApp: App {
             configurations: cacheConfiguration
         )
         self.cacheContainer = cacheContainer
+        if indexesSpotlight { CacheStore.enableSpotlight(in: cacheContainer) }
         let liveAuthManager = {
             AuthManager(
                 resetServerScopedState: AuthManager.serverScopedStateReset(

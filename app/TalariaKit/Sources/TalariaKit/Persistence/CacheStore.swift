@@ -2,6 +2,27 @@ import Foundation
 import SwiftData
 
 public enum CacheStore {
+    @MainActor private static let spotlightIndexers = NSMapTable<ModelContainer, SessionSpotlightIndexer>(
+        keyOptions: [.weakMemory, .objectPointerPersonality], valueOptions: .strongMemory
+    )
+
+    @MainActor
+    static func useSpotlight(_ indexer: SessionSpotlightIndexer, in container: ModelContainer) {
+        spotlightIndexers.setObject(indexer, forKey: container)
+    }
+
+    @MainActor
+    public static func enableSpotlight(in container: ModelContainer) {
+        guard let indexer = SessionSpotlightIndexer.system() else { return }
+        indexer.protect(with: .shared)
+        useSpotlight(indexer, in: container)
+    }
+
+    @MainActor
+    static func finishSpotlightWrites(in container: ModelContainer) async {
+        await spotlightIndexers.object(forKey: container)?.waitForPendingWrites()
+    }
+
     // Weak keys avoid retaining discarded contexts or confusing a new context with a reused address.
     @MainActor private static let maintenanceDates = NSMapTable<ModelContext, NSDate>(
         keyOptions: [.weakMemory, .objectPointerPersonality], valueOptions: .strongMemory
@@ -194,6 +215,7 @@ public enum CacheStore {
         }
 
         try saveChanges(in: context, now: cachedAt)
+        spotlightIndexers.object(forKey: context.container)?.replace(cacheableSessions, for: serverURL)
     }
 
     @MainActor
@@ -219,6 +241,13 @@ public enum CacheStore {
         }
 
         try saveChanges(in: context, now: cachedAt)
+        let indexer = spotlightIndexers.object(forKey: context.container)
+        if session.archived == true {
+            indexer?.remove([sessionID], for: serverURL)
+        } else if session.searchTitle != nil {
+            // The individual cache write can carry a raw mutation title. Donate the server's search title only.
+            indexer?.update(session, for: serverURL)
+        }
     }
 
     /// Records a session's `branched_from` from its detail (TAL-454). A chat the list has not cached yet (one opened
@@ -347,6 +376,8 @@ public enum CacheStore {
     /// leaves orphaned rows behind. `sessionIDs` narrows the same purge to confirmed deletions.
     @MainActor
     public static func clearCache(for serverURL: URL, sessionIDs: [String]? = nil, in context: ModelContext) throws {
+        // A local cache failure must not keep a signed-out server's results searchable.
+        defer { spotlightIndexers.object(forKey: context.container)?.remove(sessionIDs, for: serverURL) }
         let serverURLString = serverURL.absoluteString
         let allSessions = sessionIDs == nil
         let targetIDs = sessionIDs ?? []
@@ -490,6 +521,7 @@ private extension SessionSummary {
     init(cachedSession: CachedSession) {
         sessionId = cachedSession.sessionID
         title = cachedSession.title
+        searchTitle = nil
         workspace = cachedSession.workspace
         workspaceName = cachedSession.workspaceName
         placeLabel = cachedSession.placeLabel
@@ -506,6 +538,7 @@ private extension SessionSummary {
         archived = cachedSession.archived
         sidebarGroup = cachedSession.sidebarGroup
         projectId = cachedSession.projectId
+        projectName = nil
         profile = cachedSession.profile
         inputTokens = cachedSession.inputTokens
         outputTokens = cachedSession.outputTokens

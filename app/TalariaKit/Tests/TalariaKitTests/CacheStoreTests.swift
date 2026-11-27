@@ -1,9 +1,85 @@
+import CoreSpotlight
 import SwiftData
 import XCTest
 @testable import TalariaKit
 
 @MainActor
 final class CacheStoreTests: XCTestCase {
+    func testSpotlightIndexesOnlyChangedVisibleChatMetadata() async throws {
+        let context = try makeContext()
+        let index = RecordingSessionSpotlightIndex()
+        let defaults = UserDefaults.ephemeral("SpotlightDiff")
+        let indexer = SessionSpotlightIndexer(index: index, defaults: defaults)
+        CacheStore.useSpotlight(indexer, in: context.container)
+        let server = URL(string: "https://spotlight.test")!
+        let name = "Release planning"
+        let initial = try XCTUnwrap(decodeSessions("""
+        {"sessions":[
+          {"session_id":"rename","title":"Day one","project_name":"\(name)","updated_at":1770000000,"match_preview":"private excerpt"},
+          {"session_id":"remove","title":"Remove me"},
+          {"session_id":"keep","title":"Keep me"},
+          {"session_id":"archived","title":"Already archived","archived":true}
+        ]}
+        """).sessions)
+
+        try CacheStore.cacheSessions(initial, serverURL: server, in: context)
+        await indexer.waitForPendingWrites()
+        XCTAssertEqual(index.upserts.count, 3)
+        let renameLink = try XCTUnwrap(TalariaDeepLink.sessionURL(sessionID: "rename", publisherID: server.absoluteString))
+        let item = try XCTUnwrap(index.upserts.first { $0.uniqueIdentifier == renameLink.absoluteString })
+        XCTAssertEqual(item.domainIdentifier, server.absoluteString)
+        XCTAssertEqual(item.attributeSet.title, "Day one")
+        XCTAssertEqual(item.attributeSet.contentDescription, name)
+        XCTAssertEqual(item.attributeSet.contentModificationDate, Date(timeIntervalSince1970: 1_770_000_000))
+        XCTAssertNil(item.attributeSet.textContent)
+
+        index.upserts.removeAll()
+        let relaunchedIndexer = SessionSpotlightIndexer(index: index, defaults: defaults)
+        CacheStore.useSpotlight(relaunchedIndexer, in: context.container)
+        let refreshed = [initial[0].replacingTitle(with: "Day two"), initial[2]]
+        try CacheStore.cacheSessions(refreshed, serverURL: server, in: context)
+        try CacheStore.cacheSessions(refreshed, serverURL: server, in: context)
+        await relaunchedIndexer.waitForPendingWrites()
+        XCTAssertEqual(index.upserts.map(\.uniqueIdentifier), [renameLink.absoluteString])
+        XCTAssertEqual(index.upserts.map(\.attributeSet.title), ["Day two"])
+        XCTAssertEqual(index.deletedItems.compactMap { URL(string: $0).flatMap(TalariaDeepLink.sessionID(from:)) }, ["remove"])
+    }
+
+    func testSpotlightRemovesAnArchivedChatAndClearsOnlyTheSignedOutServerDomain() async throws {
+        let context = try makeContext()
+        let index = RecordingSessionSpotlightIndex()
+        let indexer = SessionSpotlightIndexer(index: index, defaults: .ephemeral("SpotlightRemoval"))
+        CacheStore.useSpotlight(indexer, in: context.container)
+        let server = URL(string: "https://spotlight.test")!
+        let other = URL(string: "https://other-spotlight.test")!
+        let chat = SessionSummary(sessionId: "chat", title: "Same session ID on each server")
+        for url in [server, other] {
+            try CacheStore.cacheSessions([chat], serverURL: url, in: context)
+        }
+        try CacheStore.cacheSession(SessionSummary(sessionId: "chat", archived: true), serverURL: server, in: context)
+        try CacheStore.clearCache(for: other, in: context)
+        await indexer.waitForPendingWrites()
+
+        XCTAssertEqual(index.deletedItems, [TalariaDeepLink.sessionURL(sessionID: "chat", publisherID: server.absoluteString)?.absoluteString])
+        XCTAssertEqual(index.deletedDomains, [other.absoluteString])
+    }
+
+    func testSpotlightExcludesServersWithCredentialsInTheirURLs() async throws {
+        let context = try makeContext()
+        let index = RecordingSessionSpotlightIndex()
+        let indexer = SessionSpotlightIndexer(index: index, defaults: .ephemeral("SpotlightCredentials"))
+        CacheStore.useSpotlight(indexer, in: context.container)
+        let allowed = URL(string: "https://spotlight.test")!
+        let excluded = URL(string: "https://fixture-user:fixture-password@spotlight.test")!
+        let chat = SessionSummary(sessionId: "chat", title: "Fixture chat")
+        for url in [allowed, excluded] {
+            try CacheStore.cacheSessions([chat], serverURL: url, in: context)
+        }
+        await indexer.waitForPendingWrites()
+
+        XCTAssertEqual(index.upserts.map(\.domainIdentifier), [allowed.absoluteString])
+    }
+
     func testServerActivityProvenanceSurvivesWireDecodingAndOfflineCache() throws {
         var root = URL(fileURLWithPath: #filePath)
         for _ in 0..<5 { root.deleteLastPathComponent() }
@@ -1294,5 +1370,22 @@ final class CacheStoreTests: XCTestCase {
 
     private func fetchCachedMessages(in context: ModelContext) throws -> [CachedMessage] {
         try context.fetch(FetchDescriptor<CachedMessage>())
+    }
+}
+
+@MainActor
+final class RecordingSessionSpotlightIndex: SessionSpotlightIndex {
+    var upserts: [CSSearchableItem] = []
+    var deletedItems: [String] = []
+    var deletedDomains: [String] = []
+    var deleteAllCalls = 0
+    var failsDeleteAll = false
+
+    func upsert(_ items: [CSSearchableItem]) async throws { upserts += items }
+    func deleteItems(_ identifiers: [String]) async throws { deletedItems += identifiers }
+    func deleteDomain(_ identifier: String) async throws { deletedDomains.append(identifier) }
+    func deleteAll() async throws {
+        deleteAllCalls += 1
+        if failsDeleteAll { throw CocoaError(.fileWriteUnknown) }
     }
 }

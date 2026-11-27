@@ -169,6 +169,18 @@ describe('session lifecycle over HTTP', () => {
     expect(await json(res)).toEqual({ error: 'Session not found' })
   })
 
+  it('returns the sidebar-redacted Spotlight title for a confirmed rename', async () => {
+    const sid = String((await newSession(s)).session_id)
+    await writeMessages(s, sid, [{ role: 'user', content: 'hello' }])
+    const fixtureSecret = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
+    const result = await post(s, '/api/session/rename', { session_id: sid, title: `Launch with ${fixtureSecret}` })
+    expect(result.status).toBe(200)
+    const listed = ((await json(await s.get('/api/sessions'))).sessions as Json[]).find((row) => row.session_id === sid)
+    expect(listed?.title).toMatch(/^Launch with /)
+    expect(listed?.title).not.toContain(fixtureSecret)
+    expect((await json(result)).search_title).toBe(listed?.title)
+  })
+
   it('renames, archives, pins with the configured cap, and moves between projects', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
@@ -980,6 +992,30 @@ describe('projects, workspaces, and files over HTTP', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
+
+  it('lists the current project name with each assigned chat', async () => {
+    const project = (await json(await post(s, '/api/projects/create', { name: 'Release planning' }))).project as Json
+    const sid = String((await newSession(s, { project_id: project.project_id })).session_id)
+    const chat = await s.deps.sessionStore.get(sid)
+    chat.title = 'Prepare release'
+    chat.messages = [{ role: 'user', content: 'Plan the release', timestamp: 1_770_000_000 }]
+    await s.deps.sessionStore.save(chat)
+    const list = (headers: Record<string, string> = {}) => s.get('/api/sessions', { headers })
+    const projectName = async (response: Response) => {
+      expect(response.status).toBe(200)
+      const row = ((await json(response)).sessions as Json[]).find((row) => row.session_id === sid)
+      expect(row).toBeDefined()
+      return row?.project_name
+    }
+
+    const before = await list()
+    const etag = before.headers.get('etag')!
+    expect(await projectName(before)).toBe('Release planning')
+    expect((await post(s, '/api/projects/rename', { project_id: project.project_id, name: 'Ship checklist' })).status).toBe(200)
+    expect(await projectName(await list({ 'If-None-Match': etag }))).toBe('Ship checklist')
+    expect((await post(s, '/api/projects/delete', { project_id: project.project_id })).status).toBe(200)
+    expect(await projectName(await list())).toBeNull()
+  })
 
   it('projects require a name, validate colours, and list per profile', async () => {
     expect((await post(s, '/api/projects/create', { name: '   ' })).status).toBe(400)
