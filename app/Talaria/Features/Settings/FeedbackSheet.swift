@@ -270,7 +270,21 @@ private struct PickedMovie: Transferable {
 
 extension View {
     func feedbackPresentation(_ model: FeedbackComposer?, isEnabled: Bool = true) -> some View {
-        sheet(isPresented: Binding(get: { isEnabled && model?.isPresented == true }, set: { value in
+        modifier(FeedbackPresentation(model: model, isEnabled: isEnabled))
+    }
+}
+
+private struct FeedbackPresentation: ViewModifier {
+    let model: FeedbackComposer?
+    let isEnabled: Bool
+    @Environment(\.windowSceneID) private var windowSceneID
+    @AppStorage(SectionVisibilitySettings.feedbackOnScreenshotKey)
+    private var feedbackOnScreenshot = SectionVisibilitySettings.defaultFeedbackOnScreenshot
+
+    private var listensForScreenshots: Bool { isEnabled && feedbackOnScreenshot }
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: Binding(get: { isEnabled && model?.isPresented == true }, set: { value in
             if isEnabled { model?.isPresented = value }
         })) {
             if let model { FeedbackSheet(model: model) }
@@ -278,17 +292,55 @@ extension View {
         .overlay(alignment: .top) {
             if isEnabled, let model { GitActionToastOverlay(state: model.confirmation) }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.userDidTakeScreenshotNotification)) { _ in
+            offerScreenshotFeedback()
+        }
+        .onChange(of: listensForScreenshots) { wasListening, isListening in
+            if wasListening, !isListening { dismissScreenshotPrompt() }
+        }
+        .onChange(of: model?.isPresented) { _, isPresented in
+            if isEnabled, isPresented == true { dismissScreenshotPrompt() }
+        }
+    }
+
+    private func offerScreenshotFeedback() {
+        // A second screenshot while the prompt is on screen would capture the prompt itself.
+        guard listensForScreenshots, let model, model.canOfferScreenshotFeedback,
+              model.confirmation.success?.action == nil,
+              let png = UIApplication.shared.keyWindowPNG(for: windowSceneID) else { return }
+
+        model.confirmation.showSuccess(GitActionSuccess(
+            title: String(localized: "Screenshot taken"),
+            action: .init(title: FeedbackSheet.title) { [weak model] in
+                guard let model, model.canOfferScreenshotFeedback else { return }
+                model.confirmation.dismissSuccess()
+                if model.addImage(png, isScreenCapture: true) != nil { model.isPresented = true }
+            }
+        ))
+    }
+
+    private func dismissScreenshotPrompt() {
+        guard let model, model.confirmation.success?.action != nil else { return }
+        model.confirmation.dismissSuccess()
     }
 }
 
 private extension UIApplication {
     /// The key window as it last appeared on screen, before any pending update draws.
-    func keyWindowPNG() -> Data? {
-        guard let window = connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow)
-        else { return nil }
-        return UIGraphicsImageRenderer(bounds: window.bounds).pngData { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+    func keyWindowPNG(for sceneID: String?) -> Data? {
+        let scenes = connectedScenes.compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive && $0.keyWindow != nil }
+        let candidates = scenes.compactMap(\.windowSceneID)
+        guard let selected = AppIntentRouter.shared.foregroundWindow(in: candidates),
+            sceneID == selected || (sceneID == nil && candidates.count == 1),
+            let window = scenes.first(where: { $0.windowSceneID == selected })?.keyWindow,
+            window.windowLevel == .normal else { return nil }
+
+        var didDraw = false
+        let png = UIGraphicsImageRenderer(bounds: window.bounds).pngData { _ in
+            didDraw = window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
         }
+        return didDraw ? png : nil
     }
 }
 

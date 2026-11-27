@@ -215,8 +215,9 @@ final class ScreenGalleryHostedTests: XCTestCase {
     }
 
     private func category(_ category: SettingsCategory) async throws {
+        let feedback = category == .system || category == .about ? FeedbackComposer.forApp(server: server) : nil
         try await page("settings-\(category.id)", title: category.title) {
-            SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .category(category))
+            SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .category(category), feedback: feedback)
         }
     }
 
@@ -558,7 +559,7 @@ final class ScreenGalleryHostedTests: XCTestCase {
             switch name {
             case "settings-models": controlIDs = ["settings-models-default-reasoning", "settings-models-show-thinking"]
             case "settings-default-model", "settings-auxiliary-model-picker": controlIDs = ["settings-model-visibility-fixture-model"]
-            case "settings-system": controlIDs = [SettingsIndex.systemScreen.id]
+            case "settings-system": controlIDs = [SettingsIndex.systemScreen.id, SettingsIndex.systemFeedbackOnScreenshot.id]
             default: controlIDs = []
             }
             if !controlIDs.isEmpty {

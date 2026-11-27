@@ -15,15 +15,32 @@ public struct GitActionProgress: Equatable, Sendable {
 }
 
 public struct GitActionSuccess: Equatable, Identifiable, Sendable {
+    public struct Action: Sendable {
+        public let title: String
+        public let perform: @MainActor @Sendable () -> Void
+
+        public init(title: String, perform: @escaping @MainActor @Sendable () -> Void) {
+            self.title = title
+            self.perform = perform
+        }
+    }
+
     public let id = UUID()
     public let title: String
     public var subtitle: String?
     public var detailLines: [String] = []
+    public let action: Action?
 
-    public init(title: String, subtitle: String? = nil, detailLines: [String] = []) {
+    public init(title: String, subtitle: String? = nil, detailLines: [String] = [], action: Action? = nil) {
         self.title = title
         self.subtitle = subtitle
         self.detailLines = detailLines
+        self.action = action
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        // The ID also identifies the immutable action and title.
+        lhs.id == rhs.id && lhs.subtitle == rhs.subtitle && lhs.detailLines == rhs.detailLines
     }
 }
 

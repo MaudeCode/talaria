@@ -230,7 +230,8 @@ group. A setting stored on the device sits in a group whose section help says
 so.
 
 The App's Screen switch sits in Server › System with the capability it controls.
-Its visibility preference is stored on this device.
+The Feedback on Screenshot switch sits in the same page's Feedback section,
+beside Send Feedback. Both switches store their preferences on this device.
 
 ## 12. Settings and forms
 

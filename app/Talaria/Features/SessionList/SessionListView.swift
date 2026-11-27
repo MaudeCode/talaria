@@ -60,7 +60,9 @@ struct SessionListView: View {
     @State private var lastActiveSessionMonitorTaskID: SessionListAutoRefresh.ActiveRowTaskID?
     @State private var settingsPath: [SettingsPane] = []
     @State private var pendingSettingsPath: [SettingsPane]?
-    @State private var sidebarFeedback: FeedbackComposer?
+    @State private var feedback: FeedbackComposer?
+    @AppStorage(SectionVisibilitySettings.feedbackOnScreenshotKey)
+    private var feedbackOnScreenshot = SectionVisibilitySettings.defaultFeedbackOnScreenshot
     /// The regular-width split view's own width, which sizes its columns (TAL-1453).
     @State private var observedSidebarLayout = SidebarLayoutInputs()
     @State private var appliedSidebarLayout: SidebarLayoutInputs?
@@ -293,14 +295,19 @@ struct SessionListView: View {
                         ? min(650, max(0, regularSplitWidth - 48)) : nil)
                     .presentationCompactAdaptation(.fullScreenCover)
             }
-            .feedbackPresentation(sidebarFeedback, isEnabled: !isPresentingSettings && !isPresentingUpdateNotifications)
+            .feedbackPresentation(feedback, isEnabled: !isPresentingSettings && !isPresentingUpdateNotifications
+                && authManager.pendingReauthentication == nil)
+            .task(id: feedbackOnScreenshot && observedScenePhase == .active) {
+                guard feedbackOnScreenshot, observedScenePhase == .active else { return }
+                await prepareFeedback().loadAttachmentOptions()
+            }
             // The sign-in sheet presents from the app root, which cannot stack it over these sheets: close them so a
             // session loss or a Settings "Sign In Again" (TAL-48) always reaches it.
             .onChange(of: authManager.pendingReauthentication) { _, server in
                 guard server != nil else { return }
                 isPresentingSettings = false
                 isPresentingUpdateNotifications = false
-                sidebarFeedback?.isPresented = false
+                feedback?.isPresented = false
             }
             .sheet(isPresented: $isPresentingUpdateNotifications, onDismiss: {
                 guard let path = pendingSettingsPath else { return }
@@ -1845,12 +1852,17 @@ struct SessionListView: View {
     }
 
     private func openSidebarFeedback() {
-        guard sidebarFeedback?.isSending != true else { return }
-        let model = FeedbackComposer.forApp(server: server)
+        guard feedback?.isSending != true else { return }
         // Sheets present over an open drawer, so dismissing one returns straight to it (TAL-2250).
         dismissSidebarModals()
-        sidebarFeedback = model
-        model.isPresented = true
+        prepareFeedback().isPresented = true
+    }
+
+    private func prepareFeedback() -> FeedbackComposer {
+        if let feedback { return feedback }
+        let model = FeedbackComposer.forApp(server: server)
+        feedback = model
+        return model
     }
 
     @ToolbarContentBuilder
@@ -1882,7 +1894,7 @@ struct SessionListView: View {
         }
         .accessibilityLabel(FeedbackSheet.title)
         .accessibilityIdentifier("sidebar-send-feedback")
-        .disabled(sidebarFeedback?.isSending == true)
+        .disabled(feedback?.isSending == true)
     }
 
     private var settingsButton: some View {
@@ -2570,13 +2582,14 @@ struct SessionListView: View {
             return
         }
         dismissSidebarModals()
+        _ = prepareFeedback()
         settingsPath = path
         isPresentingSettings = true
     }
 
     private func dismissSidebarModals() {
         isPresentingSettings = false
-        sidebarFeedback?.isPresented = false
+        feedback?.isPresented = false
         pendingSettingsPath = nil
     }
 
@@ -2597,11 +2610,13 @@ struct SessionListView: View {
                 }))
                 .navigationDestination(for: SettingsPane.self) { pane in
                     settingsModalPage(SettingsPaneView(authManager: authManager, server: server, pane: pane,
+                        feedback: feedback,
                         onProfileChanged: { await viewModel.loadActiveProfile() }))
                 }
             }
         }
         .id("\(server.absoluteString)|\(viewModel.activeProfileName ?? "")")
+        .feedbackPresentation(feedback, isEnabled: isPresentingSettings && authManager.pendingReauthentication == nil)
     }
 
     /// NavigationStack does not install a toolbar on its hosted pages; the root and pushed pages share this wrapper.

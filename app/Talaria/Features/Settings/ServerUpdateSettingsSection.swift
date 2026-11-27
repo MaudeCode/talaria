@@ -6,7 +6,10 @@ struct ServerUpdateSettingsSection: View {
     @Environment(ServerSettingsStore.self) private var settingsStore: ServerSettingsStore?
     @Bindable var authManager: AuthManager
     let server: URL
+    var feedback: FeedbackComposer?
     @AppStorage(SectionVisibilitySettings.chatScreenKey) private var showsScreen = true
+    @AppStorage(SectionVisibilitySettings.feedbackOnScreenshotKey)
+    private var feedbackOnScreenshot = SectionVisibilitySettings.defaultFeedbackOnScreenshot
 
     @State private var isLoading = false
     @State private var serverVersion: String?
@@ -51,6 +54,12 @@ struct ServerUpdateSettingsSection: View {
                 }
                 SettingsToggleRow(title: SettingsIndex.systemScreen.title, systemImage: "display", isOn: $showsScreen,
                                   accessibilityIdentifier: SettingsIndex.systemScreen.id)
+            }
+
+            SettingsSection(title: String(localized: "Feedback")) {
+                FeedbackSettingsRow(feedback: feedback, entry: .systemSendFeedback)
+                SettingsToggleRow(title: SettingsIndex.systemFeedbackOnScreenshot.title, systemImage: "camera.viewfinder",
+                                  isOn: $feedbackOnScreenshot, accessibilityIdentifier: SettingsIndex.systemFeedbackOnScreenshot.id)
             }
         }
         .task { await loadServerSettings() }

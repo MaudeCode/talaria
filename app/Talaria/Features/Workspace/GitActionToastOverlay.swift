@@ -3,6 +3,7 @@ import TalariaKit
 
 struct GitActionToastOverlay: View {
     let state: GitActionToastState
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Group {
@@ -11,7 +12,8 @@ struct GitActionToastOverlay: View {
                     title: success.title,
                     subtitle: success.subtitle,
                     detailLines: success.detailLines,
-                    isDismissable: true
+                    isDismissable: true,
+                    action: success.action
                 ) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 22, weight: .semibold))
@@ -40,13 +42,32 @@ struct GitActionToastOverlay: View {
         subtitle: String?,
         detailLines: [String],
         isDismissable: Bool,
+        action: GitActionSuccess.Action? = nil,
         @ViewBuilder icon: () -> Icon
     ) -> some View {
         HStack(alignment: .top, spacing: 12) {
             icon().frame(width: 28, height: 28)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(AppFont.subheadline(weight: .semibold))
+                if let action {
+                    let layout = dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                        : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+                    layout {
+                        Text(title).font(AppFont.subheadline(weight: .semibold))
+                        Button(action: action.perform) {
+                            Text(action.title)
+                                .underline()
+                                .font(AppFont.subheadline(weight: .semibold))
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("git-action-toast-action")
+                    }
+                } else {
+                    Text(title).font(AppFont.subheadline(weight: .semibold))
+                }
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle).font(AppFont.caption()).foregroundStyle(.secondary)
                 }

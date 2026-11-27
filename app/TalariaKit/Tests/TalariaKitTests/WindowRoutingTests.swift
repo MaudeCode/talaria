@@ -38,6 +38,14 @@ final class WindowRoutingTests: XCTestCase {
         XCTAssertNil(AppIntentRouter.window(showing: [], recency: []), "before any window is known, the first to drain takes it")
     }
 
+    func testMostRecentlyActiveForegroundWindowWinsRegardlessOfCandidateOrder() {
+        let (router, _) = router(windows: ["background", "focused", "side"])
+
+        XCTAssertEqual(router.foregroundWindow(in: ["side", "focused"]), "focused")
+        XCTAssertEqual(router.foregroundWindow(in: ["side"]), "side")
+        XCTAssertNil(router.foregroundWindow(in: []))
+    }
+
     func testASessionShownInTheOtherWindowGoesThereOnceAndBringsItForward() throws {
         try show("s1", in: "B")
         let (router, broughtForward) = router(windows: ["A", "B"])
