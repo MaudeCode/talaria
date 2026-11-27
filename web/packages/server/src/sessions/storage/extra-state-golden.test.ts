@@ -23,7 +23,7 @@ it('preserves main bytes for workspace, background, quota and relay state', asyn
   try {
     const workspaces = new WorkspaceRegistry({ documents: new JsonDocuments(stateDir, profileHome), defaultWorkspace: () => '/test/workspace', profileHome, activeProfile: () => 'default', isRootProfileHome: (value) => value === home, profileConfig: () => ({}) })
     for (const profile of ['default', 'work']) {
-      await workspaces.save([{ path: '/test/workspace', name: 'Work' }], profile)
+      await workspaces.edit(profile, () => [{ path: '/test/workspace', name: 'Work' }])
       await workspaces.setLastWorkspace('/test/workspace', profile)
     }
     const background = new BackgroundTaskStore(testSessionDocuments(join(stateDir, 'sessions')), () => 1000)

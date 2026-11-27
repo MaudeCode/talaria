@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { workspaceRename } from '../api/sessions-router.js'
 import { ConfigUnavailable } from '../config/agent-config.js'
 import { JsonDocuments } from '../sessions/storage/json-documents.js'
 import { bootTestServer } from '../test/harness.js'
@@ -165,11 +166,11 @@ describe('workspace registry config availability (TAL-730)', () => {
   it.each(['null', 'throw'])('refuses saves when config is %s without touching the registry', async (mode) => {
     const f = fixture()
     if (mode === 'throw') f.profileConfig.mockImplementation(() => { throw new Error('unreadable config') })
-    await expect(f.registry.save([])).rejects.toBeInstanceOf(ConfigUnavailable)
+    await expect(f.registry.edit(null, () => [])).rejects.toBeInstanceOf(ConfigUnavailable)
     expect(readFileSync(f.file, 'utf8')).toBe(f.bytes)
   })
 
-  it('refuses mutation reads if config becomes unresolved while loading the registry', async () => {
+  it('refuses edits if config becomes unresolved while loading the registry', async () => {
     const f = fixture()
     f.profileConfig.mockReturnValue({})
     const read = f.documents.get.bind(f.documents)
@@ -178,7 +179,7 @@ describe('workspace registry config availability (TAL-730)', () => {
       f.profileConfig.mockReturnValue(null)
       return record
     })
-    await expect(f.registry.load(null, { forWrite: true })).rejects.toBeInstanceOf(ConfigUnavailable)
+    await expect(f.registry.edit(null, () => [])).rejects.toBeInstanceOf(ConfigUnavailable)
     expect(readFileSync(f.file, 'utf8')).toBe(f.bytes)
   })
 
@@ -213,6 +214,67 @@ describe('default workspace behind a symlink (TAL-2098)', () => {
 const post = (s: Awaited<ReturnType<typeof bootTestServer>>, path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 
 describe('workspace registry mutations', () => {
+  it('persists both overlapping renames of different workspaces', async () => {
+    const s = await bootTestServer()
+    try {
+      const documents = s.deps.workspaces.deps.documents
+      const first = { path: join(realpathSync(s.workspace), 'first'), name: 'First' }
+      const second = { path: join(realpathSync(s.workspace), 'second'), name: 'Second' }
+      await documents.put('workspaces', 'default.registry', [first, second], null)
+
+      // Start both edits before yielding so an unqueued registry read sees the same revision.
+      await Promise.all([
+        workspaceRename(s.deps, { ...first, name: 'First renamed' }),
+        workspaceRename(s.deps, { ...second, name: 'Second renamed' }),
+      ])
+
+      expect(await s.deps.workspaces.load()).toEqual([
+        { ...first, name: 'First renamed' },
+        { ...second, name: 'Second renamed' },
+      ])
+    } finally {
+      await s.close()
+    }
+  })
+
+  it.each(['reorder', 'rename', 'add'] as const)('reapplies %s to the winning registry revision', async (action) => {
+    const s = await bootTestServer()
+    try {
+      const documents = s.deps.workspaces.deps.documents
+      const root = realpathSync(s.workspace)
+      const first = { path: join(root, 'first'), name: 'First' }
+      const second = { path: join(root, 'second'), name: 'Second' }
+      mkdirSync(second.path)
+      const initial = action === 'add' ? [first] : [first, second]
+      const revision = await documents.put('workspaces', 'default.registry', initial, null)
+      const winner = action === 'rename' ? [first] : [first, { ...second, name: 'Winner' }]
+      const put = documents.put.bind(documents)
+      let conflictPending = true
+      vi.spyOn(documents, 'put').mockImplementation(async (namespace, key, value, expected) => {
+        if (namespace === 'workspaces' && key === 'default.registry' && conflictPending) {
+          conflictPending = false
+          await put(namespace, key, winner, revision)
+        }
+        return put(namespace, key, value, expected)
+      })
+
+      const cases = {
+        reorder: { input: { paths: [second.path] }, status: 200, error: undefined, entries: [winner[1]!, first] },
+        rename: { input: { path: second.path, name: 'New name' }, status: 404, error: 'Workspace not found', entries: winner },
+        add: { input: second, status: 400, error: 'Workspace already in list', entries: winner },
+      }
+      const { input, status, error, entries } = cases[action]
+      const response = await post(s, `/api/workspaces/${action}`, input)
+      const body = await response.json() as { error?: string; workspaces?: unknown }
+      expect({ status: response.status, error: body.error, stored: await s.deps.workspaces.load() }).toEqual({
+        status, error, stored: entries,
+      })
+      if (status === 200) expect(body.workspaces).toEqual(entries)
+    } finally {
+      await s.close()
+    }
+  })
+
   it('refuses to add a workspace after a registry read fails and preserves the saved entries', async () => {
     const s = await bootTestServer()
     try {

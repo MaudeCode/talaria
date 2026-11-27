@@ -275,31 +275,36 @@ export async function workspaceAdd(deps: AppDeps, input: { path: string; name?: 
       if (!(home !== '/' && (candidate === home || isWithin(candidate, home)))) throw new HttpError(400, `Path points to a system directory: ${candidate}`)
     }
     if (input.create) {
-      try { await ws.validateToAdd(pathStr, profile, serverOwner, true) } catch (error) { throw new HttpError(400, (error as Error).message) }
+      try { await ws.validateToAdd(pathStr, profile, serverOwner, { allowMissing: true }) } catch (error) { throw new HttpError(400, (error as Error).message) }
       assertWorkspaceFree(deps, candidate)
       try { mkdirSync(candidate, { recursive: true }) } catch (error) { throw new HttpError(400, `Could not create directory: ${sanitizeError(error)}`) }
     }
   }
   let p: string
   try { p = await ws.validateToAdd(pathStr, profile, serverOwner) } catch (error) { throw new HttpError(400, (error as Error).message) }
-  const list = (await ws.load(profile, { forWrite: true }))
-  if (list.some((w) => w.path === p)) throw new HttpError(400, 'Workspace already in list')
-  list.push({ path: p, name: name || basename(p) })
-  await ws.save(list, profile)
-  return { ok: true as const, workspaces: list }
+  const workspaces = await ws.edit(profile, async (entries) => {
+    let path = p
+    // A concurrent removal can revoke a non-owner's saved root before this add commits.
+    if (!serverOwner) {
+      try { path = await ws.validateToAdd(pathStr, profile, false, { entries }) } catch (error) { throw new HttpError(400, (error as Error).message) }
+    }
+    if (entries.some((entry) => entry.path === path)) throw new HttpError(400, 'Workspace already in list')
+    return [...entries, { path, name: name || basename(path) }]
+  })
+  return { ok: true as const, workspaces }
 }
 
 export async function workspaceRename(deps: AppDeps, input: { path: string; name: string }) {
   const pathStr = input.path.trim()
   const name = input.name.trim()
   if (!pathStr || !name) throw new HttpError(400, 'path and name are required')
-  const profile = deps.activeProfile()
-  const list = (await deps.workspaces.load(profile, { forWrite: true }))
-  const entry = list.find((w) => w.path === pathStr)
-  if (!entry) throw new HttpError(404, 'Workspace not found')
-  entry.name = name
-  await deps.workspaces.save(list, profile)
-  return { ok: true as const, workspaces: list }
+  const workspaces = await deps.workspaces.edit(deps.activeProfile(), (entries) => {
+    const entry = entries.find((w) => w.path === pathStr)
+    if (!entry) throw new HttpError(404, 'Workspace not found')
+    entry.name = name
+    return entries
+  })
+  return { ok: true as const, workspaces }
 }
 
 /** TAL-2326: typed by its contract, so the declaration names it rather than inlining every procedure's output past TS7056's limit. */
@@ -761,28 +766,26 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
     remove: os.workspaces.remove.handler(({ input, context: { ctx } }) => run(async () => {
       const pathStr = input.path.trim()
       if (!pathStr) throw new HttpError(400, 'path is required')
-      const profile = ctx.deps.activeProfile()
-      const list = (await ctx.deps.workspaces.load(profile, { forWrite: true })).filter((w) => w.path !== pathStr)
-      await ctx.deps.workspaces.save(list, profile)
-      return { ok: true as const, workspaces: list }
+      const workspaces = await ctx.deps.workspaces.edit(ctx.deps.activeProfile(), (entries) => entries.filter((w) => w.path !== pathStr))
+      return { ok: true as const, workspaces }
     })),
     rename: os.workspaces.rename.handler(({ input, context: { ctx } }) => run(() => workspaceRename(ctx.deps, input))),
     reorder: os.workspaces.reorder.handler(({ input, context: { ctx } }) => run(async () => {
       const paths = input.paths
       if (!Array.isArray(paths) || !paths.length) throw new HttpError(400, 'paths is required and must be a list')
-      const profile = ctx.deps.activeProfile()
-      const list = (await ctx.deps.workspaces.load(profile, { forWrite: true }))
-      const byPath = new Map(list.map((w) => [w.path, w]))
-      const reordered: typeof list = []
-      const seen = new Set<string>()
-      for (const raw of paths) {
-        const p = String(raw).trim()
-        const entry = byPath.get(p)
-        if (entry && !seen.has(p)) { reordered.push(entry); seen.add(p) }
-      }
-      for (const w of list) if (!seen.has(w.path)) reordered.push(w)
-      await ctx.deps.workspaces.save(reordered, profile)
-      return { ok: true as const, workspaces: reordered }
+      const workspaces = await ctx.deps.workspaces.edit(ctx.deps.activeProfile(), (entries) => {
+        const byPath = new Map(entries.map((w) => [w.path, w]))
+        const reordered: WorkspaceEntry[] = []
+        const seen = new Set<string>()
+        for (const raw of paths) {
+          const p = String(raw).trim()
+          const entry = byPath.get(p)
+          if (entry && !seen.has(p)) { reordered.push(entry); seen.add(p) }
+        }
+        for (const w of entries) if (!seen.has(w.path)) reordered.push(w)
+        return reordered
+      })
+      return { ok: true as const, workspaces }
     })),
   },
   files: {
