@@ -123,8 +123,7 @@ struct ComposerTextView: UIViewRepresentable {
         let isRTL = context.environment.layoutDirection == .rightToLeft
         textView.semanticContentAttribute = isRTL ? .forceRightToLeft : .unspecified
         textView.textAlignment = isRTL ? .right : .natural
-        context.coordinator.applyEditability(!isDisabled, to: textView)
-        textView.textColor = isDisabled ? .secondaryLabel : .label
+        textView.applyEditability(!isDisabled)
         applyInputHandling(to: textView, coordinator: context.coordinator)
         context.coordinator.syncFocus(for: textView, shouldFocus: isFocused, isDisabled: isDisabled)
         context.coordinator.reportHeight(for: textView)
@@ -159,8 +158,6 @@ struct ComposerTextView: UIViewRepresentable {
         // away would drop the marked text, so it waits for the composition to end and
         // is then applied exactly once.
         private var pendingExternalText: String?
-        // The editability the latest update asked for; a deferred disable applies this value.
-        private var targetEditability = true
 
         init(
             text: Binding<String>,
@@ -191,25 +188,6 @@ struct ComposerTextView: UIViewRepresentable {
 
             pendingExternalText = nil
             textView.text = boundText
-        }
-
-        func applyEditability(_ isEditable: Bool, to textView: UITextView) {
-            targetEditability = isEditable
-            guard textView.isEditable != isEditable else { return }
-            guard !isEditable, textView.isFirstResponder else {
-                textView.isEditable = isEditable
-                textView.isSelectable = isEditable
-                return
-            }
-
-            // Disabling the focused field resigns it, and the keyboard animation lays out the
-            // hosting view inside this SwiftUI update: an AttributeGraph cycle that hangs the
-            // main thread (TAL-415). Disable it once the update has finished.
-            Task { @MainActor [weak self, weak textView] in
-                guard let self, let textView, textView.delegate === self else { return }
-                textView.isEditable = self.targetEditability
-                textView.isSelectable = self.targetEditability
-            }
         }
 
         func syncFocus(for textView: UITextView, shouldFocus: Bool, isDisabled: Bool) {
@@ -451,6 +429,26 @@ struct ComposerTextView: UIViewRepresentable {
 class ImagePastingTextView: UITextView {
     var onPasteImageProviders: (([NSItemProvider]) -> Void)?
     var onPasteImages: (([UIImage]) -> Void)?
+    private var targetEditability = true
+
+    func applyEditability(_ isEditable: Bool) {
+        targetEditability = isEditable
+        let color: UIColor = isEditable ? .label : .secondaryLabel
+        if textColor != color { textColor = color }
+        guard self.isEditable != isEditable else { return }
+        guard !isEditable, isFirstResponder else {
+            self.isEditable = isEditable
+            isSelectable = isEditable
+            return
+        }
+
+        // Resigning the focused editor can lay out its hosting view during the SwiftUI update (TAL-415).
+        Task { @MainActor [weak self, weak currentDelegate = delegate] in
+            guard let self, let currentDelegate, self.delegate === currentDelegate else { return }
+            self.isEditable = self.targetEditability
+            self.isSelectable = self.targetEditability
+        }
+    }
 
     @objc(canPasteItemProviders:)
     func canPasteItemProviders(_ itemProviders: [NSItemProvider]) -> Bool {

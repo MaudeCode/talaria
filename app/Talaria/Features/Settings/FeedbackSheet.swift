@@ -226,12 +226,7 @@ private struct FeedbackDetailsEditor: UIViewRepresentable {
     func updateUIView(_ editor: ImagePastingTextView, context: Context) {
         context.coordinator.text = $text
         if editor.text != text, editor.markedTextRange == nil { editor.text = text }
-        let isEnabled = context.environment.isEnabled
-        if editor.isEditable != isEnabled {
-            editor.isEditable = isEnabled
-            editor.isSelectable = isEnabled
-            editor.textColor = isEnabled ? .label : .secondaryLabel
-        }
+        editor.applyEditability(context.environment.isEnabled)
         let isRTL = context.environment.layoutDirection == .rightToLeft
         editor.semanticContentAttribute = isRTL ? .forceRightToLeft : .unspecified
         editor.textAlignment = isRTL ? .right : .natural

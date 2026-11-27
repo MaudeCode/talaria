@@ -250,6 +250,30 @@ final class FeedbackHostedTests: XCTestCase {
         XCTAssertNotNil(message, "The service refusal must not blame the Mac, Hermes WebUI, or Cloudflare")
     }
 
+    func testSendingDefersDisablingFocusedDetailsUntilAfterTheViewUpdate() async throws {
+        let model = model(attachments: true, submit: { _ in
+            throw URLError(.networkConnectionLost)
+        })
+        await model.loadAttachmentOptions()
+        model.edit { $0.body = "Synthetic feedback" }
+        let window = try hostWindow(FeedbackSheet(model: model))
+        let editor = try XCTUnwrap(window.firstView(ofType: ImagePastingTextView.self))
+        XCTAssertTrue(editor.becomeFirstResponder())
+        XCTAssertNotNil(editor.onPasteImageProviders)
+
+        let send = try XCTUnwrap(model.send())
+        // Deliver the SwiftUI update while the main actor is still in this synchronous section.
+        window.setNeedsLayout()
+        window.layoutIfNeeded()
+        CATransaction.flush()
+
+        XCTAssertNil(editor.onPasteImageProviders, "The editor must receive the disabled form update")
+        XCTAssertTrue(editor.isEditable, "Disabling focused Details during layout can re-enter the SwiftUI update")
+        await send.value
+        let disabled = await awaitCondition { !editor.isEditable && !editor.isSelectable }
+        XCTAssertTrue(disabled, "Details must become read-only after the update")
+    }
+
     func testSendClosesBeforeHeldResponseAndRefusalReopensTheSameDraft() async throws {
         var finish: CheckedContinuation<FeedbackResult, Error>?
         var requests: [FeedbackRequest] = []
