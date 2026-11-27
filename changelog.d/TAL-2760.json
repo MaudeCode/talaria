@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web keeps the translations for your latest language available offline after rapid language switches.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

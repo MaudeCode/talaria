@@ -28,9 +28,9 @@ export async function applyLocale(code: string, opts: { persist?: boolean } = {}
   const resolved = resolveLocale(code) ?? baseLocale
   if (!isLocale(resolved)) return currentLocale()
   const request = ++requested
+  let chunk: string | undefined
   try {
-    const chunk = await loadLocaleMessages(resolved)
-    if (chunk) cacheLocaleChunk(chunk)
+    chunk = await loadLocaleMessages(resolved)
   } catch (error) {
     // Messages fall back to English; the next switch retries the chunk.
     console.warn('[i18n] locale strings failed to load', error)
@@ -41,6 +41,7 @@ export async function applyLocale(code: string, opts: { persist?: boolean } = {}
   const info = localeInfo(resolved)
   document.documentElement.lang = info.speech
   if (opts.persist !== false) writePersisted('hermes-lang', resolved)
+  if (chunk) cacheLocaleChunk(chunk)
   for (const l of listeners) l()
   return resolved
 }

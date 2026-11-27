@@ -30,6 +30,7 @@ declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: { url: string; r
 const SHELL_URL = './index.html'
 const ASSET_CACHE = 'hermes-assets-v1'
 const LOCALE_CACHE = 'hermes-locale-v1'
+let localeUpdate = Promise.resolve()
 
 precache(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
@@ -65,7 +66,12 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
   if (typeof data !== 'object' || data === null) return
   const { type, url } = data as { type?: unknown; url?: unknown }
   if (type === 'SKIP_WAITING') void self.skipWaiting()
-  if (type === 'CACHE_LOCALE' && typeof url === 'string') event.waitUntil(cacheLocale(url))
+  if (type === 'CACHE_LOCALE' && typeof url === 'string') {
+    // Add and prune in message order. A failed replacement must leave the queue usable.
+    const update = localeUpdate.then(() => cacheLocale(url))
+    localeUpdate = update.catch(() => undefined)
+    event.waitUntil(update)
+  }
 })
 
 self.addEventListener('activate', (event) => {
