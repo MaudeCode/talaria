@@ -24,10 +24,13 @@ struct ServerUpdateSettingsSection: View {
     /// The server's last update check, for its per-target summary offers and the Agent row.
     @State private var updateTargets: UpdatesCheckResponse?
     @State private var summaryRequest: UpdateSummaryRequest?
+    @State private var backup = AgentBackupSettings()
+    @State private var backupConfirmation: AgentBackupStatus?
 
     /// Owns the System page so its sheet, alerts and loads attach once, to the page. On a `Group` or `Section` of rows,
     /// SwiftUI copies them onto every row, and a copy that never presented dismisses Settings itself (TAL-2248).
     var body: some View {
+        @Bindable var backup = backup
         SettingsCategoryPage(category: .system) {
             ServerSettingsSections(page: .updates)
             SettingsSection(title: String(localized: "System")) {
@@ -40,6 +43,7 @@ struct ServerUpdateSettingsSection: View {
                     serverVersionContent
                 }
 
+                AgentBackupSettingsRow(backup: backup, server: server) { backupConfirmation = $0 }
                 serverUpdateCheckAction
                 serverUpdateNote
                 UpdateSummaryButton(info: updateTargets?.webui) {
@@ -63,13 +67,32 @@ struct ServerUpdateSettingsSection: View {
             }
         }
         .task { await loadServerSettings() }
+        .task { await backup.load(on: server) }
+        .task(id: backup.poll) { await backup.pollStatus(on: server) }
+        .onDisappear(perform: backup.stopDownloading)
         .sheet(item: $summaryRequest) { request in
             UpdateSummarySheet(
                 model: UpdateSummaryModel(target: request.target, client: APIClient(baseURL: server)),
                 name: request.name
             )
         }
-        .refreshesLive(showsStatus: false) { await loadServerSettings() }
+        .sheet(item: $backup.shareItem) { item in
+            SessionExportShareSheet(fileURL: item.fileURL)
+                .presentationDetents([.medium, .large])
+                .ignoresSafeArea()
+        }
+        .alert("Create Agent-home backup?", isPresented: isConfirmingBackup, presenting: backupConfirmation) { status in
+            Button("Cancel", role: .cancel) {}
+            Button("Create Backup") {
+                Task { await backup.apply(.create, on: server, confirmed: status) }
+            }
+        } message: { status in
+            Text("Server: \(status.server)\nOwning profile: \(status.profile)\n\nThe backup includes every profile and can contain credentials. Keep the archive private.")
+        }
+        .refreshesLive(showsStatus: false) {
+            await loadServerSettings()
+            await backup.load(on: server)
+        }
         .alert("Update server?", isPresented: $isConfirmingUpdate) {
             Button("Cancel", role: .cancel) {}
             Button("Update") {
@@ -91,6 +114,10 @@ struct ServerUpdateSettingsSection: View {
         } message: {
             Text(forcedCheckAlertMessage)
         }
+    }
+
+    private var isConfirmingBackup: Binding<Bool> {
+        Binding(get: { backupConfirmation != nil }, set: { if !$0 { backupConfirmation = nil } })
     }
 }
 

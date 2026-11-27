@@ -355,21 +355,7 @@ public actor APIClient {
         using session: URLSession,
         mapsUnauthorized: Bool
     ) async throws -> Data {
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        // Same-origin media (incl. the user's own server via the cookie-less
-        // publicMediaSession) traverses the proxy, so it carries the custom
-        // headers. But downloadData also fetches *external* transcript media
-        // (third-party image URLs); those must NOT receive the headers, which may
-        // be secrets — that would leak them off-origin. Built-in Accept set after
-        // so it wins (#255).
-        if Self.isSameOrigin(url, as: baseURL) {
-            customHeaderProvider().apply(to: &request)
-            AppConfig.applyClientIdentity(to: &request)
-        }
-        request.setValue("*/*", forHTTPHeaderField: "Accept")
-
+        let request = downloadRequest(from: url, accept: "*/*")
         let data: Data
         let response: URLResponse
         do {
@@ -394,6 +380,59 @@ public actor APIClient {
         }
 
         return data
+    }
+
+    /// Lets URLSession write the response to disk before transferring ownership to the share sheet.
+    func downloadPrivateZIP(from url: URL, filename: String) async throws -> URL {
+        let request = downloadRequest(from: url, accept: "application/zip")
+        let redirectGuard = CrossOriginHeaderStripper(
+            baseURL: baseURL, customHeaderProvider: customHeaderProvider, allowsCrossOrigin: false
+        )
+        let temporaryFile: URL
+        let response: URLResponse
+        do {
+            (temporaryFile, response) = try await session.download(for: request, delegate: redirectGuard)
+        } catch {
+            throw APIError.network(underlying: error)
+        }
+
+        let files = FileManager.default
+        defer { try? files.removeItem(at: temporaryFile) }
+        try Task.checkCancellation()
+        let http = response as? HTTPURLResponse
+        if http?.statusCode == 401 { throw APIError.unauthorized }
+        guard http?.statusCode == 200, http?.mimeType == "application/zip" else {
+            throw APIError.http(statusCode: http?.statusCode ?? -1, body: nil)
+        }
+
+        let directory = files.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try files.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        let archive = directory.appending(path: filename)
+        do {
+            var attributes: [FileAttributeKey: Any] = [.posixPermissions: 0o600]
+            #if os(iOS)
+            attributes[.protectionKey] = FileProtectionType.complete
+            #endif
+            try files.setAttributes(attributes, ofItemAtPath: temporaryFile.path)
+            try files.moveItem(at: temporaryFile, to: archive)
+            return archive
+        } catch {
+            try? files.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    private func downloadRequest(from url: URL, accept: String) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        // The user's proxy headers stay on their server, even when fetching external transcript media.
+        if Self.isSameOrigin(url, as: baseURL) {
+            customHeaderProvider().apply(to: &request)
+            AppConfig.applyClientIdentity(to: &request)
+        }
+        request.setValue(accept, forHTTPHeaderField: "Accept")
+        return request
     }
 
     public static func isSameOrigin(_ url: URL, as baseURL: URL) -> Bool {
@@ -548,10 +587,12 @@ struct EmptyBody: Encodable {}
 final class CrossOriginHeaderStripper: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let baseURL: URL
     private let customHeaderProvider: @Sendable () -> [CustomHeader]
+    private let allowsCrossOrigin: Bool
 
-    init(baseURL: URL, customHeaderProvider: @escaping @Sendable () -> [CustomHeader]) {
+    init(baseURL: URL, customHeaderProvider: @escaping @Sendable () -> [CustomHeader], allowsCrossOrigin: Bool = true) {
         self.baseURL = baseURL
         self.customHeaderProvider = customHeaderProvider
+        self.allowsCrossOrigin = allowsCrossOrigin
     }
 
     func urlSession(
@@ -574,7 +615,7 @@ final class CrossOriginHeaderStripper: NSObject, URLSessionTaskDelegate, @unchec
         // Refuse it, so `URLSession` delivers the 3xx itself and nothing reaches
         // the other origin; callers see their usual non-2xx `APIError.http`.
         let method = request.httpMethod?.uppercased() ?? "GET"
-        guard method == "GET" || method == "HEAD",
+        guard allowsCrossOrigin, method == "GET" || method == "HEAD",
               request.httpBody == nil,
               request.httpBodyStream == nil else {
             completionHandler(nil)

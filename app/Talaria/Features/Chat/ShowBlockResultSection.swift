@@ -64,8 +64,6 @@ struct ShowBlockResultSection: View {
             SessionExportShareSheet(fileURL: item.fileURL)
                 .presentationDetents([.medium, .large])
                 .ignoresSafeArea()
-                // The file sits in its own temporary directory; it goes once the sheet does.
-                .onDisappear { try? FileManager.default.removeItem(at: item.fileURL.deletingLastPathComponent()) }
         }
         .fileExporter(payload: $exportPayload, errorTitle: "Download Failed", errorMessage: $errorMessage)
     }

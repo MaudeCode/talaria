@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Create and download a private Agent-home backup from Settings on iPhone.",
+      "highlight": false,
+      "components": ["app"],
+      "announcement": {
+        "title": "Agent-home backups",
+        "description": "Create a backup for every profile and save it to Files from Server Settings.",
+        "icon": "security"
+      }
+    }
+  ]
+}
