@@ -38,10 +38,25 @@ final class AppIntentNewChatTests: XCTestCase {
         let activity = NSUserActivity(activityType: CSSearchableItemActionType)
         activity.addUserInfoEntries(from: [CSSearchableItemActivityIdentifier: link.absoluteString])
 
-        TalariaApp.openSpotlightSession(activity, servers: ["https://other.test"], in: router)
+        TalariaApp.openSessionActivity(activity, servers: ["https://other.test"], in: router)
         XCTAssertNil(router.takeRoute(in: nil))
 
-        TalariaApp.openSpotlightSession(activity, servers: [server], in: router)
+        TalariaApp.openSessionActivity(activity, servers: [server], in: router)
+        XCTAssertEqual(router.takeRoute(in: nil), .deepLink(link))
+    }
+
+    @MainActor
+    func testHandoffActivityQueuesTheSessionLinkForItsRegisteredServer() throws {
+        let router = AppIntentRouter()
+        let server = "https://handoff.test"
+        let link = try XCTUnwrap(TalariaDeepLink.sessionURL(sessionID: "handoff-chat", publisherID: server))
+        let activity = NSUserActivity(activityType: "house.thezoo.talaria.chat")
+        activity.addUserInfoEntries(from: ["session": "handoff-chat", "server": server])
+
+        TalariaApp.openSessionActivity(activity, servers: ["https://other.test"], in: router)
+        XCTAssertNil(router.takeRoute(in: nil))
+
+        TalariaApp.openSessionActivity(activity, servers: [server], in: router)
         XCTAssertEqual(router.takeRoute(in: nil), .deepLink(link))
     }
 

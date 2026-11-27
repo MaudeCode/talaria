@@ -25,7 +25,7 @@ export const IndexSearchSchema = z.object({
   session: SessionIdSchema.optional().catch(undefined),
   session_id: SessionIdSchema.optional().catch(undefined),
   source: z.enum(['pwa']).optional().catch(undefined),
-  action: z.enum(['new-chat']).optional().catch(undefined),
+  action: z.enum(['new-chat', 'show-chats']).optional().catch(undefined),
   profile: z.string().max(64).optional().catch(undefined),
   /** TAL-1032: the unsaved chat starts in this project, on its defaults. */
   project: z.string().max(64).optional().catch(undefined),

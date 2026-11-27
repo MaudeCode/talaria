@@ -809,7 +809,7 @@ struct ChatView: View {
                 Task { await loadMessages(appliesInitialFocus: false) }
             }
             .modifier(ChatLiveSync(viewModel: viewModel, server: server, sessionID: session.sessionId, onAPIError: onAPIError))
-            .modifier(VisibleChatTracking(chat: .init(server: server, sessionID: session.sessionId)))
+            .modifier(VisibleChatTracking(chat: .init(server: server, sessionID: session.sessionId), handoff: handoffTarget))
             .onChange(of: showsLiveActivityResponseExcerpts) {
                 viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
             }
@@ -821,6 +821,12 @@ struct ChatView: View {
             .onChange(of: TalariaCompletionStore.shared.completions) {
                 scheduleCompletionAcknowledgement()
             }
+    }
+
+    private var handoffTarget: ChatHandoff? {
+        // The primary chat owns Handoff, including when the second pane previews another chat.
+        guard closeSecondary == nil, let sessionID = viewModel.streamCoordinatorSessionID else { return nil }
+        return ChatHandoff(sessionID: sessionID, server: server)
     }
 
     // `withLifecycle`'s modifiers in three functions: one chain of them all took the type checker seconds (TAL-2470).
@@ -4583,23 +4589,79 @@ private struct ChatDraftSyncModifier: ViewModifier {
     }
 }
 
+/// A browser destination and the identities needed if another Talaria app continues the activity.
+struct ChatHandoff: Equatable {
+    static let activityType = "house.thezoo.talaria.chat"
+    private static let sessionKey = "session"
+    private static let serverKey = "server"
+
+    private let webpageURL: URL
+    private let userInfo: [String: String]
+
+    init?(sessionID: String, server: URL) {
+        guard !sessionID.isEmpty,
+              var url = URLComponents(url: server.appendingPathComponent("open"), resolvingAgainstBaseURL: false),
+              url.scheme == "https" || url.scheme == "http",
+              let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else { return nil }
+        url.queryItems = [URLQueryItem(name: Self.sessionKey, value: sessionID)]
+        url.fragment = nil
+        guard let webpageURL = url.url else { return nil }
+        self.webpageURL = webpageURL
+        userInfo = [Self.sessionKey: sessionID, Self.serverKey: server.absoluteString]
+    }
+
+    func activity() -> NSUserActivity {
+        let activity = NSUserActivity(activityType: Self.activityType)
+        activity.webpageURL = webpageURL
+        activity.addUserInfoEntries(from: userInfo)
+        activity.requiredUserInfoKeys = [Self.sessionKey, Self.serverKey]
+        activity.isEligibleForHandoff = true
+        return activity
+    }
+
+    static func sessionURL(from activity: NSUserActivity) -> URL? {
+        guard let sessionID = activity.userInfo?[sessionKey] as? String,
+              let serverID = activity.userInfo?[serverKey] as? String else { return nil }
+        return TalariaDeepLink.sessionURL(sessionID: sessionID, publisherID: serverID)
+    }
+}
+
 /// TAL-872: marks this chat as on screen in its window, so its notifications stay silent while that window is active and
 /// an event or a sidebar selection for it goes to that window (TAL-2388).
 private struct VisibleChatTracking: ViewModifier {
     let chat: SessionNotificationRefresh.VisibleChat?
+    let handoff: ChatHandoff?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.windowSceneID) private var window
     @State private var isShown = false
     @State private var registered: SessionNotificationRefresh.ShownChat?
+    @State private var handoffActivity: NSUserActivity?
 
     func body(content: Content) -> some View {
         content
-            .onAppear { register(shown: true) }
+            .onAppear {
+                register(shown: true)
+                publishHandoff(handoff)
+            }
             // Unregisters here directly: a view being removed gets no later onChange.
-            .onDisappear { register(shown: false) }
-            .onChange(of: scenePhase) { register(shown: isShown) }
+            .onDisappear {
+                register(shown: false)
+                publishHandoff(nil)
+            }
+            .onChange(of: scenePhase) {
+                register(shown: isShown)
+                if scenePhase == .active { handoffActivity?.becomeCurrent() }
+            }
             .onChange(of: chat) { register(shown: isShown) }
+            .onChange(of: handoff) { if isShown { publishHandoff(handoff) } }
             .onChange(of: window) { register(shown: isShown) }
+    }
+
+    private func publishHandoff(_ target: ChatHandoff?) {
+        // Chat panes can be hosted by UIKit controllers. Tie the activity directly to the visible pane.
+        handoffActivity?.invalidate()
+        handoffActivity = target?.activity()
+        handoffActivity?.becomeCurrent()
     }
 
     private func register(shown: Bool) {

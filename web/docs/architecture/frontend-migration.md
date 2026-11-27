@@ -109,6 +109,7 @@ file-based under `packages/frontend/src/routes/`:
 |---|---|---|
 | `/` | Chat: restores the last session or shows the empty state. Validated search: `session`, `session_id` (redirect to `/session/$id`), `source`, `action` (`new-chat`). Legacy `#settings` and `#sessions` hashes redirect. | required |
 | `/session/$sessionId` | Chat for one session. Encoded id validated by `SessionIdSchema`. | required |
+| `/open?session=$sessionId` | iPhone Handoff entry. Replaces the URL with the chat's canonical route or opens the chat list if the server cannot find it. | required |
 | `/tasks`, `/tasks/$jobId` | Scheduled jobs | required |
 | `/kanban` | Kanban board; board and filter state in validated search params | required |
 | `/skills`, `/skills/$name` | Skills | required |
@@ -124,7 +125,7 @@ file-based under `packages/frontend/src/routes/`:
 | `*` | Client not-found for allowlisted prefixes only | |
 
 The server serves the shell for exactly these prefixes: `/`, `/index.html`,
-`/session/`, `/tasks`, `/kanban`, `/skills`, `/memory`, `/workspaces`,
+`/open`, `/session/`, `/tasks`, `/kanban`, `/skills`, `/memory`, `/workspaces`,
 `/profiles`, `/todos`, `/insights`, `/logs`, `/settings`, `/ext/`, `/onboarding`,
 `/login`, `/share`. Everything else keeps its server owner (`/api/*`, `/health`,
 `/static/*`, `/sw.js`, `/manifest.*`, `/extensions/*`, `/plugins/*`,
