@@ -4,12 +4,14 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSy
 import type { FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpFailure } from '../sessions/service.js'
+import { bootTestServer, type TestServer } from '../test/harness.js'
 import { logCatalog, readLogTail } from './health.js'
 
 /** Bytes read and descriptors opened/closed by `readLogTail`, with an optional gate that holds the next read. */
 const io = vi.hoisted(() => ({ bytes: 0, opened: 0, closed: 0, hold: null as Promise<void> | null, held: null as (() => void) | null, fail: null as Error | null, cap: Infinity }))
+const openFailure = vi.hoisted(() => ({ error: null as NodeJS.ErrnoException | null }))
 
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
@@ -20,6 +22,7 @@ vi.mock('node:fs', async (importOriginal) => {
 vi.mock('node:fs/promises', async (importOriginal) => {
   const fsp = await importOriginal<typeof import('node:fs/promises')>()
   const open = async (...args: Parameters<typeof fsp.open>): Promise<FileHandle> => {
+    if (openFailure.error && args[0] === openFailure.error.path) throw openFailure.error
     const handle = await fsp.open(...args)
     io.opened += 1
     const read = handle.read.bind(handle) as (buffer: Buffer, offset: number, length: number, position: number) => Promise<{ bytesRead: number }>
@@ -36,6 +39,35 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     return handle
   }
   return { ...fsp, open }
+})
+
+describe('GET /api/logs open failures', () => {
+  let server: TestServer
+  let log: string
+
+  beforeAll(async () => {
+    server = await bootTestServer({ sidecar: null })
+    const logs = join(server.state, 'logs')
+    mkdirSync(logs, { recursive: true })
+    log = join(logs, 'agent.log')
+    writeFileSync(log, 'a readable log\n')
+  })
+  afterAll(async () => { await server?.close() })
+  afterEach(() => { openFailure.error = null })
+
+  it('returns the missing-file view for ENOENT at open', async () => {
+    openFailure.error = Object.assign(new Error(`ENOENT opening ${log}`), { code: 'ENOENT', path: log })
+    const res = await server.get('/api/logs?file=agent')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ lines: [], hint: 'Log file for agent not found yet.' })
+  })
+
+  it.each(['EACCES', 'EIO'])('returns a sanitized error for %s at open', async (code) => {
+    openFailure.error = Object.assign(new Error(`${code} opening ${log}`), { code, path: log })
+    const res = await server.get('/api/logs?file=agent')
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({ error: 'Internal server error' })
+  })
 })
 
 /** The replaced whole-window read: the last 4 MiB split in full, then sliced. */
