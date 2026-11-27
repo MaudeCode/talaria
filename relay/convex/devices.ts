@@ -12,6 +12,7 @@ import {
 } from "./lib/validators";
 
 const revocationBatchSize = 128;
+const activityReplacementLimit = 10;
 
 function findDevice(ctx: MutationCtx, userId: string, deviceId: string) {
   return ctx.db.query("devices")
@@ -231,20 +232,27 @@ export const registerActivity = internalMutation({
     }
 
     const sameMode = await openDeviceActivities(ctx, args.userId, args.deviceId, args.mode)
-      .take(10);
-    for (const activity of sameMode) {
-      if (activity.activityId !== args.activityId) {
-        // Modern current-session cards are pinned to distinct runs. The app retires
-        // superseded live cards; completed cards remain until acknowledgement.
-        if (args.mode === "per_session" && args.streamId !== undefined && activity.streamId !== undefined
-          && (activity.streamId !== args.streamId || activity.sessionId !== args.sessionId || activity.publisherId !== args.publisherId)) continue;
-        await enqueueDisplacedActivityEnd(ctx, activity, device, args.now);
-        await ctx.db.patch(activity._id, { endedAt: args.now, updatedAt: args.now });
-      }
+      .take(activityReplacementLimit);
+    const streamId = args.mode === "per_session" ? args.streamId : undefined;
+    let superseded = sameMode;
+    if (streamId !== undefined) {
+      // Keep the legacy replacement window for streamless cards. A known run
+      // can have retained neighbors, so look up its cards directly.
+      const sameRun = await ctx.db.query("liveActivities")
+        .withIndex("by_open_device_run", (query) => query
+          .eq("userId", args.userId).eq("deviceId", args.deviceId).eq("mode", args.mode)
+          .eq("endedAt", undefined).eq("publisherId", args.publisherId).eq("sessionId", args.sessionId)
+          .eq("streamId", streamId))
+        .take(activityReplacementLimit);
+      superseded = [...sameMode.filter((activity) => activity.streamId === undefined), ...sameRun];
+    }
+    for (const activity of superseded) {
+      if (activity.activityId === args.activityId) continue;
+      await enqueueDisplacedActivityEnd(ctx, activity, device, args.now);
+      await ctx.db.patch(activity._id, { endedAt: args.now, updatedAt: args.now });
     }
 
     const sameRegistration = existing?.activityPushToken === args.activityPushToken;
-    const streamId = args.mode === "per_session" ? args.streamId : undefined;
     const value = {
       userId: args.userId,
       deviceId: args.deviceId,

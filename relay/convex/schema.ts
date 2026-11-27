@@ -263,6 +263,7 @@ export default defineSchema({
     .index("by_user_id_and_device_id_and_activity_id", ["userId", "deviceId", "activityId"])
     .index("by_activity_push_token", ["activityPushToken"])
     .index("by_user_id_and_device_id_and_mode_and_ended_at", ["userId", "deviceId", "mode", "endedAt"])
+    .index("by_open_device_run", ["userId", "deviceId", "mode", "endedAt", "publisherId", "sessionId", "streamId"])
     .index("by_user_id_and_mode_and_ended_at", ["userId", "mode", "endedAt"])
     .index("by_ended_at", ["endedAt"]),
 
