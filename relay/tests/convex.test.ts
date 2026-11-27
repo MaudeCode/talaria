@@ -2097,6 +2097,62 @@ describe("Convex relay state", () => {
     expect(activities[0]?.activityId).toBe("activity-2");
   });
 
+  it("displaces only the matching run on a crowded device, including on registration retry", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    const registration = {
+      userId: "user-1", deviceId: "device-1", mode: "per_session" as const,
+      publisherId: "https://hermes.example", sessionId: "session-1", streamId: "stream-1",
+      attributesType: "AgentRunActivityAttributes", schemaVersion: 1, seededLocally: false,
+      activityId: "replacement", activityPushToken: "replacement-token", now: now + 1,
+    };
+    const { userId, deviceId, mode, publisherId, sessionId, streamId, attributesType, schemaVersion } = registration;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId, deviceId, label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "sandbox",
+        preferences: defaultNotificationPreferences, createdAt: now, updatedAt: now,
+      });
+      await ctx.db.insert("publisherGrants", {
+        userId, publisherId, publisherOwnerUserId: userId, profileId: "profile-1",
+        createdAt: now, updatedAt: now,
+      });
+      const previous = {
+        userId, deviceId, mode, publisherId, sessionId, streamId, attributesType, schemaVersion,
+        activityId: "superseded", activityPushToken: "superseded-token", createdAt: now, updatedAt: now,
+      };
+      const otherRuns = [
+        { publisherId: "https://other.example" },
+        { sessionId: "other-session" },
+        ...Array.from({ length: 8 }, (_, index) => ({ streamId: `retained-stream-${index}` })),
+      ];
+      for (const [index, identity] of otherRuns.entries()) {
+        await ctx.db.insert("liveActivities", {
+          ...previous, ...identity, activityId: `retained-${index}`, activityPushToken: `retained-token-${index}`,
+        });
+      }
+      await ctx.db.insert("liveActivities", previous);
+    });
+
+    const displacement = () => backend.run(async (ctx) => ({
+      ended: (await ctx.db.query("liveActivities").collect())
+        .filter((activity) => activity.endedAt !== undefined)
+        .map(({ activityId, endedAt }) => ({ activityId, endedAt })),
+      jobs: (await ctx.db.query("deliveryJobs").collect())
+        .map(({ activityId, kind, expectedToken, status }) => ({ activityId, kind, expectedToken, status })),
+    }));
+    await expect(backend.mutation(internal.devices.registerActivity, registration)).resolves.toEqual({ ok: true });
+    const expected = {
+      ended: [{ activityId: "superseded", endedAt: registration.now }],
+      jobs: [{ activityId: "superseded", kind: "live_activity_end", expectedToken: "superseded-token", status: "queued" }],
+    };
+    expect(await displacement()).toEqual(expected);
+
+    await expect(backend.mutation(internal.devices.registerActivity, {
+      ...registration, now: registration.now + 1,
+    })).resolves.toEqual({ ok: true });
+    expect(await displacement()).toEqual(expected);
+  });
+
   it("ends a displaced activity after Live Activities are turned off", async () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;

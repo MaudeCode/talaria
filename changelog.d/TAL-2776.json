@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Re-registering a run replaces its previous Live Activity even when many other cards are still on the device.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
