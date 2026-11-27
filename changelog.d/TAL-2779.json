@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Changing a browser push preference no longer saves an earlier change that the server refused.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
