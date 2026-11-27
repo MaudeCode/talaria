@@ -63,13 +63,13 @@ function expiryForState(
 }
 
 // Ineligibility belongs to the phase transition that carried it, so same-phase updates of the same run inherit it
-// until the phase changes. A new stream is a new run and starts from its own value, and so does a new approval head.
+// until the phase changes. A new stream is a new run and starts from its own value, and so does a new prompt head.
 function alertEligibleForState(
   current: Doc<"sessionStates"> | null | undefined,
-  next: { phase: SessionPhase; activityPhase?: SessionPhase; streamId?: string; alertEligible?: boolean; approvalHeadId?: string; decisionReviewId?: string },
+  next: { phase: SessionPhase; activityPhase?: SessionPhase; streamId?: string; alertEligible?: boolean; approvalHeadId?: string; inputHeadId?: string; decisionReviewId?: string },
 ): boolean | undefined {
   return current && !current.deleted && activityPhase(current) === activityPhase(next) && current.streamId === next.streamId
-    && !approvalHeadChanged(current, next) && !decisionReviewChanged(current, next) && current.alertEligible === false ? false : next.alertEligible;
+    && !promptHeadChanged(current, next) && !decisionReviewChanged(current, next) && current.alertEligible === false ? false : next.alertEligible;
 }
 
 function sameRun(current: Doc<"sessionStates"> | null | undefined, next: { streamId?: string }): current is Doc<"sessionStates"> {
@@ -82,8 +82,19 @@ function approvalHeadFor(current: Doc<"sessionStates"> | null | undefined, next:
   return next.approvalHeadId ?? (sameRun(current, next) ? current.approvalHeadId : undefined);
 }
 
-function approvalHeadChanged(current: Doc<"sessionStates"> | null | undefined, next: { approvalHeadId?: string }): boolean {
-  return next.approvalHeadId !== undefined && next.approvalHeadId !== current?.approvalHeadId;
+// Remember the last question separately from the current actionable head carried by the publisher.
+function lastInputHead(current: Doc<"sessionStates"> | null | undefined) {
+  return current?.inputHeadId ?? current?.lastInputHeadId;
+}
+
+function previousPromptHeads(current: Doc<"sessionStates"> | null | undefined, next: { streamId?: string }) {
+  const previous = sameRun(current, next) ? current : undefined;
+  return { previousApprovalHeadId: previous?.approvalHeadId, previousInputHeadId: lastInputHead(previous) };
+}
+
+function promptHeadChanged(current: Doc<"sessionStates"> | null | undefined, next: { approvalHeadId?: string; inputHeadId?: string }): boolean {
+  return (next.approvalHeadId !== undefined && next.approvalHeadId !== current?.approvalHeadId)
+    || (next.inputHeadId !== undefined && next.inputHeadId !== lastInputHead(current));
 }
 
 // TAL-1966: the decision review a session held, across runs; a review it did not hold is a transition of its own.
@@ -292,6 +303,7 @@ export const acceptState = internalMutation({
       }
 
       const previousPhase = args.state ? previousPhaseFor(existing, args.state) : existing?.deleted || !existing ? undefined : activityPhase(existing);
+      const previousHeads = args.state ? previousPromptHeads(existing, args.state) : undefined;
       const next = args.state
         ? {
             deleted: false,
@@ -305,7 +317,7 @@ export const acceptState = internalMutation({
             ...args.state,
             alertEligible: alertEligibleForState(existing, args.state),
             approvalHeadId: approvalHeadFor(existing, args.state),
-            inputHeadId: args.state.inputHeadId,
+            lastInputHeadId: args.state.inputHeadId ?? previousHeads?.previousInputHeadId,
             runKey: stateRunKey(existing, { ...args.state, eventId: args.eventId }),
             ...expiryForState(existing, args.state, args.receivedAt),
             receivedAt: args.receivedAt,
@@ -335,7 +347,7 @@ export const acceptState = internalMutation({
         transitions: args.state
           ? [{
               publisherId: args.publisherId, sessionId: args.sessionId, previousPhase,
-              previousApprovalHeadId: sameRun(existing, args.state) ? existing.approvalHeadId : undefined,
+              ...previousHeads,
               previousDecisionReviewId: previousDecisionReviewFor(existing),
               previousAgentNotifyIds: previousAgentNoticesFor(existing),
               state: exposedState(next as Doc<"sessionStates">),
@@ -377,6 +389,7 @@ export const acceptSnapshot = internalMutation({
         sessionId: string;
         previousPhase?: SessionPhase;
         previousApprovalHeadId?: string;
+        previousInputHeadId?: string;
         previousDecisionReviewId?: string;
         previousAgentNotifyIds?: string[];
         state: ReturnType<typeof exposedState>;
@@ -392,6 +405,7 @@ export const acceptSnapshot = internalMutation({
           });
           continue;
         }
+        const previousHeads = previousPromptHeads(current, state);
         const next = {
           deleted: false,
           version: 2,
@@ -402,21 +416,21 @@ export const acceptSnapshot = internalMutation({
           ...state,
           alertEligible: alertEligibleForState(current, state),
           approvalHeadId: approvalHeadFor(current, state),
-          inputHeadId: state.inputHeadId,
+          lastInputHeadId: state.inputHeadId ?? previousHeads.previousInputHeadId,
           runKey: stateRunKey(current, state),
           ...expiryForState(current, state, args.receivedAt),
           receivedAt: args.receivedAt,
         };
         // A newly suppressed same-phase update is also delivered as a (non-alerting) transition so delivery can
-        // record the deferral and revalidate any queued alert for it. A new approval head is a transition of its own.
+        // record the deferral and revalidate any queued alert for it. A new prompt head is a transition of its own.
         if (!current || activityPhase(current) !== activityPhase(state) || current.streamId !== state.streamId
-          || approvalHeadChanged(current, state) || decisionReviewChanged(current, state) || agentNoticesChanged(current, state)
+          || promptHeadChanged(current, state) || decisionReviewChanged(current, state) || agentNoticesChanged(current, state)
           || (next.alertEligible === false && current.alertEligible !== false)) {
           transitions.push({
             publisherId: args.publisherId,
             sessionId: state.sessionId,
             previousPhase: previousPhaseFor(current, state),
-            previousApprovalHeadId: sameRun(current, state) ? current.approvalHeadId : undefined,
+            ...previousHeads,
             previousDecisionReviewId: previousDecisionReviewFor(current),
             previousAgentNotifyIds: previousAgentNoticesFor(current),
             state: exposedState(next as Doc<"sessionStates">),

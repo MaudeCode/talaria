@@ -454,6 +454,56 @@ describe("publisher alert eligibility", () => {
   });
 });
 
+describe("clarification delivery", () => {
+  beforeEach(() => { vi.useFakeTimers({ now }); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  async function publishQuestion(backend: Backend, route: "snapshot" | "state", revision: number, head: string, alertEligible?: boolean) {
+    const state = { ...snapshotState("session-1", revision, "waiting_for_input", alertEligible), inputHeadId: head };
+    const envelope = { ...publish, nonce: `q-${revision}`, receivedAt: now + revision };
+    if (route === "snapshot") {
+      await backend.mutation(internal.publishers.acceptSnapshot, { ...envelope, snapshotId: `q-${revision}`, states: [state] });
+    } else {
+      const { sessionId, eventId, revision: stateRevision, ...body } = state;
+      await backend.mutation(internal.publishers.acceptState, { ...envelope, sessionId, eventId, revision: stateRevision, state: { ...body, sessionId } });
+    }
+    await runScheduledRecomputes(backend);
+  }
+
+  const notifications = async (backend: Backend) => (await backend.run((ctx) => ctx.db.query("deliveryJobs").order("asc").collect()))
+    .filter((job) => job.kind === "notification");
+
+  it.each(["snapshot", "state"] as const)("%s publishes each successive eligible question once", async (route) => {
+    const backend = await seed({ pushToken: "push-token", activity: false });
+    await publishQuestion(backend, route, 2, "question-1");
+    await publishQuestion(backend, route, 3, "question-2");
+    await publishQuestion(backend, route, 4, "question-2");
+    const sent = await notifications(backend);
+    expect(sent.map((job) => JSON.parse(job.request.payloadJson).inputHeadId)).toEqual(["question-1", "question-2"]);
+    expect(new Set(sent.map((job) => job.request.collapseId)).size).toBe(2);
+    await expect(backend.mutation(internal.delivery.claimJob, { jobId: sent[0]!._id, now: now + 5 }))
+      .resolves.toEqual({ status: "stale" });
+  });
+
+  it("keeps a queued question claimable across a newer heartbeat of its head", async () => {
+    const backend = await seed({ pushToken: "push-token", activity: false });
+    await publishQuestion(backend, "snapshot", 2, "question-1");
+    const [job] = await notifications(backend);
+    expect(job).toMatchObject({ status: "queued" });
+    await publishQuestion(backend, "snapshot", 3, "question-1");
+    await expect(backend.mutation(internal.delivery.claimJob, { jobId: job!._id, now: now + 4 }))
+      .resolves.toMatchObject({ status: "ready", request: job!.request });
+  });
+
+  it("keeps a muted question consumed and lets the next eligible head alert", async () => {
+    const backend = await seed({ pushToken: "push-token", activity: false });
+    await publishQuestion(backend, "snapshot", 2, "question-1", false);
+    await publishQuestion(backend, "snapshot", 3, "question-1");
+    await publishQuestion(backend, "snapshot", 4, "question-2");
+    expect((await notifications(backend)).map((job) => JSON.parse(job.request.payloadJson).inputHeadId)).toEqual(["question-2"]);
+  });
+});
+
 describe.each([false, true])("claim preferences, retry=%s", (retry) => {
   beforeEach(() => {
     vi.useFakeTimers();

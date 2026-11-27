@@ -147,12 +147,13 @@ export function alertForTransition(
   preferences: NotificationPreferences,
   previousApprovalHeadId?: string,
   previousDecisionReviewId?: string | null,
+  previousInputHeadId?: string,
 ): ActivityAlert | null {
   const previousPhase = typeof previous === "string" ? previous : previous ? activityPhase(previous) : null;
   if (!previousPhase) return null;
   const decision = decisionAlert(next, preferences, previousDecisionReviewId);
   if (decision) return decision;
-  if (!isAttentionTransition(previousPhase, previousApprovalHeadId, next)) return null;
+  if (!isAttentionTransition(previousPhase, previousApprovalHeadId, next, previousInputHeadId)) return null;
   return alertForState(next, preferences);
 }
 
@@ -191,19 +192,19 @@ export function agentNotifyAlerts(next: SessionState, previousAgentNotifyIds: re
 }
 
 /**
- * When both sides name an approval queue head, the head decides: a head the relay already saw never alerts again,
+ * When both sides name an approval or input queue head, the head decides: a head the relay already saw never alerts again,
  * even after the row went stale, and a new head alerts while the phase stays the same. Otherwise the phase decides.
  */
 export function isAttentionTransition(
   previousPhase: SessionPhase,
   previousApprovalHeadId: string | undefined,
   next: SessionState,
+  previousInputHeadId?: string,
 ): boolean {
   const phase = activityPhase(next);
-  if (phase === "waiting_for_approval" && next.approvalHeadId !== undefined && previousApprovalHeadId !== undefined) {
-    return next.approvalHeadId !== previousApprovalHeadId;
-  }
-  return previousPhase !== phase;
+  const head = phase === "waiting_for_approval" ? next.approvalHeadId : phase === "waiting_for_input" ? next.inputHeadId : undefined;
+  const previousHead = phase === "waiting_for_approval" ? previousApprovalHeadId : previousInputHeadId;
+  return head !== undefined && previousHead !== undefined ? head !== previousHead : previousPhase !== phase;
 }
 
 // The App's local approval fallback shows these same Localizable keys (contracts/fixtures/relay-approval-alert.json).

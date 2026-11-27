@@ -65,8 +65,9 @@ hand-written endpoint schemas.
 | Sidecar | `sidecar/client.ts`, `discover.ts`, `fake.ts` | newline-delimited JSON-RPC 2.0 over stdio with streamed frames and cancellation; restart with backoff; Agent discovery; the Vitest fake |
 | CLI | `cli/launcher.ts`, `ctl.ts`, `dotenv.ts`, `supervise.ts`, `bin/*` | `talaria-web` bootstrap, `ctl`, `.env` precedence, the serve supervisor, `talaria-web-mcp` |
 
-Web Push remembers the latest approval head for each run. A different head can alert while the session stays in
-`waiting_for_approval`. If either state lacks a head ID, Web Push uses the phase change to decide whether to alert.
+Web Push remembers the latest approval and clarification heads for each run. A different head can alert while the session
+stays in its waiting phase. If either state lacks a head ID, Web Push uses the phase change. Each question with a head ID
+uses its own notification tag.
 
 The server's shared credential redactor masks transcript text, tool arguments and
 results, exports, and public shares. It covers credential names and connection
