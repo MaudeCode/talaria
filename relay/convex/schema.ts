@@ -323,9 +323,12 @@ export default defineSchema({
     ticketKey: v.optional(v.string()),
     createdAt: v.number(),
     deliveredAt: v.optional(v.number()),
+    queuedAt: v.optional(v.number()),
+    retryAt: v.optional(v.number()),
   })
     .index("by_request_id", ["requestId"])
     .index("by_status_and_created_at", ["status", "createdAt"])
+    .index("by_status_and_retry_at_and_queued_at_and_created_at", ["status", "retryAt", "queuedAt", "createdAt"])
     .index("by_status_and_delivered_at", ["status", "deliveredAt"]),
 
   feedbackDiagnosticChunks: defineTable({

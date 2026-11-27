@@ -60,14 +60,16 @@ deliveries, and exits.
 
 With `RELAY_SYNC_URL` set it runs in watch mode instead and does not exit. It
 holds an outbound Convex WebSocket subscription to `feedback:pendingSignal`,
-which returns only the IDs of up to 50 pending reports and only for the operator
+which returns only the IDs of up to 50 eligible reports and only for the operator
 token. When that set changes and is not empty, the bridge runs a delivery at
 once. A report counts as pending only after its uploads finish or their window
 closes, so attachments are never delivered early. Deliveries run one at a time:
-a change during a run queues exactly one more. A delivery also runs every 120
-seconds so failed reports are retried. A subscription error (wrong token,
-feedback disabled) prints one fixed line and exits 1. SIGTERM exits 0 after the
-current delivery.
+a change during a run queues exactly one more. After a failure, Relay defers the
+report for 120 seconds, then returns it to the queue behind reports that were
+already eligible. Relay keeps that retry position across bridge restarts. The
+bridge also checks the queue every 120 seconds as a fallback. A subscription
+error (wrong token, feedback disabled) prints one fixed line and exits 1.
+SIGTERM exits 0 after the current delivery.
 
 With `HEALTH_PORT` also set, watch mode serves `GET /healthz` on that port.
 It answers 200 once Relay has answered the subscription (so the token is
@@ -99,8 +101,9 @@ The bridge treats the sanitizer's answer as untrusted too. It refuses redirects
 and allows 300 seconds per file. A kept file must be PNG, JPEG or MP4, at most
 10,000,000 bytes, with its length and SHA-256 matching the response headers; a
 dropped file must name one of the reasons above. An unreachable sanitizer or any
-other answer leaves the report pending with no ticket or acknowledgement, and
-the next run retries it. There is no in-process fallback.
+other answer leaves the report pending with no ticket or acknowledgement. The
+bridge retries it through the sanitizer after Relay returns it to the eligible
+queue.
 
 | Environment variable | Purpose |
 | --- | --- |

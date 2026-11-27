@@ -1263,9 +1263,13 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const closed = await feedbackGate(request, true);
     if (closed) return closed;
-    const parts = pathParts(request);
-    const reportId = parts[2];
-    if (parts.length !== 4 || parts[3] !== "ack" || !reportId) return json(404, { error: "not_found" });
+    const [, , reportId, operation, ...extra] = pathParts(request);
+    if (!reportId || extra.length) return json(404, { error: "not_found" });
+    if (operation === "defer") {
+      const found = await ctx.runMutation(internal.feedback.deferDelivery, { reportId });
+      return found ? new Response(null, { status: 204 }) : json(404, { error: "not_found" });
+    }
+    if (operation !== "ack") return json(404, { error: "not_found" });
     const body = await readJson(request);
     const ticketKey = body?.ticketKey;
     if (!body || Object.keys(body).length !== 1 || typeof ticketKey !== "string" || !ticketKeyPattern.test(ticketKey)) {

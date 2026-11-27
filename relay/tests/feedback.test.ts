@@ -295,6 +295,7 @@ describe("feedback operator queue", () => {
     expect((await operator("/v1/feedback/anything/ack", {
       method: "POST", body: JSON.stringify({ ticketKey: "TAL-1" }),
     }, "wrong-token")).status).toBe(401);
+    expect((await operator("/v1/feedback/anything/defer", { method: "POST" }, "wrong-token")).status).toBe(401);
   });
 
   // Three reports a second apart: unverified, verified (signed by the publisher), unverified.

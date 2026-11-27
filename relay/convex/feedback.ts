@@ -19,6 +19,7 @@ const day = 24 * hour;
 const megabyte = 1_000_000;
 const allTiers: Budget = { key: "feedback:global", windowMs: day, limit: 1_000 };
 const uploadWindowMs = 30 * 60 * 1_000;
+const deliveryRetryMs = 120_000;
 /** Admission refuses attachments that would take stored bytes past this. */
 const storedBytesCeiling = 2_000 * megabyte;
 
@@ -244,6 +245,7 @@ export const submit = internalMutation({
       ...(args.diagnosticReports ? { hasDiagnosticReports: true } : {}),
       status: uploading ? "uploading" : "pending",
       createdAt: args.now,
+      queuedAt: args.now,
     });
     // Relay documents are limited to 1 MiB. Keep large diagnostics out of the pending list.
     if (args.diagnosticReports) {
@@ -331,6 +333,14 @@ export const closeUploads = internalMutation({
   },
 });
 
+function readyReports(ctx: QueryCtx, limit: number) {
+  // Existing rows without queuedAt retain their original createdAt order until their first retry.
+  return ctx.db.query("feedbackReports")
+    .withIndex("by_status_and_retry_at_and_queued_at_and_created_at", (query) =>
+      query.eq("status", "pending").eq("retryAt", undefined))
+    .take(limit);
+}
+
 export const listPending = internalQuery({
   args: { limit: v.number() },
   returns: v.array(v.object({
@@ -350,9 +360,7 @@ export const listPending = internalQuery({
     })),
   })),
   handler: async (ctx, args) => {
-    const reports = await ctx.db.query("feedbackReports")
-      .withIndex("by_status_and_created_at", (query) => query.eq("status", "pending"))
-      .take(args.limit);
+    const reports = await readyReports(ctx, args.limit);
     return await Promise.all(reports.map(async (report) => ({
       reportId: report._id,
       tier: report.tier,
@@ -368,18 +376,45 @@ export const listPending = internalQuery({
 });
 
 /**
- * The feedback bridge subscribes to this over Convex's WebSocket, so it learns of a report the moment it becomes
- * `pending` (after its uploads settle) without anything reaching into the cluster. Operator-only; IDs only.
+ * The feedback bridge subscribes over Convex's WebSocket to learn when a report is ready to deliver or retry.
+ * Operator-only; IDs only.
  */
 export const pendingSignal = query({
   args: { token: v.string() },
   returns: v.array(v.id("feedbackReports")),
   handler: async (ctx, args) => {
     if (await operatorAccess(args.token) !== "granted") throw new ConvexError("unauthorized");
-    const reports = await ctx.db.query("feedbackReports")
-      .withIndex("by_status_and_created_at", (query) => query.eq("status", "pending"))
-      .take(50);
+    const reports = await readyReports(ctx, 50);
     return reports.map((report) => report._id);
+  },
+});
+
+export const deferDelivery = internalMutation({
+  args: { reportId: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, { reportId }) => {
+    const id = ctx.db.normalizeId("feedbackReports", reportId);
+    const report = id ? await ctx.db.get(id) : null;
+    if (!report) return false;
+    if (report.status === "pending" && report.retryAt === undefined) {
+      const retryAt = Date.now() + deliveryRetryMs;
+      await ctx.db.patch(report._id, { retryAt, queuedAt: retryAt });
+      // A database write at expiry wakes the WebSocket subscription, even with no new submissions.
+      await ctx.scheduler.runAt(retryAt, internal.feedback.resumeDelivery, { reportId: report._id, retryAt });
+    }
+    return true;
+  },
+});
+
+export const resumeDelivery = internalMutation({
+  args: { reportId: v.id("feedbackReports"), retryAt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { reportId, retryAt }) => {
+    const report = await ctx.db.get(reportId);
+    if (report?.status === "pending" && report.retryAt === retryAt) {
+      await ctx.db.patch(reportId, { retryAt: undefined });
+    }
+    return null;
   },
 });
 
