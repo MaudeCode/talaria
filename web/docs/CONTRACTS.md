@@ -836,7 +836,9 @@ If the boot workspace is inside Web state, configure a writable workspace
 outside it via `TALARIA_WEB_DEFAULT_WORKSPACE`.
 Workspace registry edits fail when the stored registry cannot be read. Listing
 workspaces can still show the default, and a profile without a registry can
-add its first workspace.
+add its first workspace. Add, remove, rename and reorder apply to the latest
+registry for that profile. A revision conflict retries the edit against the
+winning value, including duplicate and missing-entry checks.
 
 `/api/media` gives a non-owner login its profile's home, without other
 profiles or Web state, and the attachment folder of the session it names, in

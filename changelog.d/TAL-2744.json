@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Simultaneous workspace edits no longer overwrite each other.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

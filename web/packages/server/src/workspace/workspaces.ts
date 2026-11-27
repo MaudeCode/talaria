@@ -310,9 +310,8 @@ export class WorkspaceRegistry {
     if (!this.configResolved(profile)) throw new ConfigUnavailable('config.yaml is unavailable; retry')
   }
 
-  async load(profile: string | null = null, options: { forWrite?: boolean } = {}): Promise<WorkspaceEntry[]> {
-    if (options.forWrite) this.requireResolvedConfig(profile)
-    return (await this.read(profile, false, options.forWrite ?? false))
+  async load(profile: string | null = null): Promise<WorkspaceEntry[]> {
+    return (await this.read(profile, false))
   }
 
   /** TAL-303: the registry as named for display: never rewritten on read, and complete before a profile's config is cached. */
@@ -320,32 +319,37 @@ export class WorkspaceRegistry {
     return (await this.read(profile, true))
   }
 
-  private async read(profile: string | null, forNames: boolean, forWrite = false): Promise<WorkspaceEntry[]> {
+  private withDefaultWorkspace(entries: WorkspaceEntry[], profile: string | null): WorkspaceEntry[] {
+    return entries.length ? entries : [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
+  }
+
+  private async read(profile: string | null, forNames: boolean): Promise<WorkspaceEntry[]> {
     try {
       const key = `${this.profileKey(profile)}.registry`
       const record = await this.deps.documents.get('workspaces', key)
-      if (forWrite) this.requireResolvedConfig(profile)
       if (record) {
         const resolved = this.configResolved(profile)
         const cleaned = this.cleanWorkspaceList(record.value, profile, forNames)
-        if (!forWrite && !forNames && resolved && this.configResolved(profile) && Array.isArray(record.value) && cleaned.length !== record.value.length) {
+        if (!forNames && resolved && this.configResolved(profile) && Array.isArray(record.value) && cleaned.length !== record.value.length) {
           try { await this.deps.documents.put('workspaces', key, cleaned, record.revision) } catch { /* next read reconciles a competing edit */ }
         }
-        return cleaned.length ? cleaned : [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
+        return this.withDefaultWorkspace(cleaned, profile)
       }
-    } catch (error) {
-      if (forWrite) throw error
+    } catch {
       // Malformed or unavailable registry falls back to the profile default.
     }
-    return [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
+    return this.withDefaultWorkspace([], profile)
   }
 
-  async save(workspaces: WorkspaceEntry[], profile: string | null = null): Promise<void> {
+  async edit(profile: string | null, apply: (entries: WorkspaceEntry[]) => WorkspaceEntry[] | Promise<WorkspaceEntry[]>): Promise<WorkspaceEntry[]> {
     this.requireResolvedConfig(profile)
     const key = `${this.profileKey(profile)}.registry`
-    await updateDocument(this.deps.documents, 'workspaces', key, () => {
+    return updateDocument(this.deps.documents, 'workspaces', key, async (value) => {
       this.requireResolvedConfig(profile)
-      return { value: workspaces, result: undefined }
+      const entries = this.withDefaultWorkspace(this.cleanWorkspaceList(value, profile), profile)
+      const updated = await apply(entries)
+      this.requireResolvedConfig(profile)
+      return { value: updated, result: updated }
     })
   }
 
@@ -490,12 +494,12 @@ export class WorkspaceRegistry {
     return isWithin(home, path) || roots.some((root) => isWithin(path, root) || isWithin(root, path))
   }
 
-  private async assertWorkspaceAuthority(candidate: string, profile: string | null, serverOwner: boolean): Promise<void> {
+  private async assertWorkspaceAuthority(candidate: string, profile: string | null, serverOwner: boolean, entries?: readonly WorkspaceEntry[]): Promise<void> {
     if (this.isInWebState(candidate)) throw this.outside(candidate)
     if (serverOwner) return
     if (this.protectedFromNonOwner(candidate)) throw this.outside(candidate)
 
-    const saved = await this.entries(profile)
+    const saved = entries ?? await this.entries(profile)
     const roots = [this.deps.defaultWorkspace(), this.profileConfigDefaultWorkspace(profile), ...saved.map((entry) => entry.path)]
     if (!roots.some((path) => {
       const root = this.resolvePath(path, profile)
@@ -568,7 +572,7 @@ export class WorkspaceRegistry {
   }
 
   /** Less strict than `resolveTrusted`: explicit user intent to register (Python `validate_workspace_to_add`). */
-  async validateToAdd(path: string, profile: string | null, serverOwner: boolean, allowMissing = false): Promise<string> {
+  async validateToAdd(path: string, profile: string | null, serverOwner: boolean, options: { allowMissing?: boolean; entries?: readonly WorkspaceEntry[] } = {}): Promise<string> {
     const cleaned = stripSurroundingQuotes(path)
     const remote = this.remoteTerminalWorkspaceCandidate(cleaned, profile)
     if (remote !== null) return remote
@@ -577,8 +581,8 @@ export class WorkspaceRegistry {
       throw new Error('Path is outside the configured remote terminal workspace')
     }
     const candidate = this.resolvePath(cleaned, profile)
-    await this.assertWorkspaceAuthority(candidate, profile, serverOwner)
-    if (!allowMissing) {
+    await this.assertWorkspaceAuthority(candidate, profile, serverOwner, options.entries)
+    if (!options.allowMissing) {
       const accessError = this.accessError(candidate)
       if (accessError) throw new Error(accessError)
     }
