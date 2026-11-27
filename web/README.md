@@ -453,8 +453,9 @@ S3-compatible bucket (AWS S3, MinIO, a NAS S3 endpoint), set `TALARIA_BLOB_STORA
 standard `AWS_*` environment or the AWS credential chain. Files the Agent reads are downloaded to
 `<state dir>/blob-cache`, capped by `TALARIA_BLOB_CACHE_MAX_MB` (default 2048). An unknown store or an unreachable
 bucket stops startup. To move existing attachments, stop the server and run
-`talaria-web storage copy-blobs --from local --to s3`; it verifies every object, skips ones already copied, and never
-deletes the source.
+`talaria-web storage copy-blobs --from local --to s3`. The command verifies copied objects and skips matching
+ones. If it cannot list or read the source, it exits with an error. Restore access and rerun the same command
+to resume. The command never deletes the source.
 
 Server owners use Settings → Models → **Auxiliary Models → Delegation** to select Default or an
 available registered mode and edit named model/profile routes and their default.

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Attachment migration reports unreadable source directories and files so you can restore access and resume the copy.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

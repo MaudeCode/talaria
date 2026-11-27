@@ -37,7 +37,8 @@ export interface BlobStore {
   delete(key: string): Promise<void>
   /** `prefix` names at least one session: `attachments/<sid>/`. */
   deletePrefix(prefix: string): Promise<number>
-  list(prefix: string): AsyncIterable<BlobStat & { key: string }>
+  /** Fail on inventory errors when completeness is required, such as during a migration. */
+  list(prefix: string, options?: { strict?: boolean }): AsyncIterable<BlobStat & { key: string }>
   /** The size of the copy already at `localPath(key)`, or null when using it would need the store. No network. */
   cachedSize(key: string): number | null
   /**
@@ -232,22 +233,28 @@ export class LocalBlobStore implements BlobStore {
     return count
   }
 
-  async *list(prefix: string): AsyncIterable<BlobStat & { key: string }> {
-    yield* this.walk(prefix)
+  async *list(prefix: string, { strict = false } = {}): AsyncIterable<BlobStat & { key: string }> {
+    yield* this.walk(prefix, strict)
   }
 
-  private *walk(prefix: string): Generator<BlobStat & { key: string }> {
+  private *walk(prefix: string, strict = false): Generator<BlobStat & { key: string }> {
     const parts = blobKeyParts(prefix, { prefix: true })
     const { root, path } = this.locate(parts)
     const stack = [path]
     while (stack.length) {
       const dir = stack.pop()!
       let names: string[]
-      try { names = readdirSync(dir) } catch { continue }
+      try { names = readdirSync(dir) } catch (error) {
+        if (strict) throw new Error(`Cannot read attachment directory ${dir}: ${(error as Error).message}`, { cause: error })
+        continue
+      }
       for (const name of names.sort()) {
         const child = join(dir, name)
         let st: BigIntStats
-        try { st = lstatSync(child, { bigint: true }) } catch { continue }
+        try { st = lstatSync(child, { bigint: true }) } catch (error) {
+          if (strict) throw new Error(`Cannot stat attachment path ${child}: ${(error as Error).message}`, { cause: error })
+          continue
+        }
         if (st.isDirectory()) stack.push(child)
         else if (st.isFile()) {
           const key = blobKeyForPath(root, child)
