@@ -167,6 +167,41 @@ describe('Memory page (TAL-784)', () => {
     await waitFor(() => expect(api.writeMemory).toHaveBeenLastCalledWith({ section: 'memory', content: 'Entry A!?', revision: 'r2', profile: 'default' }))
   })
 
+  it.each([
+    { writer: 'another writer', confirmed: memory('Entry B', 'r3') },
+    { writer: 'a different profile with the same text', confirmed: { ...memory('Entry A!', 'r3'), profile: 'other' } },
+  ])('keeps the reopened draft on its base when the refetch comes from $writer', async ({ confirmed }) => {
+    const profileConflict = 'The active profile changed to other in another tab. Nothing was saved.'
+    let current = memory('Entry A', 'r1')
+    const refetch = Promise.withResolvers<typeof current>()
+    vi.mocked(api.writeMemory).mockImplementation(({ content, revision, profile }) => {
+      if (profile !== current.profile) {
+        return Promise.reject(new ApiError({ kind: 'http', status: 409, path: '/api/memory/write', message: profileConflict, body: { condition: 'profile_changed' } }))
+      }
+      if (revision !== current.memory_revision) {
+        return Promise.reject(new ApiError({ kind: 'http', status: 409, code: 'memory_conflict', path: '/api/memory/write', message: CONFLICT, retryable: false }))
+      }
+      current = { ...current, memory: content, memory_revision: 'saved' }
+      return Promise.resolve({ ok: true, section: 'memory', path: current.memory_path })
+    })
+    renderPage()
+    await userEvent.type(await edit(), '!')
+    vi.mocked(api.fetchMemory).mockImplementationOnce(() => refetch.promise).mockImplementation(() => Promise.resolve(current))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.fetchMemory).toHaveBeenCalledTimes(2))
+    await userEvent.type(await edit(), '?')
+    current = confirmed
+    refetch.resolve(confirmed)
+    const save = screen.getByRole('button', { name: 'Save' })
+    await waitFor(() => expect(save).toBeEnabled())
+    await userEvent.click(save)
+
+    expect(api.writeMemory).toHaveBeenLastCalledWith({ section: 'memory', content: 'Entry A!?', revision: 'r1', profile: 'default' })
+    expect(await screen.findByRole('alert')).toHaveTextContent(confirmed.profile === 'default' ? CONFLICT : profileConflict)
+    expect(screen.getByRole('textbox', { name: 'Memory' })).toHaveValue('Entry A!?')
+    expect(current).toEqual(confirmed)
+  })
+
   it('keeps showing the saved text when the refetch after a save fails', async () => {
     renderPage()
     await userEvent.type(await edit(), '!')
