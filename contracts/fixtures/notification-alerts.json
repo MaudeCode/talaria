@@ -234,6 +234,109 @@
       "expected": "approval"
     },
     {
+      "name": "successive input head",
+      "previous": "waiting_for_input",
+      "next": "waiting_for_input",
+      "previousInputHeadId": "head-1",
+      "inputHeadId": "head-2",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "input"
+    },
+    {
+      "name": "input head heartbeat",
+      "previous": "waiting_for_input",
+      "next": "waiting_for_input",
+      "previousInputHeadId": "head-2",
+      "inputHeadId": "head-2",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "ineligible successive input head",
+      "previous": "waiting_for_input",
+      "next": "waiting_for_input",
+      "previousInputHeadId": "head-1",
+      "inputHeadId": "head-2",
+      "alertEligible": false,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "successive input head with input alerts disabled",
+      "previous": "waiting_for_input",
+      "next": "waiting_for_input",
+      "previousInputHeadId": "head-1",
+      "inputHeadId": "head-2",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": false,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "same input head after leaving the phase",
+      "previous": "running",
+      "next": "waiting_for_input",
+      "previousInputHeadId": "head-2",
+      "inputHeadId": "head-2",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "input phase change without an incoming head",
+      "previous": "running",
+      "next": "waiting_for_input",
+      "previousInputHeadId": "head-1",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "input"
+    },
+    {
+      "name": "first input head observed while already waiting",
+      "previous": "waiting_for_input",
+      "next": "waiting_for_input",
+      "inputHeadId": "head-2",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
       "name": "unchanged completed",
       "previous": "completed",
       "next": "completed",

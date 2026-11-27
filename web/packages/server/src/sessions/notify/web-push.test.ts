@@ -322,6 +322,34 @@ it('pushes each successive approval head once while the run waits for approval',
   }
 })
 
+it('pushes distinct notifications for successive clarification heads', async () => {
+  const server = await bootTestServer()
+  try {
+    const push = stubPushService(server)
+    const keys = browserKeys()
+    expect((await send(server, 'POST', PUSH_PATH, { endpoint: ENDPOINT, keys })).status).toBe(200)
+    const sid = String(((await json(await send(server, 'POST', '/api/session/new', {}))).session as Json).session_id)
+    const stream = 'stream-questions'
+    server.deps.registry.activeRuns.set(stream, { stream_id: stream, session_id: sid, started_at: 1, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+    const settle = async (): Promise<void> => { server.deps.notifications.changed(); await server.deps.webPush.idle() }
+    await settle()
+
+    server.deps.pending.submitClarify(sid, { clarify_id: 'first', question: 'Which branch?' })
+    server.deps.pending.submitClarify(sid, { clarify_id: 'second', question: 'Which tag?' })
+    await settle()
+    expect(push.pushes).toHaveLength(1)
+
+    server.deps.pending.resolveClarify(sid, 'first')
+    await settle()
+    await settle()
+    const payloads = push.pushes.map((sent) => keys.decrypt(Buffer.from(sent.init.body as Uint8Array)))
+    expect(payloads.map((payload) => payload.body)).toEqual(['Input needed', 'Input needed'])
+    expect(new Set(payloads.map((payload) => payload.tag)).size).toBe(2)
+  } finally {
+    await server.close()
+  }
+})
+
 describe('Web Push under person isolation (TAL-48)', () => {
   it('alerts only the person whose session needs them', async () => {
     const issuer = 'https://identity.invalid'

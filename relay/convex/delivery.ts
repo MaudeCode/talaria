@@ -233,6 +233,7 @@ async function enqueueJob(
     sourcePublisherId?: string;
     sourceSessionId?: string;
     sourceApprovalHeadId?: string;
+    sourceInputHeadId?: string;
     sourceDecisionReviewId?: string;
     sourceAgentNotifyId?: string;
     sourceServerNoticeId?: string;
@@ -264,6 +265,7 @@ async function enqueueJob(
     sourcePublisherId: input.sourcePublisherId,
     sourceSessionId: input.sourceSessionId,
     sourceApprovalHeadId: input.sourceApprovalHeadId,
+    sourceInputHeadId: input.sourceInputHeadId,
     sourceDecisionReviewId: input.sourceDecisionReviewId,
     sourceAgentNotifyId: input.sourceAgentNotifyId,
     sourceServerNoticeId: input.sourceServerNoticeId,
@@ -431,6 +433,7 @@ export const recompute = internalMutation({
       sessionId: v.string(),
       previousPhase: v.optional(sessionPhaseValidator),
       previousApprovalHeadId: v.optional(v.string()),
+      previousInputHeadId: v.optional(v.string()),
       previousDecisionReviewId: v.optional(v.string()),
       previousAgentNotifyIds: v.optional(v.array(v.string())),
       state: v.optional(storedSessionStateValidator),
@@ -498,12 +501,12 @@ export const recompute = internalMutation({
           candidate.publisherId === transition.publisherId &&
           candidate.sessionId === transition.sessionId,
       );
-      return state ? [{ state, previousPhase: transition.previousPhase, previousApprovalHeadId: transition.previousApprovalHeadId, previousDecisionReviewId: transition.previousDecisionReviewId, previousAgentNotifyIds: transition.previousAgentNotifyIds }] : [];
+      return state ? [{ ...transition, state }] : [];
     });
     // The alerts a device's preferences and publisher subscriptions allow for this run's transitions.
-    const alertsFor = (device: Doc<"devices">) => changed.flatMap(({ state, previousPhase, previousApprovalHeadId, previousDecisionReviewId }) => {
+    const alertsFor = (device: Doc<"devices">) => changed.flatMap(({ state, previousPhase, previousApprovalHeadId, previousDecisionReviewId, previousInputHeadId }) => {
       if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
-      const alert = alertForTransition(previousPhase ?? null, state, device.preferences, previousApprovalHeadId, previousDecisionReviewId);
+      const alert = alertForTransition(previousPhase ?? null, state, device.preferences, previousApprovalHeadId, previousDecisionReviewId, previousInputHeadId);
       return alert ? [{ alert, state }] : [];
     });
     // TAL-1970: agent notices a device's publisher subscriptions allow; each is its own notification, never a Live
@@ -538,8 +541,8 @@ export const recompute = internalMutation({
       // it, so heartbeats, retention, and idle recomputes cannot alert for the suppressed event.
       const visibleChanges = changed.filter(({ state }) => !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId));
       const ineligibleChange = visibleChanges.some(({ state }) => state.alertEligible === false);
-      const eligibleTransition = visibleChanges.some(({ state, previousPhase, previousApprovalHeadId, previousDecisionReviewId }) =>
-        (previousPhase === undefined || isAttentionTransition(previousPhase, previousApprovalHeadId, state)
+      const eligibleTransition = visibleChanges.some(({ state, previousPhase, previousApprovalHeadId, previousDecisionReviewId, previousInputHeadId }) =>
+        (previousPhase === undefined || isAttentionTransition(previousPhase, previousApprovalHeadId, state, previousInputHeadId)
           || (!!state.decisionReviewId && state.decisionReviewId !== previousDecisionReviewId))
           && state.alertEligible !== false,
       );
@@ -747,12 +750,17 @@ export const recompute = internalMutation({
             ? standaloneAlerts
             : alerts.slice(0, 1);
           for (const { alert, state: notificationState } of notificationAlerts) {
-            // An approval alert is keyed by its queue head rather than the snapshot that revealed it, so a later
+            // A prompt alert is keyed by its queue head rather than the snapshot that revealed it, so a later
             // snapshot of the same head neither drops a retrying delivery nor queues a second alert.
             // TAL-1966: a decision review alert is keyed by its review, so it is queued once whichever snapshot carried it.
             const decisionReviewId = alert.deepLink !== undefined ? notificationState.decisionReviewId : undefined;
             const approvalHeadId = decisionReviewId === undefined && activityPhase(notificationState) === "waiting_for_approval"
               ? notificationState.approvalHeadId
+              : undefined;
+            const inputHeadId = alert.category === "talaria.input" ? alert.headId : undefined;
+            const sessionKey = [notificationState.publisherId, notificationState.sessionId];
+            const promptKey = inputHeadId !== undefined ? `input:${JSON.stringify([...sessionKey, inputHeadId])}`
+              : approvalHeadId !== undefined ? `approval:${JSON.stringify([...sessionKey, approvalHeadId])}`
               : undefined;
             await enqueueJob(ctx, {
               userId: args.userId,
@@ -761,6 +769,7 @@ export const recompute = internalMutation({
               sourcePublisherId: notificationState.publisherId,
               sourceSessionId: notificationState.sessionId,
               sourceApprovalHeadId: approvalHeadId,
+              sourceInputHeadId: inputHeadId,
               sourceDecisionReviewId: decisionReviewId,
               request: makeNotification({
                 token: device.pushToken,
@@ -769,13 +778,12 @@ export const recompute = internalMutation({
                 alert,
                 row: rowForState(notificationState),
                 // The relay keys a chat by publisher and session (one sessionStates row each); base64url SHA-256 fits APNs' 64-byte limit.
-                threadId: await sha256(JSON.stringify(["alert", notificationState.publisherId, notificationState.sessionId])),
+                threadId: await sha256(JSON.stringify(["alert", ...sessionKey])),
+                ...(inputHeadId !== undefined ? { collapseId: await sha256(JSON.stringify(["input", ...sessionKey, inputHeadId])) } : {}),
               }),
               stateFingerprint: decisionReviewId !== undefined
                 ? `notification:decision:${JSON.stringify([notificationState.publisherId, notificationState.sessionId, notificationState.decisionReviewId])}:${device.deviceId}`
-                : approvalHeadId === undefined
-                ? `notification:${notificationState.eventId}:${device.deviceId}`
-                : `notification:approval:${JSON.stringify([notificationState.publisherId, notificationState.sessionId, approvalHeadId])}:${device.deviceId}`,
+                : `notification:${promptKey ?? notificationState.eventId}:${device.deviceId}`,
               now,
             });
           }
@@ -784,6 +792,16 @@ export const recompute = internalMutation({
     return null;
   },
 });
+
+function notificationEventMatches(job: Doc<"deliveryJobs">, state: Doc<"sessionStates">): boolean {
+  if (job.sourceApprovalHeadId !== undefined) {
+    return activityPhase(state) === "waiting_for_approval" && state.approvalHeadId === job.sourceApprovalHeadId;
+  }
+  if (job.sourceInputHeadId !== undefined) {
+    return activityPhase(state) === "waiting_for_input" && state.inputHeadId === job.sourceInputHeadId;
+  }
+  return job.stateFingerprint.includes(`:${state.eventId}:`);
+}
 
 export const claimJob = internalMutation({
   args: { jobId: v.id("deliveryJobs"), now: v.number() },
@@ -966,9 +984,7 @@ export const claimJob = internalMutation({
                 (job.sourceDecisionReviewId !== undefined
                   ? state.decisionReviewId !== job.sourceDecisionReviewId || !device.preferences.notifyOnInput
                   : (job.kind === "notification" && !alertForState(state, device.preferences)) ||
-                    (job.sourceApprovalHeadId === undefined
-                      ? !job.stateFingerprint.includes(`:${state.eventId}:`)
-                      : activityPhase(state) !== "waiting_for_approval" || state.approvalHeadId !== job.sourceApprovalHeadId))))))
+                    !notificationEventMatches(job, state))))))
         ) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           return { status: "stale" as const };

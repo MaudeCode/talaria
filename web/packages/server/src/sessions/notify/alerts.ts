@@ -76,20 +76,21 @@ const KIND_BY_PHASE: Record<string, { kind: AlertKind; pref: keyof AlertPreferen
 /**
  * No alert on a first publication or an ineligible state (a Talaria tab is open). TAL-1966: a decision review the row
  * did not hold before alerts once under the input preference, whatever the phase did. When both states name an
- * approval head, its identity decides whether to alert. Otherwise the phase decides.
+ * approval or input head, its identity decides whether to alert. Otherwise the phase decides.
  */
 export function alertForTransition(
   previous: string | null,
-  next: { phase: string; alertEligible: boolean; approvalHeadId?: string | undefined; decisionReviewId?: string | undefined },
+  next: { phase: string; alertEligible: boolean; approvalHeadId?: string | undefined; inputHeadId?: string | undefined; decisionReviewId?: string | undefined },
   preferences: AlertPreferences,
   previousDecisionReviewId?: string | null,
   previousApprovalHeadId?: string,
+  previousInputHeadId?: string,
 ): AlertKind | null {
   if (!previous || !next.alertEligible) return null
   if (next.decisionReviewId && next.decisionReviewId !== previousDecisionReviewId && preferences.notify_on_input) return 'decision'
-  const transitioned = next.phase === 'waiting_for_approval' && next.approvalHeadId !== undefined && previousApprovalHeadId !== undefined
-    ? next.approvalHeadId !== previousApprovalHeadId
-    : previous !== next.phase
+  const head = next.phase === 'waiting_for_approval' ? next.approvalHeadId : next.phase === 'waiting_for_input' ? next.inputHeadId : undefined
+  const previousHead = next.phase === 'waiting_for_approval' ? previousApprovalHeadId : previousInputHeadId
+  const transitioned = head !== undefined && previousHead !== undefined ? head !== previousHead : previous !== next.phase
   if (!transitioned) return null
   const entry = KIND_BY_PHASE[next.phase]
   return entry && preferences[entry.pref] ? entry.kind : null

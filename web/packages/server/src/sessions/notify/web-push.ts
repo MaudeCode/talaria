@@ -88,6 +88,7 @@ interface SeenActivity {
   phase: string
   streamId: ActivityState['streamId']
   approvalHeadId: string | undefined
+  inputHeadId: string | undefined
   decision: string | null
   notices: string[]
 }
@@ -271,17 +272,19 @@ export class WebPushChannel implements NotificationChannel {
         const phase = row.activityPhase ?? row.phase
         const seen = previous?.get(row.sessionId)
         // A seen head belongs to this run, including phases where the row has no head.
-        const previousApprovalHeadId = seen && seen.streamId === row.streamId ? seen.approvalHeadId : undefined
+        const sameRun = seen?.streamId === row.streamId ? seen : undefined
         next.set(row.sessionId, {
-          phase, streamId: row.streamId, approvalHeadId: row.approvalHeadId ?? previousApprovalHeadId,
+          phase, streamId: row.streamId, approvalHeadId: row.approvalHeadId ?? sameRun?.approvalHeadId,
+          inputHeadId: row.inputHeadId ?? sameRun?.inputHeadId,
           decision: row.decisionReviewId ?? null, notices: (row.agentNotices ?? []).map((notice) => notice.id),
         })
         if (!previous) continue
         for (const sub of subs) {
           if (sub.profile !== profile || !personMaySee(access.get(sub), row.ownerPersonId)) continue
           const kind = alertForTransition(seen?.phase ?? null, {
-            phase, alertEligible: row.alertEligible, approvalHeadId: row.approvalHeadId, decisionReviewId: row.decisionReviewId,
-          }, sub.preferences, seen?.decision, previousApprovalHeadId)
+            phase, alertEligible: row.alertEligible, approvalHeadId: row.approvalHeadId, inputHeadId: row.inputHeadId,
+            decisionReviewId: row.decisionReviewId,
+          }, sub.preferences, seen?.decision, sameRun?.approvalHeadId, sameRun?.inputHeadId)
           if (kind) this.track(this.deliver(sub, row, kind))
           const notices = agentNotifyAlerts(seen?.notices, row.agentNotices)
           if (notices.length) this.queueNotices(sub, row, notices)
@@ -326,6 +329,7 @@ export class WebPushChannel implements NotificationChannel {
 
   private async deliver(sub: Subscription, row: ActivityState, alert: AlertKind | AgentNotice): Promise<void> {
     const session = `/session/${encodeURIComponent(row.sessionId)}`
+    const tag = alert === 'input' && row.inputHeadId ? `input:${row.inputHeadId}` : row.sessionId
     // The Relay deep link is the app's route; the browser opens the Web chat, resolved against the worker's mount scope.
     // TAL-1966: a decision review alert opens the review and keeps its own tag, so the run's later alert never replaces it.
     // TAL-1970: an agent notice opens the session under its own tag, so the run's later alert never replaces it either.
@@ -335,7 +339,7 @@ export class WebPushChannel implements NotificationChannel {
         ? { title: ALERT_BODY.decision, body: row.decisionReviewTitle ?? '', tag: `decision:${row.decisionReviewId}`, url: `/decisions/${encodeURIComponent(row.decisionReviewId)}` }
         : alert === 'completion'
           ? completionNotification(row.sessionId, await this.deps.session?.(row.sessionId).catch(() => null) ?? { title: row.title }, this.deps.redactEnabled?.() ?? true, row.streamId)
-          : { title: row.title, body: alertBody(alert, row.currentTool), tag: row.sessionId, url: session })
+          : { title: row.title, body: alertBody(alert, row.currentTool), tag, url: session })
     await this.send(sub, payload, typeof alert === 'object' ? alert.level === 'attention' : alert === 'approval' || alert === 'input')
   }
 

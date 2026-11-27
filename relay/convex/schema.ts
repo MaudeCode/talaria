@@ -199,6 +199,7 @@ export default defineSchema({
     approvalHeadId: v.optional(v.string()),
     // TAL-1469: the question queue head while the session waits for input, so a notification's Reply answers only it.
     inputHeadId: v.optional(v.string()),
+    lastInputHeadId: v.optional(v.string()),
     // TAL-1966: the session's newest decision review by creation; a review the state did not hold before alerts once.
     decisionReviewId: v.optional(v.string()),
     decisionReviewTitle: v.optional(v.string()),
@@ -272,6 +273,7 @@ export default defineSchema({
     sourceSessionId: v.optional(v.string()),
     // An approval alert stays deliverable, through retries, while this head is still the session's head.
     sourceApprovalHeadId: v.optional(v.string()),
+    sourceInputHeadId: v.optional(v.string()),
     // TAL-1966: a decision review alert stays deliverable while the session still holds this review.
     sourceDecisionReviewId: v.optional(v.string()),
     // TAL-1970: an agent notice alert stays deliverable through retries while its session state exists.

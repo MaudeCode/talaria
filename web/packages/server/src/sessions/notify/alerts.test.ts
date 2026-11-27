@@ -4,15 +4,15 @@ import { expect, it } from 'vitest'
 import { agentNotifyAlerts, alertBody, alertForTransition, completionNotification, serverNoticeAllowed, type AlertKind, type AlertPreferences } from './alerts.js'
 
 // The relay applies the same vectors (relay/tests/notificationAlerts.test.ts), so the rule cannot drift.
-interface Vector { name: string; previous: string | null; next: string; alertEligible: boolean; previousApprovalHeadId?: string; approvalHeadId?: string; previousDecisionReviewId?: string | null; decisionReviewId?: string; preferences: AlertPreferences; expected: AlertKind | null }
+interface Vector { name: string; previous: string | null; next: string; alertEligible: boolean; previousApprovalHeadId?: string; approvalHeadId?: string; previousInputHeadId?: string; inputHeadId?: string; previousDecisionReviewId?: string | null; decisionReviewId?: string; preferences: AlertPreferences; expected: AlertKind | null }
 interface NoticeVector { name: string; previousAgentNotifyIds: string[]; agentNotices: { id: string }[]; expected: string[] }
 interface ServerNoticeVector { name: string; owner: boolean; preferences: Partial<AlertPreferences>; expected: boolean }
 const { vectors, agentNotify, serverNotice } = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../../contracts/fixtures/notification-alerts.json'), 'utf8')) as { vectors: Vector[]; agentNotify: NoticeVector[]; serverNotice: ServerNoticeVector[] }
 
 it.each(vectors)('shared alert rule: $name', (vector) => {
   expect(alertForTransition(vector.previous, {
-    phase: vector.next, alertEligible: vector.alertEligible, approvalHeadId: vector.approvalHeadId, decisionReviewId: vector.decisionReviewId,
-  }, vector.preferences, vector.previousDecisionReviewId, vector.previousApprovalHeadId)).toBe(vector.expected)
+    phase: vector.next, alertEligible: vector.alertEligible, approvalHeadId: vector.approvalHeadId, inputHeadId: vector.inputHeadId, decisionReviewId: vector.decisionReviewId,
+  }, vector.preferences, vector.previousDecisionReviewId, vector.previousApprovalHeadId, vector.previousInputHeadId)).toBe(vector.expected)
 })
 
 // TAL-1970: the server stamps a row only with an unmuted notice, so neither presence nor preferences enter the rule.

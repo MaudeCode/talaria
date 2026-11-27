@@ -12,6 +12,8 @@ interface Vector {
   alertEligible: boolean;
   previousApprovalHeadId?: string;
   approvalHeadId?: string;
+  previousInputHeadId?: string;
+  inputHeadId?: string;
   previousDecisionReviewId?: string | null;
   decisionReviewId?: string;
   preferences: Record<"notify_on_approval" | "notify_on_input" | "notify_on_completion" | "notify_on_failure", boolean>;
@@ -32,6 +34,7 @@ it.each(vectors)("shared alert rule: $name", (vector) => {
     title: "Session", phase: vector.next, updatedAt: now, deepLink: "/sessions/s1", expiresAt: now + 60_000, terminalExpiresAt: now + 60_000,
     ...(vector.alertEligible ? {} : { alertEligible: false }),
     ...(vector.approvalHeadId === undefined ? {} : { approvalHeadId: vector.approvalHeadId }),
+    ...(vector.inputHeadId === undefined ? {} : { inputHeadId: vector.inputHeadId }),
     ...(vector.decisionReviewId ? { decisionReviewId: vector.decisionReviewId, decisionReviewTitle: "Release choices" } : {}),
   };
   const preferences = {
@@ -41,7 +44,7 @@ it.each(vectors)("shared alert rule: $name", (vector) => {
     notifyOnCompletion: vector.preferences.notify_on_completion,
     notifyOnFailure: vector.preferences.notify_on_failure,
   };
-  const alert = alertForTransition(vector.previous, next, preferences, vector.previousApprovalHeadId, vector.previousDecisionReviewId);
+  const alert = alertForTransition(vector.previous, next, preferences, vector.previousApprovalHeadId, vector.previousDecisionReviewId, vector.previousInputHeadId);
   if (vector.expected === null) expect(alert).toBeNull();
   else if (vector.expected === "decision") expect(alert).toMatchObject({ title: "Decision review ready", body: "Release choices", deepLink: `/decisions/${String(vector.decisionReviewId)}` });
   else if (vector.expected === "approval") expect(alert?.body).toBe("An agent run is waiting for your approval.");

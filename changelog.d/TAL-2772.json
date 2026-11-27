@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Get a separate notification for each question an agent asks in the same run.",
+      "highlight": false,
+      "components": ["web", "relay"]
+    }
+  ]
+}
