@@ -296,7 +296,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
       <div className="flex items-center gap-1 border-b border-border-subtle px-3 py-1" data-files-toolbar>
         {sourceControl}
         <span data-files-workspace={managed ? undefined : ''} className="min-w-0 flex-1 truncate font-mono text-xs text-muted" title={managed ? undefined : workspace}>{managed ? '' : `${workspace}${g?.is_git && g.branch ? ` · ${g.branch}${g.dirty ? ` (${g.dirty}±)` : ''}` : ''}`}</span>
-        {!managed && <IconButton label={m.ws_panel_hidden()} active={showHidden} className="h-7 w-7" onClick={() => setShowHidden((h) => !h)}>{showHidden ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}</IconButton>}
+        {!managed && <IconButton label={m.ws_panel_hidden()} active={showHidden} aria-pressed={showHidden} className="h-7 w-7" onClick={() => setShowHidden((h) => !h)}>{showHidden ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}</IconButton>}
         <IconButton label={m.refresh()} className="h-7 w-7" onClick={() => { void listing.refetch(); if (!managed) void git.refetch(); if (file) void content.refetch() }}><RefreshCw size={14} aria-hidden="true" /></IconButton>
       </div>
       {file ? (

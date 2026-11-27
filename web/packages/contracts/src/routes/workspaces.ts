@@ -53,7 +53,12 @@ export const workspacesContract = {
     reorder: oc.route({ method: 'POST', path: '/api/workspaces/reorder', tags }).input(z.object({ paths: Json })).output(WorkspacesMutation),
   },
   files: {
-    list: oc.route({ method: 'GET', path: '/api/list', tags: ['files'] }).input(z.object({ session_id: z.string(), path: z.string().optional(), source: FileSource })).output(DirListingSchema),
+    list: oc.route({ method: 'GET', path: '/api/list', tags: ['files'] }).input(z.object({
+      session_id: z.string(),
+      path: z.string().optional(),
+      source: FileSource,
+      show_hidden: z.enum(['0', '1']).optional().describe('Set to 1 to include dot-prefixed entries in a workspace listing. Omission or 0 hides them. Managed buffers ignore this parameter.'),
+    })).output(DirListingSchema),
     read: oc.route({ method: 'GET', path: '/api/file', tags: ['files'], spec: workspaceTextSizeSpec }).input(SessionPath.extend({ source: FileSource })).output(FileRead),
     save: oc.route({ method: 'POST', path: '/api/file/save', tags: ['files'], spec: workspaceTextSizeSpec }).input(FileReplacement.extend({ source: FileSource })).output(OkPath.extend({ size: z.number().int(), source: FileSource, revision: SavedFileRevision })),
     /** TAL-262: saves an editable `.docx` preview's text as its paragraphs; `.xlsx` and `.pptx` are preview-only (400). */

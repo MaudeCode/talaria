@@ -519,7 +519,7 @@ function birthtimeNs(st: import('node:fs').BigIntStats | null): bigint | null {
 }
 
 /** Python `list_dir`: bounded, sorted (symlinks, dirs, files), symlink-aware listing. */
-export function listDir(workspace: string, rel = '.'): DirEntry[] {
+export function listDir(workspace: string, rel = '.', { showHidden = true } = {}): DirEntry[] {
   const target = safeResolveWs(workspace, rel)
   let st
   try {
@@ -529,13 +529,15 @@ export function listDir(workspace: string, rel = '.'): DirEntry[] {
   }
   if (!st.isDirectory()) throw new NotFoundError(`Not a directory: ${rel}`)
   const wsResolved = resolvePathLikePython(workspace)
-  return withAnchoredDir(workspace, target, (child) => listAnchored(target, rel, wsResolved, child))
+  return withAnchoredDir(workspace, target, (child) => listAnchored(target, rel, wsResolved, child, showHidden))
 }
 
-function listAnchored(target: string, rel: string, wsResolved: string, child: (name: string) => string): DirEntry[] {
+function listAnchored(target: string, rel: string, wsResolved: string, child: (name: string) => string, showHidden: boolean): DirEntry[] {
   const entries: DirEntry[] = []
+  const children = readdirSync(child('.'), { withFileTypes: true })
+  const visible = showHidden ? children : children.filter((de) => !de.name.startsWith('.'))
   // Keys are computed once per entry. The whole directory is sorted because the walk below drops symlinks, so the 200 kept cannot be chosen up front.
-  const ranked = readdirSync(child('.'), { withFileTypes: true }).map((de) => ({ de, rank: de.isSymbolicLink() ? 0 : de.isFile() ? 2 : 1, key: de.name.toLowerCase() }))
+  const ranked = visible.map((de) => ({ de, rank: de.isSymbolicLink() ? 0 : de.isFile() ? 2 : 1, key: de.name.toLowerCase() }))
   ranked.sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
   for (const { de } of ranked) {
     if (entries.length >= 200) break

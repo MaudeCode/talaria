@@ -263,13 +263,13 @@ final class ContractReadinessTests: APIClientTestCase {
                 name: "directory list root",
                 endpoint: .directoryList(sessionID: "session-123", path: nil),
                 path: "/api/list",
-                query: ["session_id": "session-123"]
+                query: ["session_id": "session-123", "show_hidden": "1"]
             ),
             .init(
                 name: "directory list nested",
                 endpoint: .directoryList(sessionID: "session-123", path: "Sources/App.swift"),
                 path: "/api/list",
-                query: ["session_id": "session-123", "path": "Sources/App.swift"]
+                query: ["session_id": "session-123", "path": "Sources/App.swift", "show_hidden": "1"]
             ),
             .init(
                 name: "file",

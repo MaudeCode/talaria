@@ -86156,6 +86156,21 @@
             },
             "allowEmptyValue": true,
             "allowReserved": true
+          },
+          {
+            "name": "show_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "0",
+                "1"
+              ],
+              "type": "string",
+              "description": "Set to 1 to include dot-prefixed entries in a workspace listing. Omission or 0 hides them. Managed buffers ignore this parameter."
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
           }
         ],
         "responses": {

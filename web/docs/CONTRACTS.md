@@ -405,6 +405,14 @@ Mermaid rendering disables links and images. Calls that omit kind still render
 Mermaid for older clients. The App displays the returned SVG in WebKit image
 mode with JavaScript disabled.
 
+## Workspace file listings
+
+`GET /api/list` hides dot-prefixed workspace entries when `show_hidden` is
+omitted or set to `0`. Set it to `1` to include those entries. The server
+applies the filter before the 200-entry limit and computes the signature from
+the returned rows. The App requests `1` to preserve its existing file browser
+behavior. Managed buffers and read-only escape grants use their own listings.
+
 ## Files HTML preview
 
 `files.read` answers an HTML file with `preview_url`,
