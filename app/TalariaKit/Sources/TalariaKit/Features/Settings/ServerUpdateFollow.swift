@@ -1,7 +1,7 @@
 import Foundation
 
 /// How an update started from Settings ended, read from the server's update
-/// notification (`notification_id` on the apply response).
+/// notification.
 public enum ServerUpdateCompletion: Equatable, Sendable {
     case succeeded
     /// Active work blocked the restart; carries the server's explanation.
@@ -16,14 +16,16 @@ public enum ServerUpdateCompletion: Equatable, Sendable {
 }
 
 public extension APIClient {
-    /// Polls the update's notification until the server marks it inactive. The
-    /// server drops connections while it restarts, so a failed poll keeps waiting.
+    /// Polls the update's notification until the server marks it inactive. If the
+    /// apply reply was lost, the request's unique tab ID resolves its notification.
     func followUpdate(
-        notificationID: String,
+        notificationID: String?,
+        tabID: String? = nil,
         interval: Duration = .seconds(2),
         timeout: Duration = .seconds(600),
         sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async -> ServerUpdateCompletion {
+        guard notificationID != nil || tabID != nil else { return .untracked }
         var waited = Duration.zero
         while waited < timeout {
             do {
@@ -32,11 +34,15 @@ public extension APIClient {
                 return .timedOut
             }
             waited += interval
-            guard let response = try? await updateNotifications() else { continue }
-            guard let record = response.notifications.first(where: { $0.id == notificationID }) else {
-                return .untracked
+            guard let response = try? await updateNotifications(tabID: tabID) else { continue }
+            let record: UpdateNotificationRecord?
+            if let notificationID {
+                record = response.notifications.first { $0.id == notificationID }
+                if record == nil { return .untracked }
+            } else {
+                record = response.tabUpdate
             }
-            if !record.active { return record.completion }
+            if let record, !record.active { return record.completion }
         }
         return .timedOut
     }

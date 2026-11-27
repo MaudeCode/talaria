@@ -56,6 +56,29 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         XCTAssertTrue(response.displayMessage(default: "fallback").contains("active chat stream"))
     }
 
+    func testWebInterruptDecodesTheSharedOfferAndRefusals() throws {
+        let fixture = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: sharedContractFixture("web-update-interrupt")) as? [String: [String: Any]]
+        )
+        let offered = try XCTUnwrap(fixture["offered"])
+        let wireOffer = try XCTUnwrap(offered["interrupt_confirmation"] as? [String: Any])
+        let decoder = APIClient.responseDecoder()
+        let offer = try decoder.decode(UpdatesApplyResponse.self, from: JSONSerialization.data(withJSONObject: offered))
+        XCTAssertEqual(offer.outcome, .restartBlocked)
+        XCTAssertEqual(offer.interruptConfirmation?.token, wireOffer["token"] as? String)
+        XCTAssertEqual(offer.interruptConfirmation?.runs, wireOffer["runs"] as? Int)
+        XCTAssertEqual(offer.interruptConfirmation?.expiresAt, wireOffer["expires_at"] as? String)
+
+        for (key, outcome) in [("not_offered", UpdatesApplyResponse.Outcome.restartBlocked),
+                               ("interrupt_failed", .failed), ("confirmed", .applying)] {
+            let body = try XCTUnwrap(fixture[key])
+            let response = try decoder.decode(UpdatesApplyResponse.self, from: JSONSerialization.data(withJSONObject: body))
+            XCTAssertEqual(response.outcome, outcome, key)
+            XCTAssertNil(response.interruptConfirmation, key)
+            XCTAssertEqual(response.notificationId, body["notification_id"] as? String, key)
+        }
+    }
+
     func testNotOkResponsesAreFailed() throws {
         for json in [
             #"{ "ok": false, "message": "Update already in progress" }"#,
@@ -86,6 +109,10 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         XCTAssertNil(response.ok)
         XCTAssertNil(response.message)
         XCTAssertEqual(response.outcome, .failed)
+
+        let malformed = try decodeApply(#"{"restart_blocked":true,"interrupt_confirmation":{"token":"bad","runs":0}}"#)
+        XCTAssertEqual(malformed.outcome, .restartBlocked)
+        XCTAssertNil(malformed.interruptConfirmation)
     }
 
     func testUpdateNotificationRequestsUseTypedRoutesAndDecodeServerCapabilities() async throws {

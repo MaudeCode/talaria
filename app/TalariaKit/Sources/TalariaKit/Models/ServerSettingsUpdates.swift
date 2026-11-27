@@ -243,16 +243,43 @@ extension UpdatesCheckResponse {
 /// recovery handoff, or a failure such as a merge conflict) and may add more over
 /// time. Only the keys `outcome` and `displayMessage` read are decoded.
 public struct UpdatesApplyResponse: Decodable, Equatable, Sendable {
+    public struct InterruptConfirmation: Decodable, Equatable, Sendable {
+        let token: String
+        public let runs: Int
+        let expiresAt: String
+    }
+
     let ok: Bool?
+    let status: String?
     let message: String?
     let restartBlocked: Bool?
     let recoveryPending: Bool?
     public let notificationId: String?
+    public let interruptConfirmation: InterruptConfirmation?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, status, message, restartBlocked, recoveryPending, notificationId, interruptConfirmation
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try values.decodeIfPresent(Bool.self, forKey: .ok)
+        status = try values.decodeIfPresent(String.self, forKey: .status)
+        message = try values.decodeIfPresent(String.self, forKey: .message)
+        restartBlocked = try values.decodeIfPresent(Bool.self, forKey: .restartBlocked)
+        recoveryPending = try values.decodeIfPresent(Bool.self, forKey: .recoveryPending)
+        notificationId = try values.decodeIfPresent(String.self, forKey: .notificationId)
+        let offer = try? values.decode(InterruptConfirmation.self, forKey: .interruptConfirmation)
+        interruptConfirmation = offer.flatMap {
+            $0.runs > 0 && $0.token.range(of: "^[a-f0-9]{32}$", options: .regularExpression) != nil ? $0 : nil
+        }
+    }
 }
 
 public struct UpdateNotificationsResponse: Decodable, Equatable, Sendable {
     let scopeId: String
     public let notifications: [UpdateNotificationRecord]
+    let tabUpdate: UpdateNotificationRecord?
     public let unreadCount: Int
     public let clearableCount: Int
     public let canClear: Bool
@@ -325,7 +352,7 @@ extension UpdatesApplyResponse {
     }
 
     public var outcome: Outcome {
-        if recoveryPending == true { return .applying }
+        if recoveryPending == true || status == "already_in_progress" { return .applying }
 
         // A restart-blocked response always carries `ok: false`, so check the
         // blocked flag first to avoid mislabelling it as a hard failure.

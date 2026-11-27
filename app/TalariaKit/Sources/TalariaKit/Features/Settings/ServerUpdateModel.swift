@@ -20,7 +20,7 @@ public final class ServerUpdateModel {
         case idle
         case applying
         case recovering
-        case blocked(message: String)
+        case blocked(message: String, confirmation: UpdatesApplyResponse.InterruptConfirmation? = nil)
         case failed(Failure)
     }
 
@@ -37,15 +37,17 @@ public final class ServerUpdateModel {
     public private(set) var isCheckingForUpdates = false
     public private(set) var forcedCheckOutcome: UpdatesCheckResponse.ForcedCheckOutcome?
     @ObservationIgnored private var loadGeneration = 0
+    @ObservationIgnored private var confirmationGeneration = 0
+    @ObservationIgnored private var offeredProfileSwitch: Int?
     @ObservationIgnored private var isReconciling = false
     @ObservationIgnored private let client: APIClient
-    @ObservationIgnored private let follow: (String) async -> ServerUpdateCompletion
+    @ObservationIgnored private let follow: (String?, String?) async -> ServerUpdateCompletion
 
     public convenience init(client: APIClient) {
-        self.init(client: client, follow: { await client.followUpdate(notificationID: $0) })
+        self.init(client: client, follow: { await client.followUpdate(notificationID: $0, tabID: $1) })
     }
 
-    init(client: APIClient, follow: @escaping (String) async -> ServerUpdateCompletion) {
+    init(client: APIClient, follow: @escaping (String?, String?) async -> ServerUpdateCompletion) {
         self.client = client
         self.follow = follow
     }
@@ -110,36 +112,73 @@ public final class ServerUpdateModel {
         return true
     }
 
-    public func apply(settingsStore: ServerSettingsStore? = nil, onAPIError: (Error) -> Void = { _ in }) async {
+    /// Consent belongs to this visit to System settings, even if the blocked reply is still in flight.
+    public func discardInterruptConfirmation() {
+        confirmationGeneration += 1
+        offeredProfileSwitch = nil
+        if case let .blocked(message, .some) = applyPhase {
+            applyPhase = .blocked(message: message)
+        }
+    }
+
+    public func apply(
+        interrupting confirmation: UpdatesApplyResponse.InterruptConfirmation? = nil,
+        settingsStore: ServerSettingsStore? = nil,
+        onAPIError: (Error) -> Void = { _ in }
+    ) async {
         guard !isCheckingForUpdates, !isApplying else { return }
+        let profileSwitch = ActiveServerProfile.switchCount(for: client.baseURL)
+        if let confirmation {
+            guard case let .blocked(_, offered) = applyPhase, offered == confirmation else { return }
+            guard offeredProfileSwitch == profileSwitch else {
+                discardInterruptConfirmation()
+                return
+            }
+        }
+        let generation = confirmationGeneration
+        offeredProfileSwitch = nil
         loadGeneration += 1
         isLoading = false
         applyPhase = .applying
+        let tabID = UUID().uuidString
 
         let response: UpdatesApplyResponse
         do {
-            response = try await client.applyUpdate(target: UpdateTarget.webui.rawValue)
+            response = try await client.applyUpdate(target: UpdateTarget.webui.rawValue, interruptToken: confirmation?.token, tabID: tabID)
         } catch {
-            onAPIError(error)
-            applyPhase = .failed(.couldNotStart)
+            if APIError.isDefinitiveWriteFailure(error) {
+                onAPIError(error)
+                applyPhase = .failed(.couldNotStart)
+            } else {
+                await reconcile(notificationID: nil, tabID: tabID, settingsStore: settingsStore, onAPIError: onAPIError)
+            }
             return
         }
 
         switch response.outcome {
         case .applying:
-            applyPhase = .recovering
-            let completion: ServerUpdateCompletion
-            if let id = response.notificationId {
-                completion = await follow(id)
-            } else {
-                completion = .untracked
-            }
-            await finish(completion, settingsStore: settingsStore, onAPIError: onAPIError)
+            await reconcile(notificationID: response.notificationId, tabID: nil, settingsStore: settingsStore, onAPIError: onAPIError)
         case .restartBlocked:
-            applyPhase = .blocked(message: response.displayMessage(default: ""))
+            let message = response.displayMessage(default: "")
+            if generation == confirmationGeneration,
+               profileSwitch == ActiveServerProfile.switchCount(for: client.baseURL),
+               let offered = response.interruptConfirmation, offered.token != confirmation?.token {
+                offeredProfileSwitch = profileSwitch
+                applyPhase = .blocked(message: message, confirmation: offered)
+            } else {
+                applyPhase = .blocked(message: message)
+            }
         case .failed:
             applyPhase = .failed(.server(message: response.displayMessage(default: "")))
         }
+    }
+
+    private func reconcile(
+        notificationID: String?, tabID: String?, settingsStore: ServerSettingsStore?, onAPIError: (Error) -> Void
+    ) async {
+        applyPhase = .recovering
+        let completion = await follow(notificationID, tabID)
+        await finish(completion, settingsStore: settingsStore, onAPIError: onAPIError)
     }
 
     private func finish(_ completion: ServerUpdateCompletion, settingsStore: ServerSettingsStore?, onAPIError: (Error) -> Void) async {

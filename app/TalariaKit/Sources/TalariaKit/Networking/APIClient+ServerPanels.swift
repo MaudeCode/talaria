@@ -299,11 +299,11 @@ extension APIClient {
     /// restarts itself, so the caller must tolerate a brief connection outage
     /// and re-poll afterwards. Defaults to the `webui` target (issue #180 scope;
     /// no `agent` target or `/force`).
-    public func applyUpdate(target: String = "webui") async throws -> UpdatesApplyResponse {
+    public func applyUpdate(target: String = "webui", interruptToken: String? = nil, tabID: String? = nil) async throws -> UpdatesApplyResponse {
         try await send(
             endpoint: .updatesApply,
             method: "POST",
-            body: UpdateTargetRequest(target: target)
+            body: UpdateTargetRequest(target: target, interruptToken: interruptToken, tabId: tabID)
         )
     }
 
@@ -316,8 +316,8 @@ extension APIClient {
         )
     }
 
-    public func updateNotifications() async throws -> UpdateNotificationsResponse {
-        try await send(endpoint: .updateNotifications, method: "GET")
+    public func updateNotifications(tabID: String? = nil) async throws -> UpdateNotificationsResponse {
+        try await send(endpoint: .updateNotifications(tabID: tabID), method: "GET")
     }
 
     public func clearUpdateNotifications() async throws -> UpdateNotificationsResponse {
@@ -419,6 +419,8 @@ private struct ProfileCreateRequest: Encodable {
 
 private struct UpdateTargetRequest: Encodable {
     let target: String
+    var interruptToken: String?
+    var tabId: String?
 }
 
 private struct UpdatesCheckForceRequest: Encodable {

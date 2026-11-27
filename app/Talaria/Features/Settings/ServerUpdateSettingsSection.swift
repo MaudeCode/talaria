@@ -14,6 +14,7 @@ struct ServerUpdateSettingsSection: View {
 
     @State private var model: ServerUpdateModel
     @State private var isConfirmingUpdate = false
+    @State private var interruptConfirmation: UpdatesApplyResponse.InterruptConfirmation?
     @State private var isPresentingForcedCheckResult = false
     @State private var summaryRequest: UpdateSummaryRequest?
     @State private var backup = AgentBackupSettings()
@@ -82,7 +83,11 @@ struct ServerUpdateSettingsSection: View {
         .task(id: backup.poll) { await backup.pollStatus(on: server) }
         .task { await restore.load(on: server) }
         .task(id: restore.shouldPoll) { await restore.pollStatus(on: server) }
-        .onDisappear(perform: archiveDownload.stop)
+        .onDisappear {
+            archiveDownload.stop()
+            interruptConfirmation = nil
+            model.discardInterruptConfirmation()
+        }
         .sheet(item: $summaryRequest) { request in
             UpdateSummarySheet(
                 model: UpdateSummaryModel(target: request.target, client: APIClient(baseURL: server)),
@@ -137,6 +142,15 @@ struct ServerUpdateSettingsSection: View {
             // swiftlint:disable:next line_length
             Text("This pulls the latest Hermes server version and restarts it. Active chats may be interrupted briefly; the app reconnects when the server is back.")
         }
+        .alert("Interrupt chats and update?", isPresented: isConfirmingInterrupt, presenting: interruptConfirmation) { confirmation in
+            Button("Cancel", role: .cancel) { interruptConfirmation = nil }
+            Button("Update anyway", role: .destructive) {
+                interruptConfirmation = nil
+                Task { await applyServerUpdate(interrupting: confirmation) }
+            }
+        } message: { confirmation in
+            Text("This interrupts \(confirmation.runs) running chats to update Talaria Web.")
+        }
         .alert(forcedCheckAlertTitle, isPresented: $isPresentingForcedCheckResult) {
             if case .updateAvailable = model.forcedCheckOutcome {
                 Button("Update") {
@@ -153,6 +167,10 @@ struct ServerUpdateSettingsSection: View {
 
     private var isConfirmingBackup: Binding<Bool> {
         Binding(get: { backupConfirmation != nil }, set: { if !$0 { backupConfirmation = nil } })
+    }
+
+    private var isConfirmingInterrupt: Binding<Bool> {
+        Binding(get: { interruptConfirmation != nil }, set: { if !$0 { interruptConfirmation = nil } })
     }
 
     private var isConfirmingRestore: Binding<Bool> {
@@ -288,13 +306,22 @@ private extension ServerUpdateSettingsSection {
             updateProgressRow(String(localized: "Starting update…"))
         case .recovering:
             updateProgressRow(String(localized: "Updating & restarting…"))
-        case let .blocked(message):
+        case let .blocked(message, confirmation):
             VStack(alignment: .leading, spacing: 10) {
                 updateMessageRow(
                     message.isEmpty ? String(localized: "The server is busy with active work. Wait for it to finish, then retry.") : message,
                     systemImage: "clock", tint: .secondary
                 )
-                updateActionButton(title: String(localized: "Retry update"))
+                HStack {
+                    updateActionButton(title: String(localized: "Retry update"))
+                    if let confirmation {
+                        SettingsButton(String(localized: "Update anyway"), systemImage: "exclamationmark.triangle") {
+                            interruptConfirmation = confirmation
+                        }
+                        .disabled(model.isCheckingForUpdates)
+                        .padding(.top, 4)
+                    }
+                }
             }
         case let .failed(failure):
             VStack(alignment: .leading, spacing: 10) {
@@ -339,8 +366,8 @@ private extension ServerUpdateSettingsSection {
         await model.load(settingsStore: settingsStore, onAPIError: handleAPIError)
     }
 
-    private func applyServerUpdate() async {
-        await model.apply(settingsStore: settingsStore, onAPIError: handleAPIError)
+    private func applyServerUpdate(interrupting confirmation: UpdatesApplyResponse.InterruptConfirmation? = nil) async {
+        await model.apply(interrupting: confirmation, settingsStore: settingsStore, onAPIError: handleAPIError)
     }
 
     private func checkForUpdatesManually() async {

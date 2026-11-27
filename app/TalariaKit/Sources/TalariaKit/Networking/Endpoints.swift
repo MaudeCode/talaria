@@ -135,7 +135,7 @@ public enum Endpoint: Sendable {
     case agentRestore
     case stageAgentRestore(filename: String)
     case agentRestoreRecovery
-    case updateNotifications
+    case updateNotifications(tabID: String? = nil)
     case updateNotificationsClear
     case updateNotificationRead(id: String)
     case updateNotificationDismiss(id: String)
@@ -615,6 +615,8 @@ public enum Endpoint: Sendable {
 
     var queryItems: [URLQueryItem] {
         switch self {
+        case let .updateNotifications(tabID):
+            return tabID.map { [URLQueryItem(name: "tab_id", value: $0)] } ?? []
         case let .settingsModelPicker(search, provider, favorites, showHidden, live):
             return [URLQueryItem(name: "q", value: search), URLQueryItem(name: "provider", value: provider),
                     URLQueryItem(name: "favorites", value: String(favorites)), URLQueryItem(name: "show_hidden", value: String(showHidden)),

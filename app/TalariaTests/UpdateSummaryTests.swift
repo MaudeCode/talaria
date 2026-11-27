@@ -153,6 +153,62 @@ final class UpdateSummaryTests: APIClientTestCase {
         }
     }
 
+    @MainActor
+    func testSystemOffersUpdateAnywayAndRequiresConsent() async throws {
+        let responses = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: sharedContractFixture("web-update-interrupt")) as? [String: [String: Any]]
+        )
+        let offer = try XCTUnwrap(responses["offered"])
+        let confirmation = try XCTUnwrap(offer["interrupt_confirmation"] as? [String: Any])
+        let token = try XCTUnwrap(confirmation["token"] as? String)
+        let count = try XCTUnwrap(confirmation["runs"] as? Int)
+        let offered = String(decoding: try JSONSerialization.data(withJSONObject: offer), as: UTF8.self)
+        let refusal = try XCTUnwrap(responses["not_offered"])
+        let refused = String(decoding: try JSONSerialization.data(withJSONObject: refusal), as: UTF8.self)
+        let tokens = LockedTestValue<[String]>([])
+        let system = try SystemSettingsFixture(test: self) { request in
+            let body = apiTestBodyData(from: request.request).flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: String]
+            }
+            tokens.value.append(body?["interrupt_token"] ?? "")
+            request.complete(withJSON: tokens.value.count == 1 ? offered : refused)
+        }
+        let (window, settings) = try await system.present(size: HostedSize.phone)
+        defer { system.close(window) }
+        let update = try await requireElement(in: window, label: SettingsIndex.systemUpdate.title)
+        attachHostedScreenshot(window, name: "web-update-before")
+        XCTAssertTrue(HostedAccessibility.activate(update))
+        let firstAlert = await presentedAlert(in: window)
+        XCTAssertTrue(HostedAccessibility.tap("Update", in: try XCTUnwrap(firstAlert)))
+
+        let action = try await requireElement(in: window, label: "Update anyway")
+        let message = try XCTUnwrap(offer["message"] as? String)
+        XCTAssertEqual(HostedAccessibility.element(in: window, identifier: "settings-system-status-update")?.accessibilityValue, message)
+        attachHostedScreenshot(window, name: "web-update-offered")
+        XCTAssertTrue(HostedAccessibility.activate(action))
+        let presented = await presentedAlert(in: window)
+        let alert = try XCTUnwrap(presented)
+        XCTAssertTrue(alert.message?.contains("\(count) running chats") == true)
+        attachHostedScreenshot(window, name: "web-update-consent")
+        XCTAssertTrue(HostedAccessibility.tap("Cancel", in: alert))
+        let dismissed = await awaitCondition { settings.presentedViewController == nil }
+        XCTAssertTrue(dismissed)
+        XCTAssertEqual(tokens.value, [""])
+
+        let retry = try await requireElement(in: window, label: "Update anyway")
+        XCTAssertTrue(HostedAccessibility.activate(retry))
+        let confirmed = await presentedAlert(in: window)
+        XCTAssertTrue(HostedAccessibility.tap("Update anyway", in: try XCTUnwrap(confirmed)))
+        let refusedMessage = try XCTUnwrap(refusal["message"] as? String)
+        let settled = await awaitCondition {
+            HostedAccessibility.element(in: window, identifier: "settings-system-status-update")?.accessibilityValue == refusedMessage
+        }
+        XCTAssertTrue(settled)
+        XCTAssertEqual(tokens.value, ["", token])
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Update anyway"))
+        attachHostedScreenshot(window, name: "web-update-refused")
+    }
+
     /// Settings > System on a fresh window against a server whose both targets offer a summarized update.
     @MainActor
     private struct SystemSettingsFixture {
@@ -161,7 +217,7 @@ final class UpdateSummaryTests: APIClientTestCase {
         private let server: URL
         private unowned let test: UpdateSummaryTests
 
-        init(test: UpdateSummaryTests) throws {
+        init(test: UpdateSummaryTests, apply: ((DeferredMockURLProtocol) -> Void)? = nil) throws {
             self.test = test
             fixture = try FixtureApp(for: test)
             let host = "system-summary-\(UUID().uuidString.lowercased()).test"
@@ -181,6 +237,7 @@ final class UpdateSummaryTests: APIClientTestCase {
                 case (_, "/api/updates/check"): request.complete(withJSON: check)
                 case (_, "/api/updates/summary"): request.complete(withJSON: UpdateSummaryTests.sectionsJSON)
                 case (_, "/api/settings"): request.complete(withJSON: #"{ "webui_version": "0.0.1" }"#)
+                case ("POST", "/api/updates/apply") where apply != nil: apply?(request)
                 default: request.complete(withJSON: "{}")
                 }
             }, forHost: host)
