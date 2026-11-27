@@ -4,6 +4,25 @@ import XCTest
 @testable import Talaria
 @testable import TalariaKit
 
+@MainActor
+final class InAppSafariPageTests: XCTestCase {
+    func testOnlyAnUnclaimedWebLinkProducesASafariPage() async throws {
+        let url = try XCTUnwrap(URL(string: "https://example.invalid/page?q=1#top"))
+        let cases: [(claimed: Bool, expectedPageURL: URL?)] = [(true, nil), (false, url)]
+
+        for (claimed, expectedPageURL) in cases {
+            var attemptedURLs: [URL] = []
+            let page = await InAppSafariPage.fallback(for: url) { openedURL in
+                attemptedURLs.append(openedURL)
+                return claimed
+            }
+
+            XCTAssertEqual(page?.url, expectedPageURL, "Safari fallback for claimed=\(claimed)")
+            XCTAssertEqual(attemptedURLs, [url], "Attempt Universal Link handoff once")
+        }
+    }
+}
+
 /// Proves the geometry end of the pipeline: a rendered mixed text-and-link
 /// paragraph reports where its link was actually drawn.
 @MainActor

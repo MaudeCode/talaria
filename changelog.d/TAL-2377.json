@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Web links in chats open in their associated app when available, with the in-app browser as a fallback.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

@@ -242,6 +242,7 @@ struct ChatView: View {
     /// A workspace file a chat link named; shown in the source viewer at its line.
     @State private var openedFileLink: WorkspaceFileLink?
     @State private var openedWebPage: InAppSafariPage?
+    @State private var webLinkOpenTask: Task<Void, Never>?
     @State private var pendingProfileSelection: ProfileSummary?
     @State private var showProfileNewSessionConfirmation = false
     @State private var goalDraft = ""
@@ -887,6 +888,8 @@ struct ChatView: View {
                 sessionStartGeneration &+= 1
                 sessionStartTask?.cancel()
                 sessionStartTask = nil
+                webLinkOpenTask?.cancel()
+                webLinkOpenTask = nil
                 completionAcknowledger.cancel(leavesChat: true)
                 if didHydrateDraft { draftStore.setVoiceNote(viewModel.pendingVoiceDraft, for: draftKey) }
                 flushDraftsBestEffort()
@@ -2559,10 +2562,6 @@ struct ChatView: View {
         }
     }
 
-    /// A link that names a workspace file opens the source viewer at its line,
-    /// a web page opens in the in-app Safari sheet, and every other link keeps
-    /// the system behaviour. The viewer's own error state covers a file the
-    /// server refuses or no longer has.
     /// TAL-1968: a workspace file a transcript block opens: on the companion page when it is beside the chat, else in
     /// the file preview a file link opens. TAL-2323: a read or search result's line opens in that preview, like a
     /// transcript link to a line.
@@ -2575,12 +2574,18 @@ struct ChatView: View {
     }
 
     private func handleTranscriptLink(_ url: URL) -> OpenURLAction.Result {
+        webLinkOpenTask?.cancel()
         // The live workspace: `/workspace` and the composer can change it after the session loads.
         switch TranscriptLinkRoute.route(url, workspaceRoot: viewModel.selectedWorkspacePath) {
         case .workspaceFile(let link):
             openedFileLink = link
         case .inAppBrowser(let url):
-            openedWebPage = InAppSafariPage(url: url)
+            webLinkOpenTask = Task {
+                guard !Task.isCancelled,
+                      let page = await InAppSafariPage.fallback(for: url),
+                      !Task.isCancelled else { return }
+                openedWebPage = page
+            }
         case .app(let url):
             AppIntentRouter.shared.requestDeepLink(url)
         case .system:
