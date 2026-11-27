@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Prevent duplicate Relay notifications and Live Activity updates when deliveries back up.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

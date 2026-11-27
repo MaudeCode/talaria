@@ -6,7 +6,7 @@ import { sha256 } from "./lib/crypto";
 import { isPublisherStateVisible, publisherForGrant, visiblePublisherStates } from "./lib/publisherVisibility";
 import { activityPhase, isCurrentActivityState, isTerminalPhase } from "./lib/model";
 import { internal } from "./_generated/api";
-import type { DataModel, Doc } from "./_generated/dataModel";
+import type { DataModel, Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import {
   aggregateFingerprint,
@@ -154,50 +154,17 @@ function statesForDevice(
   return excluded ? states.filter((state) => !excluded.has(state.publisherId)) : states;
 }
 
-async function pendingActivityJobs(
+function pendingJobs(
   ctx: MutationCtx,
-  userId: string,
-  activityId: string,
-  fingerprint: string,
-): Promise<Doc<"deliveryJobs">[]> {
-  const [queued, running] = await Promise.all([
-    ctx.db
-      .query("deliveryJobs")
-      .withIndex("by_user_id_and_activity_id_and_status", (query) =>
-        query.eq("userId", userId).eq("activityId", activityId).eq("status", "queued"),
-      )
-      .take(20),
-    ctx.db
-      .query("deliveryJobs")
-      .withIndex("by_user_id_and_activity_id_and_status", (query) =>
-        query.eq("userId", userId).eq("activityId", activityId).eq("status", "running"),
-      )
-      .take(20),
-  ]);
-  return [...queued, ...running].filter((job) => job.stateFingerprint === fingerprint);
-}
-
-async function pendingDeviceJobs(
-  ctx: MutationCtx,
-  userId: string,
-  deviceId: string,
-  fingerprint: string,
-): Promise<Doc<"deliveryJobs">[]> {
-  const [queued, running] = await Promise.all([
-    ctx.db
-      .query("deliveryJobs")
-      .withIndex("by_user_id_and_device_id_and_status", (query) =>
-        query.eq("userId", userId).eq("deviceId", deviceId).eq("status", "queued"),
-      )
-      .take(20),
-    ctx.db
-      .query("deliveryJobs")
-      .withIndex("by_user_id_and_device_id_and_status", (query) =>
-        query.eq("userId", userId).eq("deviceId", deviceId).eq("status", "running"),
-      )
-      .take(20),
-  ]);
-  return [...queued, ...running].filter((job) => job.stateFingerprint === fingerprint);
+  { userId, deviceId, activityId, stateFingerprint }: Pick<Doc<"deliveryJobs">, "userId" | "deviceId" | "activityId" | "stateFingerprint">,
+  status: "queued" | "running",
+) {
+  const jobs = ctx.db.query("deliveryJobs");
+  return activityId
+    ? jobs.withIndex("by_user_id_and_activity_id_and_state_fingerprint_and_status", (query) =>
+      query.eq("userId", userId).eq("activityId", activityId).eq("stateFingerprint", stateFingerprint).eq("status", status))
+    : jobs.withIndex("by_user_id_and_device_id_and_state_fingerprint_and_status", (query) =>
+      query.eq("userId", userId).eq("deviceId", deviceId).eq("stateFingerprint", stateFingerprint).eq("status", status));
 }
 
 type PushableDevice = Doc<"devices"> & Required<Pick<Doc<"devices">, "pushToken" | "bundleId" | "apsEnvironment">>;
@@ -246,16 +213,17 @@ async function enqueueJob(
     now: number;
   },
 ): Promise<void> {
-  const pending = input.activityId
-    ? await pendingActivityJobs(ctx, input.userId, input.activityId, input.stateFingerprint)
-    : await pendingDeviceJobs(ctx, input.userId, input.deviceId, input.stateFingerprint);
-  if (pending.length > 0) {
-    // Same state already pending. An alerted payload still replaces queued silent duplicates so an eligible
-    // transition is never swallowed by an earlier ineligible one that reached the same aggregate first.
-    if (!carriesAlert(input.request.payload) || pending.some((job) => carriesAlert(JSON.parse(job.request.payloadJson)))) return;
-    for (const job of pending) {
-      if (job.status === "queued") await ctx.db.patch(job._id, { status: "stale", updatedAt: input.now });
+  const alerted = carriesAlert(input.request.payload);
+  const silentQueuedIds: Id<"deliveryJobs">[] = [];
+  for (const status of ["running", "queued"] as const) {
+    for await (const job of pendingJobs(ctx, input, status)) {
+      if (!alerted || carriesAlert(JSON.parse(job.request.payloadJson))) return;
+      if (status === "queued") silentQueuedIds.push(job._id);
     }
+  }
+  // Replace queued silent jobs only after confirming no alert is already pending.
+  for (const jobId of silentQueuedIds) {
+    await ctx.db.patch(jobId, { status: "stale", updatedAt: input.now });
   }
 
   const jobId = await ctx.db.insert("deliveryJobs", {
@@ -340,7 +308,7 @@ export const enqueueSessionStarted = internalMutation({
         const stateFingerprint = `background:started:${JSON.stringify([args.publisherId, args.profileId, args.eventId])}:${device.deviceId}`;
         const existing = await ctx.db
           .query("deliveryJobs")
-          .withIndex("by_user_id_and_device_id_and_state_fingerprint", (query) =>
+          .withIndex("by_user_id_and_device_id_and_state_fingerprint_and_status", (query) =>
             query.eq("userId", userId).eq("deviceId", device.deviceId).eq("stateFingerprint", stateFingerprint),
           )
           .first();
@@ -403,7 +371,7 @@ export const enqueueServerNotice = internalMutation({
       const stateFingerprint = `notification:server:${JSON.stringify([args.publisherId, args.noticeId])}:${device.deviceId}`;
       const existing = await ctx.db
         .query("deliveryJobs")
-        .withIndex("by_user_id_and_device_id_and_state_fingerprint", (query) =>
+        .withIndex("by_user_id_and_device_id_and_state_fingerprint_and_status", (query) =>
           query.eq("userId", userId).eq("deviceId", device.deviceId).eq("stateFingerprint", stateFingerprint),
         )
         .first();
