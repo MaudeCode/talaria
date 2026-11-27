@@ -938,6 +938,31 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedModelID, "old-model")
     }
 
+    func testOwnerModelRefusalHasNoDismissButton() async throws {
+        let fixture = try FixtureApp(for: self)
+        let server = UITestFixtureEnvironment.serverURL
+        let session = SessionSummary(sessionId: "owner-model-refusal", title: "Owner model refusal")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: MockURLProtocol.register { request in
+            guard request.url?.path == "/api/session" else { throw URLError(.badURL) }
+            return apiTestJSONResponse(#"""
+            {"session":{"session_id":"owner-model-refusal","model":"old-model","messages":[],"read_only":true,
+              "owner_attachment":{"state":"attached","can_submit":true,"can_interrupt":false,"can_attach":false,
+                "revision":3,"execution_generation":1,"admissions":[],
+                "model_change":{"state":"refused","message":"The Agent refused the model change."}}}}
+            """#, for: request)
+        }]
+        let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        let model = ChatViewModel(session: session, server: server, client: client, networkPath: nil)
+        await model.loadMessages()
+        let window = try hostWindow(fixture.chat(session, viewModel: model, loadsInitialMessages: false))
+
+        _ = try await requireElement(in: window, label: "The Agent refused the model change.")
+        XCTAssertFalse(HostedAccessibility.labels(in: window).contains("Dismiss"))
+        attachHostedScreenshot(window, name: "owner-model-refusal")
+    }
+
     func testModelGuardCancelRefreshAndConfirmUseServerWarnings() async throws {
         try await checkModelGuardWarnings(refusalCount: 3)
     }

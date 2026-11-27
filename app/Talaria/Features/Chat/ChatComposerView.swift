@@ -54,6 +54,7 @@ struct MessageComposerView: View {
     let errorMessage: String?
     var warningMessage: String? = nil
     let configurationErrorMessage: String?
+    let ownerModelChangeMessage: String?
     let contextWindowSnapshot: ContextWindowSnapshot?
     let gitViewModel: GitWorkspaceAvailabilityViewModel
     let modelGroups: [ModelCatalogGroup]
@@ -1179,6 +1180,8 @@ struct MessageComposerView: View {
             return (preferenceError, true, dismissError)
         } else if let configurationErrorMessage {
             return (configurationErrorMessage, true, dismissError)
+        } else if let ownerModelChangeMessage {
+            return (ownerModelChangeMessage, true, nil)
         } else if let warningMessage {
             return (warningMessage, false, nil)
         } else if isUpdatingConfiguration {
