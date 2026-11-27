@@ -16,5 +16,16 @@
   "conflict": {
     "error": "File changed since you started editing. Copy your draft before discarding it to load the latest version.",
     "condition": "file_revision_conflict"
+  },
+  "previewTooLarge": {
+    "error": "File is too large to preview (400,000-byte limit).",
+    "condition": "file_too_large",
+    "max_bytes": 400000,
+    "download_allowed": true
+  },
+  "saveTooLarge": {
+    "error": "File is too large to save. Shorten your draft to 400,000 bytes or less.",
+    "condition": "file_too_large",
+    "max_bytes": 400000
   }
 }

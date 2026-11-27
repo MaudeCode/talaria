@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The workspace editor keeps your draft when it exceeds the file size limit and offers a download for files too large to preview.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

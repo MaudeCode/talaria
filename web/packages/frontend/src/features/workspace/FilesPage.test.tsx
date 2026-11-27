@@ -174,6 +174,18 @@ describe('the open file', () => {
     expect(await screen.findByRole('link', { name: 'Download a.txt' })).toHaveAttribute('href', expect.stringMatching(/\/raw$/))
     expect(api.rawFileUrl).toHaveBeenCalledWith('s1', 'a.txt', undefined)
   })
+
+  it.each([{ allowed: true }, { allowed: false }])('uses the server download permission for an oversized preview ($allowed)', async ({ allowed }) => {
+    const message = 'File is too large to preview (400,000-byte limit).'
+    vi.mocked(api.readFile).mockRejectedValue(new ApiError({ kind: 'http', status: 413, path: '/api/file', message,
+      body: { error: message, condition: 'file_too_large', max_bytes: 400_000, ...(allowed ? { download_allowed: true } : {}) },
+    }))
+    renderFiles()
+    await userEvent.click(await screen.findByRole('treeitem', { name: row('a.txt') }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    expect(!!screen.queryByRole('link', { name: 'Download a.txt' })).toBe(allowed)
+  })
 })
 
 describe('file save keeps the user\'s edits (TAL-1384)', () => {

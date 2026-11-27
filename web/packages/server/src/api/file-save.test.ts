@@ -1,5 +1,6 @@
 import { chmodSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { WorkspaceTextSizeError } from '@maudecode/talaria-web-contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const faults = vi.hoisted(() => ({ at: '', triggered: false, fds: new Set<number>() }))
@@ -46,6 +47,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 let server: TestServer | undefined
 const contract = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/workspace-file-save.json', import.meta.url), 'utf8')) as {
   text: { path: string; content: string }; office: { path: string; content: string }; conflict: { condition: string; error: string }
+  previewTooLarge: WorkspaceTextSizeError; saveTooLarge: WorkspaceTextSizeError
 }
 afterEach(async () => {
   faults.at = ''
@@ -174,6 +176,42 @@ describe('workspace save preserves the last complete file', () => {
     const read = await server!.get(`/api/file?session_id=${f.sid}&path=${path}`)
     expect(read.status).toBe(200)
     expect(await read.json()).toMatchObject({ office_format: 'docx', editable: true, content: '' })
+  })
+})
+
+describe('workspace text size limit', () => {
+  it('reopens a conditional save at exactly 400,000 UTF-8 bytes', async () => {
+    const f = await fixture()
+    const content = 'é'.repeat(200_000)
+    const base = await f.read('valuable.txt')
+    const response = await f.post('/api/file/save', { session_id: f.sid, path: 'valuable.txt', content, base_revision: base.revision })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ size: 400_000 })
+    expect((await f.read('valuable.txt')).content === content).toBe(true)
+  })
+
+  it('refuses a multibyte edit one byte over the limit without replacing the file', async () => {
+    const f = await fixture()
+    const previous = readFileSync(f.path)
+    const response = await f.save('é'.repeat(200_000) + '!')
+    expect({ status: response.status, body: await response.json(), preserved: readFileSync(f.path).equals(previous) }).toEqual({
+      status: 413, body: contract.saveTooLarge, preserved: true,
+    })
+  })
+
+  it('offers a raw download when an existing file exceeds the preview size limit', async () => {
+    const f = await fixture()
+    const content = Buffer.from('x'.repeat(400_001))
+    writeFileSync(f.path, content)
+    const query = `session_id=${f.sid}&path=valuable.txt`
+    const response = await server!.get(`/api/file?${query}`)
+    expect({ status: response.status, body: await response.json() }).toEqual({
+      status: 413, body: contract.previewTooLarge,
+    })
+    const download = await server!.get(`/api/file/raw?${query}&download=1`)
+    expect(download.status).toBe(200)
+    expect(download.headers.get('content-disposition')).toMatch(/^attachment/)
+    expect(Buffer.from(await download.arrayBuffer()).equals(content)).toBe(true)
   })
 })
 
