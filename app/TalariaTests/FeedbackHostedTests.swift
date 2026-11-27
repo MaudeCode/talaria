@@ -47,16 +47,21 @@ final class FeedbackHostedTests: XCTestCase {
         }
     }
 
-    /// Pastes `count` synthetic photos through the sheet's paste control, as its PasteButton hands them over. The
-    /// providers are the test's own: the simulator's general pasteboard is a shared service, and on a loaded runner it
-    /// once failed to load the image it held, so the paste reached the sheet with nothing to attach (TAL-2546).
-    private func paste(_ count: Int, in window: UIWindow) throws {
-        let paste = try XCTUnwrap(window.firstView(ofType: UIPasteControl.self),
-                                 "Feedback must offer a native image paste action")
-        let providers = (0..<count).map { _ in
+    private func details(in window: UIWindow) throws -> any UIPasteConfigurationSupporting {
+        let editor: UIView = try window.firstView(ofType: UITextView.self)
+            ?? XCTUnwrap(window.firstView(ofType: UITextField.self) { $0.placeholder == "Details" })
+        return editor
+    }
+
+    private func photoProviders(_ count: Int) -> [NSItemProvider] {
+        (0..<count).map { _ in
             NSItemProvider(item: syntheticPhoto() as NSData, typeIdentifier: UTType.jpeg.identifier)
         }
-        try XCTUnwrap(paste.target).paste?(itemProviders: providers)
+    }
+
+    /// Exercises the Details responder with test-owned providers instead of the simulator's shared pasteboard.
+    private func paste(_ count: Int, in window: UIWindow) throws {
+        try details(in: window).paste?(itemProviders: photoProviders(count))
     }
 
     func testPastingClipboardPhotosUsesTheFeedbackAttachmentPipeline() async throws {
@@ -132,7 +137,8 @@ final class FeedbackHostedTests: XCTestCase {
             ($0.accessibilityLabel ?? "").hasPrefix("Add Photo")
         }
         XCTAssertNil(attachControl)
-        XCTAssertNil(window.firstView(ofType: UIPasteControl.self), "Disabled attachments must not offer image paste")
+        let acceptsPhoto = try details(in: window).canPaste?(photoProviders(1))
+        XCTAssertEqual(acceptsPhoto, false, "Disabled attachments must reject image paste in Details")
     }
 
     func testPastingTooManyPhotosKeepsTheDraftAndShowsTheLimit() async throws {
@@ -158,16 +164,27 @@ final class FeedbackHostedTests: XCTestCase {
             _ = try await self.requireElementScrolling(in: window, "The pasted photo must remain reachable") {
                 $0.accessibilityLabel == "Remove attachment Photo"
             }
-            _ = try await self.requireElementScrolling(in: window, "Image paste must remain reachable") {
-                HostedAccessibility.identifier(of: $0) == "feedback-paste-attachment"
+            _ = try await self.requireElementScrolling(in: window, "The photo picker must remain reachable") {
+                HostedAccessibility.identifier(of: $0) == "feedback-add-attachment"
             }
-            let paste = try XCTUnwrap(window.firstView(ofType: UIPasteControl.self))
-            let scroll = try XCTUnwrap(window.firstView(ofType: UIScrollView.self) { $0.bounds.height > 300 })
-            scroll.scrollRectToVisible(paste.convert(paste.bounds, to: scroll).insetBy(dx: 0, dy: -16), animated: false)
-            self.settle(window: window)
-            XCTAssertTrue(window.bounds.contains(paste.convert(paste.bounds, to: window)),
-                          "The entire Paste action must be visible after scrolling")
+            XCTAssertFalse(window.containsView(ofType: UIPasteControl.self), "The attachment section has no standalone paste control")
         }
+    }
+
+    func testAnImagePastedIntoDetailsThatFailsToLoadShowsAnInlineError() async throws {
+        let model = model(attachments: true)
+        await model.loadAttachmentOptions()
+        let window = try hostWindow(FeedbackSheet(model: model))
+        _ = try await requireElement(in: window, label: "Add Photo or Video")
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.image.identifier, visibility: .all) { completion in
+            completion(nil, CocoaError(.fileReadCorruptFile))
+            return nil
+        }
+        try details(in: window).paste?(itemProviders: [provider])
+        _ = try await requireElement(in: window, label: "This file could not be attached.")
+        XCTAssertTrue(model.attachments.isEmpty)
+        attachHostedScreenshot(window, name: "feedback-pasted-image-load-failed")
     }
 
     func testTappingAnAttachedPhotoPreviewsTheCompressedFile() async throws {
