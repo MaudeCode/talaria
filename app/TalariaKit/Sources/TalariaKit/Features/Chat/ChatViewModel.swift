@@ -1585,8 +1585,10 @@ extension ChatViewModel {
 
         do {
             let response = try await client.workspaceSuggestions(prefix: prefix)
+            guard !Task.isCancelled else { return }
             workspaceSuggestions = response.suggestions ?? []
         } catch {
+            guard !Task.isCancelled, !APIError.isCancellation(error) else { return }
             lastError = error
             composerConfigurationErrorMessage = error.localizedDescription
         }

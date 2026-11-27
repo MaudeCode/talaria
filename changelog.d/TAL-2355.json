@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Typing a workspace path or interrupting a provider or quota refresh no longer shows a cancellation error.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

@@ -7,6 +7,30 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension ChatViewModelSendTests {
+    func testCancelledWorkspaceSuggestionsLeaveComposerErrorClear() async throws {
+        let host = "workspace-suggestions-cancellation.test"
+        let requested = expectation(description: "Workspace suggestions request started")
+        let requests = DeferredRequests()
+        DeferredMockURLProtocol.setOnRequest({ transport in
+            XCTAssertEqual(transport.request.url?.path, "/api/workspaces/suggest")
+            _ = requests.append(transport)
+            requested.fulfill()
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let model = try makeViewModel(server: URL(string: "https://\(host)")!, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
+            throw URLError(.badURL)
+        }
+
+        let load = Task { await model.loadWorkspaceSuggestions(prefix: "/fixture") }
+        await fulfillment(of: [requested], timeout: 10)
+        load.cancel()
+        await load.value
+        guard requests.count == 1 else { return XCTFail("Expected one in-flight suggestions request") }
+        await requests.request(at: 0).waitUntilStopped("Cancelling the suggestions load must cancel its request")
+
+        XCTAssertNil(model.composerConfigurationErrorMessage)
+    }
+
     func testRefusedWorkspaceSlashCommandSetsOneDismissibleError() async throws {
         let body = #"{"error":"Workspace does not exist."}"#
         let model = try makeViewModel { request in
