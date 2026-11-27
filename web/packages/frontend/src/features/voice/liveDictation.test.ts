@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../../api/endpoints'
 import { dictateLive, liveDictationErrorKind, toPcm16 } from './liveDictation'
 
@@ -42,11 +42,28 @@ const getUserMedia = vi.fn(() => Promise.resolve({ getTracks: () => [track] }))
 
 class FakeTap {
   static last: FakeTap | undefined
-  port: { onmessage: ((event: { data: Float32Array }) => void) | null } = { onmessage: null }
+  port = {
+    onmessage: null as ((event: { data: unknown }) => void) | null,
+    postMessage: (data: unknown) => queueMicrotask(() => this.processor.port.onmessage?.({ data })),
+    close: vi.fn(),
+  }
   connect = vi.fn()
   disconnect = vi.fn()
-  constructor() { FakeTap.last = this }
+  private readonly processor = new PcmProcessor()
+
+  constructor() {
+    FakeTap.last = this
+    this.processor.port.postMessage = (data) => queueMicrotask(() => this.port.onmessage?.({ data }))
+  }
+
+  feed(samples: Float32Array) { this.processor.process([[samples]]) }
 }
+
+class WorkletProcessorStub {
+  readonly port = { onmessage: null as ((event: { data: unknown }) => void) | null, postMessage: (_data: unknown): void => undefined }
+}
+
+let PcmProcessor: new () => WorkletProcessorStub & { process(inputs: Float32Array[][]): boolean }
 
 class FakeRecorder {
   /** Hold `stop` until `finish()`, as a browser does while it encodes the last chunk. */
@@ -92,6 +109,13 @@ async function start() {
 }
 
 describe('live dictation (TAL-802)', () => {
+  beforeAll(async () => {
+    // Execute the real processor. Only the worklet globals and message delivery are simulated.
+    vi.stubGlobal('AudioWorkletProcessor', WorkletProcessorStub)
+    vi.stubGlobal('registerProcessor', (_name: string, processor: typeof PcmProcessor) => { PcmProcessor = processor })
+    await import('./pcmTap.worklet')
+    vi.unstubAllGlobals()
+  })
   beforeEach(() => {
     FakeTap.last = undefined
     FakeSocket.last = undefined as never
@@ -131,6 +155,39 @@ describe('live dictation (TAL-802)', () => {
     expect(texts.at(-1)).toBe(final?.transcript)
     expect(api.transcribeRecording).not.toHaveBeenCalled()
     expect(track.stop).toHaveBeenCalled()
+  })
+
+  it.each([
+    { frames: 4096, blocks: [4096] },
+    { frames: 4608, blocks: [4096, 512] },
+    { frames: 512, blocks: [512] },
+  ])('sends all $frames microphone samples exactly once before EOS', async ({ frames, blocks }) => {
+    const { handle, ends, ws } = await start()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    FakeTap.last!.feed(Float32Array.from({ length: frames }, (_, index) => -index / 32768))
+    await vi.advanceTimersByTimeAsync(0)
+    handle.stop()
+    handle.stop()
+    await vi.advanceTimersByTimeAsync(0)
+    ws.receive(exchange.events[2])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(ends).toEqual([null])
+    expect(ws.sent.map((frame) => typeof frame === 'string' ? JSON.parse(frame) : frame.byteLength / 2))
+      .toEqual([exchange.start, ...blocks, { eos: true }])
+    const samples = ws.sent.flatMap((frame) => typeof frame === 'string' ? [] : Array.from(new Int16Array(frame)))
+    expect(samples).toEqual(Array.from({ length: frames }, (_, index) => 0 - index))
+  })
+
+  it('falls back and releases capture if the worklet cannot acknowledge Stop', async () => {
+    const { handle, texts, ends, ws } = await start()
+    vi.spyOn(FakeTap.last!.port, 'postMessage').mockImplementation(() => undefined)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    handle.stop()
+    await vi.runOnlyPendingTimersAsync()
+    expect(ws.text()).toEqual([exchange.start])
+    expect(ends).toEqual([null])
+    expect(texts).toEqual(['from the recording'])
+    expect(track.stop).toHaveBeenCalledTimes(1)
   })
 
   it('falls back to transcribing the recording when the server reports an error', async () => {
@@ -269,13 +326,15 @@ describe('live dictation (TAL-802)', () => {
   ])('releases the microphone, audio graph and socket once (%s, TAL-1298)', async (_order, run) => {
     const { handle, texts, ends, ws } = await start()
     const tap = FakeTap.last
+    tap?.feed(new Float32Array(512).fill(0.5))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     run(handle)
-    await flush()
-    await flush()
+    await vi.advanceTimersByTimeAsync(0)
     expect(track.stop).toHaveBeenCalledTimes(1)
     expect(tap?.disconnect).toHaveBeenCalledTimes(1)
     expect(FakeAudioContext.closes).toBe(1)
     expect(ws.readyState).toBe(FakeSocket.CLOSED)
+    expect(ws.sent).toEqual([JSON.stringify(exchange.start)])
     expect(api.transcribeRecording).not.toHaveBeenCalled()
     expect(texts).toEqual([])
     expect(ends).toEqual([])

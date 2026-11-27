@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Live dictation keeps the last words when you stop recording, even for very short recordings.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
