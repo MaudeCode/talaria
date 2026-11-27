@@ -69,6 +69,45 @@ describe('Memory page read view (TAL-2091)', () => {
     expect(screen.getByText('AGENTS.md')).toHaveAttribute('title', '/w/AGENTS.md')
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
   })
+
+  it.each([
+    { section: 'Memory', sibling: 'User profile', field: 'memory' },
+    { section: 'User profile', sibling: 'Memory', field: 'user' },
+  ] as const)('offers Edit only on the enabled store when $section is disabled', async ({ section, sibling, field }) => {
+    vi.mocked(api.fetchMemory).mockResolvedValue({ ...memory('', 'r1'), [`${field}_path`]: '', [`${field}_name`]: '' })
+    renderPage()
+    await userEvent.click(screen.getByRole('tab', { name: section }))
+    expect(await screen.findByText('Disabled by configuration')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('tab', { name: sibling }))
+    await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(screen.getByRole('textbox', { name: sibling })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  it.each([
+    { section: 'Memory', field: 'memory', filename: 'MEMORY.md' },
+    { section: 'User profile', field: 'user', filename: 'USER.md' },
+  ] as const)('keeps the draft and blocks Save when $section becomes disabled', async ({ section, field, filename }) => {
+    vi.mocked(api.fetchMemory).mockResolvedValueOnce(memory('', 'r1')).mockResolvedValue({
+      ...memory('', 'r1'), [`${field}_path`]: '', [`${field}_name`]: '',
+    })
+    const qc = renderPage()
+    await userEvent.click(screen.getByRole('tab', { name: section }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    expect(screen.getByText(filename)).toBeInTheDocument()
+    const editor = screen.getByRole('textbox', { name: section })
+    await userEvent.type(editor, 'Keep this draft')
+
+    await act(() => qc.refetchQueries())
+    await waitFor(() => expect(screen.queryByText(filename)).not.toBeInTheDocument())
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(save).toBeDisabled()
+    expect(editor).toHaveValue('Keep this draft')
+    await userEvent.click(save)
+    expect(api.writeMemory).not.toHaveBeenCalled()
+  })
 })
 
 describe('Memory page names and entries (TAL-2126)', () => {
