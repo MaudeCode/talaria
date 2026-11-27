@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "New feedback reports can reach the inbox while earlier deliveries wait to retry.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

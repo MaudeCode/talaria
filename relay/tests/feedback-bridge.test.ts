@@ -4,13 +4,18 @@ import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { convexTest } from "convex-test";
 import type Sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { serveHealth, watch } from "../bridge/bridge.ts";
+import { api } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
+import schema from "../convex/schema";
 import { mediaStubs, sanitizerToken, startSanitizer } from "./sanitizerProcess.ts";
 
 const bridge = fileURLToPath(new URL("../bridge/bridge.ts", import.meta.url));
+const relayModules = import.meta.glob("../convex/**/*.ts");
 // The bridge owns its sharp install; tests use the same copy to make and inspect images.
 const sharp = createRequire(fileURLToPath(new URL("../bridge/package.json", import.meta.url)))("sharp") as typeof Sharp;
 const operatorToken = "synthetic-operator-secret";
@@ -87,14 +92,20 @@ function report(kind: "bug" | "feature" | "other" = "bug", platform: "web" | "io
   };
 }
 
-async function fixture(reports = [report(), report("feature", "ios")], blobs = new Map<string, Map<number, Buffer>>(), diagnostics = new Map<string, Buffer>()) {
+async function fixture(
+  reports = [report(), report("feature", "ios")],
+  blobs = new Map<string, Map<number, Buffer>>(),
+  diagnostics = new Map<string, Buffer>(),
+  relayHandler?: Parameters<typeof server>[0],
+) {
   const creates: Array<Record<string, unknown>> = [];
   const acks: Array<{ reportId: string; ticketKey: string }> = [];
   const tickets = new Map<string, { id: string; key: string; input: string }>();
   const uploads: Array<{ ticketId: string; name: string; contentType: string; data: Buffer }> = [];
   const delivered = new Set<string>();
-  const failures = { create: "", ack: "", pending: false, malformedKey: false, upload: 0 };
-  const relay = await server(async (request, response) => {
+  const deferred = new Set<string>();
+  const failures = { create: new Set<string>(), ack: "", pending: false, malformedKey: false, upload: 0 };
+  const relay = await server(relayHandler ?? (async (request, response) => {
     expect(request.headers.authorization).toBe(`Bearer ${operatorToken}`);
     const file = /^\/v1\/feedback\/([^/]+)\/attachments\/(\d+)$/.exec(request.url!);
     if (request.method === "GET" && file) {
@@ -115,18 +126,25 @@ async function fixture(reports = [report(), report("feature", "ios")], blobs = n
       expect(request.url).toBe("/v1/feedback/pending?limit=50");
       response.writeHead(failures.pending ? 503 : 200).end(JSON.stringify(failures.pending
         ? { error: `${operatorToken} ${intakeKey}` }
-        : { reports: reports.filter((item) => !delivered.has(item.reportId)) }));
+        : { reports: reports.filter(({ reportId }) => !delivered.has(reportId) && !deferred.has(reportId)).slice(0, 50) }));
       return;
     }
     expect(request.method).toBe("POST");
     const reportId = decodeURIComponent(request.url!.split("/")[3]!);
+    if (request.url === `/v1/feedback/${reportId}/defer`) {
+      await body(request);
+      if (!reports.some((item) => item.reportId === reportId)) { response.writeHead(404).end(); return; }
+      if (!delivered.has(reportId)) deferred.add(reportId);
+      response.writeHead(204).end();
+      return;
+    }
     expect(request.url).toBe(`/v1/feedback/${reportId}/ack`);
     const input = await body(request);
     acks.push({ reportId, ...input });
     if (reportId === failures.ack) { response.writeHead(503).end(intakeKey); return; }
     delivered.add(reportId);
     response.end(JSON.stringify({ reportId, ...input, status: "delivered" }));
-  });
+  }));
   const kanvil = await server(async (request, response) => {
     expect(request.headers.authorization).toBe(`Bearer ${intakeKey}`);
     response.setHeader("content-type", "application/json");
@@ -151,7 +169,7 @@ async function fixture(reports = [report(), report("feature", "ios")], blobs = n
     expect(request.url).toBe("/api/v1/projects/synthetic-project/tickets");
     const input = await body(request);
     creates.push(input);
-    if (input.requestId === failures.create) { response.writeHead(503).end(operatorToken); return; }
+    if (failures.create.has(input.requestId)) { response.writeHead(503).end(operatorToken); return; }
     const previous = tickets.get(input.requestId);
     if (previous) expect(JSON.stringify(input)).toBe(previous.input);
     const ticket = previous ?? { id: randomUUID(), key: `INBOX-${tickets.size + 1}`, input: JSON.stringify(input) };
@@ -164,7 +182,7 @@ async function fixture(reports = [report(), report("feature", "ios")], blobs = n
     KANVIL_URL: `${kanvil}/`, KANVIL_INTAKE_KEY: intakeKey, KANVIL_PROJECT_ID: "synthetic-project",
     SANITIZER_URL: `${sanitizer.url}/`, SANITIZER_TOKEN: sanitizerToken,
   };
-  return { reports, creates, acks, tickets, uploads, failures, env, run: () => run(env) };
+  return { reports, creates, acks, tickets, uploads, failures, env, retryDeferred: () => deferred.clear(), run: () => run(env) };
 }
 
 it("uploads the App diagnostics file before acknowledging the report", async () => {
@@ -174,6 +192,7 @@ it("uploads the App diagnostics file before acknowledging the report", async () 
   f.failures.upload = 1;
   expect((await f.run()).code).toBe(1);
   expect(f.acks).toHaveLength(0);
+  f.retryDeferred();
   expect((await f.run()).code).toBe(0);
   expect(f.uploads).toEqual([expect.objectContaining({
     name: "app-diagnostic-reports.json", contentType: "application/json", data: bytes,
@@ -302,10 +321,11 @@ it("maps other to research and escapes metadata without requiring diagnostics", 
 
 it("continues after Kanvil failure, leaves the report pending and retries without duplicates", async () => {
   const f = await fixture();
-  f.failures.create = f.reports[0]!.payload.requestId;
+  f.failures.create.add(f.reports[0]!.payload.requestId);
   expect((await f.run()).code).toBe(1);
   expect(f.acks).toEqual([{ reportId: f.reports[1]!.reportId, ticketKey: "INBOX-1" }]);
-  f.failures.create = "";
+  f.failures.create.clear();
+  f.retryDeferred();
   expect((await f.run()).code).toBe(0);
   expect(f.creates.map((input) => input.requestId)).toEqual([
     f.reports[0]!.payload.requestId, f.reports[1]!.payload.requestId, f.reports[0]!.payload.requestId,
@@ -319,6 +339,7 @@ it("retries the identical create after an ack failure and acknowledges the origi
   f.failures.ack = f.reports[0]!.reportId;
   expect((await f.run()).code).toBe(1);
   f.failures.ack = "";
+  f.retryDeferred();
   expect((await f.run()).code).toBe(0);
   expect(f.creates).toHaveLength(2);
   expect(f.creates[1]).toEqual(f.creates[0]);
@@ -348,6 +369,84 @@ it("delivers the maximum queue batch without dropping reports", async () => {
   expect((await f.run()).code).toBe(0);
   expect(f.tickets.size).toBe(50);
   expect(f.acks).toHaveLength(50);
+});
+
+it("delivers a newer report after restart despite a full failing batch, then recovers that batch", async () => {
+  vi.useFakeTimers({ now: 1_800_000_000_000 });
+  vi.stubEnv("FEEDBACK_OPERATOR_TOKEN_SHA256", createHash("sha256").update(operatorToken).digest("hex"));
+  const backend = convexTest(schema, relayModules);
+  try {
+    const items = Array.from({ length: 50 }, () => report("bug", "ios"));
+    const newer = report("bug", "ios");
+    const diagnostic = new TextEncoder().encode('[{"kind":"crash"}]');
+    const ids = await backend.run(async (ctx) => {
+      const ids = [];
+      for (const [index, { payload, createdAt }] of items.entries()) {
+        const id = await ctx.db.insert("feedbackReports", {
+          requestId: payload.requestId, payloadHash: payload.requestId, installHash: "synthetic",
+          payload, status: "pending", createdAt: createdAt + index,
+          ...(index === 0
+            ? { tier: "verified", publisherId: "https://publisher.example", hasDiagnosticReports: true }
+            : { tier: "unverified" }),
+        });
+        if (index === 0) await ctx.db.insert("feedbackDiagnosticChunks", { reportId: id, index: 0, bytes: diagnostic.buffer });
+        ids.push(id);
+      }
+      return ids;
+    });
+    const accepted = await backend.fetch("/v1/feedback", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(newer.payload),
+    });
+    expect(accepted.status).toBe(202);
+    const { reportId: newerId } = await accepted.json() as { reportId: Id<"feedbackReports"> };
+    let ackUnavailable = true;
+    const f = await fixture([], new Map(), new Map(), async (request, response) => {
+      if (ackUnavailable && request.url === `/v1/feedback/${ids[0]}/ack`) {
+        await body(request);
+        response.writeHead(503).end();
+        return;
+      }
+      const forwarded = await backend.fetch(request.url!, {
+        method: request.method,
+        headers: { authorization: request.headers.authorization!, "content-type": "application/json" },
+        body: request.headers["content-length"] ? JSON.stringify(await body(request)) : undefined,
+      });
+      response.writeHead(forwarded.status, Object.fromEntries(forwarded.headers))
+        .end(Buffer.from(await forwarded.arrayBuffer()));
+    });
+    const older = items.map(({ payload }) => payload.requestId);
+    f.failures.create = new Set(older.slice(1));
+    expect((await f.run()).code).toBe(1);
+    expect(f.creates.map((input) => input.requestId)).toEqual(older);
+    const signal = () => backend.query(api.feedback.pendingSignal, { token: operatorToken });
+    const duringCooldown = await signal();
+    // The restarted bridge may connect after the older reports are already eligible again.
+    await backend.finishAllScheduledFunctions(vi.runAllTimers);
+    const afterCooldown = await signal();
+
+    await f.run();
+    expect(f.tickets.has(newer.payload.requestId)).toBe(true);
+    expect(duringCooldown).toEqual([newerId]);
+    expect(afterCooldown).toEqual([newerId, ...ids.slice(0, 49)]);
+    expect((await backend.run((ctx) => ctx.db.get(newerId)))?.status).toBe("delivered");
+
+    ackUnavailable = false;
+    f.failures.create.clear();
+    await backend.finishAllScheduledFunctions(vi.runAllTimers);
+    expect((await f.run()).code).toBe(0);
+    expect(f.tickets.size).toBe(items.length + 1);
+    expect(f.uploads.map((file) => [file.ticketId, file.name])).toEqual([
+      [f.tickets.get(older[0]!)?.id, "app-diagnostic-reports.json"],
+    ]);
+    const delivered = await backend.run((ctx) => ctx.db.query("feedbackReports").collect());
+    expect(Object.fromEntries(delivered.map((row) => [row.requestId, [row.status, row.ticketKey]]))).toEqual(
+      Object.fromEntries([...f.tickets].map(([requestId, ticket]) => [requestId, ["delivered", ticket.key]])),
+    );
+  } finally {
+    await backend.finishAllScheduledFunctions(vi.runAllTimers);
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  }
 });
 
 it.each(["RELAY_URL", "KANVIL_URL", "SANITIZER_URL", "RELAY_SYNC_URL", "HEALTH_PORT"])("rejects invalid %s without reflecting the value", async (name) => {
@@ -457,6 +556,7 @@ it("leaves a report pending after a failed upload and uploads only what is missi
   expect(failed.output).not.toContain("http://");
   expect(f.uploads.map((item) => item.name)).toEqual(["attachment-0.png"]);
   expect(f.acks).toEqual([]);
+  f.retryDeferred();
   expect((await f.run()).code).toBe(0);
   expect(f.uploads.map((item) => item.name)).toEqual(["attachment-0.png", "attachment-1.jpg"]);
   expect(f.creates).toHaveLength(2);
@@ -500,7 +600,7 @@ it("leaves a report pending without a ticket when the sanitizer is unreachable",
   const f = await attachedFixture([{ contentType: "image/png", data: await image(20, 20).png().toBuffer() }]);
   expect((await run({ ...f.env, SANITIZER_URL: closed })).code).toBe(1);
   expect([f.creates, f.uploads, f.acks]).toEqual([[], [], []]);
-  // The next run, with the sanitizer back, delivers it.
+  f.retryDeferred();
   expect((await f.run()).code).toBe(0);
   expect(f.uploads.map((upload) => upload.name)).toEqual(["attachment-0.png"]);
 });

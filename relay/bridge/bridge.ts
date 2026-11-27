@@ -206,7 +206,7 @@ function readConfig(): Config | number {
   return config;
 }
 
-// Delivers one batch of up to 50 pending reports: 0 when all were delivered or none were pending, 1 otherwise.
+// Delivers one batch of up to 50 eligible reports: 0 when all were delivered or none were ready, 1 otherwise.
 async function deliver(config: Config): Promise<number> {
   let reports: FeedbackReport[];
   try {
@@ -271,19 +271,27 @@ async function deliver(config: Config): Promise<number> {
       // Never log response bodies, payloads, URLs or exceptions, which can contain secrets.
       console.error("Feedback bridge: report delivery failed; left pending for retry");
       failed = true;
+      try {
+        const deferred = await request(
+          `${config.RELAY_URL}/v1/feedback/${encodeURIComponent(report.reportId)}/defer`, config.FEEDBACK_OPERATOR_TOKEN, {},
+        );
+        await deferred.body?.cancel();
+      } catch {
+        console.error("Feedback bridge: could not defer failed report");
+      }
     }
   }
   return failed ? 1 : 0;
 }
 
-// A failed delivery is retried this often, whether or not the pending set changes.
+// Fall back to checking for work even when a delivery or subscription update was missed.
 const retryMs = 120_000;
 
 type Subscribe = (onIds: (ids: string[]) => void, onError: () => void) => () => void;
 
 /**
- * Runs `run` whenever the subscribed pending set changes and is non-empty, and every two minutes so a failed delivery
- * is retried, never two at once: a change during a run queues exactly one more. Resolves with 0 once `stop` aborts
+ * Runs `run` whenever the subscribed pending set changes and is non-empty, and every two minutes as a fallback.
+ * A change during a run queues exactly one more. Resolves with 0 once `stop` aborts
  * (after the current run) or 1 when the subscription fails.
  */
 export function watch(subscribe: Subscribe, run: () => Promise<unknown>, stop: AbortSignal): Promise<number> {

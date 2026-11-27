@@ -520,12 +520,12 @@ stored attachments answer `{index, status:"stored"}` and closed windows
 
 ### Operator queue
 
-Both operator routes require `Authorization: Bearer <token>`, where the SHA-256
+Operator routes require `Authorization: Bearer <token>`, where the SHA-256
 of the token, as lowercase hex, equals `FEEDBACK_OPERATOR_TOKEN_SHA256`. A
 missing or wrong token answers 401.
 
 `GET /v1/feedback/pending?limit=50` returns at most `limit` (1–50, default 50)
-pending reports, oldest first:
+eligible pending reports in queue order:
 
 ```json
 {
@@ -548,12 +548,19 @@ pending reports, oldest first:
 `publisherId` is present only for verified reports. Another `limit` answers 400
 `{error:"invalid_limit"}`. A report with attachments joins the queue once each
 accepted file is stored or its upload window closes; a file never uploaded is
-listed as `missing`. `attachments` is empty for a text-only report.
+listed as `missing`. `attachments` is empty for a text-only report. Reports
+start in submission order.
+
+After a failed delivery, the bridge calls `POST /v1/feedback/{reportId}/defer`.
+It returns 204 for a known report and 404 for an unknown one. A pending report
+leaves the eligible queue for 120 seconds, then rejoins according to its retry
+time. A repeat during that window leaves the original retry time in place.
+Deferral preserves the report and its attachments for the next attempt.
 
 Outside HTTP, the Convex query `feedback:pendingSignal({token})` returns the IDs
-of the same first 50 pending reports and nothing else. The bridge subscribes to
-it over the Convex client WebSocket to learn of new reports at once. The token
-rule is the same; a wrong token, or an unset hash, fails the query with
+of the same first 50 eligible reports and nothing else. The bridge subscribes to
+it over the Convex client WebSocket to learn when reports become eligible. The
+query uses the same token rule. A wrong token or an unset hash fails it with
 `unauthorized`.
 
 Acknowledging a report deletes its files, so the bridge must copy them first. A
