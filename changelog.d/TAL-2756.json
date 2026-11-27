@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening a file from the chat transcript jumps to the requested line even when the workspace is still loading.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
