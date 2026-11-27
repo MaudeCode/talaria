@@ -82,11 +82,18 @@ public final class AuthManager {
     /// TAL-48: who the active server says is signed in, when it keeps sessions
     /// per person; nil for a single-user server or before the first probe.
     public var activePerson: ActivePerson? {
-        guard let answer = personAnswer, answer.server == state.server else { return nil }
+        guard let answer = authStatusAnswer, answer.server == state.server else { return nil }
         return Self.activePerson(from: answer.status)
     }
-    /// The last person probe, kept with its server so another server never shows it.
-    private var personAnswer: (server: URL, status: AuthStatusResponse)?
+    /// A successful probe can omit the field on an older server. Until a probe
+    /// succeeds for the active login, the app has no authority to render.
+    public func canManageServer(on server: URL) -> Bool {
+        guard state == .loggedIn(server: server), let answer = authStatusAnswer, answer.server == server else { return false }
+        return answer.status.canManageServer ?? true
+    }
+
+    private var authStatusAnswer: (server: URL, status: AuthStatusResponse)?
+    @ObservationIgnored private var authStatusReadID = UUID()
 
     public enum ActivePerson: Equatable, Sendable {
         case signedIn(displayName: String)
@@ -101,7 +108,13 @@ public final class AuthManager {
         APIClient.setReauthenticationRequired(nil, owner: mutationBlockID)
     }
 
-    private func finishRecovery() {
+    private func invalidateAuthStatus() {
+        authStatusReadID = UUID()
+        authStatusAnswer = nil
+    }
+
+    private func finishRecovery(keepsAuthStatus: Bool = false) {
+        if !keepsAuthStatus { invalidateAuthStatus() }
         recoveryID = UUID()
         recoveryTask?.cancel()
         recoveryTask = nil
@@ -111,6 +124,7 @@ public final class AuthManager {
     }
 
     private func requireReauthentication(for server: URL, status: AuthStatusResponse?, voluntary: Bool = false) {
+        if !voluntary { invalidateAuthStatus() }
         reauthenticationIsVoluntary = voluntary
         let usedSSO = (try? keychain.load(.authenticatedProfile, scope: server.absoluteString)) != nil
         // Without a successful capability probe, keep retry/header repair available.
@@ -125,21 +139,23 @@ public final class AuthManager {
         APIClient.setReauthenticationRequired(server, owner: mutationBlockID)
     }
 
-    /// Re-reads the active server's person (TAL-48). An unreachable server keeps
-    /// the last answer; a session it no longer accepts goes through the normal
-    /// unauthorized recovery.
+    /// Re-reads the active login's auth status, including its person and owner
+    /// authority. An unreachable server keeps the last answer for this login.
     public func refreshActivePerson() async {
-        guard case .loggedIn(let server) = state else { return }
+        guard !Task.isCancelled, case .loggedIn(let server) = state else { return }
+        let readID = UUID()
+        authStatusReadID = readID
         let client = probeClientFactory(server, currentCustomHeaders, cookieStorageProvider(server))
         let status: AuthStatusResponse
         do {
             status = try await client.authStatus()
         } catch {
+            guard !Task.isCancelled, authStatusReadID == readID else { return }
             handleAPIError(error, server: server)
             return
         }
-        guard state == .loggedIn(server: server) else { return }
-        personAnswer = (server, status)
+        guard !Task.isCancelled, authStatusReadID == readID, state == .loggedIn(server: server) else { return }
+        authStatusAnswer = (server, status)
     }
 
     static func activePerson(from status: AuthStatusResponse) -> ActivePerson? {
@@ -152,13 +168,13 @@ public final class AuthManager {
     /// so the new login decides who the person is.
     public func reauthenticateActivePerson() {
         guard case .loggedIn(let server) = state, pendingReauthentication == nil else { return }
-        requireReauthentication(for: server, status: personAnswer?.server == server ? personAnswer?.status : nil, voluntary: true)
+        requireReauthentication(for: server, status: authStatusAnswer?.server == server ? authStatusAnswer?.status : nil, voluntary: true)
     }
 
     /// Cancels a sign-in the user started; the existing session stays as it was.
     public func cancelVoluntaryReauthentication() {
         guard reauthenticationIsVoluntary, pendingReauthentication != nil, recoveryTask == nil else { return }
-        finishRecovery()
+        finishRecovery(keepsAuthStatus: true)
     }
 
     /// Observable snapshot of every configured server, mirrored from the
@@ -878,7 +894,9 @@ public final class AuthManager {
     /// (`persist: true`), since Keychain writes are slow enough to stutter typing
     /// (#255).
     public func updateCustomHeaders(_ headers: [CustomHeader], persist: Bool = true) {
-        headerStore.replace(with: headers.sanitizedForStorage())
+        let sanitized = headers.sanitizedForStorage()
+        if sanitized != currentCustomHeaders { invalidateAuthStatus() }
+        headerStore.replace(with: sanitized)
         // Persist under the active server's scoped key. The Settings editor is only
         // reachable while signed in, so a server is always present here; if somehow
         // unconfigured there's nothing to scope to, so we skip the write (#16).

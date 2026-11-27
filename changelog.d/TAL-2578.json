@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chat terminal output opens only when the server grants owner access.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}
