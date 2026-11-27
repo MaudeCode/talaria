@@ -147,10 +147,15 @@ extension APIClient {
 
     /// The profiles route supplies a path relative to the server's base, including any proxy prefix.
     func profileAvatarData(from path: String) async throws -> Data? {
+        guard let url = appRelativeURL(path) else { return nil }
+        return try await downloadData(from: url, using: session, mapsUnauthorized: true)
+    }
+
+    func appRelativeURL(_ path: String) -> URL? {
         let base = baseURL.appendingPathComponent("", isDirectory: true)
         guard let url = URL(string: path, relativeTo: base)?.absoluteURL,
               Self.isSameOrigin(url, as: baseURL) else { return nil }
-        return try await downloadData(from: url, using: session, mapsUnauthorized: true)
+        return url
     }
 
     public func switchProfile(name: String) async throws -> ProfileSwitchResponse {
@@ -225,6 +230,29 @@ extension APIClient {
 
     public func updatesCheck() async throws -> UpdatesCheckResponse {
         try await send(endpoint: .updatesCheck, method: "GET")
+    }
+
+    public func agentBackupStatus() async throws -> AgentBackupStatus {
+        try await send(endpoint: .agentBackup, method: "GET")
+    }
+
+    public func createAgentBackup() async throws -> AgentBackupStatus {
+        try await send(endpoint: .agentBackup, method: "POST", body: ["scope": "agent_home"])
+    }
+
+    public func discardAgentBackup(id: String) async throws -> AgentBackupStatus {
+        try await send(endpoint: .discardAgentBackup(id: id), method: "DELETE")
+    }
+
+    public func downloadAgentBackup(_ job: AgentBackupJob) async throws -> URL {
+        let downloadPath = Endpoint.agentBackup.url(relativeTo: baseURL).appending(path: "download").path
+        guard job.knownState == .ready, let path = job.downloadUrl,
+              let url = appRelativeURL(path), url.path == downloadPath else {
+            throw APIError.invalidServerURL
+        }
+        let filename = job.fileName.flatMap(SessionExportFile.sanitizedFilename)
+        let archiveName = filename?.lowercased().hasSuffix(".zip") == true ? filename : nil
+        return try await downloadPrivateZIP(from: url, filename: archiveName ?? "agent-home.zip")
     }
 
     /// Forces a *live* update check: `POST /api/updates/check` with `{ "force": true }`.

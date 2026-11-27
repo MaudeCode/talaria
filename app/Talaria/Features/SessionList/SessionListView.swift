@@ -328,14 +328,6 @@ struct SessionListView: View {
                     .presentationDetents([.medium, .large])
                     .adaptiveFormPresentation()
                     .ignoresSafeArea()
-                    // The temp file lives in its own UUID directory (see
-                    // SessionListViewModel.export); remove the directory once
-                    // the share sheet is gone, shared and cancelled alike.
-                    .onDisappear {
-                        try? FileManager.default.removeItem(
-                            at: item.fileURL.deletingLastPathComponent()
-                        )
-                    }
             }
             .sheet(item: $sessionPendingRename) { session in
                 SessionRenameSheet(

@@ -90,6 +90,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     case systemHermesAgent = "settings-system-hermes-agent"
     case systemUpdate = "settings-system-update"
     case systemUpdateSummary = "settings-system-update-summary"
+    case systemAgentBackup = "settings-system-agent-backup"
     case logsFile = "settings-logs-file"
     case logsLines = "settings-logs-lines"
     case logsLogText = "settings-logs-text"
@@ -321,6 +322,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
         case .systemHermesAgent: .init(category: .system, section: "System", title: "Hermes Agent", scope: .server)
         case .systemUpdate: .init(category: .system, section: "System", title: "Update", scope: .server)
         case .systemUpdateSummary: .init(category: .system, section: "System", title: "Summarize with AI", scope: .server)
+        case .systemAgentBackup: .init(category: .system, section: "System", title: "Agent-home backup", scope: .server)
         case .logsFile: .init(category: .logs, section: "Logs", title: "File", scope: .server)
         case .logsLines: .init(category: .logs, section: "Logs", title: "Lines", scope: .server)
         case .logsLogText: .init(category: .logs, section: "Logs", title: "Log text", scope: .server)

@@ -29,6 +29,7 @@
 		E22300000000000000000101 /* CarPlayWidgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22300000000000000000100 /* CarPlayWidgetTests.swift */; };
 		26AB000000000000000000B4 /* ProvidersViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F4 /* ProvidersViewTests.swift */; };
 		759A00000000000000000003 /* UpdateSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759A00000000000000000004 /* UpdateSummaryTests.swift */; };
+		759A00000000000000000013 /* AgentBackupHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759A00000000000000000014 /* AgentBackupHostedTests.swift */; };
 		211500000000000000000001 /* ScreenGalleryHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 211500000000000000000002 /* ScreenGalleryHostedTests.swift */; };
 		182A00000000000000000003 /* WhatsNewHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 182A00000000000000000004 /* WhatsNewHostedTests.swift */; };
 		26AB0000000000000000A402 /* AppIconAlternateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB0000000000000000B402 /* AppIconAlternateTests.swift */; };
@@ -255,6 +256,7 @@
 		157500000000000000000001 /* FeedbackSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157500000000000000000002 /* FeedbackSheet.swift */; };
 		C108A0000000000000000005 /* ServersProvidersSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */; };
 		C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */; };
+		759A00000000000000000023 /* AgentBackupSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759A00000000000000000024 /* AgentBackupSettings.swift */; };
 		759A00000000000000000001 /* UpdateSummarySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759A00000000000000000002 /* UpdateSummarySheet.swift */; };
 		182A00000000000000000001 /* WhatsNewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 182A00000000000000000002 /* WhatsNewSheet.swift */; };
 		C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */; };
@@ -750,6 +752,7 @@
 		157500000000000000000002 /* FeedbackSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackSheet.swift; sourceTree = "<group>"; };
 		C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServersProvidersSettingsViews.swift; sourceTree = "<group>"; };
 		C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerUpdateSettingsSection.swift; sourceTree = "<group>"; };
+		759A00000000000000000024 /* AgentBackupSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBackupSettings.swift; sourceTree = "<group>"; };
 		759A00000000000000000002 /* UpdateSummarySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSummarySheet.swift; sourceTree = "<group>"; };
 		182A00000000000000000002 /* WhatsNewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsNewSheet.swift; sourceTree = "<group>"; };
 		C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIdentitySettingsEditor.swift; sourceTree = "<group>"; };
@@ -917,6 +920,7 @@
 		E22300000000000000000100 /* CarPlayWidgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayWidgetTests.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F4 /* ProvidersViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewTests.swift; sourceTree = "<group>"; };
 		759A00000000000000000004 /* UpdateSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSummaryTests.swift; sourceTree = "<group>"; };
+		759A00000000000000000014 /* AgentBackupHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBackupHostedTests.swift; sourceTree = "<group>"; };
 		211500000000000000000002 /* ScreenGalleryHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenGalleryHostedTests.swift; sourceTree = "<group>"; };
 		182A00000000000000000004 /* WhatsNewHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsNewHostedTests.swift; sourceTree = "<group>"; };
 		26AB0000000000000000B402 /* AppIconAlternateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconAlternateTests.swift; sourceTree = "<group>"; };
@@ -1127,6 +1131,7 @@
 				E22300000000000000000100 /* CarPlayWidgetTests.swift */,
 				26AB000000000000000000F4 /* ProvidersViewTests.swift */,
 				759A00000000000000000004 /* UpdateSummaryTests.swift */,
+				759A00000000000000000014 /* AgentBackupHostedTests.swift */,
 				182A00000000000000000004 /* WhatsNewHostedTests.swift */,
 				211500000000000000000002 /* ScreenGalleryHostedTests.swift */,
 				958A00000000000000000006 /* AppLockHostedTests.swift */,
@@ -1447,6 +1452,7 @@
 				A16950000000000000000002 /* ModelsSettingsView.swift */,
 				A21180000000000000000002 /* ServerSettingsSections.swift */,
 				C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */,
+				759A00000000000000000024 /* AgentBackupSettings.swift */,
 				759A00000000000000000002 /* UpdateSummarySheet.swift */,
 				182A00000000000000000002 /* WhatsNewSheet.swift */,
 				C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */,
@@ -1936,6 +1942,7 @@
 				A16950000000000000000001 /* ModelsSettingsView.swift in Sources */,
 				A21180000000000000000001 /* ServerSettingsSections.swift in Sources */,
 				C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */,
+				759A00000000000000000023 /* AgentBackupSettings.swift in Sources */,
 				759A00000000000000000001 /* UpdateSummarySheet.swift in Sources */,
 				182A00000000000000000001 /* WhatsNewSheet.swift in Sources */,
 				C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */,
@@ -2283,6 +2290,7 @@
 				E22300000000000000000101 /* CarPlayWidgetTests.swift in Sources */,
 				26AB000000000000000000B4 /* ProvidersViewTests.swift in Sources */,
 				759A00000000000000000003 /* UpdateSummaryTests.swift in Sources */,
+				759A00000000000000000013 /* AgentBackupHostedTests.swift in Sources */,
 				182A00000000000000000003 /* WhatsNewHostedTests.swift in Sources */,
 				211500000000000000000001 /* ScreenGalleryHostedTests.swift in Sources */,
 				958A00000000000000000005 /* AppLockHostedTests.swift in Sources */,

@@ -110,7 +110,7 @@ extension SessionExportFile {
     /// Keeps only the last path component and strips characters that are
     /// unsafe in filenames, so a hostile/buggy header can't escape the temp
     /// directory or produce an unusable name.
-    private static func sanitizedFilename(_ raw: String) -> String? {
+    static func sanitizedFilename(_ raw: String) -> String? {
         let lastComponent = raw
             .replacingOccurrences(of: "\\", with: "/")
             .split(separator: "/")

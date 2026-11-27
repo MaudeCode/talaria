@@ -129,6 +129,8 @@ public enum Endpoint: Sendable {
     case updatesCheck
     case updatesApply
     case updatesSummary
+    case agentBackup
+    case discardAgentBackup(id: String)
     case updateNotifications
     case updateNotificationsClear
     case updateNotificationRead(id: String)
@@ -447,6 +449,8 @@ public enum Endpoint: Sendable {
             return "/api/updates/apply"
         case .updatesSummary:
             return "/api/updates/summary"
+        case .agentBackup, .discardAgentBackup:
+            return "/api/agent-backup"
         case .updateNotifications:
             return "/api/update-notifications"
         case .updateNotificationsClear:
@@ -829,6 +833,8 @@ public enum Endpoint: Sendable {
     public func url(relativeTo baseURL: URL) -> URL {
         let url: URL
         switch self {
+        case let .discardAgentBackup(id):
+            url = segmentsURL(relativeTo: baseURL, root: path, segments: [id])
         case let .kanbanCardDetail(request):
             url = kanbanTaskURL(relativeTo: baseURL, cardID: request.cardID)
         case let .kanbanEditBoard(request):
