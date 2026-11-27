@@ -1626,10 +1626,10 @@ export class GatewaySessions {
             && receipt.execution_generation === watch.snapshot.execution_generation) {
           const { authority_epoch, replay_epoch, execution_generation } = watch.snapshot
           const run = { identity: JSON.stringify(['owner', target.sid, authority_epoch, replay_epoch, execution_generation, activeAdmission]), promptId: activeAdmission }
-          // A newer execution can be in the same transcript. The receipt's prompt still bounds the earlier reply.
+          // The display window may omit the admission prompt. Use the owner snapshot even if it contains a newer turn.
           const snapshot = current.snapshot
           const transcript = snapshot?.authority_epoch === authority_epoch && snapshot.replay_epoch === replay_epoch
-            ? session ?? { title: str(snapshot.info.title) || base.title, messages: snapshot.messages } : null
+            ? { title: str(snapshot.info.title) || base.title, messages: snapshot.messages } : null
           this.deps.onWebCompletion?.(target.profile, target.sid, run, transcript)
         }
         await put('stream_end', { session_id: target.sid })

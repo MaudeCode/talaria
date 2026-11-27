@@ -271,6 +271,24 @@ describe('canonical owner attachment', () => {
     expect(changes.mock.calls.find(([reason]) => reason === 'web_completion')?.[1]?.webAudio?.notification?.body).toBe('Completed')
   })
 
+  it('quotes the native final answer when the completion frame windows out its prompt', async () => {
+    const changes = vi.spyOn(s.deps.events, 'publish')
+    const prompt = admission()
+    const user = { role: 'user', content: 'Run the checks', message_id: prompt.admission_id }
+    const watch = await observeOwner(snapshot({ running: true, pending: [prompt], messages: [user], message_count: 1 }))
+    const messages = [
+      user,
+      ...Array.from({ length: 119 }, (_, i) => ({ role: 'assistant', content: `Check ${String(i + 1)} passed`, message_id: `check-${String(i + 1)}` })),
+      { role: 'assistant', content: '**All checks passed**', message_id: 'final-answer' },
+    ]
+    watch.snapshot({ messages, message_count: messages.length }, false, false)
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.find(({ event }) => event === 'done')?.data).toMatchObject({ session: { _messages_offset: 1, _messages_truncated: true } })
+    await vi.waitFor(() => { expect(changes.mock.calls.some(([reason]) => reason === 'web_completion')).toBe(true) })
+    expect(changes.mock.calls.find(([reason]) => reason === 'web_completion')?.[1]?.webAudio?.notification?.body).toBe('All checks passed')
+  })
+
   it('keeps the native completion answer when the read already sees the next execution', async () => {
     const changes = vi.spyOn(s.deps.events, 'publish')
     const prompt = admission()
