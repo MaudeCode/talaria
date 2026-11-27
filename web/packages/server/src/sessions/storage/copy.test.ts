@@ -148,6 +148,22 @@ describe.each(DESTINATIONS)('a copy to $name', ({ open, tamper }) => {
 })
 })
 
+it.each([
+  { name: 'JSON', open: () => jsonStore(tempDir()) },
+  { name: 'JSONL', open: () => jsonlStore(tempDir()) },
+  ...DESTINATIONS,
+])('detects and removes a destination-only session index in $name', async ({ open }) => {
+  const source = jsonStore(tempDir())
+  const destination = await open()
+  await destination.sessions.writeIndex([{ session_id: 'stale', message_count: 1 }])
+
+  expect(await verifyStorage(source, destination)).toEqual(['session index'])
+  expect(await copyStorage(source, destination)).toEqual({ copied: 1, unchanged: 0, failures: [] })
+  expect(await destination.sessions.hasIndex()).toBe(false)
+  expect(await verifyStorage(source, destination)).toEqual([])
+  expect(await copyStorage(source, destination)).toEqual({ copied: 0, unchanged: 0, failures: [] })
+})
+
 it('refuses to approve a copy while the source holds a backup without its session', async () => {
   const state = tempDir()
   const json = jsonStore(state)

@@ -340,6 +340,7 @@ class JsonlSessions implements SessionBackend {
   hasIndex(): Promise<boolean> { this.check(); return this.files.hasIndex() }
   index(): Promise<{ entries: SessionIndexEntry[]; revision: string }> { this.check(); return this.files.index() }
   writeIndex(entries: SessionIndexEntry[]): Promise<void> { this.check(); return this.files.writeIndex(entries) }
+  deleteIndex(): Promise<void> { this.check(); return this.files.deleteIndex() }
   get tombstones(): SessionBackend['tombstones'] { this.check(); return this.files.tombstones }
 
   private async backupMeta(dir: string): Promise<BackupMeta | null> {

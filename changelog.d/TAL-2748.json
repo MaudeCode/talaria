@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Storage migrations remove stale chat indexes when the source has no index.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

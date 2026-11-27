@@ -256,6 +256,10 @@ export class JsonSessions implements SessionBackend {
       this.parsedIndex = { entries, revision: statSignature(indexPath)! }
     })())
   }
+  async deleteIndex(): Promise<void> {
+    rmSync(this.indexPath, { force: true })
+    this.parsedIndex = null
+  }
   private allTombstones(): Set<string> {
     try {
       if (!existsSync(this.tombstonePath)) return new Set()
