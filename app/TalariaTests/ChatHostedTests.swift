@@ -10,6 +10,51 @@ import XCTest
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
+    func testOfflineComposerStatusHasNoDismissButton() async throws {
+        let fixture = try FixtureApp(for: self)
+        let server = UITestFixtureEnvironment.serverURL
+        let sessionID = "offline-composer"
+        let session = SessionSummary(sessionId: sessionID, title: "Cached chat")
+        try CacheStore.cacheMessages(
+            [ChatMessage(role: "assistant", content: "Cached reply", timestamp: 1, messageId: "cached-reply")],
+            serverURL: server, sessionID: sessionID, in: fixture.cache.mainContext
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: MockURLProtocol.register { _ in
+            throw URLError(.notConnectedToInternet)
+        }]
+        let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        let model = ChatViewModel(session: session, server: server, client: client, networkPath: nil)
+        await model.loadMessages(modelContext: fixture.cache.mainContext)
+        model.setSendErrorMessage("Fixture send failed.")
+
+        let window = try hostWindow(fixture.chat(session, viewModel: model, loadsInitialMessages: false))
+
+        _ = try await requireElement(in: window, label: "Reconnect to send messages.")
+        XCTAssertFalse(HostedAccessibility.labels(in: window).contains("Dismiss"))
+        attachHostedScreenshot(window, name: "composer-offline-phone")
+    }
+
+    func testRestoringComposerDraftKeepsTheSendError() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        let server = UITestFixtureEnvironment.serverURL
+        let model = ChatViewModel(session: session, server: server, client: fixture.client, networkPath: nil)
+        let draft = "Restored draft"
+        let error = "Fixture send failed."
+        fixture.environment.draftStore.setDraft(draft, for: .session(server: server, session: session))
+        model.setSendErrorMessage(error)
+
+        let window = try hostWindow(fixture.chat(session, viewModel: model, loadsInitialMessages: false))
+        let editor = await composerTextView(in: window)
+        let restored = await awaitCondition { editor?.text == draft }
+
+        XCTAssertTrue(restored, "The stored draft must reach the composer before checking its error")
+        XCTAssertEqual(model.sendErrorMessage, error)
+        _ = try await requireElement(in: window, label: error)
+    }
+
     func testChatHeaderFollowsServerScreenAvailability() async throws {
         let fixture = try FixtureApp(for: self)
         let summary = SessionSummary(sessionId: "screen-session", title: "Screen fixture")

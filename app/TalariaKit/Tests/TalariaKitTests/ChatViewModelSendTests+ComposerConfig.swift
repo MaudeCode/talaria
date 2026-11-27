@@ -7,6 +7,30 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension ChatViewModelSendTests {
+    func testRefusedWorkspaceSlashCommandSetsOneDismissibleError() async throws {
+        let body = #"{"error":"Workspace does not exist."}"#
+        let model = try makeViewModel { request in
+            guard request.url?.path == "/api/session/update" else { throw URLError(.badURL) }
+            XCTAssertEqual(try apiTestJSONBody(from: request)["workspace"] as? String, "/missing")
+            return apiTestJSONResponse(body, statusCode: 400, for: request)
+        }
+
+        let result = await SlashCommandExecutor.execute(text: "/workspace /missing", viewModel: model)
+
+        guard case .unsupported(let message) = result else {
+            return XCTFail("Expected a workspace refusal, got \(result)")
+        }
+        XCTAssertEqual(message, APIError.http(statusCode: 400, body: body).localizedDescription)
+        model.setSendErrorMessage(message)
+        XCTAssertEqual(model.sendErrorMessage, message)
+        XCTAssertNil(model.composerConfigurationErrorMessage, "The slash refusal already appears as the send error")
+
+        model.clearComposerErrors()
+
+        XCTAssertNil(model.sendErrorMessage)
+        XCTAssertNil(model.composerConfigurationErrorMessage)
+    }
+
     func testComposerConfigurationHidesTransportFailure() async throws {
         let model = try makeViewModel { request in
             switch request.url?.path {

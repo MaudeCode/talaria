@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Dismiss composer errors with the close button or by continuing to type.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

@@ -4,30 +4,32 @@ import TalariaKit
 struct ComposerStatusView: View {
     let text: String
     let isError: Bool
-    let isDismissible: Bool
-    let onDismiss: () -> Void
+    let onDismiss: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(spacing: 8) {
             Text(text)
                 .font(AppFont.caption())
                 .foregroundStyle(textColor)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
 
-            if isDismissible {
+            if let onDismiss {
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
                         .font(AppFont.caption(weight: .bold))
                         .foregroundStyle(textColor)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss attachment error")
+                .accessibilityLabel("Dismiss")
+                .help("Dismiss")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.leading, 10)
+        .padding(.trailing, onDismiss == nil ? 10 : 0)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(backgroundColor)

@@ -16,6 +16,10 @@ public final class SettingsModelPickerViewModel {
     public private(set) var errorMessage: String?
     public private(set) var preferenceError: String?
 
+    func clearPreferenceError() {
+        if preferenceError != nil { preferenceError = nil }
+    }
+
     private struct Intent {
         let id: UUID
         let value: Bool

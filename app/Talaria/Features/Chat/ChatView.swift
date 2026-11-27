@@ -422,7 +422,7 @@ struct ChatView: View {
         MessageComposerView(
             draft: prompt == nil ? $draftMessageStorage : clarificationDraftBinding,
             draftWriteRevision: $draftWriteRevision,
-            onDraftEdit: { editComposerDraft($0, promptID: prompt?.id) },
+            onDraftEdit: { editComposerDraft($0, promptID: prompt?.id, modelPreferences: $1) },
             clarificationPanelHeight: $clarificationPanelHeight,
             availableHeight: availableHeight,
             heightAboveComposer: composerAccessoryVisibleItemCount > 0 ? (composerAccessoriesHeight ?? 0) + 8 : 0,
@@ -581,6 +581,7 @@ struct ChatView: View {
             onDismissUploadAttachmentError: {
                 viewModel.setUploadAttachmentError(nil)
             },
+            onDismissComposerError: { viewModel.clearComposerErrors(modelPreferences: $0) },
             onSelectGitBranch: { target in
                 Task { await performGitCheckout(target) }
             },
@@ -3441,9 +3442,14 @@ struct ChatView: View {
         Binding(get: { viewModel.clarificationDraftResponse }, set: { _ in })
     }
 
-    private func editComposerDraft(_ newValue: String, promptID: String?) {
+    private func editComposerDraft(
+        _ newValue: String,
+        promptID: String?,
+        modelPreferences: SettingsModelPickerViewModel?
+    ) {
         // UIKit and voice callbacks can outlive the input they belong to.
         guard promptID == viewModel.clarificationPrompt?.id else { return }
+        viewModel.clearComposerErrors(modelPreferences: modelPreferences)
         if let promptID {
             viewModel.setClarificationDraftResponse(newValue, promptID: promptID)
             draftWriteRevision &+= 1
