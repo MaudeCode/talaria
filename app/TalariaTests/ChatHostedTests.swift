@@ -2475,7 +2475,9 @@ final class ChatHostedTests: XCTestCase {
             .environment(\.chatBodyEvaluation, recorder)
         let window = try hostWindow(FoldHost(content: AnyView(chat), division: fold), size: CGSize(width: 900, height: 900))
         try await awaitFixtureApproval(in: window)
+        if keepsHostedScreenshots { attachHostedScreenshot(window, name: "approval-slot-before-tabletop") }
         HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        await awaitQuietWork(of: recorder, phase: "Tabletop approval layout")
         let foldInWindow = fold.offsetBy(dx: 0, dy: recorder.transcriptFrame.minY)
         let allow = try await requireElement(in: window, label: "Allow once")
         let moved = await awaitCondition { window.convert(allow.accessibilityFrame, from: nil).minY >= foldInWindow.maxY }
@@ -2484,7 +2486,6 @@ final class ChatHostedTests: XCTestCase {
             let button = try await requireElement(in: window, label: title)
             XCTAssertFalse(window.convert(button.accessibilityFrame, from: nil).intersects(foldInWindow), "\(title) crosses the fold")
         }
-        settle(0.3)
         attachHostedScreenshot(window, name: "approval-slot-tabletop")
     }
 

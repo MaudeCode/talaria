@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep chats responsive when moving a pending approval into the lower half of the iPhone Duo in tabletop mode.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}
