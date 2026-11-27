@@ -743,6 +743,7 @@
 	"logs_loading": "ログを読み込み中…",
 	"logs_matching_lines": "最新 {n} 行中 {matched} 行が一致",
 	"logs_no_mtime": "未書き込み",
+	"logs_refresh_failed": "ログを更新できませんでした。",
 	"logs_search": "このログを検索",
 	"logs_severity": "重大度",
 	"logs_severity_all": "すべて",

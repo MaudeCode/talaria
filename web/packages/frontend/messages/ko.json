@@ -756,6 +756,7 @@
 	"logs_loading": "로그를 불러오는 중…",
 	"logs_matching_lines": "최근 {n}줄 중 {matched}줄 일치",
 	"logs_no_mtime": "아직 기록되지 않음",
+	"logs_refresh_failed": "로그를 새로 고칠 수 없습니다.",
 	"logs_search": "이 로그 검색",
 	"logs_severity": "심각도",
 	"logs_severity_all": "전체",

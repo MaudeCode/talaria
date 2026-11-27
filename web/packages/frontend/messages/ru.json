@@ -807,6 +807,7 @@
 	"logs_loading": "Загрузка журналов…",
 	"logs_matching_lines": "{matched} совпадающих строк из последних {n}",
 	"logs_no_mtime": "ещё не записано",
+	"logs_refresh_failed": "Не удалось обновить логи.",
 	"logs_search": "Поиск в этом журнале",
 	"logs_severity": "Уровень",
 	"logs_severity_all": "Все",

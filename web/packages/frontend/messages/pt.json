@@ -717,6 +717,7 @@
 	"logs_loading": "Carregando logs…",
 	"logs_matching_lines": "{matched} linhas correspondentes nas últimas {n}",
 	"logs_no_mtime": "ainda não escrito",
+	"logs_refresh_failed": "Não foi possível atualizar os logs.",
 	"logs_search": "Pesquisar neste log",
 	"logs_severity": "Severidade",
 	"logs_severity_all": "Todos",

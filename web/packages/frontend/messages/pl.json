@@ -798,6 +798,7 @@
 	"logs_loading": "Ładowanie logów…",
 	"logs_matching_lines": "{matched} pasujących wierszy z ostatnich {n}",
 	"logs_no_mtime": "jeszcze nie zapisano",
+	"logs_refresh_failed": "Nie udało się odświeżyć logów.",
 	"logs_search": "Szukaj w tym logu",
 	"logs_severity": "Poziom ważności",
 	"logs_severity_all": "Wszystkie",

@@ -746,6 +746,7 @@
 	"logs_loading": "Protokolle werden geladen…",
 	"logs_matching_lines": "{matched} passende Zeilen in den letzten {n}",
 	"logs_no_mtime": "noch nicht geschrieben",
+	"logs_refresh_failed": "Protokolle konnten nicht aktualisiert werden.",
 	"logs_search": "Dieses Log durchsuchen",
 	"logs_severity": "Schweregrad",
 	"logs_severity_all": "Alle",

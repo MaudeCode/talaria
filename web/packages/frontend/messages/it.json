@@ -781,6 +781,7 @@
 	"logs_loading": "Caricamento log…",
 	"logs_matching_lines": "{matched} righe corrispondenti nelle ultime {n}",
 	"logs_no_mtime": "non ancora scritto",
+	"logs_refresh_failed": "Impossibile aggiornare i log.",
 	"logs_search": "Cerca in questo log",
 	"logs_status_idle": "Scegli un file di log per vedere le righe recenti.",
 	"logs_tail": "Coda",

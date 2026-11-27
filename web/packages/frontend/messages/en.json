@@ -1377,6 +1377,7 @@
 	"logs_loading": "Loading logs…",
 	"logs_matching_lines": "{matched} matching lines in the last {n}",
 	"logs_no_mtime": "not written yet",
+	"logs_refresh_failed": "Could not refresh logs.",
 	"logs_search": "Search this log",
 	"logs_severity": "Severity",
 	"logs_severity_all": "All",

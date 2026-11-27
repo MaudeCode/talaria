@@ -769,6 +769,7 @@
 	"logs_loading": "Načítám logy…",
 	"logs_matching_lines": "{matched} odpovídajících řádků z posledních {n}",
 	"logs_no_mtime": "ještě nepsáno",
+	"logs_refresh_failed": "Protokoly se nepodařilo obnovit.",
 	"logs_search": "Hledat v tomto logu",
 	"logs_severity": "Závažnost",
 	"logs_severity_all": "Všechny",

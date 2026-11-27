@@ -40,6 +40,34 @@ function renderInPane() {
 beforeEach(() => { fetchLogs.mockReset() })
 afterEach(() => { vi.useRealTimers() })
 
+it('keeps the last read visible when Follow fails and clears the error after Retry (TAL-2764)', async () => {
+  vi.useFakeTimers({ now: new Date('2026-11-27T12:00:00Z') })
+  fetchLogs.mockResolvedValueOnce(answer(ENTRIES))
+    .mockRejectedValueOnce(new Error('Log read unavailable'))
+    .mockResolvedValue(answer([{ time: '12:05:00', level: 'info', text: 'log read recovered' }]))
+  const { container } = renderInPane()
+  const updated = () => container.querySelector('[data-stat="updated"] dd')?.textContent
+
+  expect(screen.getByRole('status')).toHaveTextContent(m.loading())
+  await act(() => vi.advanceTimersByTimeAsync(1))
+  expect(screen.getByText(ENTRIES[0]!.text)).toBeVisible()
+  const lastRead = updated()
+  expect(lastRead).toBeTruthy()
+
+  await act(() => vi.advanceTimersByTimeAsync(15_000))
+  const alert = screen.getByRole('alert')
+  expect(within(screen.getByRole('list', { name: m.logs_file_agent() })).getAllByRole('listitem')).toHaveLength(ENTRIES.length)
+  expect(screen.getByText(ENTRIES[0]!.text)).toBeVisible()
+  expect(updated()).toBe(lastRead)
+
+  fireEvent.click(within(alert).getByRole('button', { name: m.retry() }))
+  await act(() => vi.advanceTimersByTimeAsync(1))
+  expect(screen.getByText('log read recovered')).toBeVisible()
+  expect(updated()).toBeTruthy()
+  expect(updated()).not.toBe(lastRead)
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
 it('stops refetching and moving once the reader scrolls up; following keeps the newest line in view (TAL-2139)', async () => {
   vi.useFakeTimers()
   // React Query batches its notifications on a short timer.
@@ -127,6 +155,7 @@ it('builds its tabs from the server, shows a missing log as empty, copies the sh
 
   await userEvent.click(within(tabs).getByRole('tab', { name: 'Web' }))
   expect(await screen.findByText('Log file for webui not found yet.')).toBeTruthy()
+  expect(screen.queryByRole('alert')).toBeNull()
   expect(screen.queryByRole('switch', { name: m.logs_follow() })).toBeNull()
   Reflect.deleteProperty(navigator, 'clipboard')
 })

@@ -768,6 +768,7 @@
 	"logs_loading": "Cargando registros…",
 	"logs_matching_lines": "{matched} líneas coincidentes en las últimas {n}",
 	"logs_no_mtime": "aún no escrito",
+	"logs_refresh_failed": "No se pudieron actualizar los registros.",
 	"logs_search": "Buscar en este registro",
 	"logs_severity": "Severidad",
 	"logs_severity_all": "Todo",

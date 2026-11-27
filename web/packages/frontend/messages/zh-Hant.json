@@ -743,6 +743,7 @@
 	"logs_loading": "正在載入記錄…",
 	"logs_matching_lines": "最近 {n} 行中有 {matched} 行相符",
 	"logs_no_mtime": "修改時間未知",
+	"logs_refresh_failed": "無法重新整理記錄。",
 	"logs_search": "搜尋此記錄",
 	"logs_severity": "嚴重性",
 	"logs_severity_all": "全部",
