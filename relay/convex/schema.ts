@@ -303,10 +303,9 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_user_id_and_activity_id_and_status", ["userId", "activityId", "status"])
-    .index("by_user_id_and_device_id_and_status", ["userId", "deviceId", "status"])
-    // TAL-232: a session-started push is sent once per event and device, whatever became of an earlier job for it.
-    .index("by_user_id_and_device_id_and_state_fingerprint", ["userId", "deviceId", "stateFingerprint"])
+    .index("by_user_id_and_activity_id_and_state_fingerprint_and_status", ["userId", "activityId", "stateFingerprint", "status"])
+    // Session-started pushes use the prefix without status to also see finished jobs.
+    .index("by_user_id_and_device_id_and_state_fingerprint_and_status", ["userId", "deviceId", "stateFingerprint", "status"])
     .index("by_status_and_updated_at", ["status", "updatedAt"]),
 
   // The current notice survives job pruning, with one receipt per update target and recipient.

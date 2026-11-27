@@ -2143,9 +2143,9 @@ describe("Convex relay state", () => {
         (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "new-activity"),
       ).unique(),
       displacedEnd: await ctx.db.query("deliveryJobs").withIndex(
-        "by_user_id_and_activity_id_and_status",
-        (query) => query.eq("userId", "user-1").eq("activityId", "old-activity").eq("status", "queued"),
-      ).unique(),
+        "by_user_id_and_activity_id_and_state_fingerprint_and_status",
+        (query) => query.eq("userId", "user-1").eq("activityId", "old-activity"),
+      ).filter((query) => query.eq(query.field("status"), "queued")).unique(),
     }));
     expect(state.oldActivity?.endedAt).toBe(now + 1);
     expect(state.newActivity?.endedAt).toBeUndefined();
@@ -2228,17 +2228,12 @@ describe("Convex relay state", () => {
       activityPushToken: "other-new-token",
       now: now + 6,
     });
-    const displacementJobs = await backend.run(async (ctx) => {
-      const queued = await ctx.db.query("deliveryJobs").withIndex(
-        "by_user_id_and_activity_id_and_status",
-        (query) => query.eq("userId", "user-1").eq("activityId", "old-activity").eq("status", "queued"),
-      ).collect();
-      const running = await ctx.db.query("deliveryJobs").withIndex(
-        "by_user_id_and_activity_id_and_status",
-        (query) => query.eq("userId", "user-1").eq("activityId", "old-activity").eq("status", "running"),
-      ).collect();
-      return [...queued, ...running];
-    });
+    const displacementJobs = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").withIndex(
+      "by_user_id_and_activity_id_and_state_fingerprint_and_status",
+      (query) => query.eq("userId", "user-1").eq("activityId", "old-activity"),
+    ).filter((query) => query.or(
+      query.eq(query.field("status"), "queued"), query.eq(query.field("status"), "running"),
+    )).collect());
     expect(new Set(displacementJobs.map((job) => job.stateFingerprint))).toEqual(new Set([
       "end:displaced:device-1:old-activity",
       "end:displaced:device-2:old-activity",
@@ -2920,7 +2915,7 @@ describe("Convex relay state", () => {
 
   describe("attention alerts during a Live Activity", () => {
     type Phase = "waiting_for_approval" | "waiting_for_input" | "completed" | "failed";
-    async function deliverTransition(
+    async function transitionFixture(
       phase: Phase,
       options: { activity: boolean; preferences?: Partial<typeof defaultNotificationPreferences> },
     ) {
@@ -2971,16 +2966,87 @@ describe("Convex relay state", () => {
           });
         }
       });
-      await backend.mutation(internal.delivery.recompute, {
+      const recompute = (withTransition = true) => backend.mutation(internal.delivery.recompute, {
         userId: "user-1",
-        transitions: [{ publisherId: "https://hermes.example", sessionId: "session-1", previousPhase: "running" }],
+        transitions: withTransition
+          ? [{ publisherId: "https://hermes.example", sessionId: "session-1", previousPhase: "running" }]
+          : undefined,
       });
-      const jobs = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").collect());
-      return jobs.map((job) => ({
+      const jobs = () => backend.run(async (ctx) => ctx.db.query("deliveryJobs").collect());
+      return { backend, recompute, jobs };
+    }
+
+    async function deliverTransition(
+      ...args: Parameters<typeof transitionFixture>
+    ) {
+      const { recompute, jobs } = await transitionFixture(...args);
+      await recompute();
+      return (await jobs()).map((job) => ({
         kind: job.kind,
         aps: (JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> }).aps,
       }));
     }
+
+    async function seedDeliveryBacklog(backend: TestBackend, activity: boolean, status: "queued" | "running") {
+      const now = Date.now();
+      const token = activity ? "activity-token" : "push-token";
+      await backend.run(async (ctx) => {
+        for (let index = 0; index < 20; index += 1) {
+          await ctx.db.insert("deliveryJobs", {
+            userId: "user-1", deviceId: "device-1", activityId: activity ? "activity-1" : undefined,
+            kind: activity ? "live_activity_update" : "notification",
+            expectedToken: token, stateFingerprint: `older-${index}`,
+            request: {
+              token, topic: "dev.kil.talaria", environment: "sandbox",
+              pushType: activity ? "liveactivity" : "alert", priority: "10", payloadJson: '{"aps":{}}',
+            },
+            status, attemptCount: status === "running" ? 1 : 0, createdAt: now, updatedAt: now,
+          });
+        }
+      });
+    }
+
+    it.each([
+      ["activity", "queued"],
+      ["activity", "running"],
+      ["device", "queued"],
+      ["device", "running"],
+    ] as const)("deduplicates a %s delivery behind a %s backlog", async (target, status) => {
+      const activity = target === "activity";
+      const { backend, recompute, jobs } = await transitionFixture("waiting_for_approval", {
+        activity, preferences: { liveActivitiesEnabled: activity },
+      });
+      await seedDeliveryBacklog(backend, activity, status);
+      await recompute(!activity);
+      const [original, ...duplicates] = (await jobs()).filter((job) => !job.stateFingerprint.startsWith("older-"));
+      expect(duplicates).toEqual([]);
+      expect(original).toMatchObject({ kind: activity ? "live_activity_update" : "notification", status: "queued" });
+      if (status === "running") {
+        await backend.run((ctx) => ctx.db.patch(original!._id, { status, attemptCount: 1 }));
+      }
+
+      await recompute(!activity);
+
+      expect((await jobs()).filter((job) => job.stateFingerprint === original!.stateFingerprint))
+        .toEqual([expect.objectContaining({ _id: original!._id, status })]);
+    });
+
+    it("replaces a silent activity delivery behind a queued backlog with an eligible alert", async () => {
+      const { backend, recompute, jobs } = await transitionFixture("waiting_for_approval", {
+        activity: true, preferences: { notificationsEnabled: false },
+      });
+      await seedDeliveryBacklog(backend, true, "queued");
+      await recompute(false);
+      const [silent] = (await jobs()).filter((job) => !job.stateFingerprint.startsWith("older-"));
+      expect(silent).toMatchObject({ kind: "live_activity_update", status: "queued" });
+      expect(JSON.parse(silent!.request.payloadJson).aps).not.toHaveProperty("alert");
+
+      await recompute();
+
+      const matches = (await jobs()).filter((job) => job.stateFingerprint === silent!.stateFingerprint);
+      expect(matches.map((job) => job.status)).toEqual(["stale", "queued"]);
+      expect(JSON.parse(matches[1]!.request.payloadJson).aps.alert).toEqual({ ...localizedApprovalAlert, sound: "default" });
+    });
 
     it.each([
       ["waiting_for_approval", { "title-loc-key": "Approval required", "loc-key": "An agent run is waiting for your approval." }],
