@@ -138,16 +138,16 @@ final class ChatScrollPositionController {
     }
 
     private var pendingNativeScrollRevision: Int?
-    private var pendingNativeScrollTarget: (id: String, anchor: UnitPoint)?
+    private var pendingNativeScrollTarget: (id: String, anchor: UnitPoint, rowOffset: CGFloat?)?
     private var nativeScrollWaitsForArrival = true
     private var nativeScrollUpdateLink: UIUpdateLink?
     var isNavigating: Bool { pendingNativeScrollRevision != nil }
-    func prepareNativeScroll(revision: Int, targetID: String? = nil, anchor: UnitPoint = .top,
+    func prepareNativeScroll(revision: Int, targetID: String? = nil, anchor: UnitPoint = .top, rowOffset: CGFloat? = nil,
                              waitsForArrival: Bool = true) {
         cancelPreservation()
         cancelNativeScroll()
         pendingNativeScrollRevision = revision
-        pendingNativeScrollTarget = targetID.map { ($0, anchor) }
+        pendingNativeScrollTarget = targetID.map { ($0, anchor, rowOffset) }
         nativeScrollWaitsForArrival = waitsForArrival
     }
 
@@ -160,7 +160,7 @@ final class ChatScrollPositionController {
 
     private var hasReachedNativeScrollTarget: Bool {
         guard let target = pendingNativeScrollTarget else { return true }
-        guard let scrollView, let destination = measuredScrollOffsetY(for: target.id, anchor: target.anchor) else { return false }
+        guard let scrollView, let destination = measuredScrollOffsetY(for: target.id, anchor: target.anchor, rowOffset: target.rowOffset) else { return false }
         return !nativeScrollWaitsForArrival || abs(destination - scrollView.contentOffset.y) <= 2
     }
 
@@ -171,22 +171,22 @@ final class ChatScrollPositionController {
 
     /// Use the native scroll animation so each displayed step reports its offset.
     @discardableResult
-    func scrollToMeasuredRow(_ id: String, anchor: UnitPoint, animated: Bool) -> Bool {
-        guard let scrollView, let y = measuredScrollOffsetY(for: id, anchor: anchor) else { return false }
+    func scrollToMeasuredRow(_ id: String, anchor: UnitPoint, animated: Bool, rowOffset: CGFloat? = nil) -> Bool {
+        guard let scrollView, let y = measuredScrollOffsetY(for: id, anchor: anchor, rowOffset: rowOffset) else { return false }
         scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: y),
                                     animated: animated && UIView.areAnimationsEnabled)
         return true
     }
 
     /// Movement and acknowledgement share the eager slot's measured destination.
-    private func measuredScrollOffsetY(for id: String, anchor: UnitPoint) -> CGFloat? {
+    private func measuredScrollOffsetY(for id: String, anchor: UnitPoint, rowOffset: CGFloat? = nil) -> CGFloat? {
         guard let scrollView, !inactiveRowIDs.contains(id), let minY = rowMinY[id],
               let height = rowFrames[id]?.height else { return nil }
         let inset = scrollView.adjustedContentInset
         let viewportHeight = scrollView.bounds.height - inset.top - inset.bottom
-        let target = anchor == Self.unreadRuleAnchor
+        let target = rowOffset.map { minY - inset.top + $0 } ?? (anchor == Self.unreadRuleAnchor
             ? minY - inset.top + viewportHeight * anchor.y
-            : minY + height * anchor.y - inset.top - viewportHeight * anchor.y
+            : minY + height * anchor.y - inset.top - viewportHeight * anchor.y)
         let minimum = -inset.top
         let maximum = max(minimum, scrollView.contentSize.height - scrollView.bounds.height + inset.bottom)
         let destination = min(maximum, max(minimum, target))
@@ -195,6 +195,26 @@ final class ChatScrollPositionController {
 
     func hasMeasuredRow(_ id: String) -> Bool {
         measuredScrollOffsetY(for: id, anchor: .top) != nil
+    }
+
+    func isRegionVisible(_ region: CGRect, inRow id: String, bottomOverlay: CGFloat) -> Bool {
+        guard let scrollView, let rowTop = rowMinY[id], let viewportTop else { return false }
+        let inset = scrollView.adjustedContentInset
+        let viewportBottom = viewportTop + scrollView.bounds.height - inset.top - max(inset.bottom, bottomOverlay)
+        return rowTop + region.minY >= viewportTop && rowTop + region.maxY <= viewportBottom
+    }
+
+    struct ReadingBookmark {
+        let id: String
+        let offset: CGFloat
+        let atBottom: Bool
+    }
+
+    var readingBookmark: ReadingBookmark? {
+        guard let id = readingAnchorRowID, let minY = rowMinY[id], let viewportTop,
+              let scrollView, let geometry = ChatScrollMetrics.geometry(of: scrollView) else { return nil }
+        return ReadingBookmark(id: id, offset: viewportTop - minY,
+                               atBottom: ChatScrollPolicy.isAtBottom(distanceFromBottom: geometry.distanceFromBottom))
     }
 
     private func acknowledgeNativeScrollLayout(revision: Int) {

@@ -1,3 +1,4 @@
+import CryptoKit
 import MarkdownUI
 import SwiftUI
 import TalariaKit
@@ -9,10 +10,33 @@ struct ChatLinkRegionTextRenderer: TextRenderer {
     /// different total is not the text these ranges describe, so its regions
     /// are dropped rather than guessed at.
     let expectedCharacterCount: Int
-    let store: ChatMessageLinkRegionStore
+    let store: ChatMessageLinkRegionStore?
     let paragraphID: UUID
+    let highlight: Range<Int>?
+    var paintsHighlight = true
+    var textWithLineBreaks: String?
+    var onHighlight: (@MainActor @Sendable (CGRect) -> Void)?
 
     func draw(layout: Text.Layout, in ctx: inout GraphicsContext) {
+        if let highlight {
+            let slices = layout.flatMap { $0.flatMap { Array($0) } }
+            let indices = Array(Set(slices.flatMap { $0.characterIndices })).sorted()
+            if let renderedRange = renderedRange(highlight, characterCount: indices.count) {
+                let highlighted = Set(indices[renderedRange])
+                var bounds = CGRect.null
+                for slice in slices where slice.characterIndices.contains(where: highlighted.contains) {
+                    let rect = slice.typographicBounds.rect
+                    if paintsHighlight {
+                        ctx.fill(Path(rect), with: .color(Color(uiColor: ChatFindBlocks.highlight)))
+                    }
+                    bounds = bounds.union(rect)
+                }
+                if let onHighlight, !bounds.isNull {
+                    let occurrence = bounds
+                    Task { @MainActor in onHighlight(occurrence) }
+                }
+            }
+        }
         var offset = 0
         var regions: [ChatMessageLinkRegion] = []
 
@@ -32,7 +56,22 @@ struct ChatLinkRegionTextRenderer: TextRenderer {
             }
         }
 
-        store.setRegions(offset == expectedCharacterCount ? regions : [], forParagraph: paragraphID)
+        store?.setRegions(offset == expectedCharacterCount ? regions : [], forParagraph: paragraphID)
+    }
+
+    private func renderedRange(_ range: Range<Int>, characterCount: Int) -> Range<Int>? {
+        if characterCount == expectedCharacterCount { return range }
+        guard let textWithLineBreaks else { return nil }
+        // A plain bubble can contain explicit line endings which the layout consumes without drawing a slice.
+        var count = 0
+        var start = 0
+        var end = 0
+        for (index, character) in textWithLineBreaks.enumerated() where !character.isNewline {
+            count += 1
+            if index < range.lowerBound { start += 1 }
+            if index < range.upperBound { end += 1 }
+        }
+        return count == characterCount && start < end ? start..<end : nil
     }
 }
 
@@ -46,6 +85,92 @@ extension EnvironmentValues {
     var chatMessageLinkRegionStore: ChatMessageLinkRegionStore? {
         get { self[ChatMessageLinkRegionStoreKey.self] }
         set { self[ChatMessageLinkRegionStoreKey.self] = newValue }
+    }
+    @Entry var chatFindMatch: SessionFindResponse.Match?
+    @Entry var chatFindBlockID: UUID?
+    @Entry var chatFindReveal: ChatFindReveal?
+}
+
+struct ChatFindReveal: Sendable {
+    static let rowSpace = "chat-find-row"
+    let selection: UUID
+    let scroll: @MainActor @Sendable (_ region: CGRect, _ exact: Bool) -> Void
+}
+
+/// The block can be laid out beyond the viewport before its glyphs are drawn.
+/// Use its layout first to expose the text, then use the highlighted slices to
+/// reach the exact line of a match in a long paragraph.
+struct ChatFindTextTracking: ViewModifier {
+    let renderer: ChatLinkRegionTextRenderer
+    @Environment(\.chatFindReveal) private var reveal
+    @State private var block: Measurement?
+    @State private var occurrence: Measurement?
+
+    private struct Measurement: Equatable {
+        let selection: UUID
+        let frame: CGRect
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if renderer.highlight != nil, let reveal {
+            let tracking = trackingRenderer(reveal)
+            content.textRenderer(tracking)
+                .onGeometryChange(for: Measurement.self) {
+                    Measurement(selection: reveal.selection, frame: $0.frame(in: .named(ChatFindReveal.rowSpace)))
+                } action: { value in
+                    block = value
+                    report(to: reveal)
+                }
+        } else {
+            content.textRenderer(renderer)
+        }
+    }
+
+    private func trackingRenderer(_ reveal: ChatFindReveal) -> ChatLinkRegionTextRenderer {
+        var tracking = renderer
+        tracking.onHighlight = { frame in
+            let value = Measurement(selection: reveal.selection, frame: frame)
+            guard occurrence != value else { return }
+            occurrence = value
+            report(to: reveal)
+        }
+        return tracking
+    }
+
+    private func report(to reveal: ChatFindReveal) {
+        guard let block, block.selection == reveal.selection else { return }
+        if let occurrence, occurrence.selection == reveal.selection {
+            reveal.scroll(occurrence.frame.offsetBy(dx: block.frame.minX, dy: block.frame.minY), true)
+        } else {
+            reveal.scroll(block.frame, false)
+        }
+    }
+}
+
+struct ChatFindBlocks: PreferenceKey {
+    static let defaultValue: [UUID] = []
+
+    static func reduce(value: inout [UUID], nextValue: () -> [UUID]) {
+        value.append(contentsOf: nextValue())
+    }
+
+    static let highlight = UIColor { traits in
+        UIColor.systemYellow.resolvedColor(with: traits)
+            .withAlphaComponent(traits.userInterfaceStyle == .dark ? 0.32 : 0.55)
+    }
+
+    static func includes(_ block: SessionFindResponse.Match.Block?, text: String, isCode: Bool = false) -> Bool {
+        guard let block else { return false }
+        let identity = isCode ? "code\0\(text)" : text
+        let digest = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+        return digest == block.digest
+    }
+
+    static func characters(in text: String, at range: NSRange?) -> Range<Int>? {
+        guard let range, let indices = Range(range, in: text) else { return nil }
+        let start = text.distance(from: text.startIndex, to: indices.lowerBound)
+        return start..<(start + text.distance(from: indices.lowerBound, to: indices.upperBound))
     }
 }
 
@@ -83,6 +208,8 @@ struct ChatMarkdownLinkTrackedText<Label: View>: View {
 
     @Environment(\.chatMessageLinkRegionStore) private var store
     @Environment(\.transcriptMediaParagraphImages) private var media
+    @Environment(\.chatFindMatch) private var findMatch
+    @Environment(\.chatFindBlockID) private var findBlockID
     @State private var paragraphID = UUID()
 
     /// TAL-2582: a link to each remote image follows the text, which never loads it; paragraphs, headings and table cells
@@ -115,22 +242,28 @@ struct ChatMarkdownLinkTrackedText<Label: View>: View {
 
     @ViewBuilder
     private var trackedLinks: some View {
-        if tracksLinks, let store, case let links = self.links, !links.isEmpty {
+        let links = tracksLinks && store != nil ? self.links : []
+        let matched = matchesFindBlock
+        let highlight = matched && findBlockID == paragraphID ? highlightRange : nil
+        if !links.isEmpty || matched {
             label
-                .textRenderer(
+                .modifier(ChatFindTextTracking(renderer:
                     ChatLinkRegionTextRenderer(
                         links: links,
-                        expectedCharacterCount: plainTextCount,
+                        expectedCharacterCount: plainText.count,
                         store: store,
-                        paragraphID: paragraphID
+                        paragraphID: paragraphID,
+                        highlight: highlight
                     )
-                )
+                ))
                 .onGeometryChange(for: CGPoint.self) { proxy in
                     proxy.frame(in: .named(ChatMessageInteraction.rowCoordinateSpace)).origin
                 } action: { origin in
-                    store.setOrigin(origin, forParagraph: paragraphID)
+                    store?.setOrigin(origin, forParagraph: paragraphID)
                 }
-                .onDisappear { store.removeParagraph(paragraphID) }
+                .onDisappear { store?.removeParagraph(paragraphID) }
+                .preference(key: ChatFindBlocks.self, value: matched ? [paragraphID] : [])
+                .accessibilityIdentifier(highlight == nil ? "" : "chat-find-highlight")
         } else {
             label
         }
@@ -143,12 +276,20 @@ struct ChatMarkdownLinkTrackedText<Label: View>: View {
         )
     }
 
-    private var plainTextCount: Int {
+    private var plainText: String {
         content
             .renderPlainText()
             .trimmingCharacters(in: .newlines)
             .replacingOccurrences(of: "\n", with: " ")
-            .count
+    }
+
+    private var matchesFindBlock: Bool {
+        guard let block = findMatch?.block else { return false }
+        return ChatFindBlocks.includes(block, text: plainText)
+    }
+
+    private var highlightRange: Range<Int>? {
+        ChatFindBlocks.characters(in: plainText, at: findMatch?.range.nsRange(in: plainText))
     }
 }
 

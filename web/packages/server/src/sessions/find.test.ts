@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { useJsonStorage } from '../test/storage.js'
@@ -42,6 +43,41 @@ describe('GET /api/session/find (TAL-2666)', () => {
     expect((await find(sid, 'CAFÉ')).matches).toEqual([{ message_id: 'u1', range: { start: 3, end: 8 } }])
   })
 
+  it('finds the rendered link label and excludes its hidden destination', async () => {
+    const sid = await seeded('find-link', [
+      { role: 'user', content: 'Where is the documentation?', message_id: 'u1', timestamp: 1 },
+      { role: 'assistant', content: 'Open [the guide](https://example.test/internal-route) for details.', message_id: 'a1', timestamp: 2 },
+    ])
+    expect((await find(sid, 'internal-route')).matches).toEqual([])
+    expect((await find(sid, 'the guide')).matches).toMatchObject([
+      { message_id: 'a1', range: { start: 5, end: 14 } },
+    ])
+  })
+
+  it('gives repeated blocks separate occurrences and scopes code ranges to the code body', async () => {
+    const sid = await seeded('find-repeated', [
+      { role: 'user', content: 'Show the example.', message_id: 'u1', timestamp: 1 },
+      { role: 'assistant', content: 'Run it\n\nRun it\n\n```sh\necho Run\n```', message_id: 'a1', timestamp: 2 },
+    ])
+    const { matches } = await find(sid, 'Run')
+    expect(matches.map((match) => [match.range.start, match.range.end, match.block?.occurrence]))
+      .toEqual([[0, 3, 0], [0, 3, 1], [5, 8, 0]])
+    expect(matches[0]?.block?.digest).toBe(matches[1]?.block?.digest)
+    expect(matches[2]?.block?.digest).not.toBe(matches[0]?.block?.digest)
+  })
+
+  it('returns table-cell digests and ranges without counting separator markup', async () => {
+    const sid = await seeded('find-table', [
+      { role: 'user', content: 'Compare the choices.', message_id: 'u1', timestamp: 1 },
+      { role: 'assistant', content: '| Fruit | Colour |\n| --- | --- |\n| Plum | **Purple** |\n| Fig | Purple |', message_id: 'a1', timestamp: 2 },
+    ])
+    const digest = createHash('sha256').update('Purple').digest('hex')
+    expect((await find(sid, 'purple')).matches).toEqual([0, 1].map(occurrence => ({
+      message_id: 'a1', range: { start: 0, end: 6 }, block: { digest, occurrence },
+    })))
+    expect((await find(sid, '---')).matches).toEqual([])
+  })
+
   it('matches the redacted text the transcript shows, never the credential behind it', async () => {
     const secret = 'ghp_abcdefghij0123456789'
     const sid = await seeded('find-redacted', [{ role: 'user', content: `key ${secret}`, message_id: 'u1', timestamp: 1 }])
@@ -51,8 +87,8 @@ describe('GET /api/session/find (TAL-2666)', () => {
 
   it('answers no matches for an empty or missing query', async () => {
     const sid = await seeded('find-empty', [{ role: 'user', content: '  spaced  ', message_id: 'u1', timestamp: 1 }])
-    expect(await find(sid, '  ')).toEqual({ session_id: sid, matches: [], truncated: false })
-    expect(await find(sid)).toEqual({ session_id: sid, matches: [], truncated: false })
+    expect(await find(sid, '  ')).toEqual({ session_id: sid, matches: [], count: 0, truncated: false })
+    expect(await find(sid)).toEqual({ session_id: sid, matches: [], count: 0, truncated: false })
   })
 
   it('answers the first 1,000 matches across rows and says more exist', async () => {

@@ -116,15 +116,25 @@ private struct TalariaSceneActionsKey: FocusedValueKey {
     typealias Value = TalariaSceneActions
 }
 
+private struct TalariaFindInChatKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
 extension FocusedValues {
     var talariaSceneActions: TalariaSceneActions? {
         get { self[TalariaSceneActionsKey.self] }
         set { self[TalariaSceneActionsKey.self] = newValue }
     }
+
+    var talariaFindInChat: (() -> Void)? {
+        get { self[TalariaFindInChatKey.self] }
+        set { self[TalariaFindInChatKey.self] = newValue }
+    }
 }
 
 struct TalariaCommands: Commands {
     @FocusedValue(\.talariaSceneActions) private var actions
+    @FocusedValue(\.talariaFindInChat) private var findInChat
 
     var body: some Commands {
         // iOS only materialises the group that replaces a standard one, so both commands
@@ -136,11 +146,15 @@ struct TalariaCommands: Commands {
             .keyboardShortcut("n", modifiers: .command)
             .disabled(actions?.canCreateNewChat != true)
 
-            Button("Search Sessions") {
-                actions?.searchSessions()
+            Button {
+                if let findInChat { findInChat() }
+                else { actions?.searchSessions() }
+            } label: {
+                if findInChat == nil { Text("Search Sessions") }
+                else { Text("Find in Chat") }
             }
             .keyboardShortcut("f", modifiers: .command)
-            .disabled(actions == nil)
+            .disabled(actions == nil && findInChat == nil)
         }
     }
 }

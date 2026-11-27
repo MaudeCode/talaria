@@ -36,6 +36,10 @@ extension APIClient {
         )
     }
 
+    public func findInSession(id: String, query: String) async throws -> SessionFindResponse {
+        try await send(endpoint: .sessionFind(id: id, query: query), method: "GET")
+    }
+
     public func session(
         id: String,
         includeMessages: Bool = true,

@@ -126,6 +126,9 @@
                         "compatibleAgent"
                       ]
                     },
+                    "session_find": {
+                      "const": true
+                    },
                     "status": {
                       "enum": [
                         "ok",
@@ -15850,7 +15853,7 @@
     "/api/session/find": {
       "get": {
         "operationId": "session.find",
-        "summary": "TAL-2666: find in chat. Case- and accent-insensitive substring matches over the text the transcript shows on its own rows, redacted like it: a user message's `_display_text` or `content`, and a settled turn's answer (`final_answer_display`, else `final_answer`, of the scene its last reply row carries). Folded work never matches: a turn's \"Worked\" rows (prose, reasoning, tools, steers), a running turn, markers, notices, deliveries and background updates. An empty or blank `q` answers no matches; an unknown session 404.",
+        "summary": "TAL-2666: find in chat. Case- and accent-insensitive substring matches over the text the transcript shows on its own rows, redacted like it: a user message's `_display_text` or `content`, and rendered text blocks of a settled turn's answer. Link destinations and other Markdown markup that does not draw as text are excluded. `GET /health` advertises `session_find: true` for this response format. Folded work never matches: a turn's \"Worked\" rows (prose, reasoning, tools, steers), a running turn, markers, notices, deliveries and background updates. An empty or blank `q` answers no matches; an unknown session 404.",
         "tags": [
           "sessions"
         ],
@@ -15914,6 +15917,26 @@
                               "start",
                               "end"
                             ]
+                          },
+                          "block": {
+                            "type": "object",
+                            "properties": {
+                              "digest": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$",
+                                "description": "SHA-256 of UTF-8 rendered prose with line breaks folded to spaces, or of code text prefixed with \"code\" and a NUL byte."
+                              },
+                              "occurrence": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991,
+                                "description": "Zero-based occurrence among blocks with this digest in this message."
+                              }
+                            },
+                            "required": [
+                              "digest",
+                              "occurrence"
+                            ]
                           }
                         },
                         "required": [
@@ -15923,6 +15946,12 @@
                       },
                       "description": "In transcript order, then text order; non-overlapping; the first 1,000."
                     },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000,
+                      "description": "Number of matches in this response."
+                    },
                     "truncated": {
                       "type": "boolean",
                       "description": "Whether more matches exist past the first 1,000, which `matches` leaves out."
@@ -15931,6 +15960,7 @@
                   "required": [
                     "session_id",
                     "matches",
+                    "count",
                     "truncated"
                   ]
                 }

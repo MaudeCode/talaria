@@ -44,6 +44,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let onFork: (MessageActionContext) -> Void
     let onCopy: (MessageActionContext) -> Void
     let onLoadEarlierSceneRows: () -> Void
+    var findMatch: SessionFindResponse.Match? = nil
 
     // Equality over the value inputs only. The closures are pure functions of
     // these values (e.g. `actionContext` is fully determined by
@@ -71,7 +72,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             lhs.isForkingMessage == rhs.isForkingMessage &&
             lhs.disablesHistoryActions == rhs.disablesHistoryActions &&
             lhs.showsGitRecap == rhs.showsGitRecap &&
-            lhs.transcriptMediaCacheNamespace == rhs.transcriptMediaCacheNamespace
+            lhs.transcriptMediaCacheNamespace == rhs.transcriptMediaCacheNamespace &&
+            lhs.findMatch == rhs.findMatch
     }
 
     var body: some View {
@@ -87,7 +89,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                         // Renders the outcome between the work and the final answer.
                         completedTurn(turn)
                     } else {
-                        activityTimeline(turn.segments, activeSegmentID: layout.isLive ? turn.segments.last?.id : nil)
+                        activityTimeline(turn.segments, activeSegmentID: layout.isLive ? turn.segments.last?.id : nil,
+                                         finalAnswerID: turn.finalAnswerSegmentID)
                     }
                 } else {
                     outcomeRow
@@ -98,7 +101,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             } else {
                 // A scene with no rows and no answer still carries the server's outcome.
                 outcomeRow
-                messageRow(transcriptMessage.message)
+                messageRow(transcriptMessage.message, canHighlight: true)
             }
         }
     }
@@ -178,7 +181,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         outcomeRow
 
         if !turn.finalAnswer.isEmpty {
-            messageRow(finalAnswerMessage(for: turn), isStreaming: false)
+            messageRow(finalAnswerMessage(for: turn), isStreaming: false, canHighlight: true)
         }
     }
 
@@ -224,7 +227,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         }
 
         if !turn.finalAnswer.isEmpty {
-            messageRow(finalAnswerMessage(for: turn), isStreaming: false)
+            messageRow(finalAnswerMessage(for: turn), isStreaming: false, canHighlight: true)
         }
     }
 
@@ -296,7 +299,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     @ViewBuilder
     private func activityTimeline(
         _ segments: [CompletedAssistantTurn.Segment],
-        activeSegmentID: String?
+        activeSegmentID: String?,
+        finalAnswerID: String? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: transcriptBlockSpacing) {
             ForEach(segments) { segment in
@@ -382,7 +386,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                             includesAttachments: false,
                             includesTurnMetrics: false
                         ),
-                        isStreaming: activeSegmentID == segment.id
+                        isStreaming: activeSegmentID == segment.id,
+                        canHighlight: finalAnswerID == segment.id
                     )
                 case .steering(let steering):
                     messageRow(ChatMessage(
@@ -416,7 +421,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                     includesAttachments: includesAttachments ?? (index == firstProseIndex),
                     includesTurnMetrics: includesTurnMetrics ?? (index == lastProseIndex)
                 ),
-                isStreaming: layout.isLive ? index == lastProseIndex : nil
+                isStreaming: layout.isLive ? index == lastProseIndex : nil,
+                canHighlight: row.isFinalAnswer
             )
         case .reasoning(let reasoning):
             if showsThinkingAndToolCards {
@@ -458,7 +464,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     }
 
     @ViewBuilder
-    private func messageRow(_ message: ChatMessage, isStreaming: Bool? = nil) -> some View {
+    private func messageRow(_ message: ChatMessage, isStreaming: Bool? = nil, canHighlight: Bool = false) -> some View {
         if shouldRenderMessageRow(message) {
             ChatTranscriptMessageRow(
                 message: message,
@@ -495,6 +501,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                 onFork: onFork,
                 onCopy: onCopy
             )
+            .environment(\.chatFindMatch, canHighlight ? findMatch : nil)
         }
     }
 

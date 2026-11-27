@@ -3885,6 +3885,133 @@ private extension XCTestCase {
 final class SessionActionsHostedTests: XCTestCase {
     private let sessionTitle = UITestFixtureURLProtocol.sessionTitle
 
+    func testChatMenuOffersFindWhenTheServerSupportsIt() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.sessionFindArgument], for: self)
+        let window = try await openChat(fixture, size: HostedSize.phone)
+        try await openFind(in: window)
+    }
+
+    func testChatMenuOmitsFindOnOlderServers() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try await openChat(fixture, size: HostedSize.phone)
+        let readHealth = await awaitCondition {
+            UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/health") }
+        }
+        XCTAssertTrue(readHealth, "The App must read the server capability")
+        let menu = try XCTUnwrap(titleMenu(in: window))
+        XCTAssertFalse(actions(in: menu).contains { $0.title == "Find in Chat" })
+    }
+
+    func testFindStepsThroughFixtureMatchesAndRestoresTheReader() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.sessionFindArgument], for: self)
+        let window = try await openChat(fixture, size: HostedSize.phone)
+        let scroll = try XCTUnwrap(mountedTranscriptScrollView(in: window))
+        let controller = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator?.scrollPositionController)
+        let ready = await awaitCondition { controller.isIdle }
+        XCTAssertTrue(ready)
+        scroll.contentOffset.y -= 50
+        let before = try XCTUnwrap(controller.readingBookmark)
+        attachHostedScreenshot(window, name: "chat-find-before")
+
+        try await searchFindFixture(in: window)
+        try await requireVisibleFindText("Where is the café?", in: window)
+
+        let next = try await requireElement(in: window, label: "Next Match")
+        XCTAssertTrue(HostedAccessibility.activate(next))
+        _ = try await requireElement(in: window, label: "2 of 3")
+        try await requireVisibleFindText("The CAFÉ is on Main Street", in: window)
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "chat-find-highlight" }
+        attachHostedScreenshot(window, name: "chat-find-next")
+
+        let previous = try await requireElement(in: window, label: "Previous Match")
+        XCTAssertTrue(HostedAccessibility.activate(previous))
+        _ = try await requireElement(in: window, label: "1 of 3")
+        try await requireVisibleFindText("Where is the café?", in: window)
+
+        let done = try await requireElement(in: window, label: "Done")
+        XCTAssertTrue(HostedAccessibility.activate(done))
+        let restored = await awaitCondition {
+            guard controller.isIdle, let bookmark = controller.readingBookmark else { return false }
+            return bookmark.id == before.id && abs(bookmark.offset - before.offset) < 2
+        }
+        XCTAssertTrue(restored, "Closing Find must restore \(before). The scroll controller reported \(String(describing: controller.readingBookmark)).")
+        XCTAssertNil(HostedAccessibility.element(in: window, identifier: "chat-find-highlight"))
+        attachHostedScreenshot(window, name: "chat-find-restored")
+    }
+
+    func testFindScrollsTheSelectedBlockIntoViewInALongReply() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.sessionFindArgument,
+                                      UITestFixtureEnvironment.sessionFindLongAnswerArgument], for: self)
+        let window = try await openChat(fixture, size: HostedSize.phone)
+        let query = try await searchFindFixture(in: window)
+        let next = try await requireElement(in: window, label: "Next Match")
+        XCTAssertTrue(HostedAccessibility.activate(next))
+        _ = try await requireElement(in: window, label: "2 of 3")
+        _ = try await requireElement(in: window, "The highlighted answer must be visible above Find") {
+            let frame = window.convert($0.accessibilityFrame, from: window.screen.coordinateSpace)
+            return $0.accessibilityLabel?.hasPrefix("The CAFÉ is on Main Street") == true
+                && frame.minY >= 0 && frame.maxY < query.convert(query.bounds, to: window).minY
+        }
+        attachHostedScreenshot(window, name: "chat-find-long-answer")
+    }
+
+    func testFindGalleryPhoneLight() async throws { try await renderFind("phone-light") }
+    func testFindGalleryPhoneDark() async throws { try await renderFind("phone-dark") }
+    func testFindGalleryAccessibility() async throws { try await renderFind("phone-ax5") }
+    func testFindGalleryDuoOuter() async throws { try await renderFind("duo-outer") }
+    func testFindGalleryDuoInner() async throws { try await renderFind("duo-inner") }
+
+    private func renderFind(_ name: String) async throws {
+        let variant = try XCTUnwrap(HostedVariant.gallery.first { $0.name == name })
+        let fixture = try FixtureApp([UITestFixtureEnvironment.sessionFindArgument], for: self)
+        fixture.pendingSessionID = UITestFixtureURLProtocol.sessionID
+        try await renderHostedPage("chat-find", variants: [variant]) {
+            fixture.sessionList()
+        } inspect: { window, _ in
+            _ = try await requireElement(in: window, label: "Link preview for example.invalid")
+            let query = try await searchFindFixture(in: window)
+            let done = try await requireElement(in: window, label: "Done")
+            let button = window.convert(done.accessibilityFrame, from: window.screen.coordinateSpace)
+            XCTAssertTrue(window.bounds.contains(button), "The Find controls must fit this layout")
+            _ = try await requireElement(in: window, "The Find bar must leave the match visible above it") {
+                let match = window.convert($0.accessibilityFrame, from: window.screen.coordinateSpace)
+                return $0.accessibilityLabel == "Where is the café?"
+                    && match.maxY < query.convert(query.bounds, to: window).minY
+            }
+        }
+    }
+
+    @discardableResult
+    private func searchFindFixture(in window: UIWindow) async throws -> UITextField {
+        try await openFind(in: window)
+        let focused = await awaitCondition {
+            window.firstView(ofType: UITextField.self, where: { $0.isFirstResponder }) != nil
+        }
+        XCTAssertTrue(focused, "The Find field must take focus when it opens")
+        let field = try XCTUnwrap(window.firstView(ofType: UITextField.self, where: { $0.isFirstResponder }))
+        field.insertText("cafe")
+        _ = try await requireElement(in: window, label: "1 of 3")
+        return field
+    }
+
+    private func requireVisibleFindText(_ prefix: String, in window: UIWindow) async throws {
+        _ = try await requireElement(in: window, "The selected match must scroll into view") {
+            $0.accessibilityLabel?.hasPrefix(prefix) == true
+                && window.bounds.contains(CGPoint(x: $0.accessibilityFrame.midX, y: $0.accessibilityFrame.midY))
+        }
+    }
+
+    private func openFind(in window: UIWindow) async throws {
+        var findAction: UIAction?
+        let ready = await awaitCondition {
+            findAction = self.titleMenu(in: window).flatMap { self.actions(in: $0).first { $0.title == "Find in Chat" } }
+            return findAction != nil
+        }
+        XCTAssertTrue(ready, "The chat's title menu must offer Find in Chat when the server supports it")
+        XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(findAction)))
+        _ = try await requireElement(in: window, label: "Find in Chat")
+    }
+
     func testSwipePlacementsFilterTheSharedMenu() async throws {
         let fixture = try FixtureApp(for: self)
         let model = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)

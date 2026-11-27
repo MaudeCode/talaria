@@ -2,6 +2,32 @@ import XCTest
 @testable import TalariaKit
 
 final class APIClientSessionListTests: APIClientTestCase {
+    func testFindInSessionUsesTheServerOrderedFixtureRanges() async throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("session-find")) as? [String: Any])
+        let source = try XCTUnwrap(fixture["response"] as? [String: Any])
+        let sessionID = try XCTUnwrap(source["session_id"] as? String)
+        let query = try XCTUnwrap(fixture["query"] as? String)
+        let responseData = try JSONSerialization.data(withJSONObject: source)
+        let client = makeClient { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/session/find")
+            let queryItems = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems }
+            XCTAssertEqual(queryItems, [URLQueryItem(name: "session_id", value: sessionID), URLQueryItem(name: "q", value: query)])
+            return apiTestJSONResponse(String(decoding: responseData, as: UTF8.self), for: request)
+        }
+
+        let response = try await client.findInSession(id: sessionID, query: query)
+
+        XCTAssertEqual(response.sessionId, sessionID)
+        XCTAssertEqual(response.count, 3)
+        XCTAssertEqual(response.matches.map(\.messageId), ["u1", "a2", "a2"])
+        XCTAssertEqual(response.matches.map(\.range.start), [13, 4, 38])
+        XCTAssertEqual(response.matches.map(\.range.end), [17, 8, 42])
+        XCTAssertNil(response.matches.first?.block)
+        XCTAssertEqual(response.matches.dropFirst().compactMap(\.block?.occurrence), [0, 0])
+        XCTAssertFalse(response.truncated)
+    }
+
     func testSessionStatusDecodesPinnedAgentRunningShape() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/status")

@@ -14,9 +14,10 @@
     "session_id": "find_fixture",
     "matches": [
       { "message_id": "u1", "range": { "start": 13, "end": 17 } },
-      { "message_id": "a2", "range": { "start": 4, "end": 8 } },
-      { "message_id": "a2", "range": { "start": 38, "end": 42 } }
+      { "message_id": "a2", "range": { "start": 4, "end": 8 }, "block": { "digest": "8e7f4173a33155f88aa164891d8ca3648dff8d3e4ea0e9dd4b9749f0374967e4", "occurrence": 0 } },
+      { "message_id": "a2", "range": { "start": 38, "end": 42 }, "block": { "digest": "8e7f4173a33155f88aa164891d8ca3648dff8d3e4ea0e9dd4b9749f0374967e4", "occurrence": 0 } }
     ],
+    "count": 3,
     "truncated": false
   }
 }

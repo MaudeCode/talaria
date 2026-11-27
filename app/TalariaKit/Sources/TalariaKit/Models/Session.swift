@@ -118,6 +118,34 @@ public struct SessionResponse: Decodable, Sendable {
     public let session: SessionDetail?
 }
 
+public struct SessionFindResponse: Decodable, Sendable {
+    public let sessionId: String
+    public let matches: [Match]
+    public let count: Int
+    public let truncated: Bool
+
+    public struct Match: Decodable, Equatable, Sendable {
+        public let messageId: String
+        public let range: TextRange
+        public let block: Block?
+
+        public struct TextRange: Decodable, Equatable, Sendable {
+            public let start: Int
+            public let end: Int
+
+            public func nsRange(in text: String) -> NSRange? {
+                guard start >= 0, end > start, end <= text.utf16.count else { return nil }
+                return NSRange(location: start, length: end - start)
+            }
+        }
+
+        public struct Block: Decodable, Equatable, Sendable {
+            public let digest: String
+            public let occurrence: Int
+        }
+    }
+}
+
 /// `POST /api/session/truncate` (TAL-929): the cut session, or, for a cut that would discard more than one user turn,
 /// `confirmRequired` with the server's counts and nothing changed until the cut is resent with `confirmToken`.
 public struct SessionTruncateResponse: Decodable, Sendable {

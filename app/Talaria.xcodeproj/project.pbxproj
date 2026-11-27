@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA1471000000000000000004 /* session-find.json in Resources */ = {isa = PBXBuildFile; fileRef = AA1471000000000000000003 /* session-find.json */; };
+		AA1471000000000000000002 /* ChatFindBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1471000000000000000001 /* ChatFindBar.swift */; };
 		A21200000000000000000001 /* LogsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21200000000000000000002 /* LogsSettingsView.swift */; };
 		211900000000000000000001 /* ProfileDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 211900000000000000000002 /* ProfileDetailView.swift */; };
 		C21121000000000000000006 /* SettingsDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C21120000000000000000006 /* SettingsDivider.swift */; };
@@ -535,6 +537,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		AA1471000000000000000003 /* session-find.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "session-find.json"; path = "../contracts/fixtures/session-find.json"; sourceTree = SOURCE_ROOT; };
+		AA1471000000000000000001 /* ChatFindBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatFindBar.swift; sourceTree = "<group>"; };
 		A21200000000000000000002 /* LogsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogsSettingsView.swift; sourceTree = "<group>"; };
 		211900000000000000000002 /* ProfileDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDetailView.swift; sourceTree = "<group>"; };
 		C21120000000000000000006 /* SettingsDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDivider.swift; sourceTree = "<group>"; };
@@ -1317,6 +1321,7 @@
 				C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */,
 				C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */,
 				C1TAL49B0000000000000001 /* ChatMessageLinkRegions.swift */,
+				AA1471000000000000000001 /* ChatFindBar.swift */,
 				C1TAL49C0000000000000001 /* ChatMessageMenuInteraction.swift */,
 				C107N0000000000000000121 /* TranscriptHistorySentinel.swift */,
 				C107N0000000000000000122 /* SelectableTextPresentationView.swift */,
@@ -1855,6 +1860,7 @@
 				7A1350000000000000000003 /* TalariaDev.icon in Resources */,
 				10CA110C0DE000000000B001 /* Localizable.xcstrings in Resources */,
 				10CA110C0DE000000000B004 /* AppShortcuts.xcstrings in Resources */,
+				AA1471000000000000000004 /* session-find.json in Resources */,
 				958A00000000000000000001 /* InfoPlist.xcstrings in Resources */,
 				1A2B3C4D5E6F70000000300 /* PrivacyInfo.xcprivacy in Resources */,
 				9E2A653D968A4ACDA19A8142 /* ThirdPartyNotices in Resources */,
@@ -2038,6 +2044,7 @@
 				C107N0000000000000000018 /* ChatTranscriptMessageBlock.swift in Sources */,
 				C107N0000000000000000019 /* ChatTranscriptMessageRow.swift in Sources */,
 				C1TAL49B0000000000000002 /* ChatMessageLinkRegions.swift in Sources */,
+				AA1471000000000000000002 /* ChatFindBar.swift in Sources */,
 				C1TAL49C0000000000000002 /* ChatMessageMenuInteraction.swift in Sources */,
 				C107N0000000000000000021 /* TranscriptHistorySentinel.swift in Sources */,
 				C107N0000000000000000022 /* SelectableTextPresentationView.swift in Sources */,
