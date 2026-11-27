@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Renewed browser push subscriptions keep receiving alerts when an older delivery is rejected.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
