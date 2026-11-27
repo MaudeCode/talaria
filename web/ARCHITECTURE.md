@@ -446,7 +446,8 @@ the in-memory contract server used by Vitest (`src/adapters/memory.ts`). `npm ru
 i18n: Paraglide compiles one module per message. `src/i18n/localeSplit.ts` keeps only the English function in
 each module and builds one lazily imported chunk per other locale (entries identical to English are left out
 and fall back to it). `applyLocale` installs the active locale's chunk before switching, so boot and runtime
-switches render translated from the first frame; the service worker keeps the active chunk beside the shell.
+switches render translated from the first frame. Only the winning switch asks the service worker to keep
+its chunk beside the shell. The worker serializes replacements in message order.
 
 ## 6. Runtime and startup
 
