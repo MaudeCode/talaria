@@ -86,7 +86,7 @@ export function MemoryPage() {
         if (isDefiniteRefusal(error)) throw error
         // Read the authoritative outcome; never replay a write after a missing acknowledgment.
         const current = await api.fetchMemory().catch(() => null)
-        if (current?.[target] !== d.text) throw error
+        if (current?.profile !== d.profile || current[target] !== d.text) throw error
       }
       return qc.refetchQueries({ queryKey: keys.memory }, { throwOnError: true }).then(() => true, () => false)
     },

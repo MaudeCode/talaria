@@ -11,6 +11,7 @@ import * as api from '../../api/endpoints'
 import { teardownAll } from '../../stream/connection'
 import { MemoryPage } from './MemoryPage'
 import { loadBootstrap } from '../../app/bootstrap'
+import { Toaster } from '../toast/Toaster'
 // Loaded up front, so the read view's lazy renderer chunk resolves within a query's timeout.
 import '../chat/render/MarkdownRenderer'
 
@@ -27,7 +28,7 @@ beforeEach(() => {
 
 const renderPage = () => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  render(<QueryClientProvider client={qc}><MemoryPage /></QueryClientProvider>)
+  render(<QueryClientProvider client={qc}><MemoryPage /><Toaster /></QueryClientProvider>)
   return qc
 }
 const edit = async () => { await userEvent.click(await screen.findByRole('button', { name: 'Edit' })); return screen.getByRole('textbox', { name: 'Memory' }) }
@@ -185,10 +186,25 @@ describe('Memory page (TAL-784)', () => {
     vi.mocked(api.writeMemory).mockRejectedValue(new ApiError({ kind: 'timeout', path: '/api/memory/write', message: 'Response lost', retryable: true }))
     vi.mocked(api.fetchMemory).mockResolvedValue(memory('Entry A!', 'r2'))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    // The read that finds the saved text settles the save; a lost one would reopen the editor.
-    await waitFor(() => expect(api.fetchMemory).toHaveBeenCalledTimes(3))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled())
+    expect(await screen.findByText('Memory saved')).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).toBeNull()
+    expect(api.writeMemory).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the draft when a lost save is followed by matching text from another profile', async () => {
+    vi.mocked(api.fetchMemory)
+      .mockResolvedValue({ ...memory('Entry A!', 'r2'), profile: 'beta' })
+      .mockResolvedValueOnce(memory('Entry A', 'r1'))
+    vi.mocked(api.writeMemory).mockRejectedValue(new ApiError({ kind: 'timeout', path: '/api/memory/write', message: 'Response lost', retryable: true }))
+    renderPage()
+    await userEvent.type(await edit(), '!')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    // Wait for the outcome before asserting which result the user sees.
+    await screen.findByText(/^(Response lost|Memory saved)$/)
+    expect(screen.queryByText('Memory saved')).toBeNull()
+    expect(screen.getByRole('alert')).toHaveTextContent('Response lost')
+    expect(screen.getByRole('textbox', { name: 'Memory' })).toHaveValue('Entry A!')
     expect(api.writeMemory).toHaveBeenCalledTimes(1)
   })
 })

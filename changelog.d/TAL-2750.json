@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web keeps your memory draft when a lost save response cannot be confirmed in the original profile.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
