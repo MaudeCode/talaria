@@ -627,6 +627,33 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect((await checkWebUpdate(null, 'web-v3.0.0', 'stable', s.run, s.getJson, s.identity)).behind).toBe(0)
   })
 
+  it('reports the published Web tag for a manual container install ahead of Stable', async () => {
+    const s = sourceInstall()
+    const info = await checkWebUpdate(null, 'web-v3.0.0', 'stable', s.run, s.getJson, s.identity)
+    expect(updateTargetView('webui', info, false)).toMatchObject({
+      current_version: 'web-v3.0.0', latest_release_tag: 'web-v2.0.0', latest_release_tag_distinct: true,
+      state: 'manual', target_version: null, can_apply: false, no_git: true,
+    })
+  })
+
+  it('leaves the Web latest release unknown when the check has no release metadata', async () => {
+    const s = sourceInstall()
+    const current = 'web-v1.0.0'
+    const source = await checkWebUpdate(web(s.client), current, 'stable', s.run, noReleases, s.identity)
+    const failed = await checkWebUpdate(null, current, 'stable', s.run, noReleases, s.identity)
+    expect(updateTargetView('webui', source, false)).toMatchObject({ state: 'manual', current_version: current })
+    expect(updateTargetView('webui', failed, false)).toMatchObject({ state: 'check_failed', current_version: current })
+    for (const info of [source, failed]) expect(updateTargetView('webui', info, false)).not.toHaveProperty('latest_release_tag')
+  })
+
+  it('does not show an Experimental release-set tag as the latest Nightly release', async () => {
+    const s = sourceInstall()
+    Object.assign(s.release, { tag: 'web-exp-v2.0.0', version: '2.0.0' })
+    const info = await checkWebUpdate(null, 'web-exp-v3.0.0', 'nightly', s.run, s.getJson, s.identity)
+    expect(info).toMatchObject({ latest_version: 'web-exp-v2.0.0', manual_update: true })
+    expect(updateTargetView('webui', info, false)).not.toHaveProperty('latest_release_tag')
+  })
+
   it('packaged and npm installs report every completed Stable release they are behind (TAL-624)', async () => {
     const s = sourceInstall()
     const latest = (await s.getJson('/releases?per_page=100&page=1', { asset: false }) as Dict[])[0]!
@@ -2000,6 +2027,30 @@ describe('Agent checkout updates', () => {
     expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ current_version: head.slice(0, 12) })
   })
 
+  it.each([
+    ['behind', 'commits_behind', 2, true], ['current', 'up_to_date', 0, false], ['ahead', 'manual', 0, false],
+  ] as const)('reports the Experimental Agent branch release tag when the checkout is %s', async (position, state, behind, canApply) => {
+    const a = agentInstall()
+    // Put the higher tag on a side branch so it cannot stand in for the selected branch's release.
+    git(a.origin, 'branch', 'other-channel', a.v1)
+    git(a.origin, 'switch', 'other-channel')
+    git(a.origin, 'commit', '--allow-empty', '-m', 'different channel release')
+    git(a.origin, 'tag', 'v9.0.0')
+    git(a.origin, 'switch', 'master')
+    git(a.origin, 'commit', '--allow-empty', '-m', 'experimental branch tip')
+    const tip = git(a.origin, 'rev-parse', 'HEAD')
+    if (position !== 'behind') {
+      git(a.agent, 'fetch', 'origin')
+      git(a.agent, 'merge', '--ff-only', tip)
+    }
+    if (position === 'ahead') git(a.agent, 'commit', '--allow-empty', '-m', 'local ahead')
+    const info = await checkAgentUpdate(a.agent, runGit, 'experimental')
+    expect(updateTargetView('agent', info, false)).toMatchObject({
+      state, behind, can_apply: canApply, latest_sha: tip, latest_version: 'origin/master', target_version: null,
+      latest_release_tag: 'v2.0.0', latest_release_tag_distinct: true,
+    })
+  })
+
   it('private Agent remote credentials never enter update status (TAL-1664)', async () => {
     const a = agentInstall()
     git(a.agent, 'fetch', 'origin', '--tags')
@@ -2018,26 +2069,35 @@ describe('Agent checkout updates', () => {
     expect(await checkAgentUpdate(a.agent, unreadable)).toMatchObject({ behind: null, error: 'Agent commit count is unavailable' })
     for (const repo of [a.origin, a.agent]) for (const tag of ['v1.0.0', 'v2.0.0']) git(repo, 'tag', '-d', tag)
     expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ behind: null, error: 'No stable Agent release is available' })
-    expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ behind: 1, channel: 'experimental' })
+    const experimental = await checkAgentUpdate(a.agent, runGit, 'experimental')
+    expect(experimental).toMatchObject({ behind: 1, channel: 'experimental' })
+    expect(updateTargetView('agent', experimental, false)).not.toHaveProperty('latest_release_tag')
   })
 
   it('keys the update cache by the independent Agent channel', async () => {
     const a = agentInstall()
     const s = sourceInstall()
-    git(a.origin, 'commit', '--allow-empty', '-m', 'experimental only')
-    const latest = git(a.origin, 'rev-parse', 'HEAD')
     let channel: 'stable' | 'experimental' = 'stable'
     const svc = updateService({
-      webRoot: web(s.client), git: (args, cwd, timeout) => cwd === a.agent ? runGit(args, cwd, timeout) : s.run(args, cwd, timeout), getJson: noReleases, identity: s.identity, webuiVersion: 'test',
-      agentDir: () => a.agent, channel: () => 'experimental', agentChannel: () => channel, includeAgent: () => true,
+      webRoot: tmp(), git: runGit, getJson: s.getJson, identity: s.identity, webuiVersion: 'web-v3.0.0',
+      agentDir: () => a.agent, channel: () => 'stable', agentChannel: () => channel, includeAgent: () => true,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => undefined, log: () => undefined,
     })
-    const stable = await svc.check()
-    expect(stable).toMatchObject({ channel: 'experimental', agent_channel: 'stable', agent: { latest_sha: a.v2, behind: 1 } })
+    const webui = { latest_release_tag: 'web-v2.0.0', latest_release_tag_distinct: true }
+    expect(updatesCheckView(await svc.check())).toMatchObject({ channel: 'stable', agent_channel: 'stable', webui,
+      agent: { latest_sha: a.v2, behind: 1, latest_release_tag: 'v2.0.0', latest_release_tag_distinct: false },
+    })
+    git(a.origin, 'commit', '--allow-empty', '-m', 'experimental branch release')
+    git(a.origin, 'tag', 'v2.1.0')
+    git(a.origin, 'commit', '--allow-empty', '-m', 'experimental branch tip')
+    const latest = git(a.origin, 'rev-parse', 'HEAD')
+    expect(updatesCheckView(svc.cachedStatus())).toMatchObject({ cached: true, webui, agent: { latest_release_tag: 'v2.0.0' } })
     channel = 'experimental'
-    expect(svc.cachedStatus()).toMatchObject({ agent: null, stale_agent_channel: true })
-    expect(await svc.check()).toMatchObject({ channel: 'experimental', agent_channel: 'experimental', agent: { latest_sha: latest, behind: 2 } })
+    expect(updatesCheckView(svc.cachedStatus())).toMatchObject({ webui, agent: null, stale_agent_channel: true })
+    expect(updatesCheckView(await svc.check())).toMatchObject({ channel: 'stable', agent_channel: 'experimental', webui,
+      agent: { latest_sha: latest, behind: 3, latest_release_tag: 'v2.1.0', latest_release_tag_distinct: true },
+    })
   })
 
   it.each(['main', 'master'])('recovers a dangling default-branch reference using %s', async (branch) => {
@@ -2679,6 +2739,13 @@ describe('Agent checkout updates', () => {
     await svc.check(true)
     expect(paths.filter((p) => p.endsWith('/releases/latest'))).toEqual(['/repos/Synthetic/agent/releases/latest'])
     expect(await svc.apply('agent', null, () => true, { confirmedRevision: a.v2 })).toMatchObject({ ok: true, verified_revision: a.v2, verified_version: 'v0.21.7' })
+  })
+
+  it('shows the latest published Stable Agent tag even if the checkout can only target an older tag', async () => {
+    const { next, svc } = unpublishedTagInstall(() => Promise.resolve({ tag_name: 'v0.21.9', draft: false, prerelease: false }))
+    expect(updatesCheckView(await svc.check(true)).agent).toMatchObject({
+      latest_release_tag: 'v0.21.9', latest_release_tag_distinct: true, target_version: 'v0.21.8', latest_sha: next, can_apply: true,
+    })
   })
 
   it('keeps the last verified published tag when a later releases/latest read fails (TAL-930)', async () => {
@@ -3595,6 +3662,22 @@ describe('update status view (TAL-559)', () => {
     const status = updatesCheckView({ cached: true, webui: { name: 'webui', behind: 1, current_version: 'web-v1' }, agent: null })
     expect(status).toMatchObject({ cached: true, webui: { name: 'webui', behind: 1, current_version: 'web-v1', state: 'commits_behind', can_apply: true }, agent: null })
     expect(updatesCheckView({ disabled: true })).toMatchObject({ disabled: true, webui: { state: 'off', can_apply: false }, agent: { state: 'off', can_apply: false } })
+  })
+
+  it('marks a known release tag as distinct only when its own installed or target line differs', () => {
+    const tag = 'v2.0.0'
+    const info = { latest_release_tag: tag, current_version: 'v1.0.0' }
+    const status = updatesCheckView({
+      cached: true,
+      webui: { ...info, behind: 1, release_based: true, latest_version: tag },
+      agent: { ...info, behind: 2, release_based: false, latest_version: 'origin/master' },
+    })
+    expect(status).toMatchObject({
+      webui: { latest_release_tag: tag, latest_release_tag_distinct: false, target_version: tag },
+      agent: { latest_release_tag: tag, latest_release_tag_distinct: true, target_version: null },
+    })
+    expect(updateTargetView('agent', { ...info, behind: 0, current_version: tag }, false)).toMatchObject({ latest_release_tag_distinct: false })
+    expect(updateTargetView('agent', { ...info, behind: 0 }, true)).toMatchObject({ latest_release_tag_distinct: false })
   })
 
   it('lists versions only while a release is installable and folds all but the newest (TAL-946)', () => {

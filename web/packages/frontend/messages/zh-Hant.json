@@ -1830,6 +1830,7 @@
 	"switched_workspace": "已切換至工作區：",
 	"symlink_link_to": "Symlink → {target}",
 	"system_apply_agent_update": "更新 Agent",
+	"system_latest_release_tag": "最新發行版本標籤：{tag}",
 	"system_not_responding": "沒有回應",
 	"system_running_normally": "運作正常",
 	"system_server_disk": "伺服器磁碟",

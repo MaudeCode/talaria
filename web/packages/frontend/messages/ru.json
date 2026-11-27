@@ -1997,6 +1997,7 @@
 	"switched_workspace": "Переключено на рабочее пространство: ",
 	"symlink_link_to": "Символическая ссылка → {target}",
 	"system_apply_agent_update": "Обновить Agent",
+	"system_latest_release_tag": "Тег последнего выпуска: {tag}",
 	"system_not_responding": "Не отвечает",
 	"system_running_normally": "Работает нормально",
 	"system_server_disk": "Диск сервера",

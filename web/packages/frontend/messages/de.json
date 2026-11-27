@@ -1857,6 +1857,7 @@
 	"switched_workspace": "Gewechselt zu Workspace: ",
 	"symlink_link_to": "Symlink → {target}",
 	"system_apply_agent_update": "Agent aktualisieren",
+	"system_latest_release_tag": "Neuestes Release-Tag: {tag}",
 	"system_not_responding": "Reagiert nicht",
 	"system_running_normally": "Läuft normal",
 	"system_server_disk": "Serverspeicher",

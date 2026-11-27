@@ -3362,6 +3362,7 @@
 	"system_install": "Install",
 	"system_install_version": "Install {version}",
 	"system_installed_unverified": "The installed release could not be verified.",
+	"system_latest_release_tag": "Latest release tag: {tag}",
 	"system_local_changes_named": "Local changes block {name} updates",
 	"system_logout": "Sign out",
 	"system_manual_named": "{name} is updated manually",

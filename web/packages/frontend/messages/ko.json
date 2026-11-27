@@ -1897,6 +1897,7 @@
 	"switched_workspace": "Switched to workspace: ",
 	"symlink_link_to": "Symlink → {target}",
 	"system_apply_agent_update": "Agent 업데이트",
+	"system_latest_release_tag": "최신 릴리스 태그: {tag}",
 	"system_not_responding": "응답 없음",
 	"system_running_normally": "정상 작동 중",
 	"system_server_disk": "서버 디스크",

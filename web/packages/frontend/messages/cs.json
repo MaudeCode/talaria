@@ -1929,6 +1929,7 @@
 	"switched_workspace": "Přepnuto na pracovní prostor:",
 	"symlink_link_to": "Symbolický odkaz → {target}",
 	"system_apply_agent_update": "Aktualizovat Agent",
+	"system_latest_release_tag": "Nejnovější tag vydání: {tag}",
 	"system_not_responding": "Neodpovídá",
 	"system_running_normally": "Běží normálně",
 	"system_server_disk": "Disk serveru",

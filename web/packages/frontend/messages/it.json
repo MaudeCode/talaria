@@ -1905,6 +1905,7 @@
 	"switched_workspace": "Passato al workspace: ",
 	"symlink_link_to": "Symlink → {target}",
 	"system_apply_agent_update": "Aggiorna Agent",
+	"system_latest_release_tag": "Tag dell’ultima versione: {tag}",
 	"system_not_responding": "Non risponde",
 	"system_running_normally": "Funziona normalmente",
 	"system_server_disk": "Disco del server",

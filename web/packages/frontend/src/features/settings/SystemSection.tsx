@@ -214,13 +214,17 @@ interface Support { label: string; unchecked: boolean }
 
 /** An Agent target's or version's one-line support status, as the server words it (TAL-946). */
 const supportOf = (v: Pick<UpdateVersion, 'support' | 'support_label'>): Support | null => (v.support_label ? { label: v.support_label, unchecked: v.support === 'unchecked' } : null)
-interface PathStatus { tone: Tone; text: string; target?: string | undefined; detail?: string | undefined }
+interface PathStatus { tone: Tone; text: string; target?: string | undefined; detail?: string | undefined; latestReleaseTag?: string | undefined }
 
 /** One component's update state in the words its channel uses: Stable names releases, Experimental counts commits. */
 function pathStatus(t: Target | null | undefined, name: string, { failed, pending }: { failed: boolean; pending: boolean }): PathStatus {
   if (pending && !t) return { tone: 'quiet', text: m.system_checking_named({ name }) }
   if (failed) return { tone: 'warn', text: m.system_check_failed_named({ name }), detail: t?.error }
   if (!t) return { tone: 'quiet', text: m.system_status_unknown_named({ name }) }
+  return { ...checkedPathStatus(t, name), latestReleaseTag: t.latest_release_tag_distinct ? t.latest_release_tag : undefined }
+}
+
+function checkedPathStatus(t: Target, name: string): PathStatus {
   const target = t.target_version ?? undefined
   const detail = typeof t.message === 'string' ? t.message : undefined
   switch (t.state) {
@@ -304,6 +308,12 @@ function UpdatePath({ id, title, icon, installed, installedNote, status, channel
 }) {
   const [open, setOpen] = useState(false)
   const next = status.tone !== 'ok'
+  const statusLines = (
+    <>
+      <p role="status" className={cn(!next && 'mt-1', 'text-xs', status.tone === 'update' ? 'text-accent-text' : status.tone === 'warn' ? 'text-warning' : 'text-muted')}>{status.text}</p>
+      {status.latestReleaseTag ? <p className="mt-0.5 wrap-anywhere text-xs text-muted">{m.system_latest_release_tag({ tag: status.latestReleaseTag })}</p> : null}
+    </>
+  )
   return (
     <section aria-labelledby={`${id}Heading`} data-update-path={id} className="row-span-2 grid min-w-0 grid-rows-subgrid gap-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -315,7 +325,7 @@ function UpdatePath({ id, title, icon, installed, installedNote, status, channel
           <div className="text-xs text-muted">{m.system_path_installed()}</div>
           <div className="font-mono text-sm text-text break-all">{installed}</div>
           {installedNote ? <p className="mt-1 flex min-w-0"><StatusDot state="warning" title={installedNote}>{installedNote}</StatusDot></p> : null}
-          {!next ? <p role="status" className="mt-1 text-xs text-muted">{status.text}</p> : null}
+          {!next ? statusLines : null}
         </PathNode>
         {next && folded.length ? (
           <PathNode tone="quiet">
@@ -337,7 +347,7 @@ function UpdatePath({ id, title, icon, installed, installedNote, status, channel
         {next ? (
           <PathNode tone={status.tone}>
             {status.target ? <div className="font-mono text-sm text-text break-all">{status.target}</div> : null}
-            <p role="status" className={cn('text-xs', status.tone === 'update' ? 'text-accent-text' : status.tone === 'warn' ? 'text-warning' : 'text-muted')}>{status.text}</p>
+            {statusLines}
             {status.detail ? <p className="mt-0.5 text-xs text-muted">{status.detail}</p> : null}
             {manualLink ? <a className="inline-flex min-h-11 items-center text-xs text-accent-text underline" href="https://github.com/MaudeCode/talaria/releases" target="_blank" rel="noreferrer">{m.system_manual_updates()}</a> : null}
             <SupportLine support={support ?? null} />

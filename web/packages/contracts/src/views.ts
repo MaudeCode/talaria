@@ -1924,6 +1924,8 @@ export const UpdateTargetSchema = z.looseObject({
   installed_unverified: z.boolean().describe('`release_ready` only: the installed revision sits on no release tag.'),
   manual_link: z.boolean().describe('Show the manual-install (releases) link.'),
   target_version: z.string().nullable().describe('The version the update path leads to, when one is shown.'),
+  latest_release_tag: z.string().min(1).optional().describe('The latest known release tag for this component and channel, independent of the installed version or branch target.'),
+  latest_release_tag_distinct: z.boolean().optional().describe('Show the latest release tag when this component’s installed and target lines do not already name it.'),
   summary_available: z.boolean().describe('TAL-759: offer "Summarize with AI" for this target (`release_ready` or `commits_behind`).'),
   versions: z.array(UpdateVersionSchema).describe('TAL-946: every installable Stable release newer than the installed one, newest first; empty unless `release_ready` can apply.'),
   folded_count: z.number().int().nonnegative().describe('How many `versions` are `folded`.'),

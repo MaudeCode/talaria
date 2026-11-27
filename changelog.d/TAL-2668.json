@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "System settings show the latest known release tag for Web and Agent when it adds context to their update status.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
