@@ -44,6 +44,8 @@ const createKind = (workspace: string, dir: string) => JSON.stringify(['file-new
 const draftKey = (sessionId: string, source: 'workspace' | 'managed', workspace: string, path: string) => JSON.stringify([sessionId, source, workspace, path])
 interface Draft { text: string; base: { revision: string | undefined } }
 type Drafts = Record<string, Draft>
+// The optimistic text can outlive its response while the file is reread. Associate the revision with that exact save.
+const confirmedSaveRevisions = new WeakMap<Draft, string>()
 type Pending = { kind: 'new-file' } | { kind: 'new-folder' } | { kind: 'rename'; entry: Entry } | { kind: 'delete'; entry: Entry } | null
 
 /** Files a checkpoint restore rewrote in `workspace`; `seq` tells one restore from the next. */
@@ -152,7 +154,8 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const focusedRow = useRef<HTMLElement | null>(null)
   const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden, ...sourceArgs), staleTime: 10_000, enabled: active })
   const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active && !managed })
-  const effects = useResourceEffects()
+  const effects = useResourceEffects<Draft>()
+  const saving = file ? effects[contentResource(workspace, file)]?.value : undefined
   // The server orders the listing (symlinks, folders, files); rows render in that order. While the user's own write
   // shows a row the server has not listed, that row holds its place in the order and is one row, so the listing's
   // arrival never moves a row out from under a press.
@@ -168,8 +171,9 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   // The first edit fixes its base. Refresh and reopen can replace the preview without rebasing the user's draft.
   const setDraft = (text: string | null) => {
     if (file === null) return
-    const revision = content.data?.revision
-    updateDraft(file, (current) => text === null ? undefined : { text, base: current?.base ?? { revision } })
+    const committed = saving && confirmedSaveRevisions.get(saving)
+    const base = committed === undefined ? saving?.base ?? { revision: content.data?.revision } : { revision: committed }
+    updateDraft(file, (current) => text === null ? undefined : { text, base: current?.base ?? base })
   }
   useEffect(() => {
     if (!opened?.line || opened.path !== file || !content.data || !textRef.current || revealedSeq.current === opened.seq) return
@@ -181,17 +185,13 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
     resource: ({ path }: { path: string; draft: Draft; office: boolean }) => contentResource(workspace, path),
     exclusive: !managed,
     queryKey: keys.files.contents(workspace), readKeys: ({ path }) => [{ queryKey: keys.files.content(workspace, path), exact: true }],
-    effect: ({ draft: submitted }) => ({ value: submitted.text }),
+    effect: ({ draft: submitted }) => ({ value: submitted }),
     mutationFn: ({ path, draft: submitted, office }) => office
       ? api.saveOfficeFile(sessionId, path, submitted.text, submitted.base.revision)
       : api.saveFile(sessionId, path, submitted.text, managed ? { source: 'managed' } : { base_revision: submitted.base.revision }),
     onSuccess: (saved, { path, draft: submitted }) => {
       const { revision } = saved
-      if (revision !== undefined) {
-        // A new edit before the reread starts from this confirmed text and revision together.
-        const text = 'content' in saved && typeof saved.content === 'string' ? saved.content : submitted.text
-        qc.setQueryData<typeof content.data>(keys.files.content(workspace, path), (old) => old && { ...old, content: text, size: saved.size, revision })
-      }
+      if (revision !== undefined) confirmedSaveRevisions.set(submitted, revision)
       updateDraft(path, (current) => {
         if (current?.base !== submitted.base) return current
         return current.text === submitted.text ? undefined : { text: current.text, base: { revision: revision ?? current.base.revision } }
@@ -268,8 +268,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const atLine = opened?.line !== undefined && opened.path === file
   const renderable = kind === 'markdown' || kind === 'csv' || kind === 'html'
   const rendered = draft === null && !atLine && renderable
-  const saving = file ? effects[contentResource(workspace, file)]?.value : undefined
-  const text = draft?.text ?? (typeof saving === 'string' ? saving : content.data?.content ?? '')
+  const text = draft?.text ?? saving?.text ?? content.data?.content ?? ''
   const rawUrl = (inline?: boolean) => appUrl(api.rawFileUrl(sessionId, file ?? '', inline)).href
   // One list for a row's kebab and its right-click and long-press menu.
   const entryItems = (entry: Entry) => <>

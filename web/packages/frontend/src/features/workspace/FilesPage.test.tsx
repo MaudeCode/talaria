@@ -199,6 +199,45 @@ describe('file save keeps the user\'s edits (TAL-1384)', () => {
     expect(editor).toHaveValue('Submitted A and newer')
   })
 
+  it('uses the confirmed revision for a draft started after cancelling during a save', async () => {
+    const base = 'a'.repeat(64)
+    const committed = 'b'.repeat(64)
+    const original = { source: 'workspace' as const, content: 'Original A', size: 10, preview: 'text' as const, revision: base }
+    let saved = original
+    vi.mocked(api.readFile).mockImplementation(() => Promise.resolve(saved))
+    type Saved = Awaited<ReturnType<typeof api.saveFile>>
+    let finish!: (response: Saved) => void
+    vi.mocked(api.saveFile)
+      .mockReturnValueOnce(new Promise<Saved>((resolve) => { finish = resolve }))
+      .mockImplementationOnce((_session, path, text, options) => {
+        if (options?.base_revision !== saved.revision) return Promise.reject(new ApiError({ kind: 'http', status: 409, path, message: 'Changed on disk' }))
+        saved = { ...saved, content: text, size: text.length, revision: 'c'.repeat(64) }
+        return Promise.resolve({ ok: true, path, size: saved.size, revision: saved.revision })
+      })
+    try {
+      renderFiles()
+      const editor = await openFile('a.txt')
+      await waitFor(() => expect(editor).toHaveValue(original.content))
+      await userEvent.type(editor, ' submitted')
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(editor).toHaveValue('Original A submitted')
+      await userEvent.type(editor, ' revised')
+
+      saved = { ...original, content: 'Original A submitted', size: 20, revision: committed }
+      await act(async () => { finish({ ok: true, path: 'a.txt', size: saved.size, revision: committed }); await Promise.resolve() })
+      expect(editor).toHaveValue('Original A submitted revised')
+      const save = screen.getByRole('button', { name: 'Save' })
+      await waitFor(() => expect(save).toBeEnabled())
+      await userEvent.click(save)
+      expect(api.saveFile).toHaveBeenNthCalledWith(2, 's1', 'a.txt', 'Original A submitted revised', { base_revision: committed })
+      await waitFor(() => expect(toast).toHaveBeenCalledTimes(2))
+      expect(toast).toHaveBeenLastCalledWith('File saved')
+    } finally {
+      await act(async () => { finish({ ok: true, path: 'a.txt', size: saved.size, revision: saved.revision }); await Promise.resolve() })
+    }
+  })
+
   it('keeps the draft and shows the error when the save is refused', async () => {
     vi.mocked(api.saveFile).mockRejectedValue(new ApiError({ kind: 'http', status: 413, path: '/x', message: 'File too large' }))
     renderFiles()
