@@ -192,6 +192,7 @@ class PostgresSessions implements SessionBackend {
   async writeIndex(entries: SessionIndexEntry[]): Promise<void> {
     await this.db.run(`INSERT INTO ${this.s}session_index AS i (id, entries, revision) VALUES (1, $1, ${NEXT_REVISION('0')}) ON CONFLICT (id) DO UPDATE SET entries = excluded.entries, revision = ${NEXT_REVISION('i.revision')}`, JSON.stringify(entries))
   }
+  async deleteIndex(): Promise<void> { await this.db.run(`DELETE FROM ${this.s}session_index WHERE id = 1`) }
   private async addTombstone(q: Queries, sid: string): Promise<void> { await q.run(`INSERT INTO ${this.s}session_tombstones (id, deleted_at) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING`, sid, Date.now() / 1000) }
   readonly tombstones = {
     has: async (sid: string): Promise<boolean> => (await this.db.row(`SELECT 1 FROM ${this.s}session_tombstones WHERE id = $1`, sid)) !== undefined,

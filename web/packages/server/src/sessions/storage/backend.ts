@@ -50,6 +50,7 @@ export interface SessionBackend {
   ids(opts?: { strict?: boolean }): Promise<Set<string>>
   index(): Promise<{ entries: SessionIndexEntry[]; revision: string }>
   writeIndex(entries: SessionIndexEntry[]): Promise<void>
+  deleteIndex(): Promise<void>
   hasIndex(): Promise<boolean>
   tombstones: {
     has(sid: string): Promise<boolean>

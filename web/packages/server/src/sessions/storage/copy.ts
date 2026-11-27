@@ -23,6 +23,12 @@ const fingerprints = {
     // File times keep whole milliseconds reliably; finer digits do not survive every filesystem.
     return backup && { messages: backup.messages.length, savedAt: Math.round(backup.savedAt * 1000), sha256: sha256({ doc: backup.doc, messages: backup.messages }) }
   },
+  index: async (storage: StorageBackend) => {
+    try { return (await storage.sessions.index()).entries } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
+    }
+  },
   async document(storage: StorageBackend, namespace: string, key: string) {
     try { const stored = await storage.documents.get(namespace, key); return stored && { sha256: sha256(stored.value) } } catch (error) {
       if (error instanceof InvalidDocument) return { invalid: error.revision }
@@ -105,9 +111,9 @@ export async function copyStorage(source: StorageBackend, destination: StorageBa
     })
   }
   for (const sid of items.tombstones) await step(`tombstone ${sid}`, () => destination.sessions.tombstones.has(sid), () => destination.sessions.tombstones.add(sid))
-  if (await source.sessions.hasIndex()) {
-    const entries = (await source.sessions.index()).entries
-    await step('session index', async () => await destination.sessions.hasIndex() && equal(entries, (await destination.sessions.index()).entries), () => destination.sessions.writeIndex(entries))
+  const index = await fingerprints.index(source)
+  if (index !== null) {
+    await step('session index', async () => equal(index, await fingerprints.index(destination)), () => destination.sessions.writeIndex(index))
   }
   for (const [namespace, key] of items.documents) {
     await step(`document ${namespace}/${key}`, async () => equal(await fingerprints.document(source, namespace, key), await fingerprints.document(destination, namespace, key)), async () => {
@@ -125,6 +131,7 @@ export async function copyStorage(source: StorageBackend, destination: StorageBa
   const remove = async (label: string, run: () => Promise<unknown>): Promise<void> => {
     try { await run(); report.copied += 1 } catch (error) { report.failures.push(`${label}: ${(error as Error).message}`) }
   }
+  if (index === null && await destination.sessions.hasIndex()) await remove('session index', () => destination.sessions.deleteIndex())
   // Deleted here rather than restored from a tombstone: a session the source dropped must not come back.
   for (const sid of stale.sessions) await remove(`session ${sid}`, () => destination.sessions.delete(sid, { tombstone: false }))
   for (const sid of stale.tombstones) await remove(`tombstone ${sid}`, () => destination.sessions.tombstones.remove(sid))
@@ -144,7 +151,7 @@ export async function verifyStorage(source: StorageBackend, destination: Storage
     await compare(`session ${sid}`, (storage) => fingerprints.session(storage, sid))
     await compare(`shrink backup ${sid}`, (storage) => fingerprints.backup(storage, sid))
   }
-  if (await source.sessions.hasIndex()) await compare('session index', async (storage) => await storage.sessions.hasIndex() ? (await storage.sessions.index()).entries : null)
+  await compare('session index', fingerprints.index)
   const tombstones = await destination.sessions.tombstones.all()
   for (const sid of items.tombstones) if (!tombstones.has(sid)) mismatches.push(`tombstone ${sid}`)
   for (const [namespace, key] of items.documents) await compare(`document ${namespace}/${key}`, (storage) => fingerprints.document(storage, namespace, key))

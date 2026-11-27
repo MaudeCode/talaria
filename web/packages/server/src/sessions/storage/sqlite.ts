@@ -156,6 +156,7 @@ class SqliteSessions implements SessionBackend {
       this.db.run('INSERT INTO session_index (id, entries, revision) VALUES (1, ?, ?) ON CONFLICT (id) DO UPDATE SET entries = excluded.entries, revision = excluded.revision', JSON.stringify(entries), nextRevision(previous))
     })
   }
+  async deleteIndex(): Promise<void> { this.db.run('DELETE FROM session_index WHERE id = 1') }
   private addTombstone(sid: string): void { this.db.run('INSERT INTO session_tombstones (id, deleted_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING', sid, Date.now() / 1000) }
   readonly tombstones = {
     has: async (sid: string): Promise<boolean> => { this.db.check(); return this.db.get('SELECT 1 AS present FROM session_tombstones WHERE id = ?', sid) !== undefined },
