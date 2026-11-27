@@ -1,6 +1,6 @@
 /** Session, project, share, workspace, and file procedures. */
 import { implement, type Router } from '@orpc/server'
-import { sessionsContract, workspacesContract, type Attachment, type SessionDeleteRefused, type SessionsListQuery } from '@maudecode/talaria-web-contracts'
+import { sessionsContract, workspacesContract, type Attachment, type SessionDeleteRefused, type SessionsListQuery, type WorkspaceTextSizeError } from '@maudecode/talaria-web-contracts'
 import { mkdirSync } from 'node:fs'
 import { closeSync, existsSync, lstatSync, statSync } from 'node:fs'
 import { writeFully } from '../fs/atomic.js'
@@ -23,7 +23,7 @@ import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { fileSourceSession, managedBuffers } from '../workspace/managed-buffers.js'
 import { previewUrl, readFilePreview } from '../workspace/preview.js'
 import { OfficeError, officeFormat, saveDocx } from '../workspace/office.js'
-import { dirSignature, FileExistsError, FileRevisionConflict, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, readFileSnapshot, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
+import { dirSignature, FileExistsError, FileRevisionConflict, listDir, makeAnchoredDir, MAX_FILE_BYTES, NotFoundError, openAnchoredCreateFd, readFileSnapshot, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
 import { pyOsError, pyRepr, storageFull, str } from '../util.js'
 import { activeProfileName, ensureTrustedAuthSession, requestCanManageServer, sessionCanManageServer } from '../auth/gate.js'
@@ -816,6 +816,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
         const file = { ...readFilePreview(s.workspace, input.path, { revision: true }), source: 'workspace' as const }
         return file.preview === 'html' ? { ...file, preview_url: previewUrl(ctx.deps.auth.signingKey(), s.workspace, input.path) } : file
       } catch (error) {
+        if (error instanceof FileTooLargeError) throw workspaceTextSizeError('read')
         throw fileError(error, 404)
       }
     })),
@@ -832,6 +833,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
         if (!existsSync(target)) throw new HttpError(404, 'File not found')
         if (statSync(target).isDirectory()) throw new HttpError(400, 'Cannot save: path is a directory')
         const data = Buffer.from(input.content, 'utf8')
+        if (data.length > MAX_FILE_BYTES) throw workspaceTextSizeError('save')
         const revision = replaceAnchoredFile(root, target, data, input.base_revision)
         return { ok: true as const, path: input.path, size: data.length, ...(revision ? { revision } : {}) }
       } catch (error) {
@@ -1072,6 +1074,19 @@ function isSymlinkAt(path: string): boolean {
 /** Workspace writes are synchronous, so refusing while Git holds the workspace keeps the two from overlapping. */
 function assertWorkspaceFree(deps: AppDeps, path: string): void {
   if (deps.git.workspaceBusy(path)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
+}
+
+function workspaceTextSizeError(operation: 'read' | 'save'): HttpError {
+  const limit = MAX_FILE_BYTES.toLocaleString('en-US')
+  const { error, ...data }: WorkspaceTextSizeError = {
+    error: operation === 'read'
+      ? `File is too large to preview (${limit}-byte limit).`
+      : `File is too large to save. Shorten your draft to ${limit} bytes or less.`,
+    condition: 'file_too_large',
+    max_bytes: MAX_FILE_BYTES,
+    ...(operation === 'read' ? { download_allowed: true } : {}),
+  }
+  return new HttpError(413, error, data)
 }
 
 export function fileError(error: unknown, notFoundStatus = 400): Error {

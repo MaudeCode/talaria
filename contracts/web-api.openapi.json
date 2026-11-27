@@ -86455,6 +86455,45 @@
                 }
               }
             }
+          },
+          "413": {
+            "description": "Workspace text exceeds the UTF-8 byte limit for preview or replacement.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "condition": {
+                      "type": "string",
+                      "enum": [
+                        "file_too_large"
+                      ]
+                    },
+                    "max_bytes": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "download_allowed": {
+                      "description": "Returned only when a workspace read authorizes raw download of the same file.",
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "condition",
+                    "max_bytes"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       }
@@ -86540,6 +86579,45 @@
                     "path",
                     "size"
                   ]
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Workspace text exceeds the UTF-8 byte limit for preview or replacement.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "condition": {
+                      "type": "string",
+                      "enum": [
+                        "file_too_large"
+                      ]
+                    },
+                    "max_bytes": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "download_allowed": {
+                      "description": "Returned only when a workspace read authorizes raw download of the same file.",
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "condition",
+                    "max_bytes"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }

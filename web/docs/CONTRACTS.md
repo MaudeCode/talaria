@@ -426,6 +426,12 @@ that address unlocks only its folder, minus dotfiles, until the grant expires.
 to clear the text. An omitted field returns 400 before any replacement.
 `files.create` accepts an omitted `content` field to create an empty file.
 
+Workspace text preview and replacement share a 400,000-byte limit. A read
+above the limit returns HTTP 413 with `condition: "file_too_large"`, `max_bytes`
+and `download_allowed: true`. The raw download rechecks access on every
+request. A save above the UTF-8 limit returns the same condition and limit
+before replacing the file. The editor retains the draft so it can be shortened.
+
 Editable workspace text and DOCX reads include an opaque `revision` for the
 file that was read. Echo it as `base_revision` when saving, even if the file is
 refetched while a draft is open. The server compares it with the destination

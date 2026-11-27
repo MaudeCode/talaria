@@ -1,4 +1,4 @@
-import { oc } from '@orpc/contract'
+import { oc, type OpenAPI } from '@orpc/contract'
 import { z } from 'zod'
 import { WorkspaceEntrySchema, WorkspacesSchema, DirListingSchema, FileContentSchema, FileEntrySchema, FileSourceSchema } from '../views.js'
 
@@ -17,6 +17,18 @@ const FileReplacement = SessionPath.extend({
 })
 const SavedFileRevision = FileRevision.optional().describe('Opaque revision of the committed workspace file after a conditional save.')
 const FileRead = FileContentSchema.extend({ revision: FileRevision.optional().describe('Opaque revision of this editable workspace file. Send it back as base_revision when saving.') })
+export const WorkspaceTextSizeErrorSchema = z.object({
+  error: z.string(),
+  condition: z.literal('file_too_large'),
+  max_bytes: z.number().int().min(1),
+  download_allowed: z.literal(true).optional().describe('Returned only when a workspace read authorizes raw download of the same file.'),
+})
+export type WorkspaceTextSizeError = z.infer<typeof WorkspaceTextSizeErrorSchema>
+const workspaceTextSizeResponse = {
+  description: 'Workspace text exceeds the UTF-8 byte limit for preview or replacement.',
+  content: { 'application/json': { schema: z.toJSONSchema(WorkspaceTextSizeErrorSchema, { target: 'openapi-3.0' }) as Record<string, unknown> } },
+}
+const workspaceTextSizeSpec = (op: OpenAPI.OperationObject): OpenAPI.OperationObject => ({ ...op, responses: { ...op.responses, 413: workspaceTextSizeResponse } })
 const OkPath = z.object({ ok: z.literal(true), path: z.string() })
 /** TAL-263: `token` is the grant from `files.escapeAuthorize`; `path` is workspace-relative and must sit under the granted symlink. */
 const EscapeQuery = z.object({ session_id: z.string().optional(), token: z.string().optional(), path: z.string().optional() })
@@ -42,8 +54,8 @@ export const workspacesContract = {
   },
   files: {
     list: oc.route({ method: 'GET', path: '/api/list', tags: ['files'] }).input(z.object({ session_id: z.string(), path: z.string().optional(), source: FileSource })).output(DirListingSchema),
-    read: oc.route({ method: 'GET', path: '/api/file', tags: ['files'] }).input(SessionPath.extend({ source: FileSource })).output(FileRead),
-    save: oc.route({ method: 'POST', path: '/api/file/save', tags: ['files'] }).input(FileReplacement.extend({ source: FileSource })).output(OkPath.extend({ size: z.number().int(), source: FileSource, revision: SavedFileRevision })),
+    read: oc.route({ method: 'GET', path: '/api/file', tags: ['files'], spec: workspaceTextSizeSpec }).input(SessionPath.extend({ source: FileSource })).output(FileRead),
+    save: oc.route({ method: 'POST', path: '/api/file/save', tags: ['files'], spec: workspaceTextSizeSpec }).input(FileReplacement.extend({ source: FileSource })).output(OkPath.extend({ size: z.number().int(), source: FileSource, revision: SavedFileRevision })),
     /** TAL-262: saves an editable `.docx` preview's text as its paragraphs; `.xlsx` and `.pptx` are preview-only (400). */
     officeSave: oc.route({ method: 'POST', path: '/api/file/office-save', tags: ['files'] }).input(FileReplacement).output(FileContentSchema.extend({ ok: z.literal(true), path: z.string(), size: z.number().int(), revision: SavedFileRevision })),
     create: oc.route({ method: 'POST', path: '/api/file/create', tags: ['files'] }).input(SessionPath.extend({ content: z.string().optional() })).output(OkPath),

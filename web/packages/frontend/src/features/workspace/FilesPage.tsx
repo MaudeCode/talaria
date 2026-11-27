@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState, type Dispatch, type DragEvent, type KeyboardEvent, type ReactElement, type ReactNode, type SetStateAction } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Download, Eye, EyeOff, File as FileIcon, FilePlus, Folder, FolderPlus, MoreHorizontal, RefreshCw, X } from 'lucide-react'
+import { WorkspaceTextSizeErrorSchema } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
+import { isApiError } from '../../contracts/common'
 import { appUrl } from '../../lib/appRoot'
-import { Button, IconButton } from '../../ui/Button'
+import { Button, IconButton, iconButtonClass } from '../../ui/Button'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { Select } from '../../ui/Select'
 import { HelpTip, TextInput } from '../../ui/Field'
 import { ContextMenu, Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
 import { ErrorState, LoadingState, formatBytes } from '../../ui/States'
+import { Tooltip } from '../../ui/Tooltip'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
@@ -258,12 +261,17 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
     items[Math.max(0, Math.min(to, items.length - 1))]?.focus()
   }
   const g = git.data?.git
-  const kind = content.data?.preview
+  const readError = content.error
+  const sizeRefused = !managed && isApiError(readError) && readError.status === 413
+  const sizeError = sizeRefused ? WorkspaceTextSizeErrorSchema.safeParse(readError.body).data : undefined
+  const kind = sizeError ? undefined : content.data?.preview
   // TAL-262: an Office preview saves only when the server marks it editable; otherwise it shows the server's reason.
   const office = kind === 'office'
   const officeBlocked = office && content.data?.editable !== true
-  const readOnly = (managed && (content.data?.read_only !== false || content.isError)) || officeBlocked
+  const readOnly = !!sizeError || (managed && (content.data?.read_only !== false || content.isError)) || officeBlocked
   const fileName = content.data?.name ?? listing.data?.entries.find((entry) => entry.path === file)?.name ?? file
+  const downloadLabel = m.ws_panel_download_file({ name: fileName ?? '' })
+  const canDownload = !managed && (!sizeRefused || sizeError?.download_allowed === true)
   // Markdown, CSV and HTML show their rendered form until Edit opens the text; TAL-2323: a file opened at a line shows its text.
   const atLine = opened?.line !== undefined && opened.path === file
   const renderable = kind === 'markdown' || kind === 'csv' || kind === 'html'
@@ -294,10 +302,11 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
           <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1 text-xs">
             <Button variant="ghost" onClick={() => setFile(null)}><ArrowUp size={12} aria-hidden="true" /> {m.back()}</Button>
             <span className="min-w-0 flex-1 truncate font-mono text-muted">{fileName}</span>
-            {!managed && <a className="text-muted hover:text-text" href={rawUrl()} download aria-label={m.ws_panel_download_file({ name: fileName ?? file })}><Download size={14} aria-hidden="true" /></a>}
+            {canDownload && <Tooltip label={downloadLabel}><a className={iconButtonClass('ghost', 'h-7 w-7')} href={rawUrl()} download aria-label={downloadLabel}><Download aria-hidden="true" /></a></Tooltip>}
           </div>
           {content.isPending && <LoadingState />}
-          {content.isError && <ErrorState error={content.error} onRetry={() => { void content.refetch() }} />}
+          {sizeError ? <ErrorState><span className="break-words">{sizeError.error}</span></ErrorState>
+            : content.isError && <ErrorState error={content.error} onRetry={() => { void content.refetch() }} />}
           {kind === 'binary' && <div className="p-3 text-xs text-muted">{m.ws_panel_binary({ size: formatBytes(content.data?.size) })}</div>}
           {/* Media and HTML frames mount only while the page is shown, so a hidden page stops playing; the selection stays. */}
           {active && (kind === 'image' || kind === 'pdf' || kind === 'audio' || kind === 'video') && (
