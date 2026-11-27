@@ -603,7 +603,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     agentSessionsStamp: (profile) => stateDbStamp(cliSessions.dbPath(profile)),
     personIsolation: () => personIsolationEnabled(env),
     agentSessionOwner: (sid, profile) => sessions.foreignOwnerOf(sid, profile),
-    documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), redactEnabled: sessions.deps.redactEnabled,
+    documents: storage.documents, updateNotices: updateNotifications, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), redactEnabled: sessions.deps.redactEnabled,
   })
   const liveLogin = (login: string | null) => login ? auth.liveSessions().find((session) => loginHash(session.token) === login) : undefined
   const webPush = new WebPushChannel({ documents: storage.documents, activity, lookup: () => deps.dnsLookup, fetch: () => deps.pinnedFetch, liveLogins: () => liveLoginHashes(auth, { sessionBindingIsCurrent: (info) => oidc?.sessionBindingIsCurrent(info) ?? Promise.resolve(false) }),
@@ -1332,7 +1332,9 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     checkEnabled: () => !truthy(env.TALARIA_WEB_TEST_NETWORK_BLOCK) && settings.peekValue('check_for_updates') !== false,
     // TAL-2665: a new available version also pushes once to each server owner's opted-in subscriptions and devices.
     availableNotification: async (target, view) => {
-      const notice = await updateNotifications.updateAvailable(target, view)
+      const wasPending = updateNotifications.hasPendingRelayNotices(target)
+      const notice = await updateNotifications.updateAvailable(target, view, relay.current()?.serverNoticeDestinations())
+      if ((notice || !wasPending) && updateNotifications.hasPendingRelayNotices(target)) relay.current()?.serverNoticesChanged()
       if (notice) void notifications.serverNotice(notice)
     },
     autoNotification: {

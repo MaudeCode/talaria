@@ -309,6 +309,16 @@ export default defineSchema({
     .index("by_user_id_and_device_id_and_state_fingerprint", ["userId", "deviceId", "stateFingerprint"])
     .index("by_status_and_updated_at", ["status", "updatedAt"]),
 
+  // The current notice survives job pruning, with one receipt per update target and recipient.
+  serverNoticeReceipts: defineTable({
+    userId: v.string(),
+    publisherId: v.string(),
+    deviceId: v.string(),
+    target: v.union(v.literal("webui"), v.literal("agent")),
+    noticeId: v.string(),
+    receivedAt: v.number(),
+  }).index("by_user_id_and_publisher_id_and_device_id_and_target", ["userId", "publisherId", "deviceId", "target"]),
+
   // `requestId` is unique: the submit mutation reads it before inserting in the same transaction.
   feedbackReports: defineTable({
     requestId: v.string(),

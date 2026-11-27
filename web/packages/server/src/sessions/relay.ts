@@ -25,6 +25,7 @@ import type { SessionStore } from './store.js'
 import { str } from '../util.js'
 import { ActivityStates, activityRowFields, hasSessionData, TERMINAL_PHASES, type AgentNotice } from './notify/activity.js'
 import type { NotificationChannel, ServerNotice } from './notify/channel.js'
+import type { UpdateNotificationStore } from '../tools/update-notifications.js'
 import { completionNotification, type OwnerCompletionRun } from './notify/alerts.js'
 
 export const PRESENCE_LEASE_SECONDS = 90
@@ -34,6 +35,7 @@ export const PRESENCE_FENCE_SECONDS = 15 * 60
 const PRESENCE_TAB_RE = /^[A-Za-z0-9_-]{8,64}$/
 const DEFAULT_RELAY_URL = 'https://relay.talaria.kil.dev'
 const REQUEST_TIMEOUT_MS = 10_000
+const PUBLISHER_IDLE_SECONDS = 60
 // Sessions started longer ago than this are never announced, which bounds the started ledger.
 const STARTED_WINDOW_MS = 24 * 60 * 60 * 1000
 const b64u = (data: Buffer): string => data.toString('base64url')
@@ -217,6 +219,7 @@ export interface RelayPublisherDeps {
   agentSessionsStamp?: (profile: string) => string | null
   /** Shared with the other notification channels; a standalone publisher tracks its own. */
   activity?: ActivityStates
+  updateNotices?: Pick<UpdateNotificationStore, 'hasPendingRelayNotices' | 'deliverRelayNotices'>
   /**
    * TAL-48: person isolation is on. Relay enrollment is per profile, not per person, so a person's session is never
    * published to the profile's devices; only unowned sessions are.
@@ -254,6 +257,8 @@ export class RelayPublisher {
   private ended = false
   /** The pass the loop is running, until it ends or backs off after a failure. */
   private passing: Promise<void> | null = null
+  private noticePass: Promise<void> | null = null
+  private nextNoticeAttempt = 0
   private dirty = false
   /** The hub change the next pass answers, while no other change followed it. */
   private change: number | undefined
@@ -282,6 +287,7 @@ export class RelayPublisher {
   async start(publishInitial = true): Promise<void> {
     if (this.loop) return
     this.loop = this.run().finally(() => { this.ended = true })
+    this.flushServerNotices()
     if (publishInitial || (await loadDeletedViews(this.deps.documents)).length) this.changed()
   }
 
@@ -299,7 +305,9 @@ export class RelayPublisher {
 
   /** Settles once no pass runs and no change waits for one (tests). */
   async idle(): Promise<void> {
-    while (this.passing || (this.dirty && this.loop !== null && !this.ended)) await (this.passing ?? new Promise<void>((resolve) => setImmediate(resolve)))
+    while (this.passing || this.noticePass || (this.dirty && this.loop !== null && !this.ended)) {
+      await (this.passing ?? this.noticePass ?? new Promise<void>((resolve) => setImmediate(resolve)))
+    }
   }
 
   noteTerminal(streamId: string, phase: string): void {
@@ -388,8 +396,9 @@ export class RelayPublisher {
   private async run(): Promise<void> {
     while (!this.stopped) {
       let idle = false
-      if (!this.dirty) { await this.sleep(60); idle = !this.dirty }
+      if (!this.dirty) { await this.sleep(PUBLISHER_IDLE_SECONDS); idle = !this.dirty }
       if (this.stopped) return
+      this.flushServerNotices()
       this.dirty = false
       const change = idle ? undefined : this.change
       this.change = undefined
@@ -486,10 +495,12 @@ export class RelayPublisher {
   }
 
   private async publishes(profile: string, cfg: RelayProfile): Promise<boolean> {
-    if (cfg.identity) {
-      try { if ((await profileIdentity(this.deps, profile)) !== cfg.identity) return false } catch { return false }
-    }
-    return !this.disabledProfiles.has(cfg.profile_id)
+    if (this.disabledProfiles.has(cfg.profile_id)) return false
+    try { return await this.ownsProfile(profile, cfg) } catch { return false }
+  }
+
+  private async ownsProfile(profile: string, cfg: RelayProfile): Promise<boolean> {
+    return !cfg.identity || (await profileIdentity(this.deps, profile)) === cfg.identity
   }
 
   /** Validation publish for one newly enrolled profile (Python `publish_profile`). */
@@ -610,19 +621,45 @@ export class RelayPublisher {
     }
   }
 
-  /**
-   * TAL-2665: send a server notice to each enrolled profile. Relay alerts the publisher owner's opted-in devices once per
-   * notice and device whichever profile carried it, so a repeat send queues nothing; a failed send is logged, not retried,
-   * and the inbox row still shows the update.
-   */
-  async serverNotice(notice: ServerNotice): Promise<void> {
-    for (const [profile, cfg] of Object.entries(this.config.profiles)) {
-      if (!(await this.publishes(profile, cfg))) continue
+  private serverNoticeDestination(cfg: RelayProfile): string {
+    return createHash('sha256').update(JSON.stringify([this.config.url, this.config.publisher_id, cfg.profile_id, cfg.identity])).digest('hex')
+  }
+
+  serverNoticeDestinations(): string[] {
+    return [...new Set(Object.values(this.config.profiles).map((cfg) => this.serverNoticeDestination(cfg)))]
+  }
+
+  serverNoticesChanged(): void {
+    this.nextNoticeAttempt = 0
+    this.flushServerNotices()
+  }
+
+  /** Retry on publisher ticks without holding up activity snapshots or adding a separate timer. */
+  private flushServerNotices(): void {
+    const notices = this.deps.updateNotices
+    if (this.stopped || this.noticePass || this.deps.now() < this.nextNoticeAttempt || !notices?.hasPendingRelayNotices()) return
+    this.nextNoticeAttempt = this.deps.now() + PUBLISHER_IDLE_SECONDS
+    this.noticePass = notices.deliverRelayNotices((notice, destination, isCurrent) => this.serverNotice(notice, destination, isCurrent))
+      .catch((error: unknown) => { this.deps.log(`[relay] server notice persistence failed (${(error as Error).message})`) })
+      .finally(() => { this.noticePass = null; this.flushServerNotices() })
+  }
+
+  /** True settles this destination on acknowledgement or permanent removal or rejection. */
+  async serverNotice(notice: ServerNotice, destination: string, isCurrent: () => boolean): Promise<boolean> {
+    if (this.stopped) return false
+    const enrollment = Object.entries(this.config.profiles).find(([, cfg]) => this.serverNoticeDestination(cfg) === destination)
+    if (!enrollment) return true
+    const [profile, cfg] = enrollment
+    try {
+      if (!(await this.ownsProfile(profile, cfg))) return true
+      if (this.stopped || !isCurrent()) return false
       const path = `/v1/publishers/${encodeURIComponent(this.config.publisher_id)}/profiles/${encodeURIComponent(cfg.profile_id)}/notices/${encodeURIComponent(notice.id)}`
       const body = JSON.stringify({ version: 1, kind: notice.kind, noticeId: notice.id, publisherId: this.config.publisher_id, profileId: cfg.profile_id, title: notice.title, body: notice.body, deepLink: notice.url })
-      try { await this.put(path, body) } catch (error) {
-        this.deps.log(`[relay] Talaria relay did not take a server notice (${error instanceof RelayHttpError ? `HTTP ${String(error.status)}` : (error as Error).message})`)
-      }
+      await this.put(path, body)
+      return true
+    } catch (error) {
+      this.deps.log(`[relay] Talaria relay did not take a server notice (${(error as Error).message})`)
+      return error instanceof RelayHttpError ? !error.retryable : (error as NodeJS.ErrnoException).code === 'ENOENT'
     }
   }
 
@@ -719,11 +756,6 @@ export class RelayService implements NotificationChannel {
 
   /** TAL-1970: the adopted publisher sends a session's agent notice to the relay; without one it reaches no device. */
   async noticeReach(profile: string | null, owner: string | null): Promise<boolean> { return await this.publisher?.reaches(profile, owner) ?? false }
-
-  /** TAL-2665: the adopted publisher sends a server notice to the relay; without one it reaches no device. */
-  async serverNotice(notice: ServerNotice): Promise<void> {
-    try { await this.publisher?.serverNotice(notice) } catch (error) { this.deps.log(`[relay] server notice failed (${(error as Error).message})`) }
-  }
 
   private adopt(candidate: RelayPublisher, previous: RelayPublisher | null): void {
     this.publisher = candidate

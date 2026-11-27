@@ -110,7 +110,7 @@ it('publishes exactly the shared publisher-session-started fixture', async () =>
 })
 
 // TAL-2665: the Relay gate accepts this fixture as the Web publisher's update-available notice (relay/tests/sharedContracts.test.ts).
-it('publishes exactly the shared publisher-server-notice fixture to each enrolled profile', async () => {
+it('publishes exactly the shared publisher-server-notice fixture to the selected enrollment', async () => {
   const expected = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/publisher-server-notice.json'), 'utf8')) as { noticeId: string; title: string; body: string; deepLink: string }
   const home = mkdtempSync(join(tmpdir(), 'talaria-relay-contract-'))
   try {
@@ -125,7 +125,8 @@ it('publishes exactly the shared publisher-server-notice fixture to each enrolle
     } as unknown as RelayPublisherDeps
     const config = { url: 'https://relay.example', publisher_id: 'https://contract.example', key_id: 'contract-key', private_key_path: keyPath, profiles: { default: { identity: (await testProfileIdentity(home)), profile_id: 'prf_default' } } }
     const notice = { kind: 'update_available' as const, id: expected.noticeId, title: expected.title, body: expected.body, url: expected.deepLink }
-    await (await initializeStore(new RelayPublisher(config, deps))).serverNotice(notice)
+    const publisher = await initializeStore(new RelayPublisher(config, deps))
+    await publisher.serverNotice(notice, publisher.serverNoticeDestinations()[0]!, () => true)
     expect(requests).toHaveLength(1)
     expect(requests[0]!.url).toBe(`https://relay.example/v1/publishers/${encodeURIComponent('https://contract.example')}/profiles/prf_default/notices/${encodeURIComponent(expected.noticeId)}`)
     expect(JSON.parse(requests[0]!.body)).toEqual(expected)
