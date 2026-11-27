@@ -45,8 +45,13 @@ struct RelayNotificationSettingsRow: View {
 
     @State private var statusMessage: String?
     @State private var isRelayAvailable = false
+    @State private var updateAlertsOverride: Bool?
+    @State private var updateAlertsWriteID: UUID?
+    @State private var updateAlertsError: (message: SettingsErrorText, whileUnconfirmed: Bool)?
     @AppStorage(TalariaRelayNotifications.isEnabledKey) private var notificationsEnabled = false
     @AppStorage(TalariaRelayNotifications.backgroundAlertsEnabledKey) private var backgroundAlertsEnabled = false
+    @AppStorage(TalariaRelayNotifications.updateAvailableAlertsEnabledKey) private var updateAlertsEnabled = false
+    @AppStorage(TalariaRelayNotifications.unconfirmedUpdateAvailableAlertsKey) private var unconfirmedUpdateAlerts: Bool?
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var completionAlertsEnabled = false
 
     var body: some View {
@@ -65,6 +70,18 @@ struct RelayNotificationSettingsRow: View {
             )
             .disabled(!isRelayAvailable || !completionAlertsEnabled)
 
+            SettingsToggleRow(
+                title: SettingsIndex.notificationsUpdateAvailable.title,
+                systemImage: "arrow.down.circle",
+                isOn: Binding(get: { updateAlertsOverride ?? unconfirmedUpdateAlerts ?? updateAlertsEnabled }, set: setUpdateAlerts),
+                accessibilityIdentifier: SettingsIndex.notificationsUpdateAvailable.id
+            )
+            .disabled(!isRelayAvailable)
+
+            if let updateAlertsError, !updateAlertsError.whileUnconfirmed || unconfirmedUpdateAlerts != nil {
+                SettingsErrorFootnote(updateAlertsError.message)
+            }
+
             SettingsFootnote(
                 statusMessage
                     ?? (isRelayAvailable
@@ -75,12 +92,7 @@ struct RelayNotificationSettingsRow: View {
         .onChange(of: backgroundAlertsEnabled) {
             Task { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
         }
-        .task {
-            isRelayAvailable = authManager.servers.contains { account in
-                guard let server = URL(string: account.urlString) else { return false }
-                return TalariaRelayConfigurationStore.operationalCredentials(for: server) != nil
-            }
-        }
+        .task { isRelayAvailable = relayCredentials != nil }
     }
 
     private var notificationBinding: Binding<Bool> {
@@ -95,6 +107,52 @@ struct RelayNotificationSettingsRow: View {
                 }
             }
         )
+    }
+
+    private var relayCredentials: TalariaRelayCredentials? {
+        for account in authManager.servers {
+            if let server = URL(string: account.urlString),
+               let credentials = TalariaRelayConfigurationStore.operationalCredentials(for: server) {
+                return credentials
+            }
+        }
+        return nil
+    }
+
+    private func setUpdateAlerts(_ enabled: Bool) {
+        let writeID = UUID()
+        updateAlertsWriteID = writeID
+        updateAlertsOverride = enabled
+        updateAlertsError = nil
+        Task {
+            if enabled {
+                let granted = await ResponseCompletionNotificationService.requestAuthorization()
+                guard updateAlertsWriteID == writeID else { return }
+                guard granted else {
+                    updateAlertsOverride = nil
+                    updateAlertsError = (SettingsErrorText(String(localized: "Notification permission is required for relay alerts.")), false)
+                    return
+                }
+                UIApplication.shared.registerForRemoteNotifications()
+            }
+            guard updateAlertsWriteID == writeID else { return }
+            guard let credentials = relayCredentials else {
+                updateAlertsOverride = nil
+                updateAlertsError = (SettingsErrorText(String(localized: "Connect a server to Talaria Relay to enable remote alerts.")), false)
+                return
+            }
+            defer { if updateAlertsWriteID == writeID { updateAlertsOverride = nil } }
+            do {
+                try await TalariaRelayClient(credentials: credentials).configureDevice(
+                    pushToStartEnabled: TalariaLiveActivityMode.current == .allRunning,
+                    updateAvailableAlertsEnabled: enabled
+                )
+            } catch {
+                guard updateAlertsWriteID == writeID else { return }
+                let refused = (error as? TalariaRelayClient.ClientError)?.definitivelyRefusedWrite == true
+                updateAlertsError = (SettingsErrorText(error), !refused)
+            }
+        }
     }
 
     @MainActor

@@ -25,8 +25,11 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
                 Task { await TalariaApp.invalidateRelayIdentity() }
             }
         }
-        if UserDefaults.standard.bool(forKey: TalariaRelayNotifications.isEnabledKey)
-            || UserDefaults.standard.bool(forKey: ResponseCompletionNotifications.isEnabledKey) {
+        let defaults = UserDefaults.standard
+        let updateAlerts = (defaults.object(forKey: TalariaRelayNotifications.unconfirmedUpdateAvailableAlertsKey) as? Bool)
+            ?? defaults.bool(forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey)
+        if defaults.bool(forKey: TalariaRelayNotifications.isEnabledKey)
+            || updateAlerts || defaults.bool(forKey: ResponseCompletionNotifications.isEnabledKey) {
             application.registerForRemoteNotifications()
         }
         return true
@@ -75,7 +78,7 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        let url = SessionNotificationRefresh.sessionURL(userInfo: userInfo)
+        let url = Self.notificationURL(userInfo: userInfo)
         let answer = NotificationAnswer(
             actionIdentifier: response.actionIdentifier, userText: (response as? UNTextInputNotificationResponse)?.userText,
             userInfo: userInfo
@@ -87,7 +90,16 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         }
     }
 
-    /// Opens the tapped notification's session, then completes the tap on the main actor. Allow, Deny and Reply answer
+    nonisolated static func notificationURL(userInfo: [AnyHashable: Any]) -> URL? {
+        if let session = SessionNotificationRefresh.sessionURL(userInfo: userInfo) { return session }
+        guard userInfo[SessionNotificationRefresh.deepLinkKey] as? String == "/settings/system",
+              let publisher = userInfo[SessionNotificationRefresh.publisherIDKey] as? String,
+              let origin = TalariaRelayClient.originIdentifier(publisher)
+        else { return nil }
+        return TalariaDeepLink.sectionURL(.system, publisherID: origin)
+    }
+
+    /// Opens the tapped notification's destination, then completes the tap on the main actor. Allow, Deny and Reply answer
     /// in the background instead and open nothing (TAL-1469).
     @MainActor static func completeTap(
         opening url: URL?,

@@ -23,6 +23,43 @@ final class ScreenGalleryHostedTests: XCTestCase {
     func testChatsSettingsPage() async throws { try await category(.chats) }
     func testNavigationSettingsPage() async throws { try await category(.navigation) }
     func testNotificationsAndHapticsSettingsPage() async throws { try await category(.notificationsAndHaptics) }
+
+    func testUpdateAvailableSwitchSavesTheChoiceToRelay() async throws {
+        let key = "talariaRelay.updateAvailableAlertsEnabled"
+        let previous = UserDefaults.standard.object(forKey: key)
+        let previousCredentials = TalariaRelayConfigurationStore.load()
+        defer {
+            UserDefaults.standard.set(previous, forKey: key)
+            if let previousCredentials { try? TalariaRelayConfigurationStore.save(previousCredentials) }
+            else { try? TalariaRelayConfigurationStore.clear() }
+        }
+        UserDefaults.standard.set(true, forKey: key)
+        try TalariaRelayConfigurationStore.save(TalariaRelayCredentials(
+            baseURL: server, deviceID: "fixture-device", userID: "fixture-owner", appleUserID: "fixture-apple",
+            sessionToken: "fixture-relay-session", expiresAt: .distantFuture, pairedPublisherIDs: [server.absoluteString]
+        ))
+        let window = try hostWindow(NavigationStack { NotificationsHapticsSettingsView(authManager: fixture.environment.authManager) })
+        let row = try await requireElement(in: window, label: "Update available")
+        let rowBounds = window.convert(row.accessibilityFrame, from: window.screen.coordinateSpace)
+        let control = try XCTUnwrap(window.firstView(ofType: UISwitch.self) { toggle in
+            let bounds = window.convert(toggle.bounds, from: toggle)
+            return (rowBounds.minY...rowBounds.maxY).contains(bounds.midY)
+        })
+        let available = await awaitCondition { control.isEnabled }
+        XCTAssertTrue(available, "The fixture's paired Relay must enable the switch")
+        XCTAssertTrue(control.isOn)
+        attachHostedScreenshot(window, name: "update-available-alerts-on")
+        control.setOn(false, animated: false)
+        control.sendActions(for: .valueChanged)
+
+        let saved = await awaitCondition {
+            !UserDefaults.standard.bool(forKey: key)
+                && UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/v1/devices/fixture-device") }
+        }
+        XCTAssertTrue(saved, "The visible switch must register the disabled preference with Relay")
+        attachHostedScreenshot(window, name: "update-available-alerts-off")
+    }
+
     func testSpeechSettingsPage() async throws { try await category(.speech) }
     func testProfileSettings() async throws { try await categories(in: .profile) }
     func testProfilesSettingsPage() async throws { try await category(.profiles) }

@@ -211,17 +211,20 @@ public enum TalariaDeepLink {
         return BotChat(profileName: profile, publisherID: publisher)
     }
 
-    /// TAL-2326: an app page a transcript row opens: Tasks (scheduled jobs), Skills, or Settings › Tools.
+    /// A destination opened from a transcript row or a Relay server notice.
     public enum Section: String, Sendable {
-        case tasks, skills, tools
+        case tasks, skills, tools, system
     }
 
     /// TAL-2326: `talaria://section?name=<section>`.
-    public static func sectionURL(_ section: Section) -> URL? {
+    public static func sectionURL(_ section: Section, publisherID: String? = nil) -> URL? {
         var components = URLComponents()
         components.scheme = scheme
         components.host = sectionHost
         components.queryItems = [URLQueryItem(name: "name", value: section.rawValue)]
+        if let publisherID = normalizedPublisherID(publisherID) {
+            components.queryItems?.append(URLQueryItem(name: "publisher", value: publisherID))
+        }
         return components.url
     }
 
@@ -330,7 +333,7 @@ public enum TalariaDeepLink {
 
     public static func publisherID(from url: URL) -> String? {
         guard url.scheme?.lowercased() == scheme,
-              url.host?.lowercased() == sessionHost
+              url.host?.lowercased() == sessionHost || section(from: url) == .system
         else { return nil }
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         return normalizedPublisherID(

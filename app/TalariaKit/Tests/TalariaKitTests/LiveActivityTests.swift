@@ -718,6 +718,45 @@ final class LiveActivityTests: XCTestCase {
         )
     }
 
+    func testRelayBackgroundRegistrationReconcilesAnUnconfirmedUpdateAlertChoice() async throws {
+        let defaults = UserDefaults.ephemeral("RelayUpdateAlertRecovery")
+        let choices = LockedTestValue<[Bool]>([])
+        let scope = MockURLProtocol.register { request in
+            guard request.httpMethod == "PUT", request.url?.path == "/v1/devices/update-recovery-test" else {
+                return apiTestJSONResponse("{}", statusCode: 404, for: request)
+            }
+            let data = try XCTUnwrap(apiTestBodyData(from: request))
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let preferences = try XCTUnwrap(body["preferences"] as? [String: Bool])
+            choices.value.append(try XCTUnwrap(preferences["notifyOnUpdateAvailable"]))
+            if choices.value.count <= 2 { throw URLError(.timedOut) }
+            return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: scope]
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        let credentials = TalariaRelayCredentials(
+            baseURL: URL(string: "https://relay.test")!, deviceID: "update-recovery-test", userID: "test-user",
+            appleUserID: "test-apple-id", sessionToken: "test-token", expiresAt: .distantFuture
+        )
+        do {
+            try await TalariaRelayClient(credentials: credentials, session: session).configureDevice(
+                updateAvailableAlertsEnabled: true, defaults: defaults
+            )
+            XCTFail("A lost response cannot confirm the write")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .timedOut)
+        }
+        XCTAssertFalse(defaults.bool(forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey))
+
+        try await TalariaRelayClient(credentials: credentials, session: session).configureDevice(defaults: defaults)
+
+        XCTAssertEqual(choices.value, [true, true, true], "The background PUT must reconcile the unresolved opt-in")
+        XCTAssertTrue(defaults.bool(forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey))
+    }
+
     func testRelayAppleSignInPairingAndAggregateSnapshotContract() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LiveActivityURLProtocol.self]
