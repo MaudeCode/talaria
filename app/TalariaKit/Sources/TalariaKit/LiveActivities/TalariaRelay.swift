@@ -161,6 +161,8 @@ public enum TalariaRelayConfigurationStore {
 }
 
 public final class TalariaRelayClient: Sendable {
+    @MainActor private static var deviceRegistration: Task<Void, any Error>?
+
     struct AppleAuthResponse: Decodable {
         var userId: String
         var sessionToken: String
@@ -204,6 +206,13 @@ public final class TalariaRelayClient: Sendable {
         public var isRetryable: Bool {
             guard case .invalidResponse(let status, _) = self else { return false }
             return status == 408 || status == 425 || status == 429 || status >= 500
+        }
+
+        public var definitivelyRefusedWrite: Bool {
+            switch self {
+            case .invalidURL, .rejected: true
+            case .invalidResponse(let status, _): (400..<500).contains(status) && status != 408
+            }
         }
 
         public var errorDescription: String? {
@@ -376,23 +385,48 @@ public final class TalariaRelayClient: Sendable {
         _ = try await Self.responseData(for: request, session: session)
     }
 
-    public func configureDevice(
+    @MainActor public func configureDevice(
         liveActivitiesEnabled: Bool = true,
-        pushToStartEnabled: Bool = true
+        pushToStartEnabled: Bool = true,
+        updateAvailableAlertsEnabled: Bool? = nil,
+        defaults: UserDefaults = .standard
     ) async throws {
-        let pushToken = UserDefaults.standard.string(forKey: TalariaRelayNotifications.pushTokenKey)
-        let pushToStartToken = UserDefaults.standard.string(
+        // Every registration replaces the full preference object. Take its snapshot after the preceding PUT.
+        let preceding = Self.deviceRegistration
+        let registration = Task {
+            _ = await preceding?.result
+            try Task.checkCancellation()
+            try await putDevice(
+                liveActivitiesEnabled: liveActivitiesEnabled, pushToStartEnabled: pushToStartEnabled,
+                updateAvailableAlertsEnabled: updateAvailableAlertsEnabled, defaults: defaults
+            )
+        }
+        Self.deviceRegistration = registration
+        try await withTaskCancellationHandler {
+            try await registration.value
+        } onCancel: {
+            registration.cancel()
+        }
+    }
+
+    @MainActor private func putDevice(
+        liveActivitiesEnabled: Bool, pushToStartEnabled: Bool,
+        updateAvailableAlertsEnabled: Bool?, defaults: UserDefaults
+    ) async throws {
+        let pushToken = defaults.string(forKey: TalariaRelayNotifications.pushTokenKey)
+        let pushToStartToken = defaults.string(
             forKey: TalariaRelayNotifications.pushToStartTokenKey
         )
-        let approvalInputAlertsEnabled = UserDefaults.standard.bool(
+        let approvalInputAlertsEnabled = liveActivitiesEnabled && defaults.bool(
             forKey: TalariaRelayNotifications.isEnabledKey
         )
-        let completionAlertsEnabled = UserDefaults.standard.bool(
+        let completionAlertsEnabled = liveActivitiesEnabled && defaults.bool(
             forKey: ResponseCompletionNotifications.isEnabledKey
         )
-        let notificationsEnabled = liveActivitiesEnabled
-            && (approvalInputAlertsEnabled || completionAlertsEnabled)
-            && pushToken != nil
+        let updateAlerts = updateAvailableAlertsEnabled
+            ?? defaults.bool(forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey)
+        let notificationsEnabled = pushToken != nil
+            && (approvalInputAlertsEnabled || completionAlertsEnabled || updateAlerts)
         let preferences: [String: Bool] = [
             "liveActivitiesEnabled": liveActivitiesEnabled,
             "notificationsEnabled": notificationsEnabled,
@@ -400,12 +434,13 @@ public final class TalariaRelayClient: Sendable {
             "notifyOnInput": approvalInputAlertsEnabled,
             "notifyOnCompletion": completionAlertsEnabled,
             "notifyOnFailure": completionAlertsEnabled,
-            "notifyOnBackground": UserDefaults.standard.bool(
+            "notifyOnUpdateAvailable": updateAlerts,
+            "notifyOnBackground": defaults.bool(
                 forKey: TalariaRelayNotifications.backgroundAlertsEnabledKey
             )
         ]
         var body: [String: Any] = [
-            "label": await Self.deviceLabel,
+            "label": Self.deviceLabel,
             "bundleId": Bundle.main.bundleIdentifier ?? "dev.kil.talaria",
             "apsEnvironment": Self.apsEnvironment,
             "preferences": preferences
@@ -418,11 +453,19 @@ public final class TalariaRelayClient: Sendable {
         } else if !liveActivitiesEnabled || !pushToStartEnabled {
             body["pushToStartToken"] = NSNull()
         }
-        try await send(
-            path: "v1/devices/\(credentials.deviceID)",
-            method: "PUT",
-            body: try JSONSerialization.data(withJSONObject: body)
-        )
+        let path = "v1/devices/\(credentials.deviceID)"
+        let data = try JSONSerialization.data(withJSONObject: body)
+        do {
+            try await send(path: path, method: "PUT", body: data)
+        } catch let unconfirmed where updateAvailableAlertsEnabled != nil
+            && (unconfirmed as? ClientError)?.definitivelyRefusedWrite != true && !Task.isCancelled {
+            // Relay has no device-preferences GET. Reasserting the same absolute preference is idempotent.
+            do { try await send(path: path, method: "PUT", body: data) }
+            catch { throw unconfirmed }
+        }
+        if let updateAvailableAlertsEnabled {
+            defaults.set(updateAvailableAlertsEnabled, forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey)
+        }
     }
 
     public func snapshot() async throws -> TalariaAggregateActivityAttributes.ContentState? {

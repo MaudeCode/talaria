@@ -5,6 +5,39 @@ import XCTest
 // The members of LiveActivityTests that need the App host; the rest run in TalariaKitTests (TAL-399).
 @MainActor
 final class LiveActivityTests: XCTestCase {
+    func testRelayDeviceRegistrationSendsTheUpdateAlertPreference() async throws {
+        let defaults = UserDefaults.ephemeral("RelayDeviceRegistration")
+        defaults.set("0123456789abcdef", forKey: TalariaRelayNotifications.pushTokenKey)
+
+        let requests = LockedTestValue<[[String: Bool]]>([])
+        let scope = MockURLProtocol.register { request in
+            guard request.httpMethod == "PUT", request.url?.path == "/v1/devices/update-test" else {
+                return apiTestJSONResponse("{}", statusCode: 404, for: request)
+            }
+            let data = try XCTUnwrap(apiTestBodyData(from: request))
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            requests.value.append(try XCTUnwrap(body["preferences"] as? [String: Bool]))
+            return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: scope]
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        let client = TalariaRelayClient(credentials: TalariaRelayCredentials(
+            baseURL: URL(string: "https://relay.test")!, deviceID: "update-test", userID: "test-user",
+            appleUserID: "test-apple-id", sessionToken: "test-token", expiresAt: .distantFuture
+        ), session: session)
+
+        try await client.configureDevice(defaults: defaults)
+        defaults.set(true, forKey: "talariaRelay.updateAvailableAlertsEnabled")
+        try await client.configureDevice(defaults: defaults)
+
+        XCTAssertEqual(requests.value.map { $0["notifyOnUpdateAvailable"] }, [false, true])
+        XCTAssertEqual(requests.value.map { $0["notificationsEnabled"] }, [false, true],
+                       "Update alerts also work when the other alert families are off")
+    }
+
     func testFullExcerptSkipsNormalizationAndActivityUpdatesForTwoThousandTokens() async throws {
         try await assertFullExcerptSkipsFurtherTokens(
             initialToken: String(repeating: "a", count: 141), tailToken: " more",

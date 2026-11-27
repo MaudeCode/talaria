@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Opt in to server update alerts on iPhone and tap an alert to open the server update settings.",
+      "highlight": false,
+      "components": ["app"],
+      "announcement": {
+        "title": "Server update alerts",
+        "description": "Turn on Update available in Notifications & Haptics to get alerts for new Talaria Web and Hermes Agent versions.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

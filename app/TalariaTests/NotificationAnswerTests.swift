@@ -326,6 +326,29 @@ final class NotificationAnswerTests: XCTestCase {
         await TalariaAppDelegate.completeTap(opening: nil, with: { _ in record("open") }) { record("complete") }
         XCTAssertEqual(events, ["complete"], "a tap without a session completes without opening anything")
     }
+
+    func testTappingTheRelayUpdateAlertOpensServerUpdateSettings() async throws {
+        let fixture = try FixtureApp(for: self)
+        let auth = fixture.environment.authManager
+        let initial = try XCTUnwrap(auth.servers.first)
+        let publisher = UITestFixtureEnvironment.secondServerURL
+        let added = await auth.addServer(serverURLString: publisher.absoluteString, password: "")
+        XCTAssertEqual(added, .added(publisher))
+        auth.switchActiveServer(to: initial)
+        let router = AppIntentRouter()
+        let window = try hostWindow(fixture.root(intentRouter: router))
+        _ = try await requireElement(in: window, label: "Select model")
+
+        let wire = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("relay-server-notice-push")) as? [String: Any])
+        var payload = try XCTUnwrap(wire["payload"] as? [String: Any])
+        payload["publisherId"] = publisher.absoluteString
+        let url = try XCTUnwrap(TalariaAppDelegate.notificationURL(userInfo: payload), "The Relay alert must have an app destination")
+        await TalariaAppDelegate.completeTap(opening: url, with: { router.requestDeepLink($0) }) {}
+
+        _ = try await requireElement(in: window, label: "Check for Updates")
+        XCTAssertEqual(auth.state, .loggedIn(server: publisher))
+        attachHostedScreenshot(window, name: "relay-update-alert-opens-system-settings")
+    }
 }
 
 /// Decodes UserNotifications objects that have no public initializer from fixed key values.

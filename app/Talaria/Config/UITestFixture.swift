@@ -870,6 +870,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
     private static func responseData(for request: URLRequest) -> Data {
         guard let url = request.url else { return json([:]) }
         switch url.path {
+        case "/v1/devices/fixture-device" where request.httpMethod == "PUT":
+            return json(["ok": true])
         case "/v1/devices/fixture-device/publisher-subscriptions":
             let revoked = relayKeysRevoked.withLock { $0 }
             let publishers: [[String: Any]] = revoked ? [] : [[

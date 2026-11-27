@@ -22,7 +22,7 @@ struct ContentView: View {
     @State private var pendingDeepLinkedSessionID: String?
     @State private var pendingBotChat: TalariaDeepLink.BotChat?
     @State private var botChatServerUnavailable = false
-    /// A widget's quota account or a push's decision review, pushed once above the current screen.
+    /// A utility destination opened once above the current screen.
     @State private var pendingDestination: SessionListUtilityDestination?
     @State private var opensProviderQuotaWidgetSettings = false
     @State private var pendingNewChatRequest: NewChatRequest?
@@ -231,12 +231,17 @@ struct ContentView: View {
             return
         }
 
-        // TAL-2326: a transcript row's Tasks, Skills or Settings › Tools page.
         if let section = TalariaDeepLink.section(from: url) {
-            pendingDestination = switch section {
-            case .tasks: .tasks
-            case .skills: .skills
-            case .tools: .settings(.tools)
+            switch section {
+            case .tasks: pendingDestination = .tasks
+            case .skills: pendingDestination = .skills
+            case .tools: pendingDestination = .settings(.tools)
+            case .system:
+                guard let publisherID = TalariaDeepLink.publisherID(from: url),
+                      let account = relayPublisherAccount(publisherID) else { return }
+                authManager.switchActiveServer(to: account)
+                guard authManager.activeServerID == account.id else { return }
+                pendingDestination = .settings(.system)
             }
             return
         }
@@ -292,10 +297,7 @@ struct ContentView: View {
 
         if let sessionID = TalariaDeepLink.sessionID(from: url) {
             if let publisherID = TalariaDeepLink.publisherID(from: url),
-               let canonicalPublisherID = TalariaRelayClient.originIdentifier(publisherID),
-               let account = authManager.servers.first(where: { $0.id == publisherID }) ?? authManager.servers.first(where: {
-                   TalariaRelayClient.originIdentifier($0.urlString) == canonicalPublisherID
-               }) {
+               let account = relayPublisherAccount(publisherID) {
                 authManager.switchActiveServer(to: account)
             }
             // TAL-1966: a decision review alert opens the review on that server rather than its chat.
@@ -312,6 +314,12 @@ struct ContentView: View {
         }
 
         Task { await sharedImports.importIfAvailable() }
+    }
+
+    private func relayPublisherAccount(_ publisherID: String) -> ServerAccount? {
+        guard let origin = TalariaRelayClient.originIdentifier(publisherID) else { return nil }
+        return authManager.servers.first { $0.id == publisherID }
+            ?? authManager.servers.first { TalariaRelayClient.originIdentifier($0.urlString) == origin }
     }
 
     private func drainPendingIntentRoute() {
