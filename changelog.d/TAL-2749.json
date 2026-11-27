@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reopened Memory drafts keep your edits and show a conflict if someone else changes the file.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
