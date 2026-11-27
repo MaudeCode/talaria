@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web installs at different addresses on the same site keep their chosen languages available offline.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}

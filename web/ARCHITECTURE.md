@@ -447,7 +447,9 @@ i18n: Paraglide compiles one module per message. `src/i18n/localeSplit.ts` keeps
 each module and builds one lazily imported chunk per other locale (entries identical to English are left out
 and fall back to it). `applyLocale` installs the active locale's chunk before switching, so boot and runtime
 switches render translated from the first frame. Only the winning switch asks the service worker to keep
-its chunk beside the shell. The worker serializes replacements in message order.
+its chunk beside the shell. Each registration serializes replacements in message order in its own locale cache.
+On upgrade, the worker can serve an exact asset URL from the former shared cache and copy it into its own cache
+when the page reports that locale. Older registrations can still use the shared cache during rollout.
 
 ## 6. Runtime and startup
 

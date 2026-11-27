@@ -1,80 +1,167 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { registerRoute } from 'workbox-routing'
 
 vi.mock('workbox-precaching', () => ({ precache: () => undefined, getCacheKeyForURL: () => undefined, cleanupOutdatedCaches: () => undefined, matchPrecache: () => Promise.resolve(undefined) }))
-vi.mock('workbox-routing', () => ({ registerRoute: () => undefined }))
+vi.mock('workbox-routing', () => ({ registerRoute: vi.fn() }))
 vi.mock('workbox-strategies', () => ({ CacheFirst: class { handle = vi.fn() } }))
 vi.mock('workbox-expiration', () => ({ ExpirationPlugin: class { name = 'expiration' } }))
 
 afterEach(() => vi.unstubAllGlobals())
 
 describe('service worker locale cache', () => {
-  async function boot(beforeAdd?: (url: string) => Promise<void>) {
-    vi.resetModules()
-    const entries = new Map<string, true>([['http://x/assets/locale-de-old.js', true]])
-    const cache = {
-      match: (url: string) => Promise.resolve(entries.has(url) ? new Response('') : undefined),
-      add: async (url: string) => { await beforeAdd?.(url); entries.set(url, true) },
-      keys: () => Promise.resolve([...entries.keys()].map((url) => ({ url }))),
-      delete: (request: { url: string }) => Promise.resolve(entries.delete(request.url)),
+  const origin = 'https://talaria.test'
+  const roots = [`${origin}/`, `${origin}/mount/`] as const
+  const legacyCache = 'hermes-locale-v1'
+  const chunk = (scope: string, language: string) => new URL(`assets/locale-${language}.js`, scope).href
+
+  function cacheStorage() {
+    const stores = new Map<string, Map<string, Response>>()
+    return {
+      match: (request: Request | string, { cacheName }: CacheQueryOptions & { cacheName: string }) =>
+        Promise.resolve(stores.get(cacheName)?.get(typeof request === 'string' ? request : request.url)?.clone()),
+      open: (name: string) => {
+        const entries = stores.get(name) ?? new Map<string, Response>()
+        stores.set(name, entries)
+        return Promise.resolve({
+          match: (url: string) => Promise.resolve(entries.get(url)?.clone()),
+          add: async (url: string) => { entries.set(url, await fetch(url)) },
+          put: (url: string, response: Response) => { entries.set(url, response.clone()); return Promise.resolve() },
+          keys: () => Promise.resolve([...entries.keys()].map((url) => new Request(url))),
+          delete: (request: Request) => Promise.resolve(entries.delete(request.url)),
+        })
+      },
     }
+  }
+
+  async function boot(scope: string) {
+    vi.resetModules()
+    vi.mocked(registerRoute).mockClear()
     const listeners: Record<string, (ev: unknown) => void> = {}
-    vi.stubGlobal('self', {
+    const worker = {
       addEventListener: (name: string, fn: (ev: unknown) => void) => { listeners[name] = fn },
-      registration: { scope: 'http://x/' },
-      location: { origin: 'http://x' },
+      registration: { scope },
+      location: { origin },
       __WB_MANIFEST: [],
-    })
-    vi.stubGlobal('caches', { open: (name: string) => Promise.resolve(name === 'hermes-locale-v1' ? cache : null) })
+    }
+    vi.stubGlobal('self', worker)
     await import('./sw')
+    const routes = vi.mocked(registerRoute).mock.calls.slice()
     const post = async (url: string) => {
+      vi.stubGlobal('self', worker)
       const waits: Promise<unknown>[] = []
       listeners.message?.({ data: { type: 'CACHE_LOCALE', url }, waitUntil: (p: Promise<unknown>) => { waits.push(p) } })
       await Promise.all(waits)
     }
-    return { entries, post }
+    const read = async (href: string) => {
+      vi.stubGlobal('self', worker)
+      const url = new URL(href)
+      const request = new Request(url)
+      const options = { url, request, sameOrigin: url.origin === origin, event: new Event('fetch') as ExtendableEvent }
+      for (const [match, handle] of routes) {
+        if (typeof match === 'function' && match(options) && typeof handle === 'function') {
+          return (await handle(options))?.text()
+        }
+      }
+    }
+    return { post, read }
   }
 
-  it('keeps only the reported locale chunk and ignores URLs outside the assets', async () => {
-    const { entries, post } = await boot()
-    await post('http://x/assets/locale-ja-new.js')
-    expect([...entries.keys()]).toEqual(['http://x/assets/locale-ja-new.js'])
-    await post('http://evil.example/assets/locale-ja.js')
-    await post('http://x/api/settings')
-    expect([...entries.keys()]).toEqual(['http://x/assets/locale-ja-new.js'])
+  it.each(roots)('changing the language at %s keeps the other install available offline', async (switchingScope) => {
+    vi.stubGlobal('caches', cacheStorage())
+    vi.stubGlobal('fetch', (url: string) => Promise.resolve(new Response(url)))
+    const otherScope = roots.find((scope) => scope !== switchingScope)!
+    const switching = await boot(switchingScope)
+    const other = await boot(otherScope)
+    const original = chunk(switchingScope, 'de')
+    const selected = chunk(switchingScope, 'fr')
+    const retained = chunk(otherScope, 'ja')
+
+    await switching.post(original)
+    await other.post(retained)
+    await switching.post(selected)
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('offline')))
+
+    expect(await switching.read(selected)).toBe(selected)
+    expect(await other.read(retained)).toBe(retained)
+    expect(await switching.read(original)).toBeUndefined()
+  })
+
+  it('retains a legacy locale offline during upgrade, then pins it independently when reported', async () => {
+    const storage = cacheStorage()
+    vi.stubGlobal('caches', storage)
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('offline')))
+    const [upgradedScope, otherScope] = roots
+    const upgradedLocale = chunk(upgradedScope, 'ja')
+    const otherLocale = chunk(otherScope, 'de')
+    const legacy = await storage.open(legacyCache)
+    await legacy.put(upgradedLocale, new Response('Japanese'))
+    await legacy.put(otherLocale, new Response('German'))
+    const upgraded = await boot(upgradedScope)
+
+    expect(await upgraded.read(upgradedLocale)).toBe('Japanese')
+    await upgraded.post(upgradedLocale)
+    expect(await (await legacy.match(otherLocale))?.text()).toBe('German')
+
+    // An old worker can still prune the shared cache while this registration has upgraded.
+    await legacy.delete(new Request(upgradedLocale))
+    expect(await upgraded.read(upgradedLocale)).toBe('Japanese')
+  })
+
+  it('ignores reported URLs outside the registration assets', async () => {
+    vi.stubGlobal('caches', cacheStorage())
+    const fetchAsset = vi.fn((url: string) => Promise.resolve(new Response(url)))
+    vi.stubGlobal('fetch', fetchAsset)
+    const worker = await boot(roots[1])
+    const selected = chunk(roots[1], 'fr')
+    await worker.post(selected)
+    fetchAsset.mockClear()
+
+    await worker.post(chunk(roots[0], 'ja'))
+    await worker.post('https://elsewhere.test/mount/assets/locale-ja.js')
+    await worker.post(`${roots[1]}api/settings`)
+
+    expect(fetchAsset).not.toHaveBeenCalled()
+    expect(await worker.read(selected)).toBe(selected)
   })
 
   it('keeps the newest reported chunk when a prior replacement is still writing', async () => {
-    const firstUrl = 'http://x/assets/locale-fr.js'
-    const latestUrl = 'http://x/assets/locale-ja.js'
+    const firstUrl = chunk(roots[0], 'fr')
+    const latestUrl = chunk(roots[0], 'ja')
     const writeStarted = Promise.withResolvers<undefined>()
     const releaseWrite = Promise.withResolvers<undefined>()
-    const { entries, post } = await boot(async (url) => {
-      if (url !== firstUrl) return
-      writeStarted.resolve(undefined)
-      await releaseWrite.promise
+    vi.stubGlobal('caches', cacheStorage())
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (url === firstUrl) {
+        writeStarted.resolve(undefined)
+        await releaseWrite.promise
+      }
+      return new Response(url)
     })
+    const worker = await boot(roots[0])
 
-    const first = post(firstUrl)
+    const first = worker.post(firstUrl)
     await writeStarted.promise
-    const latest = post(latestUrl)
+    const latest = worker.post(latestUrl)
     releaseWrite.resolve(undefined)
     await Promise.all([first, latest])
 
-    expect([...entries.keys()]).toEqual([latestUrl])
+    expect(await worker.read(latestUrl)).toBe(latestUrl)
+    expect(await worker.read(firstUrl)).toBeUndefined()
   })
 
   it('can replace the locale after a chunk fetch fails', async () => {
-    const missingUrl = 'http://x/assets/locale-fr-missing.js'
-    const latestUrl = 'http://x/assets/locale-ja.js'
-    const { entries, post } = await boot((url) => {
-      if (url === missingUrl) return Promise.reject(new Error('chunk unavailable'))
-      return Promise.resolve()
-    })
+    const missingUrl = chunk(roots[0], 'fr')
+    const latestUrl = chunk(roots[0], 'ja')
+    vi.stubGlobal('caches', cacheStorage())
+    vi.stubGlobal('fetch', (url: string) => url === missingUrl
+      ? Promise.reject(new Error('chunk unavailable'))
+      : Promise.resolve(new Response(url)))
+    const worker = await boot(roots[0])
 
-    await expect(post(missingUrl)).rejects.toThrow('chunk unavailable')
-    await post(latestUrl)
+    await expect(worker.post(missingUrl)).rejects.toThrow('chunk unavailable')
+    await worker.post(latestUrl)
 
-    expect([...entries.keys()]).toEqual([latestUrl])
+    expect(await worker.read(latestUrl)).toBe(latestUrl)
   })
 })
 
