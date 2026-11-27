@@ -12,18 +12,9 @@ struct ServerUpdateSettingsSection: View {
     @AppStorage(SectionVisibilitySettings.feedbackOnScreenshotKey)
     private var feedbackOnScreenshot = SectionVisibilitySettings.defaultFeedbackOnScreenshot
 
-    @State private var isLoading = false
-    @State private var serverVersion: String?
-    @State private var serverSettingsError: String?
-    @State private var serverUpdateState: UpdatesCheckResponse.WebUIUpdateState?
-    @State private var updateApplyPhase: ServerUpdateApplyPhase = .idle
+    @State private var model: ServerUpdateModel
     @State private var isConfirmingUpdate = false
-    @State private var updateApplyMessage: String?
-    @State private var isCheckingForUpdates = false
-    @State private var forcedCheckOutcome: UpdatesCheckResponse.ForcedCheckOutcome?
     @State private var isPresentingForcedCheckResult = false
-    /// The server's last update check, for its per-target summary offers and the Agent row.
-    @State private var updateTargets: UpdatesCheckResponse?
     @State private var summaryRequest: UpdateSummaryRequest?
     @State private var backup = AgentBackupSettings()
     @State private var backupConfirmation: AgentBackupStatus?
@@ -32,6 +23,13 @@ struct ServerUpdateSettingsSection: View {
     @State private var showsRestoreImporter = false
     @State private var isReplacingRecoveryBackup = false
     @State private var archiveDownload = AgentArchiveDownload()
+
+    init(authManager: AuthManager, server: URL, feedback: FeedbackComposer? = nil) {
+        self.authManager = authManager
+        self.server = server
+        self.feedback = feedback
+        _model = State(initialValue: ServerUpdateModel(client: APIClient(baseURL: server)))
+    }
 
     /// Owns the System page so its sheet, alerts and loads attach once, to the page. On a `Group` or `Section` of rows,
     /// SwiftUI copies them onto every row, and a copy that never presented dismisses Settings itself (TAL-2248).
@@ -59,13 +57,13 @@ struct ServerUpdateSettingsSection: View {
                 } confirm: { restoreConfirmation = $0 }
                 serverUpdateCheckAction
                 serverUpdateNote
-                UpdateSummaryButton(info: updateTargets?.webui) {
+                UpdateSummaryButton(info: model.updateTargets?.webui) {
                     summaryRequest = UpdateSummaryRequest(target: .webui)
                 }
                 serverUpdateAction
                 agentUpdateRows
                 if scrollAnchor == .setting(.systemUpdateSummary),
-                   updateTargets?.webui?.offersSummary != true, updateTargets?.agent?.offersSummary != true {
+                   model.updateTargets?.webui?.offersSummary != true, model.updateTargets?.agent?.offersSummary != true {
                     SettingsInfoRow(title: SettingsIndex.systemUpdateSummary.title,
                                     value: String(localized: "Not Available on This Server"))
                 }
@@ -140,7 +138,7 @@ struct ServerUpdateSettingsSection: View {
             Text("This pulls the latest Hermes server version and restarts it. Active chats may be interrupted briefly; the app reconnects when the server is back.")
         }
         .alert(forcedCheckAlertTitle, isPresented: $isPresentingForcedCheckResult) {
-            if case .updateAvailable = forcedCheckOutcome {
+            if case .updateAvailable = model.forcedCheckOutcome {
                 Button("Update") {
                     Task { await applyServerUpdate() }
                 }
@@ -165,51 +163,47 @@ struct ServerUpdateSettingsSection: View {
 private extension ServerUpdateSettingsSection {
     @ViewBuilder
     private var serverVersionContent: some View {
-        if isLoading {
+        if model.isLoading {
             ProgressView()
-        } else if let serverVersion {
+        } else if let serverVersion = model.status.version {
             Text(serverVersion)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
         } else {
-            Text(serverSettingsError ?? String(localized: "Unknown"))
+            Text(serverStatusLabel)
                 .foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder
     private var serverStatusPill: some View {
-        if isLoading {
-            SettingsStatusPill(label: String(localized: "Loading"))
-        } else if serverSettingsError == nil, serverVersion != nil {
-            SettingsStatusPill(label: String(localized: "Connected"))
-        } else {
-            SettingsStatusPill(label: serverSettingsError ?? String(localized: "Unknown"), tint: .orange)
-        }
+        SettingsStatusPill(label: serverStatusLabel, tint: model.isLoading || model.status.version != nil ? .secondary : .orange)
     }
 
-    private var isUpdateApplyInFlight: Bool {
-        switch updateApplyPhase {
-        case .applying, .recovering: true
-        case .idle, .blocked, .failed: false
+    private var serverStatusLabel: String {
+        if model.isLoading { return String(localized: "Loading") }
+        switch model.status {
+        case .connected: return String(localized: "Connected")
+        case .unavailable: return String(localized: "Unavailable")
+        case .unknown: return String(localized: "Unknown")
         }
     }
 
     @ViewBuilder
     private var serverUpdateCheckAction: some View {
-        if isCheckingForUpdates {
+        if model.isCheckingForUpdates {
             updateProgressRow(String(localized: "Checking for updates…"))
         } else {
             SettingsButton(SettingsIndex.systemCheckNow.title) {
                 Task { await checkForUpdatesManually() }
             }
-            .disabled(isUpdateApplyInFlight)
+            .disabled(model.isApplying)
             .padding(.top, 4)
         }
     }
 
     private var forcedCheckAlertTitle: String {
-        switch forcedCheckOutcome {
+        switch model.forcedCheckOutcome {
         case let .updateAvailable(behind): Self.updateAvailableText(behind: behind)
         case .upToDate: String(localized: "You're up to date")
         case .manual: String(localized: "Update on the server")
@@ -219,7 +213,7 @@ private extension ServerUpdateSettingsSection {
     }
 
     private var forcedCheckAlertMessage: String {
-        switch forcedCheckOutcome {
+        switch model.forcedCheckOutcome {
         case .updateAvailable:
             String(localized: "This pulls the latest Hermes server version and restarts it. Active chats may be interrupted briefly; the app reconnects when the server is back.")
         case .upToDate:
@@ -235,8 +229,8 @@ private extension ServerUpdateSettingsSection {
 
     @ViewBuilder
     private var serverUpdateNote: some View {
-        if serverVersion != nil, let serverUpdateState {
-            switch serverUpdateState {
+        if model.status.version != nil, let updateState = model.updateTargets?.webuiUpdateState {
+            switch updateState {
             case .upToDate:
                 updateNoteRow(systemImage: "checkmark.circle", tint: .secondary, text: String(localized: "Up to date"))
             case let .updateAvailable(behind):
@@ -250,7 +244,7 @@ private extension ServerUpdateSettingsSection {
     /// The server's pending Agent update, read-only: installed version, status, and its summary.
     @ViewBuilder
     private var agentUpdateRows: some View {
-        if let agent = updateTargets?.agent {
+        if let agent = model.updateTargets?.agent {
             let status = UpdateNote(agent: agent)
             SettingsValueRow(title: SettingsIndex.systemHermesAgent.title) {
                 Text(
@@ -283,9 +277,9 @@ private extension ServerUpdateSettingsSection {
 
     @ViewBuilder
     private var serverUpdateAction: some View {
-        switch updateApplyPhase {
+        switch model.applyPhase {
         case .idle:
-            if serverVersion != nil, case .updateAvailable = serverUpdateState {
+            if model.status.version != nil, case .updateAvailable = model.updateTargets?.webuiUpdateState {
                 updateActionButton(title: SettingsIndex.systemUpdate.title)
             } else if scrollAnchor == .setting(.systemUpdate) {
                 SettingsInfoRow(title: SettingsIndex.systemUpdate.title, value: String(localized: "Not Available on This Server"))
@@ -294,14 +288,17 @@ private extension ServerUpdateSettingsSection {
             updateProgressRow(String(localized: "Starting update…"))
         case .recovering:
             updateProgressRow(String(localized: "Updating & restarting…"))
-        case .blocked:
+        case let .blocked(message):
             VStack(alignment: .leading, spacing: 10) {
-                updateMessageRow(systemImage: "clock", tint: .secondary)
+                updateMessageRow(
+                    message.isEmpty ? String(localized: "The server is busy with active work. Wait for it to finish, then retry.") : message,
+                    systemImage: "clock", tint: .secondary
+                )
                 updateActionButton(title: String(localized: "Retry update"))
             }
-        case .failed:
+        case let .failed(failure):
             VStack(alignment: .leading, spacing: 10) {
-                updateMessageRow(systemImage: "exclamationmark.triangle", tint: .orange)
+                updateMessageRow(failureMessage(failure), systemImage: "exclamationmark.triangle", tint: .orange)
                 updateActionButton(title: String(localized: "Retry update"))
             }
         }
@@ -311,7 +308,7 @@ private extension ServerUpdateSettingsSection {
         SettingsButton(title) {
             isConfirmingUpdate = true
         }
-        .disabled(isCheckingForUpdates)
+        .disabled(model.isCheckingForUpdates)
         .padding(.top, 4)
     }
 
@@ -320,130 +317,39 @@ private extension ServerUpdateSettingsSection {
                           status: text, isLoading: true, accessibilityIdentifier: "settings-system-status-update")
     }
 
-    private func updateMessageRow(systemImage: String, tint: Color) -> some View {
+    private func updateMessageRow(_ message: String, systemImage: String, tint: Color) -> some View {
         SettingsStatusRow(title: SettingsIndex.systemStatus.title, systemImage: systemImage,
-                          status: updateApplyMessage ?? String(localized: "The update could not be applied."), tone: tint, accessibilityIdentifier: "settings-system-status-update")
+                          status: message, tone: tint, accessibilityIdentifier: "settings-system-status-update")
     }
 
-    @MainActor
+    private func failureMessage(_ failure: ServerUpdateModel.Failure) -> String {
+        switch failure {
+        case .couldNotStart:
+            String(localized: "Could not reach the server to start the update.")
+        case let .server(message):
+            message.isEmpty ? String(localized: "The update could not be applied.") : message
+        case let .timedOut(serverReachable):
+            serverReachable
+                ? String(localized: "The update is taking longer than expected to finish. Try again in a moment.")
+                : String(localized: "The server didn't come back after the update. Check the server, then retry.")
+        }
+    }
+
     private func loadServerSettings() async {
-        guard !isLoading else { return }
-        isLoading = true
-        serverSettingsError = nil
-        serverUpdateState = nil
-        let client = APIClient(baseURL: server)
-
-        do {
-            if let settingsStore {
-                await settingsStore.loadIfNeeded()
-                serverVersion = settingsStore.settings?.webuiVersion
-                serverSettingsError = settingsStore.settings == nil ? String(localized: "Unavailable") : nil
-            } else {
-                serverVersion = try await client.settings().webuiVersion
-            }
-            if serverVersion == nil, serverSettingsError == nil {
-                serverSettingsError = String(localized: "Unknown")
-            }
-        } catch {
-            authManager.handleAPIError(error, server: server)
-            serverSettingsError = String(localized: "Unavailable")
-        }
-        isLoading = false
-
-        do {
-            let response = try await client.updatesCheck()
-            updateTargets = response
-            serverUpdateState = response.webuiUpdateState
-        } catch {
-            updateTargets = nil
-            serverUpdateState = nil
-        }
+        await model.load(settingsStore: settingsStore, onAPIError: handleAPIError)
     }
 
-    @MainActor
-    private func checkForUpdatesManually() async {
-        guard !isCheckingForUpdates, !isUpdateApplyInFlight else { return }
-        isCheckingForUpdates = true
-        do {
-            let response = try await APIClient(baseURL: server).updatesCheckForced()
-            updateTargets = response
-            serverUpdateState = response.webuiUpdateState
-            forcedCheckOutcome = response.forcedCheckOutcome
-        } catch {
-            authManager.handleAPIError(error, server: server)
-            forcedCheckOutcome = .error
-        }
-        isCheckingForUpdates = false
-        isPresentingForcedCheckResult = true
-    }
-
-    @MainActor
     private func applyServerUpdate() async {
-        guard !isCheckingForUpdates else { return }
-        switch updateApplyPhase {
-        case .idle, .blocked, .failed: break
-        case .applying, .recovering: return
-        }
+        await model.apply(settingsStore: settingsStore, onAPIError: handleAPIError)
+    }
 
-        updateApplyPhase = .applying
-        updateApplyMessage = nil
-        let client = APIClient(baseURL: server)
-        let response: UpdatesApplyResponse
-        do {
-            response = try await client.applyUpdate(target: "webui")
-        } catch {
-            authManager.handleAPIError(error, server: server)
-            updateApplyMessage = String(localized: "Could not reach the server to start the update.")
-            updateApplyPhase = .failed
-            return
-        }
-
-        switch response.outcome {
-        case .applying:
-            updateApplyPhase = .recovering
-            if let notificationID = response.notificationId {
-                await finishServerUpdate(client.followUpdate(notificationID: notificationID))
-            } else {
-                await finishServerUpdate(.untracked)
-            }
-        case .restartBlocked:
-            updateApplyMessage = response.displayMessage(
-                default: String(localized: "The server is busy with active work. Wait for it to finish, then retry.")
-            )
-            updateApplyPhase = .blocked
-        case .failed:
-            updateApplyMessage = response.displayMessage(default: String(localized: "The update could not be applied."))
-            updateApplyPhase = .failed
+    private func checkForUpdatesManually() async {
+        if await model.checkForUpdates(onAPIError: handleAPIError) {
+            isPresentingForcedCheckResult = true
         }
     }
 
-    @MainActor
-    private func finishServerUpdate(_ completion: ServerUpdateCompletion) async {
-        await settingsStore?.load()
-        await loadServerSettings()
-        switch completion {
-        case .succeeded, .untracked:
-            updateApplyMessage = nil
-            updateApplyPhase = .idle
-        case let .blocked(message):
-            updateApplyMessage = message
-            updateApplyPhase = .blocked
-        case let .failed(message):
-            updateApplyMessage = message
-            updateApplyPhase = .failed
-        case .timedOut:
-            updateApplyMessage = serverSettingsError != nil
-                ? String(localized: "The server didn't come back after the update. Check the server, then retry.")
-                : String(localized: "The update is taking longer than expected to finish. Try again in a moment.")
-            updateApplyPhase = .failed
-        }
+    private func handleAPIError(_ error: Error) {
+        authManager.handleAPIError(error, server: server)
     }
-}
-
-private enum ServerUpdateApplyPhase: Equatable {
-    case idle
-    case applying
-    case recovering
-    case blocked
-    case failed
 }
