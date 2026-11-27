@@ -99,11 +99,8 @@ public final class ProvidersViewModel {
             providers = response.providers ?? []
             activeProviderID = response.activeProvider
             errorMessage = response.availability?.unavailableReason
-        } catch is CancellationError {
-            // The owning view was dismissed (or the refresh gesture was torn
-            // down) mid-request — don't surface "cancelled" as a load error.
-        } catch let error as URLError where error.code == .cancelled {
-            // Same cancellation, surfaced through URLSession.
+        } catch where APIError.isCancellation(error) {
+            // An interrupted read leaves the last loaded providers in place.
         } catch {
             guard generation == loadGeneration else { return }
             errorMessage = error.localizedDescription
@@ -128,10 +125,8 @@ public final class ProvidersViewModel {
             guard generation == quotaLoadGeneration else { return }
             applyQuotaResponse(response, sequence: sequence)
             if refresh && response.hasAuthoritativeMembership { lastForcedQuotaRefreshSuccess = ContinuousClock.now }
-        } catch is CancellationError {
-            // The view was dismissed while quota was loading.
-        } catch let error as URLError where error.code == .cancelled {
-            // Same cancellation surfaced through URLSession.
+        } catch where APIError.isCancellation(error) {
+            // An interrupted read leaves the last loaded quotas in place.
         } catch {
             guard generation == quotaLoadGeneration else { return }
             quotaErrorMessage = error.localizedDescription
@@ -216,10 +211,8 @@ public final class ProvidersViewModel {
                 quotaSources[index] = refreshed
             }
             persistQuotaWidgetSnapshot(updatedSourceIDs: [sourceID])
-        } catch is CancellationError {
-            // The row disappeared while its refresh was running.
-        } catch let error as URLError where error.code == .cancelled {
-            // Same cancellation surfaced through URLSession.
+        } catch where APIError.isCancellation(error) {
+            // An interrupted refresh has no error to display for this row.
         } catch {
             guard generation == quotaLoadGeneration, profileID == quotaProfileID else { return }
             quotaErrorMessage = error.localizedDescription

@@ -18,6 +18,36 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testCancelledProviderReadsLeaveErrorsClear() async {
+        let client = makeScopedClient { _ in throw URLError(.cancelled) }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.load()
+        await model.loadQuotas(refresh: true)
+
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(model.quotaErrorMessage)
+    }
+
+    @MainActor
+    func testCancelledTargetedQuotaRefreshLeavesErrorClear() async {
+        let client = makeScopedClient { request in
+            if request.url?.query?.contains("refresh=1") == true {
+                XCTAssertTrue(request.url?.query?.contains("source=qsrc_test") == true)
+                throw URLError(.cancelled)
+            }
+            return apiTestJSONResponse(#"{"version":1,"scope_id":"qscope_test","profile_id":"default","sources":[{"source_id":"qsrc_test","provider_id":"openai-codex","status":"available","windows":[]}]}"#, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+        await model.loadQuotas()
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_test"])
+
+        await model.refreshQuotaSource("qsrc_test")
+
+        XCTAssertNil(model.quotaErrorMessage)
+    }
+
+    @MainActor
     func testRecoveryKeepsLastConfirmedSourcesUntilAnAuthoritativeEmptyResponse() async throws {
         var step = 0
         let client = makeScopedClient { request in
@@ -260,21 +290,21 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     @MainActor
-    func testMissingMultiSourceEndpointIsAnError() async throws {
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/provider/quotas")
-            return (
-                HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
-                Data()
-            )
+    func testFailedQuotaLoadShowsTheServerError() async {
+        let body = #"{"error":"Could not load quotas"}"#
+        for status in [404, 500] {
+            let client = makeScopedClient { request in
+                XCTAssertEqual(request.url?.path, "/api/provider/quotas")
+                return apiTestJSONResponse(body, statusCode: status, for: request)
+            }
+            let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+            await model.loadQuotas(refresh: true)
+
+            XCTAssertTrue(model.quotaSources.isEmpty)
+            XCTAssertFalse(model.hasStableQuotaSources)
+            XCTAssertEqual(model.quotaErrorMessage, APIError.http(statusCode: status, body: body).localizedDescription)
         }
-        let model = ProvidersViewModel(server: Self.serverURL, client: client)
-
-        await model.loadQuotas(refresh: true)
-
-        XCTAssertTrue(model.quotaSources.isEmpty)
-        XCTAssertFalse(model.hasStableQuotaSources)
-        XCTAssertNotNil(model.quotaErrorMessage)
     }
 
     @MainActor
