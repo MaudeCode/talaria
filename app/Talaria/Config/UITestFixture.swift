@@ -747,6 +747,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
         }
         let refusesRemoval = Self.sessionRemovalPaths.contains(url.path)
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.refuseSessionRemovalArgument)
+        let refusesWorkspace = url.path == "/api/session/update"
+            && ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-workspace-update")
         let refusesLogs = url.path == "/api/logs"
             && ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-first-logs")
             && Self.answeredPaths.withLock { $0.filter { $0 == "/api/logs" }.count == 1 }
@@ -761,6 +763,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         else if Self.isFullWidthPanelLoad(url), Self.panelScenario == UITestFixtureEnvironment.panelUnavailableArgument { statusCode = 503 }
         else if refusesLogs { statusCode = 403 }
         else if refusesRemoval { statusCode = 409 }
+        else if refusesWorkspace { statusCode = 400 }
         else if url.path == "/api/toolsets/defaults" { statusCode = 404 }
         else if url.path == "/api/session/anchor-scene" { statusCode = Self.anchorScenePageStatus.withLock { $0 } }
         else if Self.failsInitialUpload(url) { statusCode = 500 }
@@ -787,6 +790,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
             client?.urlProtocol(self, didLoad: Self.json(["error": "Fixture log access refused"]))
         } else if refusesRemoval {
             client?.urlProtocol(self, didLoad: Self.json(["error": "Synthetic session removal refusal"]))
+        } else if refusesWorkspace {
+            client?.urlProtocol(self, didLoad: Self.json(["error": "Workspace does not exist."]))
         } else {
             client?.urlProtocol(self, didLoad: Self.responseData(for: request))
         }

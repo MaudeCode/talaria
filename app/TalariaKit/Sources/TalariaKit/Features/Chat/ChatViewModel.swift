@@ -4554,8 +4554,8 @@ extension ChatViewModel {
             return .unsupported(friendlyMessage: String(localized: "The server did not provide a session ID."))
         }
 
-        guard canRunConfigurationSlashCommand(String(localized: "change workspace")) else {
-            return .unsupported(friendlyMessage: composerConfigurationErrorMessage ?? String(localized: "Workspace switching is unavailable."))
+        if let refusal = configurationSlashCommandRefusal(String(localized: "change workspace")) {
+            return .unsupported(friendlyMessage: refusal)
         }
 
         let workspace = workspacePath(matching: requestedWorkspace) ?? requestedWorkspace
@@ -4585,7 +4585,6 @@ extension ChatViewModel {
             return .executed(message: nil)
         } catch {
             lastError = error
-            composerConfigurationErrorMessage = error.localizedDescription
             return .unsupported(friendlyMessage: error.localizedDescription)
         }
     }
@@ -5213,17 +5212,21 @@ extension ChatViewModel {
     }
 
     private func canRunConfigurationSlashCommand(_ actionDescription: String) -> Bool {
+        guard let refusal = configurationSlashCommandRefusal(actionDescription) else { return true }
+        composerConfigurationErrorMessage = refusal
+        return false
+    }
+
+    private func configurationSlashCommandRefusal(_ actionDescription: String) -> String? {
         if isViewingCachedData {
-            composerConfigurationErrorMessage = String(localized: "Reconnect to the server to \(actionDescription).")
-            return false
+            return String(localized: "Reconnect to the server to \(actionDescription).")
         }
 
         if activeStreamID != nil {
-            composerConfigurationErrorMessage = String(localized: "Wait for the current response to finish before you \(actionDescription).")
-            return false
+            return String(localized: "Wait for the current response to finish before you \(actionDescription).")
         }
 
-        return true
+        return nil
     }
 
     private func modelOption(matching query: String) -> ModelCatalogOption? {
@@ -5542,6 +5545,12 @@ extension ChatViewModel {
 
     public func setSendErrorMessage(_ message: String?) {
         sendErrorMessage = message
+    }
+
+    public func clearComposerErrors(modelPreferences: SettingsModelPickerViewModel? = nil) {
+        if sendErrorMessage != nil { sendErrorMessage = nil }
+        if composerConfigurationErrorMessage != nil { composerConfigurationErrorMessage = nil }
+        modelPreferences?.clearPreferenceError()
     }
 
     public func forkFromMessage(_ context: MessageActionContext, modelContext: ModelContext? = nil) async -> SessionSummary? {

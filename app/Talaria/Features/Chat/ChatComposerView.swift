@@ -29,7 +29,7 @@ struct MessageComposerView: View {
     /// A binding for the same reason as `draft`: only this view reads it.
     @Binding var draftWriteRevision: Int
     /// Every edit made here (typing, completions, dictation, drops), for the owner to apply and persist.
-    let onDraftEdit: (String) -> Void
+    let onDraftEdit: (String, SettingsModelPickerViewModel?) -> Void
     @Binding var clarificationPanelHeight: CGFloat
     let availableHeight: CGFloat
     /// What the chat stacks above the composer in the same pane, such as the run status chip.
@@ -54,6 +54,7 @@ struct MessageComposerView: View {
     let errorMessage: String?
     var warningMessage: String? = nil
     let configurationErrorMessage: String?
+    let ownerModelChangeMessage: String?
     let contextWindowSnapshot: ContextWindowSnapshot?
     let gitViewModel: GitWorkspaceAvailabilityViewModel
     let modelGroups: [ModelCatalogGroup]
@@ -124,6 +125,7 @@ struct MessageComposerView: View {
     let onRemoveAttachment: (UUID) -> Void
     let onPreviewAttachment: (PendingAttachment) -> Void
     let onDismissUploadAttachmentError: () -> Void
+    let onDismissComposerError: (SettingsModelPickerViewModel?) -> Void
     let onSelectGitBranch: (GitCheckoutTarget) -> Void
     let onCreateGitBranch: (GitCheckoutTarget) -> Void
     let onRefreshGitBranches: () -> Void
@@ -277,7 +279,7 @@ struct MessageComposerView: View {
 
     private var draftMessage: String {
         get { draft }
-        nonmutating set { onDraftEdit(newValue) }
+        nonmutating set { onDraftEdit(newValue, modelPreferences) }
     }
 
     private var draftBinding: Binding<String> {
@@ -306,8 +308,7 @@ struct MessageComposerView: View {
                     ComposerStatusView(
                         text: composerStatus.text,
                         isError: composerStatus.isError,
-                        isDismissible: composerStatus.isDismissible,
-                        onDismiss: onDismissUploadAttachmentError
+                        onDismiss: composerStatus.onDismiss
                     )
                 }
 
@@ -1155,33 +1156,36 @@ struct MessageComposerView: View {
         isOfflineReadOnly || isSessionReadOnly
     }
 
-    private var composerStatus: (text: String, isError: Bool, isDismissible: Bool)? {
+    private var composerStatus: (text: String, isError: Bool, onDismiss: (() -> Void)?)? {
+        let dismissError = { onDismissComposerError(modelPreferences) }
         if isOfflineReadOnly {
-            return (String(localized: "Reconnect to send messages."), false, false)
+            return (String(localized: "Reconnect to send messages."), false, nil)
         } else if isSessionReadOnly {
-            return (isVerifyingSessionAccess ? String(localized: "Checking access...") : readOnlyStatusText, false, false)
+            return (isVerifyingSessionAccess ? String(localized: "Checking access...") : readOnlyStatusText, false, nil)
         } else if let ownerAttachment, !ownerAttachment.canSubmit {
             return (ownerAttachment.hasUnknownAdmission
                 ? String(localized: "Retry or discard the unknown input first.")
-                : String(localized: "The owning Agent isn't taking input."), false, false)
+                : String(localized: "The owning Agent isn't taking input."), false, nil)
         } else if isWaitingForStream && isCancellingStream {
-            return (String(localized: "Stopping response..."), false, false)
+            return (String(localized: "Stopping response..."), false, nil)
         } else if let uploadAttachmentErrorMessage {
-            return (uploadAttachmentErrorMessage, true, true)
+            return (uploadAttachmentErrorMessage, true, onDismissUploadAttachmentError)
         } else if isSendingVoiceNote {
-            return (String(localized: "Sending voice note..."), false, false)
+            return (String(localized: "Sending voice note..."), false, nil)
         } else if isUploadingAttachment {
-            return (String(localized: "Uploading attachment..."), false, false)
+            return (String(localized: "Uploading attachment..."), false, nil)
         } else if let errorMessage {
-            return (errorMessage, true, false)
+            return (errorMessage, true, dismissError)
         } else if let preferenceError = modelPreferences?.preferenceError {
-            return (preferenceError, true, false)
+            return (preferenceError, true, dismissError)
         } else if let configurationErrorMessage {
-            return (configurationErrorMessage, true, false)
+            return (configurationErrorMessage, true, dismissError)
+        } else if let ownerModelChangeMessage {
+            return (ownerModelChangeMessage, true, nil)
         } else if let warningMessage {
-            return (warningMessage, false, false)
+            return (warningMessage, false, nil)
         } else if isUpdatingConfiguration {
-            return (String(localized: "Updating composer settings..."), false, false)
+            return (String(localized: "Updating composer settings..."), false, nil)
         }
 
         return nil
