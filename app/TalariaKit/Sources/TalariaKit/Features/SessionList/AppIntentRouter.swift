@@ -62,6 +62,11 @@ public final class AppIntentRouter {
         windows.insert(window, at: 0)
     }
 
+    public func foregroundWindow(in candidates: [String]) -> String? {
+        guard !candidates.isEmpty else { return nil }
+        return Self.window(showing: Set(candidates), recency: windows)
+    }
+
     /// A closed window hands its pending route to the window now most recently active.
     public func windowDidClose(_ window: String) {
         windows.removeAll { $0 == window }

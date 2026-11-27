@@ -328,9 +328,12 @@ private struct FeedbackPresentation: ViewModifier {
 private extension UIApplication {
     /// The key window as it last appeared on screen, before any pending update draws.
     func keyWindowPNG(for sceneID: String?) -> Data? {
-        guard let window = connectedScenes.lazy.compactMap({ $0 as? UIWindowScene })
-            .filter({ $0.activationState == .foregroundActive }).compactMap(\.keyWindow).first,
-            sceneID == nil || window.windowScene?.windowSceneID == sceneID,
+        let scenes = connectedScenes.compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive && $0.keyWindow != nil }
+        let candidates = scenes.compactMap(\.windowSceneID)
+        guard let selected = AppIntentRouter.shared.foregroundWindow(in: candidates),
+            sceneID == selected || (sceneID == nil && candidates.count == 1),
+            let window = scenes.first(where: { $0.windowSceneID == selected })?.keyWindow,
             window.windowLevel == .normal else { return nil }
 
         var didDraw = false
