@@ -30,6 +30,7 @@ interface StoredUpdateNotification {
   /** Agent startup identity and full-text digest stay internal, including after dismissal. */
   notice_key?: string
   notice_text_hash?: string
+  relay_notice?: { id: string; pending: string[] }
   id: string
   owner: string
   profile: string
@@ -80,7 +81,7 @@ export type UpdateStep = UpdateNotification['steps'][number]
 export type UpdateStepId = UpdateStep['id']
 /** How an Updating dialog showing this record may close: not at all, with Close, with Restart later, or by itself. */
 export type UpdateDialogClose = 'none' | 'close' | 'restart_later' | 'auto'
-export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'notice_key' | 'notice_text_hash' | 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids' | 'tab_id' | 'watchers' | 'web_restart_boot' | 'gateway_tasks' | 'gateway_baseline' | 'failed_step' | 'agent_operation'> & {
+export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'notice_key' | 'notice_text_hash' | 'relay_notice' | 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids' | 'tab_id' | 'watchers' | 'web_restart_boot' | 'gateway_tasks' | 'gateway_baseline' | 'failed_step' | 'agent_operation'> & {
   unread: boolean
   active: boolean
   requires_interaction: boolean
@@ -216,6 +217,7 @@ export class UpdateNotificationStore {
   private rows: StoredUpdateNotification[] = []
   private revision: string | null = null
   private writes: Promise<void> = Promise.resolve()
+  private deliveringRelayNotices = false
   /** Last check-in per tab refresh notice; kept in memory so polling never rewrites the store. */
   private readonly tabSeen = new Map<string, number>()
   private readonly loadedAt: number
@@ -259,9 +261,9 @@ export class UpdateNotificationStore {
    * TAL-2001: mirror one target's completed update check (`updateTargetView`) in the inbox. An applicable release or
    * newer commits keep one server-wide row; a newer version rewrites it and shows it again, while a repeat keeps its
    * read and dismissed state. A failed or undecided check leaves the row; anything else, or `null`, withdraws it.
-   * TAL-2665: a created or newer-version row returns its push notice, `update_available:<target>:<version>`.
+   * Save Relay's pending destinations with the row before either push channel sees a new notice.
    */
-  async updateAvailable(target: UpdateNotificationTarget, view: Record<string, unknown> | null): Promise<ServerNotice | null> {
+  async updateAvailable(target: UpdateNotificationTarget, view: Record<string, unknown> | null, relayDestinations: string[] = []): Promise<ServerNotice | null> {
     const key = `${UPDATE_AVAILABLE_KIND}:${target}`
     const row = this.rows.find((entry) => entry.kind === UPDATE_AVAILABLE_KIND && entry.notice_key === key)
     if (view && UNDECIDED_STATES.has(str(view.state))) return null
@@ -277,16 +279,45 @@ export class UpdateNotificationStore {
     const message = `${name}${shownVersion(view?.state === 'commits_behind' ? identity.slice(0, 12) : identity)} is available.`
     const hash = createHash('sha256').update(identity).digest('hex')
     if (row?.notice_text_hash === hash) return null
+    const notice = { kind: UPDATE_AVAILABLE_KIND, id: `${key}:${identity}`, title, body: message, url: SETTINGS_SYSTEM_URL } as const
+    const relayNotice = relayDestinations.length ? { id: notice.id, pending: relayDestinations } : undefined
     if (!row) {
       await this.createRow({ owner: '*', profile: 'default', serverOwner: true }, {
         kind: UPDATE_AVAILABLE_KIND, target, phase: 'available', title, message,
         destination: { key: 'settings.system', label: 'Open System settings' }, visibility: 'server',
-      }, { notice_key: key, notice_text_hash: hash })
+      }, { notice_key: key, notice_text_hash: hash, ...(relayNotice ? { relay_notice: relayNotice } : {}) })
     } else {
+      if (relayNotice) row.relay_notice = relayNotice
+      else delete row.relay_notice
       Object.assign(row, { message, notice_text_hash: hash, updated_at: this.now().toISOString(), read_at: null, dismissed_at: null })
       await this.save()
     }
-    return { kind: UPDATE_AVAILABLE_KIND, id: `${UPDATE_AVAILABLE_KIND}:${target}:${identity}`, title, body: message, url: SETTINGS_SYSTEM_URL }
+    return notice
+  }
+
+  hasPendingRelayNotices(): boolean { return this.rows.some((row) => row.relay_notice) }
+
+  /** Settle each destination separately. Replacing or removing a row invalidates its old delivery pass. */
+  async deliverRelayNotices(send: (notice: ServerNotice, destination: string, isCurrent: () => boolean) => Promise<boolean>): Promise<void> {
+    if (this.deliveringRelayNotices) return
+    this.deliveringRelayNotices = true
+    try {
+      for (const row of this.rows) {
+        if (!row.relay_notice) continue
+        await this.writes.catch(() => this.save())
+        const pending = row.relay_notice
+        if (!pending) continue
+        const isCurrent = () => row.relay_notice === pending && this.rows.includes(row)
+        const notice = { kind: UPDATE_AVAILABLE_KIND, id: pending.id, title: row.title, body: row.message, url: SETTINGS_SYSTEM_URL } as const
+        for (const destination of pending.pending) {
+          if (!isCurrent()) break
+          if (!await send(notice, destination, isCurrent) || !isCurrent()) continue
+          pending.pending = pending.pending.filter((entry) => entry !== destination)
+          if (!pending.pending.length) delete row.relay_notice
+          await this.save()
+        }
+      }
+    } finally { this.deliveringRelayNotices = false }
   }
 
   /** TAL-2001: an installed update answers its own available notice. */
@@ -539,7 +570,7 @@ export class UpdateNotificationStore {
     return this.publish(await this.createRow(scope, input))
   }
 
-  private async createRow(scope: UpdateNotificationScope, input: CreateUpdateNotificationInput, notice: Pick<StoredUpdateNotification, 'notice_key' | 'notice_text_hash'> = {}): Promise<StoredUpdateNotification> {
+  private async createRow(scope: UpdateNotificationScope, input: CreateUpdateNotificationInput, notice: Pick<StoredUpdateNotification, 'notice_key' | 'notice_text_hash' | 'relay_notice'> = {}): Promise<StoredUpdateNotification> {
     const kind = safeToken(input.kind, '')
     const phase = safeToken(input.phase, '')
     const title = safeText(input.title, '', 160)
@@ -856,8 +887,14 @@ export class UpdateNotificationStore {
         // TAL-1138: `verifying` is stored as Stable's `restarting` plus a flag Stable ignores.
         const phase = row.phase === 'restarting' && row.recovering === true ? 'recovering' : row.phase === 'restarting' && row.verifying === true ? 'verifying' : safeToken(row.phase, 'unknown')
         const fallback = target && PHASES.has(phase as UpdateNotificationPhase) ? wording(target, phase as UpdateNotificationPhase) : { title: 'Server notification', message: 'This server needs your attention.' }
+        const relayNotice = row.relay_notice
+        const pending = kind === UPDATE_AVAILABLE_KIND && target && isRecord(relayNotice) && typeof relayNotice.id === 'string'
+          && relayNotice.id.startsWith(`${UPDATE_AVAILABLE_KIND}:${target}:`) && Array.isArray(relayNotice.pending)
+          ? { id: relayNotice.id, pending: [...new Set(relayNotice.pending.filter((entry): entry is string => typeof entry === 'string' && /^[a-f0-9]{64}$/.test(entry)))] }
+          : undefined
         return [{
           ...(typeof row.notice_key === 'string' ? { notice_key: row.notice_key, notice_text_hash: typeof row.notice_text_hash === 'string' ? row.notice_text_hash : '' } : {}),
+          ...(pending?.pending.length ? { relay_notice: pending } : {}),
           id: row.id, owner: row.owner.slice(0, 256), profile: row.profile.slice(0, 64), visibility: row.visibility === 'profile' ? 'profile' : 'server', kind, target, phase,
           severity: row.severity === 'critical' || row.severity === 'warning' ? row.severity : 'info',
           persistent: row.persistent === true,

@@ -100,3 +100,22 @@ it("drops a queued notice once the device turns the switch off or its user no lo
   });
   await expect(backend.mutation(internal.delivery.claimJob, { jobId: queued._id, now: now + 3 })).resolves.toEqual({ status: "stale" });
 });
+
+it("does not re-alert after a lost acknowledgement outlives delivery job retention", async () => {
+  const backend = await relay();
+  await expect(backend.mutation(internal.publishers.acceptServerNotice, notice("original"))).resolves.toEqual({ status: "accepted" });
+  await runScheduledRecomputes(backend);
+  const jobs = await alerts(backend);
+  expect(jobs.map((job) => job.deviceId).sort()).toEqual(["device-1", "device-2"]);
+  for (const job of jobs) await backend.mutation(internal.delivery.markDelivered, { jobId: job._id, apnsStatus: 200, now });
+
+  const retryTime = new Date(now);
+  retryTime.setUTCDate(retryTime.getUTCDate() + 8);
+  vi.setSystemTime(retryTime);
+  await backend.mutation(internal.cleanup.prune, {});
+  expect(await alerts(backend)).toEqual([]);
+
+  await expect(backend.mutation(internal.publishers.acceptServerNotice, { ...notice("retry"), receivedAt: retryTime.valueOf() })).resolves.toEqual({ status: "accepted" });
+  await runScheduledRecomputes(backend);
+  expect(await alerts(backend)).toEqual([]);
+});

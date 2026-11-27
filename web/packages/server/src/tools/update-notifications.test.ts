@@ -1,9 +1,11 @@
 import { initializeStore } from '../test/storage.js'
 import { JsonDocuments } from '../sessions/storage/json-documents.js'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { bootTestServer, type TestServer } from '../test/harness.js'
+import { fakeRelay } from '../test/notifications.js'
 import { UpdateNotificationStore, type UpdateNotificationScope } from './update-notifications.js'
 import { gatewayDrainDetail } from './updates.js'
 
@@ -12,6 +14,68 @@ const temp = () => { const path = mkdtempSync(join(tmpdir(), 'talaria-notificati
 const alice: UpdateNotificationScope = { owner: 'oidc:alice', profile: 'work', serverOwner: true }
 
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+
+describe('available update delivery to Relay', () => {
+  const release = (version: string) => ({ state: 'release_ready', can_apply: true, target_version: version })
+  // oxlint-disable-next-line typescript/dot-notation -- Exercise the runtime callback without querying a real release source.
+  const check = (server: TestServer, view: Record<string, unknown> | null) => server.deps.updates['deps'].availableNotification!('webui', view)
+  const pairing = { relay_url: 'https://relay.talaria.kil.dev', publisher_id: 'https://updates.example', publisher_invitation: 'synthetic' }
+
+  it.each(['outage', 'lost acknowledgement'])('retries only the unacknowledged enrollment after restart with the same version (%s)', async (failure) => {
+    const state = temp()
+    const relay = fakeRelay()
+    const attempts: [profile: string, notice: string, nonce: string][] = []
+    let unavailable = ''
+    const fetchRelay: typeof fetch = async (input, init) => {
+      if (typeof input !== 'string' || !input.includes('/notices/')) return relay.fetch(input, init)
+      if (typeof init?.body !== 'string') throw new Error('Expected a JSON notice')
+      const { profileId, noticeId } = JSON.parse(init.body) as { profileId: string; noticeId: string }
+      attempts.push([profileId, noticeId, new Headers(init?.headers).get('X-Talaria-Nonce') ?? ''])
+      if (profileId !== unavailable) return Response.json({ status: 'accepted' })
+      if (failure === 'lost acknowledgement') throw new Error('response lost after acceptance')
+      return new Response(null, { status: 503 })
+    }
+    const boot = () => bootTestServer({ env: { HERMES_HOME: state, TALARIA_WEB_STATE_DIR: state }, deps: (deps) => { deps.fetch = fetchRelay } })
+    const first = await boot()
+    let firstClosed = false
+    let restarted: TestServer | undefined
+    try {
+      await first.deps.relay.pair(pairing, 'default', true)
+      mkdirSync(first.deps.profileHome('work'), { recursive: true })
+      await first.deps.relay.pair(pairing, 'work', true)
+      const publisher = first.deps.relay.current()!
+      const healthy = publisher.config.profiles.default!.profile_id
+      const failing = unavailable = publisher.config.profiles.work!.profile_id
+      const notice = 'update_available:webui:web-v2.0.0'
+
+      await check(first, release('web-v2.0.0'))
+      await vi.waitFor(() => { expect(attempts.map(([profile, id]) => [profile, id])).toEqual([[healthy, notice], [failing, notice]]) })
+      await publisher.idle()
+      const rows = (await first.deps.updateNotifications.list(alice)).notifications
+      expect(rows).toHaveLength(1)
+      first.deps.relay.stop()
+      firstClosed = true
+      await first.close()
+
+      unavailable = ''
+      restarted = await boot()
+      await restarted.deps.relay.start()
+      await check(restarted, release('web-v2.0.0'))
+      await restarted.deps.relay.current()!.idle()
+      expect(attempts.map(([profile, id]) => [profile, id])).toEqual([[healthy, notice], [failing, notice], [failing, notice]])
+      expect(attempts[2]?.[2]).toBeTruthy()
+      expect(attempts[2]?.[2]).not.toBe(attempts[1]?.[2])
+      expect((await restarted.deps.updateNotifications.list(alice)).notifications).toEqual(rows)
+    } finally {
+      restarted?.deps.relay.stop()
+      await restarted?.close()
+      if (!firstClosed) {
+        first.deps.relay.stop()
+        await first.close()
+      }
+    }
+  })
+})
 
 describe('UpdateNotificationStore', () => {
   it.each([['error', 'critical'], ['warn', 'warning'], ['info', 'info'], ['success', 'info']])('a startup %s warning has %s severity', async (level, severity) => {
@@ -112,6 +176,38 @@ describe('UpdateNotificationStore', () => {
     expect(await restarted.updateAvailable('agent', { state: 'commits_behind', can_apply: true, latest_sha: 'c'.repeat(40) }))
       .toEqual({ kind: 'update_available', id: `update_available:agent:${'c'.repeat(40)}`, title: 'Hermes Agent update available', body: `Hermes Agent ${'c'.repeat(12)} is available.`, url: '/settings/system' })
     expect(await restarted.updateAvailable('webui', null)).toBeNull()
+  })
+
+  it.each(['withdrawn', 'superseded'])('stops sending a pending notice as soon as its update is %s', async (outcome) => {
+    const root = temp()
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    const old = { state: 'release_ready', can_apply: true, target_version: 'web-v2.0.0' }
+    const latest = outcome === 'superseded' ? { ...old, target_version: 'web-v2.1.0' } : null
+    const destinations = ['a'.repeat(64), 'b'.repeat(64)]
+    await store.updateAvailable('webui', old, destinations)
+    let acknowledge!: () => void
+    const ack = new Promise<boolean>((resolve) => { acknowledge = () => { resolve(true) } })
+    const sent: [string, string][] = []
+    const delivery = store.deliverRelayNotices((notice, destination) => {
+      sent.push([notice.id, destination])
+      return ack
+    })
+    try {
+      await vi.waitFor(() => { expect(sent).toHaveLength(1) })
+      await store.updateAvailable('webui', latest, destinations)
+    } finally {
+      acknowledge()
+      await delivery
+    }
+    expect(sent).toEqual([['update_available:webui:web-v2.0.0', destinations[0]]])
+
+    const restarted = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    sent.length = 0
+    await restarted.deliverRelayNotices((notice, destination) => {
+      sent.push([notice.id, destination])
+      return Promise.resolve(true)
+    })
+    expect(sent).toEqual(latest ? destinations.map((destination) => ['update_available:webui:web-v2.1.0', destination]) : [])
   })
 
   it('withdraws an available notice once its target update succeeds (TAL-2001)', async () => {

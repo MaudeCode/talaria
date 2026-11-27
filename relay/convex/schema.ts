@@ -309,6 +309,12 @@ export default defineSchema({
     .index("by_user_id_and_device_id_and_state_fingerprint", ["userId", "deviceId", "stateFingerprint"])
     .index("by_status_and_updated_at", ["status", "updatedAt"]),
 
+  // A server notice can be replayed after delivery jobs are pruned. Keep only the deduplication key.
+  serverNoticeReceipts: defineTable({
+    userId: v.string(),
+    stateFingerprint: v.string(),
+  }).index("by_user_id_and_state_fingerprint", ["userId", "stateFingerprint"]),
+
   // `requestId` is unique: the submit mutation reads it before inserting in the same transaction.
   feedbackReports: defineTable({
     requestId: v.string(),

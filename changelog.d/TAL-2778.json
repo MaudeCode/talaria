@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Update alerts retry after a temporary Relay outage without sending duplicate alerts.",
+      "highlight": false,
+      "components": ["web", "relay"]
+    }
+  ]
+}

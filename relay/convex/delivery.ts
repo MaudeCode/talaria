@@ -399,6 +399,10 @@ export const enqueueServerNotice = internalMutation({
         )
         .first();
       if (existing) continue;
+      const receipt = await ctx.db.query("serverNoticeReceipts")
+        .withIndex("by_user_id_and_state_fingerprint", (query) => query.eq("userId", userId).eq("stateFingerprint", stateFingerprint))
+        .first();
+      if (receipt) continue;
       await enqueueJob(ctx, {
         userId,
         deviceId: device.deviceId,
