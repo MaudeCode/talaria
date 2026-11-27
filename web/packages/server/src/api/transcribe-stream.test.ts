@@ -85,13 +85,19 @@ describe('live dictation stream (TAL-802)', () => {
     expect(types.slice(0, -1).length).toBeGreaterThan(0)
     expect(types.slice(0, -1).every((type) => type === 'partial')).toBe(true)
     expect(done.events.at(-2)).toEqual({ type: 'partial', text: 'heard 19200 bytes' })
-    expect(done.events.at(-1)).toEqual({ type: 'final', transcript: 'final 19200 bytes', filtered: false, provider: 'fake-live' })
+    expect(done.events.at(-1)).toEqual({ type: 'final', transcript: 'final 19200 bytes', filtered: false, provider: 'fake-live', has_usable_transcript: true })
     expect(done.closed).toBe(true)
     expect(session.opened).toEqual([{ profile_home: s.deps.profileHome('default'), sample_rate: 48_000 }])
     // Every chunk reaches the session in order, and the end of speech comes last.
     expect(session.pushes.reduce((total, push) => total + push.bytes, 0)).toBe(19_200)
     expect(session.pushes.map((push) => push.end)).toEqual([...session.pushes.slice(1).map(() => false), true])
     expect(session.cancelled).toBe(false)
+  })
+
+  it('marks the live final unusable when the sidecar filters a silence artifact', async () => {
+    sidecar.respond('stt.stream', () => ({ transcript: '', filtered: true, provider: 'fake-live' }))
+    const done = await dictate(s, [])
+    expect(done.events).toEqual([{ type: 'final', transcript: '', filtered: true, provider: 'fake-live', has_usable_transcript: false }])
   })
 
   it('cancels the session when the client hangs up before the end of speech', async () => {

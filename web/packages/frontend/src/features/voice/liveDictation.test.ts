@@ -96,7 +96,7 @@ describe('live dictation (TAL-802)', () => {
     FakeTap.last = undefined
     FakeSocket.last = undefined as never
     getUserMedia.mockReset().mockResolvedValue({ getTracks: () => [track] })
-    vi.mocked(api.transcribeRecording).mockReset().mockResolvedValue({ ok: true, transcript: ' from the recording ', filtered: false, no_speech: false })
+    vi.mocked(api.transcribeRecording).mockReset().mockResolvedValue({ ok: true, transcript: 'from the recording', filtered: false, no_speech: false, has_usable_transcript: true })
     track.stop.mockReset()
     FakeRecorder.deferStop = false
     FakeRecorder.pending = []
@@ -165,29 +165,23 @@ describe('live dictation (TAL-802)', () => {
     expect((ends[0] as Error).message).toBe('Speech-to-text is unavailable on this server')
   })
 
-  it.each([
-    { result: 'empty text', transcript: '', filtered: false, partial: false },
-    { result: 'whitespace', transcript: ' \n ', filtered: false, partial: true },
-    { result: 'filtered text', transcript: '', filtered: true, partial: true },
-  ])('reports no speech when the live final has $result', async ({ transcript, filtered, partial }) => {
+  it('reports no speech when the server marks the live final unusable', async () => {
     const { handle, texts, ends, ws } = await start()
     const first = exchange.events[0]
-    if (partial) ws.receive(first)
+    ws.receive(first)
     handle.stop()
-    ws.receive({ type: 'final', transcript, filtered, provider: 'openai' })
+    ws.receive({ type: 'final', transcript: '', filtered: true, provider: 'openai', has_usable_transcript: false })
     await vi.waitFor(() => { expect(ends).toHaveLength(1) })
     expect(liveDictationErrorKind(ends[0])).toBe('no_speech')
-    expect(texts).toEqual(partial ? [first?.text] : [])
+    expect(texts).toEqual([first?.text])
     expect(api.transcribeRecording).not.toHaveBeenCalled()
   })
 
   it.each([
-    { result: 'an explicit no-speech result', transcript: '', filtered: false, no_speech: true },
-    { result: 'empty text', transcript: '', filtered: false, no_speech: false },
-    { result: 'whitespace', transcript: ' \n ', filtered: false, no_speech: false },
-    { result: 'filtered text', transcript: '', filtered: true, no_speech: false },
-  ])('reports no speech when the recorded fallback has $result', async ({ transcript, filtered, no_speech }) => {
-    vi.mocked(api.transcribeRecording).mockResolvedValue({ ok: true, transcript, filtered, no_speech })
+    { scenario: 'marks the transcript unusable', filtered: true, no_speech: false, has_usable_transcript: false },
+    { scenario: 'is an older server reporting explicit no speech', filtered: false, no_speech: true },
+  ])('reports no speech when the recorded fallback $scenario', async ({ scenario: _scenario, ...status }) => {
+    vi.mocked(api.transcribeRecording).mockResolvedValue({ ok: true, transcript: '', ...status })
     const { handle, texts, ends, ws } = await start()
     ws.receive(exchange.events[0])
     ws.close()

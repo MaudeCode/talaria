@@ -1,5 +1,5 @@
 {
-  "heard": { "ok": true, "transcript": "Ship the release notes.", "filtered": false, "no_speech": false },
-  "filtered": { "ok": true, "transcript": "", "filtered": true, "no_speech": false },
-  "no_speech": { "ok": true, "transcript": "", "filtered": false, "no_speech": true }
+  "heard": { "ok": true, "transcript": "Ship the release notes.", "filtered": false, "no_speech": false, "has_usable_transcript": true },
+  "filtered": { "ok": true, "transcript": "", "filtered": true, "no_speech": false, "has_usable_transcript": false },
+  "no_speech": { "ok": true, "transcript": "", "filtered": false, "no_speech": true, "has_usable_transcript": false }
 }

@@ -379,15 +379,19 @@ describe('contracts package', () => {
     const fixture = shared('fixtures/transcribe-stream.json') as { start: unknown; end: unknown; events: unknown[]; unavailable: unknown }
     expect(TranscribeStreamStartSchema.parse(fixture.start).sample_rate).toBe(48000)
     expect(TranscribeStreamEndSchema.parse(fixture.end).eos).toBe(true)
-    expect(fixture.events.map((event) => TranscribeStreamEventSchema.parse(event).type)).toEqual(['partial', 'partial', 'final'])
+    const events = fixture.events.map((event) => TranscribeStreamEventSchema.parse(event))
+    expect(events.map((event) => event.type)).toEqual(['partial', 'partial', 'final'])
+    expect(events.at(-1)).toMatchObject({ has_usable_transcript: true })
+    expect(TranscribeStreamEventSchema.safeParse({ type: 'final', transcript: 'hi', filtered: false, provider: 'openai' }).success).toBe(true)
     expect(TranscribeStreamEventSchema.parse(fixture.unavailable).type).toBe('error')
     expect(TranscribeStreamStartSchema.safeParse({ sample_rate: 96000 }).success).toBe(false)
   })
   it('parses the shared dictation transcripts, filtered, heard and no speech (TAL-917, TAL-1608)', () => {
     const fixture = shared('fixtures/transcribe.json') as Record<string, unknown>
     expect(Object.values(fixture).map((body) => TranscribeResponseSchema.parse(body))).toEqual([
-      { ok: true, transcript: 'Ship the release notes.', filtered: false, no_speech: false }, { ok: true, transcript: '', filtered: true, no_speech: false },
-      { ok: true, transcript: '', filtered: false, no_speech: true },
+      { ok: true, transcript: 'Ship the release notes.', filtered: false, no_speech: false, has_usable_transcript: true },
+      { ok: true, transcript: '', filtered: true, no_speech: false, has_usable_transcript: false },
+      { ok: true, transcript: '', filtered: false, no_speech: true, has_usable_transcript: false },
     ])
     // An older server omits no_speech: an ordinary transcript.
     expect(TranscribeResponseSchema.parse({ ok: true, transcript: 'hi', filtered: false }).no_speech).toBe(false)

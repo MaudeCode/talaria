@@ -3,7 +3,7 @@
  * reports `streaming`. Microphone PCM goes up while the user speaks and the provider's partial text comes back. The same
  * microphone is recorded locally, so a stream that fails at any point falls back to transcribing the recording.
  */
-import { TRANSCRIBE_STREAM_PATH, TranscribeStreamEventSchema } from '@maudecode/talaria-web-contracts'
+import { TRANSCRIBE_STREAM_PATH, TranscribeStreamEventSchema, type TranscribeResult } from '@maudecode/talaria-web-contracts'
 import { resolveApiUrl } from '../../api/client'
 import { transcribeRecording } from '../../api/endpoints'
 import type { DictationErrorKind } from './dictation'
@@ -37,7 +37,7 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
   const recorded: Blob[] = []
   const { recorder, audio, tap, source, ws } = await openCapture(media, recorded)
   const early: ArrayBuffer[] = []
-  let final: { transcript: string; filtered: boolean; no_speech?: boolean } | null = null
+  let final: (TranscribeResult & { no_speech?: boolean }) | null = null
   let failed = false
   let ended = false
   let cancelled = false
@@ -126,9 +126,9 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
           result = await transcribeRecording(file, `dictation.${extension(file.type)}`, upload.signal)
           live()
         }
-        const transcript = result.transcript.trim()
-        if (result.filtered || result.no_speech || !transcript) throw new NoSpeechError()
-        return transcript
+        const hasUsableTranscript = result.has_usable_transcript ?? !result.no_speech
+        if (!hasUsableTranscript) throw new NoSpeechError()
+        return result.transcript
       })()
       return stopping
     },

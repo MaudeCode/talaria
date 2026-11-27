@@ -158,7 +158,7 @@ export const RAW_ROUTES: readonly RawRoute[] = [
   {
     method: 'POST', path: '/api/transcribe', summary: 'Speech-to-text through the Agent (multipart `file`).', tags: ['tools'],
     requestBody: { contentType: 'multipart/form-data', description: 'Field `file` (audio).' },
-    responses: { 200: { description: '`{ok, transcript, filtered, no_speech}`; `filtered` when a phrase Whisper invents on silent audio was emptied; `no_speech` when the provider ran cleanly and produced no transcript (absent from older servers: false).', contentType: 'application/json' }, 400: { description: 'No file or transcription failed.', contentType: 'application/json' }, 503: { description: 'Speech-to-text unavailable.', contentType: 'application/json' } },
+    responses: { 200: { description: '`{ok, transcript, filtered, no_speech, has_usable_transcript}`; `filtered` when a phrase Whisper invents on silent audio was emptied; `no_speech` when the provider ran cleanly and produced no transcript (absent from older servers: false). `has_usable_transcript` is false for empty, filtered, or explicitly silent results and may be absent on older servers.', contentType: 'application/json' }, 400: { description: 'No file or transcription failed.', contentType: 'application/json' }, 503: { description: 'Speech-to-text unavailable.', contentType: 'application/json' } },
   },
   {
     method: 'POST', path: '/api/tts', summary: 'Text-to-speech through the profile\'s configured Agent speech provider.', tags: ['tools'],

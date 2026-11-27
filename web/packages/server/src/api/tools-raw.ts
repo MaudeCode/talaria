@@ -8,6 +8,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { rateLimitClientIp } from './router.js'
 import { readUploadForm, uploadFile } from './raw-routes.js'
+import { transcriptionResult } from './transcription-result.js'
 
 const CSP_MAX_BODY = 64 * 1024
 const TTS_TIMEOUT_MS = 30_000
@@ -35,7 +36,7 @@ export async function handleTranscribe(ctx: RequestContext): Promise<void> {
   if (!sidecar) { (await ctx.json({ error: 'Speech-to-text is unavailable on this server' }, { status: 503 })); return }
   try {
     const result = await sidecar.call('stt.transcribe', { profile_home: ctx.deps.profileHome(activeProfileName(ctx)), audio_b64: file.body.toString('base64'), suffix }, { timeoutMs: 120_000 })
-    await ctx.json({ ok: true, transcript: result.transcript.trim(), filtered: result.filtered, no_speech: result.no_speech === true })
+    await ctx.json({ ok: true, ...transcriptionResult(result), no_speech: result.no_speech === true })
   } catch (error) {
     if (error instanceof SidecarError) {
       const message = error.message || 'Transcription failed'
