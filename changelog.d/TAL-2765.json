@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Logs page shows an error when a log cannot be read.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

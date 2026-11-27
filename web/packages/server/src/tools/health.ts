@@ -64,9 +64,11 @@ export async function readLogTail(catalog: LogCatalog, query: LogQuery, signal?:
   const notFound = { file: fileKey, tail, truncated: false, total_bytes: 0, mtime: null, hint: `Log file for ${fileKey} not found yet.`, ...view([]) }
   let handle: FileHandle
   try { handle = await open(path, LOG_OPEN_FLAGS) } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
     // Python `_handle_logs` refused a log resolving outside the logs dir; refusing every symlink makes the open itself the check.
-    if ((error as NodeJS.ErrnoException).code === 'ELOOP') throw new HttpFailure(400, 'Invalid log file')
-    return notFound
+    if (code === 'ELOOP') throw new HttpFailure(400, 'Invalid log file')
+    if (code === 'ENOENT') return notFound
+    throw error
   }
   try {
     for (let attempt = 0; attempt < LOG_READ_ATTEMPTS; attempt += 1) {
