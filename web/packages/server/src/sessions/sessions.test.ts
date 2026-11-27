@@ -169,6 +169,18 @@ describe('session lifecycle over HTTP', () => {
     expect(await json(res)).toEqual({ error: 'Session not found' })
   })
 
+  it('returns the sidebar-redacted Spotlight title for a confirmed rename', async () => {
+    const sid = String((await newSession(s)).session_id)
+    await writeMessages(s, sid, [{ role: 'user', content: 'hello' }])
+    const fixtureSecret = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
+    const result = await post(s, '/api/session/rename', { session_id: sid, title: `Launch with ${fixtureSecret}` })
+    expect(result.status).toBe(200)
+    const listed = ((await json(await s.get('/api/sessions'))).sessions as Json[]).find((row) => row.session_id === sid)
+    expect(listed?.title).toMatch(/^Launch with /)
+    expect(listed?.title).not.toContain(fixtureSecret)
+    expect((await json(result)).search_title).toBe(listed?.title)
+  })
+
   it('renames, archives, pins with the configured cap, and moves between projects', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)

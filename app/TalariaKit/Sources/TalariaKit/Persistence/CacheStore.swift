@@ -13,7 +13,9 @@ public enum CacheStore {
 
     @MainActor
     public static func enableSpotlight(in container: ModelContainer) {
-        if let indexer = SessionSpotlightIndexer.system() { useSpotlight(indexer, in: container) }
+        guard let indexer = SessionSpotlightIndexer.system() else { return }
+        indexer.protect(with: .shared)
+        useSpotlight(indexer, in: container)
     }
 
     @MainActor
@@ -239,8 +241,12 @@ public enum CacheStore {
         }
 
         try saveChanges(in: context, now: cachedAt)
+        let indexer = spotlightIndexers.object(forKey: context.container)
         if session.archived == true {
-            spotlightIndexers.object(forKey: context.container)?.remove([sessionID], for: serverURL)
+            indexer?.remove([sessionID], for: serverURL)
+        } else if session.searchTitle != nil {
+            // The individual cache write can carry a raw mutation title. Donate the server's search title only.
+            indexer?.update(session, for: serverURL)
         }
     }
 
@@ -515,6 +521,7 @@ private extension SessionSummary {
     init(cachedSession: CachedSession) {
         sessionId = cachedSession.sessionID
         title = cachedSession.title
+        searchTitle = nil
         workspace = cachedSession.workspace
         workspaceName = cachedSession.workspaceName
         placeLabel = cachedSession.placeLabel

@@ -512,6 +512,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var approvalBypassOverride: Bool?
     /// The session's toolsets as the fixture saved them (TAL-631); nil is the profile's defaults.
     private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
+    private static let renamedSessions = OSAllocatedUnfairLock(initialState: [String: String]())
     private static let profileState = OSAllocatedUnfairLock(initialState: (rows: [[String: JSONValue]](), active: "fixture-profile"))
     static var activeFixtureProfile: String { profileState.withLock { $0.active } }
     private static let serverSettings = OSAllocatedUnfairLock(initialState: [String: JSONValue]())
@@ -557,6 +558,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         cancelOpenLoads()
         approvalBypassOverride = nil
         sessionToolsets.withLock { $0 = nil }
+        renamedSessions.withLock { $0.removeAll() }
         reasoningDefaults.withLock { $0 = ("medium", true) }
         auxiliarySelections.withLock { $0 = [:] }
         modelPreferences.withLock { $0 = (["fixture-provider": Set(["fixture-model"])], [:]) }
@@ -897,6 +899,13 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return sessionsResponse()
         case "/api/session/branch" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.forkSessionArgument):
             return json(["session_id": forkSessionID])
+        case "/api/session/rename":
+            let body = requestJSON(request)
+            guard let id = body["session_id"] as? String, let title = body["title"] as? String else {
+                return json(["error": "Missing session ID or title"])
+            }
+            renamedSessions.withLock { $0[id] = title }
+            return json(["session": session(id: id, title: title), "search_title": title])
         case "/api/session/delete":
             if let id = requestJSON(request)["session_id"] as? String {
                 recoveryState.withLock { _ = deletedSessionIDs.insert(id) }
@@ -2114,9 +2123,10 @@ final class UITestFixtureURLProtocol: URLProtocol {
 
     static func session(id: String, title: String, overrides: [String: Any] = [:]) -> [String: Any] {
         let noPlace = ProcessInfo.processInfo.arguments.contains("--ui-test-chat-without-place")
+        let renamedTitle = renamedSessions.withLock { $0[id] }
         var value: [String: Any] = [
             "session_id": id,
-            "title": title,
+            "title": renamedTitle ?? title,
             "message_count": 48,
             "last_message_at": 2_000_000_000,
             "sort_ts": 2_000_000_000,
@@ -2138,6 +2148,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
             "confirms_deep_truncate": true,
             "enabled_toolsets": sessionToolsets.withLock { $0 }.map { $0 as Any } ?? NSNull()
         ]
+        if renamedTitle != nil { value["updated_at"] = 2_000_000_001 }
         for key in ["model", "model_provider", "workspace", "enabled_toolsets"] {
             if let override = overrides[key] { value[key] = override }
         }

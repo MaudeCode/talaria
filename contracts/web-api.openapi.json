@@ -29257,6 +29257,10 @@
                         "can_share"
                       ],
                       "additionalProperties": {}
+                    },
+                    "search_title": {
+                      "type": "string",
+                      "description": "TAL-1472: the confirmed title with the same redaction as the session list, for device search."
                     }
                   },
                   "required": [

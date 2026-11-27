@@ -1374,12 +1374,18 @@ final class CacheStoreTests: XCTestCase {
 }
 
 @MainActor
-private final class RecordingSessionSpotlightIndex: SessionSpotlightIndex {
+final class RecordingSessionSpotlightIndex: SessionSpotlightIndex {
     var upserts: [CSSearchableItem] = []
     var deletedItems: [String] = []
     var deletedDomains: [String] = []
+    var deleteAllCalls = 0
+    var failsDeleteAll = false
 
     func upsert(_ items: [CSSearchableItem]) async throws { upserts += items }
     func deleteItems(_ identifiers: [String]) async throws { deletedItems += identifiers }
     func deleteDomain(_ identifier: String) async throws { deletedDomains.append(identifier) }
+    func deleteAll() async throws {
+        deleteAllCalls += 1
+        if failsDeleteAll { throw CocoaError(.fileWriteUnknown) }
+    }
 }

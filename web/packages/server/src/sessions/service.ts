@@ -2316,7 +2316,8 @@ export class SessionService {
     })
     await this.deps.syncTitle(s, 'user')
     this.publish('session_rename', s.profile, s.session_id)
-    return { session: (await this.wireRow(s)) }
+    const session = await this.wireRow(s)
+    return { session, search_title: redactString(str(session.title), this.deps.redactEnabled()) }
   }
 
   // The pin quota is counted across sessions, so the count-and-save transaction runs on one process-wide chain;

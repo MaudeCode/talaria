@@ -135,6 +135,18 @@ public struct SessionMutationResponse: Decodable, Sendable {
     public let ok: Bool?
     public let session: SessionSummary?
     public let error: String?
+    /// The rename result's title with the session list's redaction, for device search.
+    public let searchTitle: String?
+
+    private enum CodingKeys: String, CodingKey { case ok, session, error, searchTitle }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decodeIfPresent(Bool.self, forKey: .ok)
+        session = try container.decodeIfPresent(SessionSummary.self, forKey: .session)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+        searchTitle = try? container.decodeIfPresent(String.self, forKey: .searchTitle)
+    }
 }
 
 public enum SessionBulkAction: String, Encodable, Sendable {
@@ -363,6 +375,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
 
     public let sessionId: String?
     public let title: String?
+    /// A confirmed rename's search title, retained until the next authoritative list response.
+    let searchTitle: String?
     public let workspace: String?
     /// The server's label for `workspace` (TAL-303); nil from an older server, which shows none.
     public let workspaceName: String?
@@ -425,6 +439,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     public init(
         sessionId: String? = nil,
         title: String? = nil,
+        searchTitle: String? = nil,
         workspace: String? = nil,
         workspaceName: String? = nil,
         placeLabel: String? = nil,
@@ -472,6 +487,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     ) {
         self.sessionId = sessionId
         self.title = title
+        self.searchTitle = searchTitle
         self.workspace = workspace
         self.workspaceName = workspaceName
         self.placeLabel = placeLabel
@@ -544,6 +560,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
         title = container.decodeLossyStringIfPresent(forKey: .title)
+        searchTitle = nil
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)
         workspaceName = container.decodeLossyStringIfPresent(forKey: .workspaceName)
         // Older servers send only the workspace label. An explicit null hides the subtitle.
@@ -619,6 +636,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     public init(from detail: SessionDetail) {
         sessionId = detail.sessionId
         title = detail.title
+        searchTitle = nil
         workspace = detail.workspace
         workspaceName = detail.workspaceName
         placeLabel = detail.placeLabel
@@ -672,10 +690,11 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
 
     /// Mirrors all stored fields so local title patches preserve session-list metadata.
     /// Update this when `SessionSummary` gains a new stored property.
-    public func replacingTitle(with title: String) -> SessionSummary {
+    public func replacingTitle(with title: String, searchTitle: String? = nil, updatedAt: Double? = nil) -> SessionSummary {
         SessionSummary(
             sessionId: sessionId,
             title: title,
+            searchTitle: searchTitle,
             workspace: workspace,
             workspaceName: workspaceName,
             placeLabel: placeLabel,
@@ -684,7 +703,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
             modelOptionID: modelOptionID,
             messageCount: messageCount,
             createdAt: createdAt,
-            updatedAt: updatedAt,
+            updatedAt: updatedAt ?? self.updatedAt,
             lastMessageAt: lastMessageAt,
             sortTs: sortTs,
             pinned: pinned,
@@ -739,6 +758,7 @@ extension SessionSummary {
         return SessionSummary(
             sessionId: sessionId ?? row.sessionId,
             title: title ?? row.title,
+            searchTitle: searchTitle ?? row.searchTitle,
             workspace: workspace ?? row.workspace,
             // The name labels its own path, so it moves with the workspace it came with.
             workspaceName: workspace != nil ? workspaceName : row.workspaceName,

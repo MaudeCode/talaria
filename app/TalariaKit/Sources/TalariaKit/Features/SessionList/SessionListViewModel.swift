@@ -1251,16 +1251,18 @@ public final class SessionListViewModel {
 
         var renamed: SessionSummary?
         return await changeSession(session, label: String(localized: "Rename"), title: title, modelContext: modelContext, reload: false, confirmed: {
-            if let renamed, renamed.sessionId != nil {
+            if let renamed {
                 self.refreshRow(with: renamed, modelContext: modelContext)
             }
         }) { id in
             let response = try await self.sessionMutator.rename(sessionID: id, title: title)
-            guard response.session?.sessionId == id, let resolvedTitle = Self.nonEmpty(response.session?.title) else {
+            guard let confirmed = response.session, confirmed.sessionId == id, let resolvedTitle = Self.nonEmpty(confirmed.title) else {
                 throw ResourceMutationError(message: String(localized: "The server did not return the renamed session title."))
             }
             let base = self.sessions.first { $0.sessionId == id } ?? session
-            renamed = base.replacingTitle(with: resolvedTitle)
+            // Older servers echo the raw title. Keep the previous search title until a fresh list arrives.
+            let searchTitle = response.searchTitle ?? base.searchTitle ?? SessionRowPresentation.displayTitle(for: base)
+            renamed = base.replacingTitle(with: resolvedTitle, searchTitle: searchTitle, updatedAt: confirmed.updatedAt)
         }
     }
 

@@ -141,13 +141,16 @@ extension SessionListMutationTests {
         var requestedPaths: [String] = []
         let context = try makeContext()
         let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let index = RecordingSessionSpotlightIndex()
+        let indexer = SessionSpotlightIndexer(index: index, defaults: .ephemeral("SpotlightRename"))
+        CacheStore.useSpotlight(indexer, in: context.container)
         let viewModel = try makeViewModel { request in
             let path = request.url?.path ?? "nil"
             requestedPaths.append(path)
 
             switch path {
             case "/api/sessions":
-                return apiTestJSONResponse(self.sessionListJSON(forLoadCount: 1), for: request)
+                return apiTestJSONResponse(#"{"sessions":[{"session_id":"session-abc","title":"Planning","workspace":"/demo","project_name":"Roadmap","updated_at":1700000000},{"session_id":"other","title":"Another chat"}]}"#, for: request)
             case "/api/session/rename":
                 let body = try XCTUnwrap(apiTestJSONBody(from: request))
                 XCTAssertEqual(body["session_id"] as? String, "session-abc")
@@ -155,9 +158,11 @@ extension SessionListMutationTests {
                 return apiTestJSONResponse("""
                 {
                   "ok": true,
+                  "search_title": "Launch [redacted]",
                   "session": {
                     "session_id": "session-abc",
-                    "title": "Launch Notes"
+                    "title": "Launch Notes",
+                    "updated_at": 1700000123
                   }
                 }
                 """, for: request)
@@ -168,8 +173,12 @@ extension SessionListMutationTests {
         }
 
         await viewModel.load(modelContext: context)
+        await indexer.waitForPendingWrites()
+        XCTAssertEqual(index.upserts.count, 2)
+        index.upserts.removeAll()
         let session = try XCTUnwrap(viewModel.sessions.first)
         let didRename = await viewModel.rename(session, to: "  Launch Notes  ", modelContext: context)
+        await indexer.waitForPendingWrites()
         let cachedSessions = try CacheStore.cachedSessions(serverURL: server, in: context)
 
         XCTAssertTrue(didRename)
@@ -177,6 +186,14 @@ extension SessionListMutationTests {
         XCTAssertEqual(viewModel.sessions.first?.title, "Launch Notes")
         XCTAssertEqual(viewModel.sessions.first?.workspace, session.workspace)
         XCTAssertEqual(cachedSessions.first?.title, "Launch Notes")
+        XCTAssertEqual(index.upserts.map(\.attributeSet.title), ["Launch [redacted]"])
+        XCTAssertEqual(index.upserts.first?.attributeSet.contentDescription, "Roadmap")
+        XCTAssertEqual(index.upserts.first?.attributeSet.contentModificationDate, Date(timeIntervalSince1970: 1_700_000_123))
+        XCTAssertTrue(index.deletedItems.isEmpty)
+        index.upserts.removeAll()
+        try CacheStore.cacheSessions(viewModel.sessions, serverURL: server, in: context)
+        await indexer.waitForPendingWrites()
+        XCTAssertTrue(index.upserts.isEmpty, "Reapplying the confirmed rows must not replace the redacted Spotlight title.")
         XCTAssertFalse(viewModel.isRenamingSession)
         XCTAssertNil(viewModel.actionErrorMessage)
         XCTAssertNil(viewModel.lastError)

@@ -213,6 +213,51 @@ final class AppLockTests: XCTestCase {
         XCTAssertFalse(model.switchPosition, "A refusal rolls the switch back")
     }
 
+    func testEnablingAppLockRequiresPurgingSpotlightAndBlocksNewDonations() async {
+        let model = coldLaunch(enabled: false)
+        let index = RecordingSessionSpotlightIndex()
+        let indexer = SessionSpotlightIndexer(index: index, defaults: defaults)
+        indexer.protect(with: model)
+        let server = URL(string: "https://spotlight.test")!
+        let first = SessionSummary(sessionId: "a", title: "Existing chat")
+        let second = SessionSummary(sessionId: "b", title: "New chat")
+        indexer.replace([first], for: server)
+        await indexer.waitForPendingWrites()
+        XCTAssertEqual(index.upserts.map(\.attributeSet.title), ["Existing chat"])
+
+        index.failsDeleteAll = true
+        let refused = await model.setEnabled(true)
+        XCTAssertEqual(refused, .cancelled)
+        XCTAssertFalse(model.isEnabled)
+
+        index.failsDeleteAll = false
+        let enabled = await model.setEnabled(true)
+        XCTAssertEqual(enabled, .succeeded)
+        XCTAssertTrue(model.isEnabled)
+        XCTAssertEqual(index.deleteAllCalls, 2)
+        indexer.replace([first, second], for: server)
+        await indexer.waitForPendingWrites()
+        XCTAssertEqual(index.upserts.map(\.attributeSet.title), ["Existing chat"])
+
+        _ = await model.setEnabled(false)
+        index.upserts.removeAll()
+        indexer.replace([first, second], for: server)
+        await indexer.waitForPendingWrites()
+        XCTAssertEqual(Set(index.upserts.compactMap(\.attributeSet.title)), ["Existing chat", "New chat"])
+    }
+
+    func testLaunchingWithAppLockEnabledPurgesSpotlightBeforeAcceptingCacheRefreshes() async {
+        let model = coldLaunch()
+        let index = RecordingSessionSpotlightIndex()
+        let indexer = SessionSpotlightIndexer(index: index, defaults: defaults)
+        indexer.protect(with: model)
+        indexer.replace([SessionSummary(sessionId: "a", title: "Private chat")], for: URL(string: "https://spotlight.test")!)
+        await indexer.waitForPendingWrites()
+
+        XCTAssertEqual(index.deleteAllCalls, 1)
+        XCTAssertTrue(index.upserts.isEmpty)
+    }
+
     func testTheLockCannotTurnOnWithoutAPasscode() async {
         authenticator.results = [.unavailable]
         let model = coldLaunch(enabled: false)
