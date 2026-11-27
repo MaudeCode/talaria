@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
+import type { Readable } from 'node:stream'
 import { assertStorageKind, loadBlobConfig, loadConfig, STORAGE_KINDS } from '../config.js'
 import { createStorage } from '../runtime.js'
 import type { StorageBackend } from '../sessions/storage/backend.js'
@@ -25,37 +26,50 @@ const COPY_USAGE = `Usage: talaria-web storage copy --from <${STORAGE_KINDS.join
 const USAGE = 'Usage: talaria-web storage copy-blobs --from <local|s3> --to <local|s3>'
 const KINDS = new Set(['local', 's3'])
 
-async function digest(store: BlobStore, key: string): Promise<{ sha256: string; size: number } | null> {
-  const got = await store.get(key)
-  if (!got) return null
+async function digest(body: Readable): Promise<{ sha256: string; size: number }> {
   const hash = createHash('sha256')
   let size = 0
-  for await (const chunk of got.body) {
+  for await (const chunk of body) {
     hash.update(chunk as Buffer)
     size += (chunk as Buffer).length
   }
   return { sha256: hash.digest('hex'), size }
 }
 
+async function storedDigest(store: BlobStore, key: string): Promise<{ sha256: string; size: number } | null> {
+  const got = await store.get(key)
+  return got ? digest(got.body) : null
+}
+
+async function sourceBody(store: BlobStore, key: string): Promise<Readable> {
+  const got = await store.get(key)
+  if (!got) throw new Error('Source attachment is no longer readable')
+  return got.body
+}
+
 /** Copy every attachment object, skipping one the destination already holds with the same bytes. */
 export async function copyBlobs(from: BlobStore, to: BlobStore, log: (line: string) => void): Promise<{ copied: number; skipped: number }> {
   let copied = 0
   let skipped = 0
-  for await (const item of from.list(`${ATTACHMENTS}/`)) {
-    const source = await digest(from, item.key)
-    if (!source) continue
-    const existing = await to.stat(item.key)
-    if (existing?.size === source.size && (existing.sha256 ?? (await digest(to, item.key))?.sha256) === source.sha256) {
-      skipped += 1
-      continue
+  for await (const { key } of from.list(`${ATTACHMENTS}/`, { strict: true })) {
+    try {
+      const source = await digest(await sourceBody(from, key))
+      const existing = await to.stat(key)
+      if (existing?.size === source.size && (existing.sha256 ?? (await storedDigest(to, key))?.sha256) === source.sha256) {
+        skipped += 1
+        continue
+      }
+      const body = await sourceBody(from, key)
+      try {
+        await to.put(key, body, { sha256: source.sha256, contentType: guessMime(basename(key)) })
+      } finally { body.destroy() }
+      const written = await storedDigest(to, key)
+      if (written?.sha256 !== source.sha256 || written.size !== source.size) throw new Error('Verification failed because the copy does not match the source')
+      copied += 1
+      log(`[storage] copied ${key} (${String(source.size)} bytes)`)
+    } catch (error) {
+      throw new Error(`Cannot copy ${key}: ${(error as Error).message}`, { cause: error })
     }
-    const got = await from.get(item.key)
-    if (!got) continue
-    await to.put(item.key, got.body, { sha256: source.sha256, contentType: guessMime(basename(item.key)) })
-    const written = await digest(to, item.key)
-    if (written?.sha256 !== source.sha256 || written.size !== source.size) throw new Error(`Verification failed for ${item.key}: the copy does not match the source`)
-    copied += 1
-    log(`[storage] copied ${item.key} (${String(source.size)} bytes)`)
   }
   return { copied, skipped }
 }

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { Readable, Writable } from 'node:stream'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,6 +16,17 @@ import { str } from '../../util.js'
 import { ZipWriter } from '../../workspace/zip.js'
 
 const temp = (name: string): string => mkdtempSync(join(tmpdir(), `talaria-blobs-${name}-`))
+
+const inventoryFault = vi.hoisted(() => ({ directory: '', file: '' }))
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  const deny = (path: string): never => { throw Object.assign(new Error(`EACCES: ${path}`), { code: 'EACCES' }) }
+  return {
+    ...fs,
+    readdirSync: (...args: Parameters<typeof fs.readdirSync>) => args[0] === inventoryFault.directory ? deny(inventoryFault.directory) : fs.readdirSync(...args),
+    lstatSync: (...args: Parameters<typeof fs.lstatSync>) => args[0] === inventoryFault.file ? deny(inventoryFault.file) : fs.lstatSync(...args),
+  }
+})
 
 runBlobStoreConformance('local', () => {
   const root = temp('local')
@@ -44,6 +55,48 @@ it('refuses malformed copy-blobs arguments before touching any store', async () 
     expect(await runStorage({ env: {}, webRoot: '/nonexistent', home: '/nonexistent', log: vi.fn(), warn }, args)).toBe(2)
   }
   expect(warn).toHaveBeenCalledWith('Usage: talaria-web storage copy-blobs --from <local|s3> --to <local|s3>')
+})
+
+it.each(['directory read', 'stat', 'hash open', 'transfer open'] as const)('fails and resumes copy-blobs after a source %s failure', async (failure) => {
+  const root = realpathSync(temp('copy-failure'))
+  const source = join(root, 'source')
+  const target = join(root, 'target')
+  const directory = join(source, 'session', 'nested')
+  const file = join(directory, 'later.txt')
+  const key = 'attachments/session/nested/later.txt'
+  const from = new LocalBlobStore(() => source)
+  const to = new LocalBlobStore(() => target)
+  try {
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(join(source, 'session', 'first.txt'), 'already copied')
+    writeFileSync(file, 'bytes to recover')
+
+    const get = from.get.bind(from)
+    const stat = to.stat.bind(to)
+    if (failure === 'directory read') inventoryFault.directory = directory
+    if (failure === 'stat') inventoryFault.file = file
+    const hashOpen = vi.spyOn(from, 'get').mockImplementation((item, range) => {
+      if (failure === 'hash open' && item === key) unlinkSync(file)
+      return get(item, range)
+    })
+    const transferOpen = vi.spyOn(to, 'stat').mockImplementation((item) => {
+      if (failure === 'transfer open' && item === key) unlinkSync(file)
+      return stat(item)
+    })
+    await expect(copyBlobs(from, to, vi.fn())).rejects.toThrow(failure === 'directory read' ? directory : failure === 'stat' ? file : key)
+
+    inventoryFault.directory = ''
+    inventoryFault.file = ''
+    hashOpen.mockRestore()
+    transferOpen.mockRestore()
+    writeFileSync(file, 'bytes to recover')
+    expect(await copyBlobs(from, to, vi.fn())).toEqual({ copied: 1, skipped: 1 })
+    expect(readFileSync(join(target, 'session', 'nested', 'later.txt'), 'utf8')).toBe('bytes to recover')
+  } finally {
+    inventoryFault.directory = ''
+    inventoryFault.file = ''
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 it.each(['missing', 'startup alias', 'symlink loop'])('keeps the startup share attachment root when its configured path is %s', async (kind) => {
