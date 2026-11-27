@@ -294,6 +294,56 @@ describe('live logins', () => {
   })
 })
 
+it.each([
+  { status: 404, legacy: true },
+  { status: 410, legacy: false },
+])('keeps a renewed subscription after an older delivery returns $status (legacy: $legacy)', async ({ status, legacy }) => {
+  const server = await bootTestServer({ now: () => 1_800_000_000 })
+  let markArrived!: () => void
+  const arrived = new Promise<void>((resolve) => { markArrived = resolve })
+  let reply!: (response: Response) => void
+  const heldResponse = new Promise<Response>((resolve) => { reply = resolve })
+  try {
+    const push = stubPushService(server)
+    const fetch = server.deps.pinnedFetch
+    server.deps.pinnedFetch = (...args) => {
+      const response = fetch(...args)
+      if (push.pushes.length !== 1) return response
+      markArrived()
+      return heldResponse
+    }
+    const keys = browserKeys()
+    expect((await send(server, 'POST', PUSH_PATH, { endpoint: ENDPOINT, keys })).status).toBe(200)
+    if (legacy) {
+      const documents = server.deps.sessionStore.deps.storage.documents
+      const stored = (await documents.get('web-push-subscriptions', 'subscriptions'))!
+      const value = stored.value as { subscriptions: { registration_id?: string }[] }
+      delete value.subscriptions[0]!.registration_id
+      await documents.put('web-push-subscriptions', 'subscriptions', value, stored.revision)
+    }
+    const sid = String(((await json(await send(server, 'POST', '/api/session/new', {}))).session as Json).session_id)
+    server.deps.registry.activeRuns.set('stream-renewed', { stream_id: 'stream-renewed', session_id: sid, started_at: 1, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+    const settle = async (): Promise<void> => { server.deps.notifications.changed(); await server.deps.webPush.idle() }
+    await settle()
+
+    server.deps.pending.submitApproval(sid, { request_id: 'first', tool: 'shell' })
+    server.deps.notifications.changed()
+    await arrived
+    expect((await send(server, 'POST', PUSH_PATH, { endpoint: ENDPOINT, keys })).status).toBe(200)
+    reply(new Response(null, { status }))
+    await server.deps.webPush.idle()
+
+    expect((await json(await server.get(`/api/notifications/web-push?endpoint=${encodeURIComponent(ENDPOINT)}`))).subscription).not.toBeNull()
+    server.deps.pending.resolveApproval(sid, 'first')
+    server.deps.pending.submitApproval(sid, { request_id: 'second', tool: 'shell' })
+    await settle()
+    expect(push.pushes.map((sent) => sent.url)).toEqual([ENDPOINT, ENDPOINT])
+  } finally {
+    reply(new Response(null, { status: 201 }))
+    await server.close()
+  }
+})
+
 it('pushes each successive approval head once while the run waits for approval', async () => {
   const server = await bootTestServer()
   try {

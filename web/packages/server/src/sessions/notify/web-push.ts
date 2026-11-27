@@ -4,7 +4,7 @@
  * session and applies the shared alert rule; delivery goes through the vetted, address-pinned fetch because
  * the browser chose the endpoint.
  */
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import webpush from 'web-push'
 import { WebPushPreferencesSchema } from '@maudecode/talaria-web-contracts'
 import { z } from 'zod'
@@ -31,11 +31,17 @@ export class WebPushRequestError extends Error {
 const SubscriptionSchema = z.object({
   endpoint: z.string(), keys: z.object({ p256dh: z.string(), auth: z.string() }), profile: z.string(),
   login: z.string().nullable(), origin: z.string(), preferences: WebPushPreferencesSchema, created_at: z.number(),
-  server_notices: z.array(z.string()).optional(),
+  registration_id: z.string().optional(), server_notices: z.array(z.string()).optional(),
 })
 type Subscription = z.infer<typeof SubscriptionSchema>
 const SubscriptionsSchema = z.object({ version: z.literal(1), subscriptions: z.array(SubscriptionSchema) })
 const VapidSchema = z.object({ publicKey: z.string().min(1), privateKey: z.string().min(1) })
+
+function sameRegistration(current: Subscription, sent: Subscription): boolean {
+  // Legacy rows have no ID. Every subscribe replaces the row with a fresh ID, even within the same second.
+  return current.endpoint === sent.endpoint && current.profile === sent.profile && current.login === sent.login
+    && current.registration_id === sent.registration_id
+}
 
 export interface WebPushDeps {
   documents: DocumentBackend
@@ -169,11 +175,12 @@ export class WebPushChannel implements NotificationChannel {
     if (decodedLength(input.keys.p256dh) !== 65 || decodedLength(input.keys.auth) !== 16) throw new WebPushRequestError('Invalid push subscription keys', 400)
     await this.publicKey()
     const created = Math.floor(this.deps.now())
+    const registrationId = randomUUID()
     const preferences = await this.mutate((subs) => {
       const index = subs.findIndex((s) => s.endpoint === input.endpoint)
       const preferences = input.preferences ?? (index >= 0 && subs[index]!.profile === requester.profile ? subs[index]!.preferences : DEFAULT_ALERT_PREFERENCES)
       if (index >= 0) subs.splice(index, 1)
-      subs.push({ endpoint: input.endpoint, keys: { p256dh: input.keys.p256dh, auth: input.keys.auth }, profile: requester.profile, login: requester.login, origin: requester.origin, preferences: { ...preferences }, created_at: created })
+      subs.push({ endpoint: input.endpoint, keys: { p256dh: input.keys.p256dh, auth: input.keys.auth }, profile: requester.profile, login: requester.login, origin: requester.origin, preferences: { ...preferences }, created_at: created, registration_id: registrationId })
       if (subs.length > MAX_SUBSCRIPTIONS) subs.splice(0, subs.length - MAX_SUBSCRIPTIONS)
       return preferences
     })
@@ -321,7 +328,7 @@ export class WebPushChannel implements NotificationChannel {
 
   private async stillSubscribed(sub: Subscription): Promise<boolean> {
     if ((sub.login !== null && !(await this.deps.liveLogins()).has(sub.login)) || !this.deps.profileExists(sub.profile)) return false
-    return (await this.subscriptions()).some((s) => s.endpoint === sub.endpoint && s.profile === sub.profile && s.login === sub.login)
+    return (await this.subscriptions()).some((current) => sameRegistration(current, sub))
   }
 
   private async deliver(sub: Subscription, row: ActivityState, alert: AlertKind | AgentNotice): Promise<void> {
@@ -349,7 +356,7 @@ export class WebPushChannel implements NotificationChannel {
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms).unref() }))
     let failure = ''
     for (let attempt = 1; attempt <= MAX_TRIES && !this.stopped; attempt++) {
-      // Logout, expiry, unsubscribe or a 410 during a retry delay ends the alert with its subscription.
+      // Logout, expiry, unsubscribe, replacement or a terminal response ends the alert with its registration.
       if (!(await this.stillSubscribed(sub))) return
       try {
         const addresses = await vettedAddresses(new URL(sub.endpoint).hostname, isNonGlobalAddress, this.deps.lookup())
@@ -357,7 +364,10 @@ export class WebPushChannel implements NotificationChannel {
         void res.body?.cancel().catch(() => undefined)
         if (res.ok) return
         if (res.status === 404 || res.status === 410) {
-          await this.mutate((subs) => { const index = subs.findIndex((s) => s.endpoint === sub.endpoint); if (index >= 0) subs.splice(index, 1) })
+          await this.mutate((subs) => {
+            const index = subs.findIndex((current) => sameRegistration(current, sub))
+            if (index >= 0) subs.splice(index, 1)
+          })
           return
         }
         failure = `HTTP ${String(res.status)}`
