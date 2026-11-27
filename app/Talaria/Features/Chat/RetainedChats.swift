@@ -20,6 +20,10 @@ final class RetainedChat {
     var gitAvailability: GitWorkspaceAvailabilityViewModel?
     /// The row at the top of the transcript where the reader last let go of it; nil while it follows the latest message.
     var readingRowID: String?
+    /// The selected search hit, kept while a layout replacement transfers the same visit.
+    var searchLandingTarget: (revision: Int, index: Int)?
+    /// A landing is kept through that handoff without recording a bookmark for a later visit.
+    var searchLandingRowID: String?
     /// The transcript scrolled to the "New since you left" rule this visit, so a rebuilt one leaves the reader be (TAL-1484).
     var didPlaceUnreadRule = false
     /// Registered by the mounted transcript; layout admission calls it before publishing a new wrap width.

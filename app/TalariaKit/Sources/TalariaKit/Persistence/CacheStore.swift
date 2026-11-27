@@ -566,6 +566,7 @@ private extension SessionSummary {
         canDuplicate = cachedSession.canDuplicate
         matchType = nil
         matchPreview = nil
+        matchMessageIdx = cachedSession.matchMessageIdx
         // A prompt waiting on the user is live state; a cached row shows none.
         attention = nil
     }

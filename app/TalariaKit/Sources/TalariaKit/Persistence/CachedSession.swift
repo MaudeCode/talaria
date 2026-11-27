@@ -68,6 +68,7 @@ public final class CachedSession {
     var canBranch: Bool?
     /// The server's `access_provisional` (TAL-2508). Optional so the unversioned store opens without a migration.
     var accessProvisional: Bool?
+    var matchMessageIdx: Int?
     /// Metadata-only rows never add a session to the server-owned list.
     var transcriptOnly: Bool?
     /// Last server-selected run presentation, retained for offline display.
@@ -141,6 +142,7 @@ public final class CachedSession {
         row.set(\.canDuplicate, session.canDuplicate)
         row.set(\.canBranch, session.canBranch)
         row.set(\.accessProvisional, session.accessProvisional)
+        row.set(\.matchMessageIdx, session.matchMessageIdx)
         row.renew(cachedAt: \.cachedAt, expiresAt: \.expiresAt, at: cachedAt)
     }
 }

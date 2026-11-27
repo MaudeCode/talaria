@@ -2522,6 +2522,19 @@ extension ChatViewModel {
         }
     }
 
+    public func searchLandingRenderID(at absoluteIndex: Int, modelContext: ModelContext) async -> String? {
+        guard absoluteIndex >= 0 else { return nil }
+        while absoluteIndex < messagesOffset, !Task.isCancelled {
+            let previousOffset = messagesOffset
+            guard await loadOlderMessages(modelContext: modelContext), messagesOffset < previousOffset else { return nil }
+        }
+        let index = absoluteIndex - messagesOffset
+        guard !Task.isCancelled, messages.indices.contains(index) else { return nil }
+        // A server message can be displayed as one segment of a grouped assistant turn.
+        let key = TranscriptMessage.serverRowKey(for: messages[index], absoluteIndex: absoluteIndex)
+        return displayedTranscriptMessages.first { $0.shows(rowKey: key) }?.renderID
+    }
+
     @discardableResult
     public func loadOlderMessages(modelContext: ModelContext? = nil, beforePrepend: @MainActor () -> Void = {}) async -> Bool {
         guard let sessionID else {
@@ -2558,7 +2571,7 @@ extension ChatViewModel {
                 messageLimit: Self.messagePageLimit,
                 messageBefore: messageBefore
             )
-            guard clearCountAtFetch == transcriptClearCount else { return false }
+            guard !Task.isCancelled, clearCountAtFetch == transcriptClearCount else { return false }
             guard let session = response.session else {
                 hasOlderMessages = false
                 return false
@@ -2604,6 +2617,7 @@ extension ChatViewModel {
 
             return didAddMessages
         } catch {
+            guard !Task.isCancelled, !APIError.isCancellation(error) else { return false }
             lastError = error
             errorMessage = error.localizedDescription
             return false

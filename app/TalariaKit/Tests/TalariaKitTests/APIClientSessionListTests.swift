@@ -300,11 +300,14 @@ final class APIClientSessionListTests: APIClientTestCase {
                   "workspace_name": "Talaria",
                   "match_type": "content",
                   "match_preview": "the [REDACTED] billing plan for caf\\u00e9",
+                  "match_message_idx": 0,
                   "unexpected": "ignored"
-                }
+                },
+                {"session_id": "null-index", "match_type": "content", "match_message_idx": null},
+                {"session_id": "old-server", "match_type": "content"}
               ],
               "query": "billing plan",
-              "count": 1
+              "count": 3
             }
             """, for: request)
         }
@@ -312,11 +315,16 @@ final class APIClientSessionListTests: APIClientTestCase {
         let response = try await client.searchSessions(query: "billing plan", content: true, depth: 5)
 
         XCTAssertEqual(response.query, "billing plan")
-        XCTAssertEqual(response.count, 1)
+        XCTAssertEqual(response.count, 3)
         XCTAssertEqual(response.sessions?.first?.sessionId, "content-123")
         XCTAssertEqual(response.sessions?.first?.matchType, "content")
         XCTAssertEqual(response.sessions?.first?.workspaceName, "Talaria")
         XCTAssertEqual(response.sessions?.first?.matchPreview, "the [REDACTED] billing plan for café")
+        let rows = try XCTUnwrap(response.sessions)
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertEqual(rows[0].matchMessageIdx, 0)
+        XCTAssertNil(rows[1].matchMessageIdx)
+        XCTAssertNil(rows[2].matchMessageIdx)
     }
 
     func testSessionSearchDecodesEmptyQueryResponseWithoutQueryOrCount() async throws {

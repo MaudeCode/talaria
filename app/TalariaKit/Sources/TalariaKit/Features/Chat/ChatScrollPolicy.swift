@@ -197,6 +197,13 @@ public enum ChatScrollPolicy {
             deliveredMovedAway && isScrollingAwayFromBottom(previous: delivered, current: current)
         }
 
+        /// An offset changed within the same viewport and content layout, in either direction.
+        public func changedOffsetInSameLayout(to current: ScrollGeometry) -> Bool {
+            guard let delivered, delivered.visibleHeight == current.visibleHeight,
+                  delivered.contentHeight == current.contentHeight else { return false }
+            return abs(delivered.offsetY - current.offsetY) > 0.5
+        }
+
         /// Records the geometry behind a report the transcript received.
         public mutating func deliver(_ geometry: ScrollGeometry) {
             guard geometry != delivered else { return }

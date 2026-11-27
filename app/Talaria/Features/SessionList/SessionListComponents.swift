@@ -66,7 +66,7 @@ extension EnvironmentValues {
 
 struct SessionListRowActions {
     let retryLoad: () -> Void
-    let open: (SessionSummary) -> Void
+    let open: (SessionSummary, String) -> Void
     let togglePinned: (SessionSummary) -> Void
     let archive: (SessionSummary) -> Void
     let delete: (SessionSummary) -> Void

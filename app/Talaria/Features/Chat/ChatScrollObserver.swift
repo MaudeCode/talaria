@@ -302,11 +302,16 @@ struct ChatScrollObserver: UIViewRepresentable {
             // While a disclosure pin holds the offset, a toggled row growing
             // below the reader increases the distance without anyone scrolling.
             let isPinned = scrollPositionController?.isHoldingPosition == true
+            let movedAwayFromBottom = !isUserInteracting && !isPinned && scrollAway.movesAway(to: geometry)
+            let didScrollWithoutGesture = !isUserInteracting && !isUserScrollSessionActive
+                && scrollPositionController?.isNavigating != true
+                && scrollPositionController?.isPreservingPosition != true
+                && (movedAwayFromBottom || scrollAway.changedOffsetInSameLayout(to: geometry))
             let metrics = ChatScrollMetrics(
                 distanceFromBottom: geometry.distanceFromBottom,
                 isUserInteracting: isUserInteracting,
-                movedAwayFromBottom: !isUserInteracting && !isPinned
-                    && scrollAway.movesAway(to: geometry),
+                movedAwayFromBottom: movedAwayFromBottom,
+                didScrollWithoutGesture: didScrollWithoutGesture,
                 distanceFromTop: max(0, scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
             )
             // The transcript only needs a callback when the derived metrics move,
@@ -315,8 +320,12 @@ struct ChatScrollObserver: UIViewRepresentable {
             // that stays bottom-pinned would make the next gesture-free scroll
             // look like it happened in a different viewport, and be ignored.
             guard metrics != lastMetrics else {
-                scrollAway.deliver(geometry)
-                pendingGeometry = hasScheduledMetricDelivery ? geometry : nil
+                if hasScheduledMetricDelivery {
+                    // Compare every queued report against the geometry the transcript has actually received.
+                    pendingGeometry = geometry
+                } else {
+                    scrollAway.deliver(geometry)
+                }
                 return
             }
 
