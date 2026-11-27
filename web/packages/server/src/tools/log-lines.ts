@@ -4,7 +4,7 @@ import type { LogEntry, LogLevel, LogLevelFilter } from '@maudecode/talaria-web-
 /** A leading timestamp as Hermes, Python logging and ISO 8601 write it, optionally in brackets: `2026-11-08 12:01:03,123`, `2026-11-08T12:01:03Z`, `12:01:03`. */
 const TIMESTAMP = /^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\]?(?:\s+|$)/
 /** A `[tag]` that opens a record of its own, as this server writes (`[webui]`, `[updates]`): it starts a line, not a continuation. */
-const RECORD_TAG = /^(\[[A-Za-z][\w.:-]*\])(?:\s+|$)/
+const RECORD_TAG = /^\[[A-Za-z][\w.:-]*\](?:\s+|$)/
 const TOKEN_LEVEL: Record<string, LogLevel> = { critical: 'error', fatal: 'error', error: 'error', warning: 'warning', warn: 'warning', info: 'info', debug: 'debug', trace: 'debug' }
 const LEVEL_WORDS = Object.keys(TOKEN_LEVEL).join('|')
 const LEVEL_HEADER = new RegExp(String.raw`^(?:\[(${LEVEL_WORDS})\]|(${LEVEL_WORDS}))(?=[:\s]|$):?\s*`, 'i')
@@ -25,14 +25,18 @@ export function classifyLine(line: string, previous: LogLevel | null): Omit<LogE
   const stamp = TIMESTAMP.exec(line)
   const time = stamp?.[1] ?? null
   const rest = stamp ? line.slice(stamp[0].length) : line
-  // A leading `[ERROR]` is itself a level, even if the message starts with another level word.
-  const leading = LEVEL_HEADER.exec(rest)
-  const tag = leading ? null : RECORD_TAG.exec(rest)
-  const afterTag = tag ? rest.slice(tag[0].length) : rest
-  const token = leading ?? (tag && LEVEL_HEADER.exec(afterTag))
+  // Forwarded logs can stack source tags. Check for severity before treating each bracketed word as a tag.
+  let content = rest
+  let token = LEVEL_HEADER.exec(content)
+  while (!token) {
+    const tag = RECORD_TAG.exec(content)
+    if (!tag) break
+    content = content.slice(tag[0].length)
+    token = LEVEL_HEADER.exec(content)
+  }
+  const tagEnd = rest.length - content.length
   if (token) {
-    const message = afterTag.slice(token[0].length)
-    const text = tag ? [tag[1], message].filter(Boolean).join(' ') : message
+    const text = [rest.slice(0, tagEnd).trimEnd(), content.slice(token[0].length)].filter(Boolean).join(' ')
     return { text, level: TOKEN_LEVEL[(token[1] ?? token[2] ?? '').toLowerCase()] ?? null, time }
   }
   const verbose = stamp ? VERBOSE_HEADER.exec(rest) : null
@@ -40,7 +44,7 @@ export function classifyLine(line: string, previous: LogLevel | null): Omit<LogE
     const text = `${verbose[1]}${verbose[3] ?? ''}: ${rest.slice(verbose[0].length)}`
     return { text, level: TOKEN_LEVEL[verbose[2]?.toLowerCase() ?? ''] ?? null, time }
   }
-  return { text: rest, level: stamp || tag ? null : previous, time }
+  return { text: rest, level: stamp || tagEnd > 0 ? null : previous, time }
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

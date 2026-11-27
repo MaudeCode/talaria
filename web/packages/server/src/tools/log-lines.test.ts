@@ -37,6 +37,7 @@ describe('classifyLine', () => {
     expect(classifyLine('[bootstrap] ERROR: port in use', null)).toEqual({ time: null, level: 'error', text: '[bootstrap] port in use' })
     expect(classifyLine('12:00:00 [sidecar] [DEBUG]:  INFO  remains in the message', null)).toEqual({ time: '12:00:00', level: 'debug', text: '[sidecar] INFO  remains in the message' })
     expect(classifyLine('[ERROR] WARNING comes from the message', null)).toEqual({ time: null, level: 'error', text: 'WARNING comes from the message' })
+    expect(classifyLine('[sidecar] [ERROR] [worker] WARNING comes from the message', null)).toEqual({ time: null, level: 'error', text: '[sidecar] [worker] WARNING comes from the message' })
   })
 
   it('reads the severity field of an Agent verbose header', () => {
@@ -84,6 +85,22 @@ describe('classifyLog', () => {
       { time: null, level: 'error', text: continuation },
     ])
     expect(errors).toMatchObject({ matched: 2, counts: { error: 2, warning: 0, lines: 3 } })
+  })
+
+  it('keeps forwarded sidecar severity headers in the warning filter and counts', () => {
+    const lines = [
+      '[sidecar] [sidecar] ERROR talaria_sidecar: startup failed',
+      '[sidecar] [sidecar] WARNING talaria_sidecar: retrying',
+      '[sidecar] [sidecar] No error occurred',
+    ]
+    expect(classifyLog(lines, { level: 'warning' })).toMatchObject({
+      entries: [
+        { level: 'error', text: '[sidecar] [sidecar] talaria_sidecar: startup failed' },
+        { level: 'warning', text: '[sidecar] [sidecar] talaria_sidecar: retrying' },
+      ],
+      counts: { error: 1, warning: 1, lines: 3 },
+      matched: 2,
+    })
   })
 
   it('keeps errors and their continuation lines for level error, warnings too for level warning', () => {
