@@ -20,6 +20,43 @@ final class ServerUpdateModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testAgentDashboardRefreshPreservesPreviouslyAcceptedRevision() async throws {
+        let refreshReply = try sharedContractFixture("agent-update-refresh")
+        let wire = try XCTUnwrap(JSONSerialization.jsonObject(with: refreshReply) as? [String: Any])
+        let revision = try XCTUnwrap(wire["candidate_revision"] as? String)
+        let refresh = try XCTUnwrap(wire["refresh_confirmation"] as? [String: Any])
+        let token = try XCTUnwrap(refresh["token"] as? String)
+        let revisionReply = #"{"ok":false,"confirmation_required":true,"candidate_revision":"\#(revision)","message":"Install this revision?"}"#
+        let client = makeClient { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/updates/apply")
+            let data = try XCTUnwrap(apiTestBodyData(from: request))
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: String])
+            XCTAssertEqual(body["target"], "agent")
+            if body["confirmed_agent_revision"] != revision {
+                return apiTestJSONResponse(revisionReply, for: request)
+            }
+            if body["agent_refresh_token"] != token {
+                return apiTestJSONResponse(String(decoding: refreshReply, as: UTF8.self), for: request)
+            }
+            return apiTestJSONResponse(#"{"ok":false,"message":"Reached the installation boundary"}"#, for: request)
+        }
+        let notifications = UpdateNotificationCenterViewModel(server: client.baseURL, client: client)
+        let model = ServerUpdateModel(client: client)
+        await model.apply(target: .agent, notifications: notifications)
+        guard case let .agentConfirmation(revisionOffer, _) = model.applyPhase, case .revision = revisionOffer else {
+            return XCTFail("Expected revision consent")
+        }
+        await model.apply(target: .agent, confirming: revisionOffer, notifications: notifications)
+        guard case let .agentConfirmation(refreshOffer, _) = model.applyPhase, case .refresh = refreshOffer else {
+            return XCTFail("Expected dashboard refresh consent")
+        }
+        await model.apply(target: .agent, confirming: refreshOffer, notifications: notifications)
+
+        XCTAssertEqual(model.applyPhase, .failed(.server(message: "Reached the installation boundary")))
+    }
+
+    @MainActor
     private func assertAgentConfirmationRetry(reply: Data, field: String, value: String) async throws {
         let writes = LockedTestValue<[[String: String]]>([])
         let client = makeClient { request in

@@ -933,14 +933,17 @@ final class UITestFixtureURLProtocol: URLProtocol {
         guard let target = body["target"] as? String, let tabID = body["tab_id"] as? String else {
             return json(["ok": false, "message": "Missing update target or tab"])
         }
-        if target == "agent", body["agent_refresh_token"] as? String != FixtureServerUpdate.token {
+        if target == "agent" {
             let confirmed = body["confirmed_agent_revision"] as? String == FixtureServerUpdate.revision
-            var response: [String: Any] = [
-                "ok": false, "confirmation_required": true, "candidate_revision": FixtureServerUpdate.revision,
-                "message": confirmed ? "Active dashboard work may be interrupted by a graceful refresh." : "This revision is outside the checked support window."
-            ]
-            if confirmed { response["refresh_confirmation"] = ["token": FixtureServerUpdate.token, "services": ["synthetic.dashboard"]] }
-            return json(response)
+            let refreshed = body["agent_refresh_token"] as? String == FixtureServerUpdate.token
+            if !confirmed || !refreshed {
+                var response: [String: Any] = [
+                    "ok": false, "confirmation_required": true, "candidate_revision": FixtureServerUpdate.revision,
+                    "message": confirmed ? "Active dashboard work may be interrupted by a graceful refresh." : "This revision is outside the checked support window."
+                ]
+                if confirmed { response["refresh_confirmation"] = ["token": FixtureServerUpdate.token, "services": ["synthetic.dashboard"]] }
+                return json(response)
+            }
         }
         let update = FixtureServerUpdate(target: target, tabID: tabID)
         serverUpdate.withLock { $0 = update }

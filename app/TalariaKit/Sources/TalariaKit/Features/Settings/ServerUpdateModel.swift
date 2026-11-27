@@ -39,7 +39,7 @@ public final class ServerUpdateModel {
     public private(set) var forcedCheckOutcome: UpdatesCheckResponse.ForcedCheckOutcome?
     @ObservationIgnored private var loadGeneration = 0
     @ObservationIgnored private var confirmationGeneration = 0
-    @ObservationIgnored private var offeredProfileSwitch: Int?
+    @ObservationIgnored private var offeredConfirmation: (profileSwitch: Int, confirmedAgentRevision: String?)?
     @ObservationIgnored private let client: APIClient
     public init(client: APIClient) {
         self.client = client
@@ -100,7 +100,7 @@ public final class ServerUpdateModel {
     /// Consent belongs to this visit to System settings, even if the blocked reply is still in flight.
     public func discardConfirmation() {
         confirmationGeneration += 1
-        offeredProfileSwitch = nil
+        offeredConfirmation = nil
         if case let .blocked(message, .some) = applyPhase {
             applyPhase = .blocked(message: message)
         } else if case .agentConfirmation = applyPhase {
@@ -119,24 +119,24 @@ public final class ServerUpdateModel {
         let profileSwitch = ActiveServerProfile.switchCount(for: client.baseURL)
         if let confirmation {
             guard target == .webui, case let .blocked(_, offered) = applyPhase, offered == confirmation else { return }
-            guard offeredProfileSwitch == profileSwitch else {
+            guard offeredConfirmation?.profileSwitch == profileSwitch else {
                 discardConfirmation()
                 return
             }
         }
         if let agentConfirmation {
             guard target == .agent, case let .agentConfirmation(offered, _) = applyPhase, offered == agentConfirmation else { return }
-            guard offeredProfileSwitch == profileSwitch else { discardConfirmation(); return }
+            guard offeredConfirmation?.profileSwitch == profileSwitch else { discardConfirmation(); return }
         }
         let confirmedRevision: String?
         let refreshToken: String?
         switch agentConfirmation {
         case let .revision(revision): (confirmedRevision, refreshToken) = (revision, nil)
-        case let .refresh(token, _, _): (confirmedRevision, refreshToken) = (nil, token)
+        case let .refresh(token, _, _): (confirmedRevision, refreshToken) = (offeredConfirmation?.confirmedAgentRevision, token)
         case nil: (confirmedRevision, refreshToken) = (nil, nil)
         }
         let generation = confirmationGeneration
-        offeredProfileSwitch = nil
+        offeredConfirmation = nil
         loadGeneration += 1
         isLoading = false
         lastTarget = target
@@ -182,7 +182,7 @@ public final class ServerUpdateModel {
             break
         case .needsAgentConfirmation:
             if generation == confirmationGeneration, let offered = response.agentConfirmation {
-                offeredProfileSwitch = profileSwitch
+                offeredConfirmation = (profileSwitch, confirmedRevision)
                 applyPhase = .agentConfirmation(offered, message: response.displayMessage(default: ""))
             } else {
                 applyPhase = .idle
@@ -192,7 +192,7 @@ public final class ServerUpdateModel {
             if generation == confirmationGeneration,
                profileSwitch == ActiveServerProfile.switchCount(for: client.baseURL),
                let offered = response.interruptConfirmation, offered.token != confirmation?.token {
-                offeredProfileSwitch = profileSwitch
+                offeredConfirmation = (profileSwitch, nil)
                 applyPhase = .blocked(message: message, confirmation: offered)
             } else {
                 applyPhase = .blocked(message: message)
