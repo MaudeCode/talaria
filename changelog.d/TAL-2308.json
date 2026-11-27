@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Restore an Agent-home backup in System settings and save the private recovery backup.",
+      "highlight": true,
+      "components": ["app"],
+      "announcement": {
+        "title": "Agent backup and restore",
+        "description": "Save a private Agent backup and restore it with clear recovery results.",
+        "icon": "security"
+      }
+    }
+  ]
+}

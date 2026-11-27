@@ -257,6 +257,7 @@
 		C108A0000000000000000005 /* ServersProvidersSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */; };
 		C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */; };
 		759A00000000000000000023 /* AgentBackupSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759A00000000000000000024 /* AgentBackupSettings.swift */; };
+		759A00000000000000000025 /* AgentRestoreSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759A00000000000000000026 /* AgentRestoreSettings.swift */; };
 		759A00000000000000000001 /* UpdateSummarySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759A00000000000000000002 /* UpdateSummarySheet.swift */; };
 		182A00000000000000000001 /* WhatsNewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 182A00000000000000000002 /* WhatsNewSheet.swift */; };
 		C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */; };
@@ -753,6 +754,7 @@
 		C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServersProvidersSettingsViews.swift; sourceTree = "<group>"; };
 		C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerUpdateSettingsSection.swift; sourceTree = "<group>"; };
 		759A00000000000000000024 /* AgentBackupSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBackupSettings.swift; sourceTree = "<group>"; };
+		759A00000000000000000026 /* AgentRestoreSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRestoreSettings.swift; sourceTree = "<group>"; };
 		759A00000000000000000002 /* UpdateSummarySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSummarySheet.swift; sourceTree = "<group>"; };
 		182A00000000000000000002 /* WhatsNewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsNewSheet.swift; sourceTree = "<group>"; };
 		C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIdentitySettingsEditor.swift; sourceTree = "<group>"; };
@@ -1453,6 +1455,7 @@
 				A21180000000000000000002 /* ServerSettingsSections.swift */,
 				C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */,
 				759A00000000000000000024 /* AgentBackupSettings.swift */,
+				759A00000000000000000026 /* AgentRestoreSettings.swift */,
 				759A00000000000000000002 /* UpdateSummarySheet.swift */,
 				182A00000000000000000002 /* WhatsNewSheet.swift */,
 				C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */,
@@ -1943,6 +1946,7 @@
 				A21180000000000000000001 /* ServerSettingsSections.swift in Sources */,
 				C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */,
 				759A00000000000000000023 /* AgentBackupSettings.swift in Sources */,
+				759A00000000000000000025 /* AgentRestoreSettings.swift in Sources */,
 				759A00000000000000000001 /* UpdateSummarySheet.swift in Sources */,
 				182A00000000000000000001 /* WhatsNewSheet.swift in Sources */,
 				C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */,

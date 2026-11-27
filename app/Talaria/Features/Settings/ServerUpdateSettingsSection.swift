@@ -1,5 +1,6 @@
 import SwiftUI
 import TalariaKit
+import UniformTypeIdentifiers
 
 struct ServerUpdateSettingsSection: View {
     @Environment(\.settingsScrollAnchor) private var scrollAnchor
@@ -26,11 +27,16 @@ struct ServerUpdateSettingsSection: View {
     @State private var summaryRequest: UpdateSummaryRequest?
     @State private var backup = AgentBackupSettings()
     @State private var backupConfirmation: AgentBackupStatus?
+    @State private var restore = AgentRestoreSettings()
+    @State private var restoreConfirmation: AgentRestoreStatus?
+    @State private var showsRestoreImporter = false
+    @State private var isReplacingRecoveryBackup = false
+    @State private var archiveDownload = AgentArchiveDownload()
 
     /// Owns the System page so its sheet, alerts and loads attach once, to the page. On a `Group` or `Section` of rows,
     /// SwiftUI copies them onto every row, and a copy that never presented dismisses Settings itself (TAL-2248).
     var body: some View {
-        @Bindable var backup = backup
+        @Bindable var archiveDownload = archiveDownload
         SettingsCategoryPage(category: .system) {
             ServerSettingsSections(page: .updates)
             SettingsSection(title: String(localized: "System")) {
@@ -43,7 +49,14 @@ struct ServerUpdateSettingsSection: View {
                     serverVersionContent
                 }
 
-                AgentBackupSettingsRow(backup: backup, server: server) { backupConfirmation = $0 }
+                AgentBackupSettingsRow(backup: backup, archiveDownload: archiveDownload, server: server) { backupConfirmation = $0 }
+                AgentRestoreSettingsRow(restore: restore, archiveDownload: archiveDownload, server: server) {
+                    if restore.status?.job?.recoveryUrl != nil {
+                        isReplacingRecoveryBackup = true
+                    } else {
+                        showsRestoreImporter = true
+                    }
+                } confirm: { restoreConfirmation = $0 }
                 serverUpdateCheckAction
                 serverUpdateNote
                 UpdateSummaryButton(info: updateTargets?.webui) {
@@ -69,14 +82,16 @@ struct ServerUpdateSettingsSection: View {
         .task { await loadServerSettings() }
         .task { await backup.load(on: server) }
         .task(id: backup.poll) { await backup.pollStatus(on: server) }
-        .onDisappear(perform: backup.stopDownloading)
+        .task { await restore.load(on: server) }
+        .task(id: restore.shouldPoll) { await restore.pollStatus(on: server) }
+        .onDisappear(perform: archiveDownload.stop)
         .sheet(item: $summaryRequest) { request in
             UpdateSummarySheet(
                 model: UpdateSummaryModel(target: request.target, client: APIClient(baseURL: server)),
                 name: request.name
             )
         }
-        .sheet(item: $backup.shareItem) { item in
+        .sheet(item: $archiveDownload.shareItem) { item in
             SessionExportShareSheet(fileURL: item.fileURL)
                 .presentationDetents([.medium, .large])
                 .ignoresSafeArea()
@@ -89,9 +104,31 @@ struct ServerUpdateSettingsSection: View {
         } message: { status in
             Text("Server: \(status.server)\nOwning profile: \(status.profile)\n\nThe backup includes every profile and can contain credentials. Keep the archive private.")
         }
+        .fileImporter(isPresented: $showsRestoreImporter, allowedContentTypes: [.zip]) { result in
+            switch result {
+            case let .success(archive): Task { await restore.stage(archive, on: server) }
+            case let .failure(error): restore.failedToOpenArchive(error)
+            }
+        }
+        .alert("Replace recovery backup?", isPresented: $isReplacingRecoveryBackup) {
+            Button("Cancel", role: .cancel) {}
+            Button("Choose Archive") { showsRestoreImporter = true }
+        } message: {
+            Text("Staging a new archive removes the current recovery backup from the server. Download it first if you need to keep it.")
+        }
+        .alert("Restore Agent home?", isPresented: isConfirmingRestore, presenting: restoreConfirmation) { status in
+            Button("Cancel", role: .cancel) {}
+            Button("Restore", role: .destructive) { Task { await restore.confirm(status, on: server) } }
+        } message: { status in
+            if let job = status.job {
+                Text("Restore \(job.fileName) to \(status.profile) on \(status.server)? Files and sessions can be overwritten.")
+            }
+        }
         .refreshesLive(showsStatus: false) {
             await loadServerSettings()
-            await backup.load(on: server)
+            async let backupStatus: Void = backup.load(on: server)
+            async let restoreStatus: Void = restore.load(on: server)
+            _ = await (backupStatus, restoreStatus)
         }
         .alert("Update server?", isPresented: $isConfirmingUpdate) {
             Button("Cancel", role: .cancel) {}
@@ -118,6 +155,10 @@ struct ServerUpdateSettingsSection: View {
 
     private var isConfirmingBackup: Binding<Bool> {
         Binding(get: { backupConfirmation != nil }, set: { if !$0 { backupConfirmation = nil } })
+    }
+
+    private var isConfirmingRestore: Binding<Bool> {
+        Binding(get: { restoreConfirmation != nil }, set: { if !$0 { restoreConfirmation = nil } })
     }
 }
 
