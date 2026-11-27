@@ -21,7 +21,6 @@ final class LocalizationCatalogTests: XCTestCase {
         "  %lld",
         "  −%lld",
         "%@ percent",
-        "%@ of %@",
         "%@",
         "%@ is no longer waiting for approval.",
         "%@: %@.",

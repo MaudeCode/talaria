@@ -1691,11 +1691,20 @@ export const SessionOutlineSchema = z.object({ session_id: z.string(), entries: 
 export type SessionOutline = z.infer<typeof SessionOutlineSchema>
 /**
  * TAL-2666: one find-in-chat match. `message_id` is the transcript row key (as `GET /api/session` keys its rows) of the
- * message whose shown text holds it; `range` is `[start, end)` in UTF-16 code units of that text.
+ * message whose shown text holds it; `range` is `[start, end)` in UTF-16 code units of the user message or rendered
+ * assistant text block. `block` identifies the latter, including repeated identical blocks in a single message.
  */
-export const SessionFindMatchSchema = z.object({ message_id: z.string(), range: z.object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative() }) })
+export const SessionFindMatchSchema = z.object({
+  message_id: z.string(),
+  range: z.object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative() }),
+  block: z.object({
+    digest: z.string().regex(/^[a-f0-9]{64}$/).describe('SHA-256 of UTF-8 rendered prose with line breaks folded to spaces, or of code text prefixed with "code" and a NUL byte.'),
+    occurrence: z.number().int().nonnegative().describe('Zero-based occurrence among blocks with this digest in this message.'),
+  }).optional(),
+})
 export type SessionFindMatch = z.infer<typeof SessionFindMatchSchema>
 export const SessionFindSchema = z.object({ session_id: z.string(), matches: z.array(SessionFindMatchSchema).max(1000).describe('In transcript order, then text order; non-overlapping; the first 1,000.'),
+  count: z.number().int().nonnegative().max(1000).describe('Number of matches in this response.'),
   truncated: z.boolean().describe('Whether more matches exist past the first 1,000, which `matches` leaves out.') })
 export type SessionFind = z.infer<typeof SessionFindSchema>
 export const SkillsUsageSchema = z.looseObject({ usage: z.record(z.string(), z.looseObject({ use_count: z.number().optional(), view_count: z.number().optional(), patch_count: z.number().optional() })), skill_names: z.array(z.string()).optional(), total_invocations: z.number().optional(), unique_skills_used: z.number().optional() })

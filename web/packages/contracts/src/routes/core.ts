@@ -156,6 +156,8 @@ export type WhatsNewState = z.infer<typeof WhatsNewStateSchema>
  */
 export const HealthSchema = z.object({
   release: ReleaseInfoSchema.optional(),
+  /** The installed API returns rendered text ranges for chat Find. Absent on older servers and before sign-in. */
+  session_find: z.literal(true).optional(),
   status: z.enum(['ok', 'degraded', 'starting']),
   phase: z.string().optional(),
   sessions: z.number().int().optional(),

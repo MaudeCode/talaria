@@ -5,10 +5,10 @@ import TalariaKit
 /// Extends ScrollViewProxy with destination mounting before an ID navigation.
 @MainActor
 struct ChatTranscriptScrollProxy {
-    let perform: (String, UnitPoint, Animation?) -> Void
+    let perform: (String, UnitPoint, Animation?, CGFloat?) -> Void
 
-    func scrollTo(id: String, anchor: UnitPoint, animation: Animation? = nil) {
-        perform(id, anchor, animation)
+    func scrollTo(id: String, anchor: UnitPoint, animation: Animation? = nil, rowOffset: CGFloat? = nil) {
+        perform(id, anchor, animation, rowOffset)
     }
 }
 
@@ -31,7 +31,8 @@ struct ChatTranscriptView: View {
     @State private var didPlaceUnreadRuleHere = false
     @State private var showsSearchLandingCue = true
     @State private var nativeScrollRevision = 0
-    @State private var scrollDestination: (id: String, anchor: UnitPoint, animation: Animation?)?
+    @State private var scrollDestination: (id: String, anchor: UnitPoint, animation: Animation?, rowOffset: CGFloat?)?
+    @State private var findBookmark: ChatScrollPositionController.ReadingBookmark?
     @State private var scrollDestinationNeedsMount = false
     @State private var readyScrollRevision: Int?
     @State private var ownRowCache = ChatTranscriptRowCache()
@@ -152,6 +153,8 @@ struct ChatTranscriptView: View {
     var onPlaceUnreadRule: (String) -> Void = { _ in }
     var isResolvingSearchLanding = false
     var searchLandingRowID: String? = nil
+    var find: ChatFindPresentation? = nil
+    var findRow: (String) -> String? = { _ in nil }
 
     private var rowCache: ChatTranscriptRowCache { retainedRowCache ?? ownRowCache }
 
@@ -246,11 +249,31 @@ struct ChatTranscriptView: View {
                         // own task ID adds a second change in the same frame and
                         // can prevent SwiftUI from starting the next command.
                         performScroll(to: destination.id, anchor: destination.anchor,
-                                      animation: destination.animation, using: proxy)
+                                      animation: destination.animation, using: proxy, rowOffset: destination.rowOffset)
+                    }
+                    .onChange(of: find != nil) { _, searching in
+                        if searching {
+                            didReaderScroll = true
+                            findBookmark = find?.bookmark ?? scrollPositionController.readingBookmark
+                        } else if let bookmark = findBookmark {
+                            findBookmark = nil
+                            scrollCommands.scrollTo(id: bookmark.id, anchor: .top, rowOffset: bookmark.offset)
+                        }
+                    }
+                    .task(id: find?.selection) {
+                        guard let match = find?.match else { return }
+                        var row = findRow(match.messageId)
+                        while row == nil, !Task.isCancelled {
+                            guard await loadOlderMessagesPreservingPosition(proxy: proxy) else { break }
+                            row = findRow(match.messageId)
+                        }
+                        guard !Task.isCancelled, let row else { return }
+                        scrollCommands.scrollTo(id: Self.containerID(for: row), anchor: .top)
                     }
                     // After this update's own follow scrolls, so placing the reader at the rule wins over them.
                     // The row count re-runs it after each older page, until the row arrives.
-                    .task(id: [unreadFromMessageID, unreadRuleRowID, String(displayedTranscriptMessages.count)]) {
+                    .task(id: find == nil ? [unreadFromMessageID, unreadRuleRowID, String(displayedTranscriptMessages.count)] : []) {
+                        guard find == nil else { return }
                         await placeUnreadRule(proxy: proxy)
                     }
                     .onChange(of: rowCache.layoutRevision) {
@@ -261,6 +284,7 @@ struct ChatTranscriptView: View {
                         performScroll(to: latest, anchor: .bottom, animation: nil, using: proxy)
                     }
                     .onAppear {
+                        retainedChat?.transcriptPositionController = scrollPositionController
                         scrollPositionController.onHoldAnchor = { id, anchor in
                             if scrollPositionController.isPreservingPosition {
                                 if !scrollPositionController.scrollToMeasuredRow(id, anchor: anchor, animated: false) {
@@ -283,7 +307,7 @@ struct ChatTranscriptView: View {
                                   rowCache.containsRow(destination.id) else { return }
                             // Keep admission paused across the mount-to-navigation handoff.
                             scrollDestinationNeedsMount = false
-                            beginNativeScroll(targetID: destination.id, anchor: destination.anchor)
+                            beginNativeScroll(targetID: destination.id, anchor: destination.anchor, rowOffset: destination.rowOffset)
                             readyScrollRevision = nativeScrollRevision
                         }
                         if restoredReadingRowID != nil, !didRestoreReadingRow {
@@ -294,6 +318,9 @@ struct ChatTranscriptView: View {
                         }
                     }
                     .onDisappear {
+                        if retainedChat?.transcriptPositionController === scrollPositionController {
+                            retainedChat?.transcriptPositionController = nil
+                        }
                         if retainedChat?.widthChangePreparation?.owner == ObjectIdentifier(scrollPositionController) {
                             retainedChat?.widthChangePreparation = nil
                         }
@@ -394,26 +421,26 @@ struct ChatTranscriptView: View {
     }
 
     private var scrollCommands: ChatTranscriptScrollProxy {
-        ChatTranscriptScrollProxy { id, anchor, animation in
+        ChatTranscriptScrollProxy { id, anchor, animation, rowOffset in
             initialScrollAnchor = nil
-            scrollDestination = (id, anchor, animation)
+            scrollDestination = (id, anchor, animation, rowOffset)
             let isRow = rowCache.mountedIDs.contains(id) || rowCache.containsRow(id)
             scrollDestinationNeedsMount = isRow && !scrollPositionController.hasMeasuredRow(id)
-            beginNativeScroll(targetID: isRow ? id : nil, anchor: anchor,
+            beginNativeScroll(targetID: isRow ? id : nil, anchor: anchor, rowOffset: rowOffset,
                               waitsForArrival: !scrollDestinationNeedsMount)
             if !scrollDestinationNeedsMount { readyScrollRevision = nativeScrollRevision }
         }
     }
 
-    private func beginNativeScroll(targetID: String? = nil, anchor: UnitPoint = .top,
+    private func beginNativeScroll(targetID: String? = nil, anchor: UnitPoint = .top, rowOffset: CGFloat? = nil,
                                    waitsForArrival: Bool = true) {
         nativeScrollRevision += 1
         scrollPositionController.prepareNativeScroll(revision: nativeScrollRevision, targetID: targetID,
-                                                     anchor: anchor, waitsForArrival: waitsForArrival)
+                                                     anchor: anchor, rowOffset: rowOffset, waitsForArrival: waitsForArrival)
     }
 
-    private func performScroll(to id: String, anchor: UnitPoint, animation: Animation?, using proxy: ScrollViewProxy) {
-        if !scrollPositionController.scrollToMeasuredRow(id, anchor: anchor, animated: animation != nil && !reduceMotion) {
+    private func performScroll(to id: String, anchor: UnitPoint, animation: Animation?, using proxy: ScrollViewProxy, rowOffset: CGFloat? = nil) {
+        if !scrollPositionController.scrollToMeasuredRow(id, anchor: anchor, animated: animation != nil && !reduceMotion, rowOffset: rowOffset) {
             // SwiftUI cannot offset a row's top into the viewport; its top is the closest it can place.
             withAnimation(animation) {
                 proxy.scrollTo(id, anchor: anchor == ChatScrollPositionController.unreadRuleAnchor ? .top : anchor)
@@ -728,7 +755,8 @@ struct ChatTranscriptView: View {
                 onEdit: onEdit,
                 onFork: onFork,
                 onCopy: onCopy,
-                onLoadEarlierSceneRows: { onLoadEarlierSceneRows(transcriptMessage) }
+                onLoadEarlierSceneRows: { onLoadEarlierSceneRows(transcriptMessage) },
+                findMatch: find?.match.flatMap { transcriptMessage.shows(rowKey: $0.messageId) ? $0 : nil }
             )
             .equatable()
 
@@ -789,7 +817,7 @@ struct ChatTranscriptView: View {
     /// fires no load, so the next near-top report after a refusal asks the sentinel to check again. A
     /// count, not a cleared flag: a loaded runner can drop the render that showed the flag cleared.
     private func canPrefetchHistory() -> Bool {
-        let canPrefetch = scrollPositionController.shouldPrefetchHistory()
+        let canPrefetch = find == nil && scrollPositionController.shouldPrefetchHistory()
         if !canPrefetch { historyCheckWasRefused = true }
         return canPrefetch
     }

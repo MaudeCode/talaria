@@ -110,6 +110,7 @@ struct ChatView: View {
     @Environment(\.acknowledgeViewedCompletionsForTesting) private var acknowledgeViewedCompletionsForTesting
     @Environment(\.chatViewedDwell) private var viewedDwell
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -180,6 +181,9 @@ struct ChatView: View {
     @State private var restoredReadingRowID: String?
     @State private var isResolvingSearchLanding: Bool
     @State private var searchLandingRowID: String?
+    @State private var find: ChatFindPresentation?
+    @State private var serverSupportsFind = false
+    @State private var findBarHeight: CGFloat = 0
 
     private let hasInitialDraft: Bool
     @State private var draftMessageStorage = ""
@@ -705,12 +709,15 @@ struct ChatView: View {
                 .frame(width: blockSize.width, height: blockSize.height, alignment: .leading)
 
                 ZStack(alignment: .bottom) {
-                    BottomComposerMaterialFade(composerHeight: composerHeight)
+                    BottomComposerMaterialFade(composerHeight: visibleComposerHeight)
                     composerAccessoryStack
-                        .onGeometryChange(for: CGFloat.self) { [composerHeight] in max(0, $0.size.height - composerHeight - 8) } action: {
+                        .onGeometryChange(for: CGFloat.self) { [visibleComposerHeight] in max(0, $0.size.height - visibleComposerHeight - 8) } action: {
                             composerAccessoriesHeight = $0
                         }
                     messageComposer(availableHeight: composerFrame.height)
+                        .opacity(hidesComposerWhileFinding ? 0 : 1)
+                        .allowsHitTesting(!hidesComposerWhileFinding)
+                        .accessibilityHidden(hidesComposerWhileFinding)
                 }
                 // An empty accessory stack never reports; its height is then known to be zero.
                 .onChange(of: composerAccessoryVisibleItemCount, initial: true) { _, count in
@@ -983,7 +990,6 @@ struct ChatView: View {
         #if DEBUG
         recordBodyEvaluation?(hasVerticalToolbar ? "toolbar.vertical" : "toolbar.horizontal")
         #endif
-        let sessionMenu = sessionContextMenu
         return chatLayout
             .onChange(of: showsEmptyTranscript,
                       initial: true) { _, isEmpty in splitFilesInspector?.reportEmptyTranscript(isEmpty) }
@@ -1005,7 +1011,7 @@ struct ChatView: View {
             // The transcript scrolls inside the chat, so the bar never sees content under it to draw its own (TAL-968).
             .adaptiveNavigationBarBackground()
             .onToolbarVerticalEdgeChange { observedVerticalToolbar = $0 }
-            .toolbarTitleMenu { if !isSplitPane { sessionMenu } }
+            .toolbarTitleMenu { if !isSplitPane { sessionMenuContent } }
             .toolbar {
                 // The trailing chat of two owns the system bar; the leading one draws its copy of it.
                 let actions = secondaryChatIsBeside ? [] : chatActionButtons
@@ -1074,11 +1080,43 @@ struct ChatView: View {
         } else { nil }
     }
 
+    private var canFindInChat: Bool {
+        serverSupportsFind && transcriptMediaSessionID != nil && !viewModel.isViewingCachedData
+    }
+
+    /// Leave room for the matched text above the keyboard at the largest sizes.
+    /// The editor stays mounted, with its draft and selection.
+    private var hidesComposerWhileFinding: Bool {
+        dynamicTypeSize.isAccessibilitySize && find != nil
+    }
+
+    private var visibleComposerHeight: CGFloat {
+        hidesComposerWhileFinding ? 0 : composerHeight
+    }
+
+    private func openFindInChat() {
+        guard canFindInChat, find == nil else { return }
+        let bookmark = retained?.transcriptPositionController?.readingBookmark
+        // The title action runs before the Find field changes the keyboard and viewport.
+        if bookmark?.atBottom == false { followLatch.isFollowing = false }
+        find = ChatFindPresentation(bookmark: bookmark)
+    }
+
+    @ViewBuilder
+    private var sessionMenuContent: some View {
+        if canFindInChat {
+            Button(action: openFindInChat) {
+                Label("Find in Chat", systemImage: "magnifyingglass")
+            }
+        }
+        sessionContextMenu
+    }
+
     @ViewBuilder
     private var paneTitle: some View {
         let title = ChatToolbarTitleLabel(title: displayTitle, subtitle: headerSubtitle)
-        if let menu = sessionContextMenu {
-            Menu { menu } label: { title }
+        if sessionContextMenu != nil || canFindInChat {
+            Menu { sessionMenuContent } label: { title }
                 .accessibilityIdentifier("chat-session-actions-title")
         } else { title }
     }
@@ -1089,9 +1127,9 @@ struct ChatView: View {
         func add<Button: View>(_ action: ToolbarAction, badgeCount: Int? = nil, accessibilityIdentifier: String? = nil, @ViewBuilder _ content: () -> Button) {
             buttons.append(ChatActionButton(action: action, content: AnyView(content()), badgeCount: badgeCount, accessibilityIdentifier: accessibilityIdentifier))
         }
-        if hasVerticalToolbar, let menu = sessionContextMenu {
+        if (hasVerticalToolbar && sessionContextMenu != nil) || (canFindInChat && (hasVerticalToolbar || isSplitPane)) {
             add(.chatMore, accessibilityIdentifier: "chat-session-actions-more") {
-                Menu { menu } label: { Label("More", systemImage: "ellipsis.circle") }
+                Menu { sessionMenuContent } label: { Label("More", systemImage: "ellipsis.circle") }
             }
         }
         if viewModel.hasSession, viewModel.hasActivatedGoalCommand {
@@ -1492,13 +1530,29 @@ struct ChatView: View {
         .accessibilityIdentifier("chat-pane-actions")
     }
 
+    private var focusedFindAction: (() -> Void)? {
+        guard canFindInChat, makePrimary == nil else { return nil }
+        return { openFindInChat() }
+    }
+
+    private var chatWithFindCommands: some View {
+        chatWithSheets
+            .focusedSceneValue(\.talariaFindInChat, focusedFindAction)
+            .task(id: server) {
+                let supportsFind = (try? await viewModel.client.health())?.sessionFind == true
+                guard !Task.isCancelled else { return }
+                serverSupportsFind = supportsFind
+            }
+            .onChange(of: transcriptMediaSessionID) { find = nil }
+    }
+
     var body: some View {
 #if DEBUG
         let _ = recordBodyEvaluation?("chat")
         // Keep invalidation reasons in XCTest's console when this test-only probe is installed.
         let _ = recordBodyEvaluation == nil ? () : Self._printChanges()
 #endif
-        chatWithSheets
+        chatWithFindCommands
             .alert(item: $gitAlert, content: gitAlertPresentation)
             .sheet(isPresented: $showsGoalSheet) {
                 GoalSubmissionSheet(
@@ -2016,6 +2070,10 @@ struct ChatView: View {
     private var composerAccessoryStack: some View {
         if composerAccessoryVisibleItemCount > 0 {
             VStack(spacing: composerAccessoryVerticalSpacing) {
+                if let find, let sessionID = transcriptMediaSessionID {
+                    ChatFindBar(find: find, client: viewModel.client, sessionID: sessionID) { self.find = nil }
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { findBarHeight = $0 }
+                }
                 // With no run status to sit beside, the scroll chip tops the stack on its own.
                 if showsScrollToBottomButton, activeRunStatusPresentation == nil {
                     scrollToBottomChip(isVisible: true)
@@ -2041,7 +2099,7 @@ struct ChatView: View {
             }
             .padding(.horizontal)
             .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.chat)
-            .padding(.bottom, composerHeight + 8)
+            .padding(.bottom, visibleComposerHeight + 8)
             .zIndex(8)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsScrollToBottomButton)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: composerAccessoryVisibleItemCount)
@@ -2469,7 +2527,11 @@ struct ChatView: View {
                 unreadFromMessageID: viewModel.unreadFromMessageID,
                 onPlaceUnreadRule: chat.placeReaderAtUnreadRule,
                 isResolvingSearchLanding: chat.isResolvingSearchLanding,
-                searchLandingRowID: chat.searchLandingRowID
+                searchLandingRowID: chat.searchLandingRowID,
+                find: chat.find,
+                findRow: { key in
+                    chat.displayedTranscriptMessages.first { $0.shows(rowKey: key) }?.renderID
+                }
             )
             .environment(\.chatShowsReasoning, viewModel.showsReasoning)
             .toolResultActions(of: chat)
@@ -2639,7 +2701,7 @@ struct ChatView: View {
     }
 
     private var shouldFollowLatestMessage: Bool {
-        followLatch.isFollowing
+        find == nil && followLatch.isFollowing
     }
 
     /// Automatic follows run only while the latch is on and no disclosure
@@ -2653,7 +2715,7 @@ struct ChatView: View {
     }
 
     private var showsScrollToBottomButton: Bool {
-        !isScrolledNearBottom && (viewModel.activeStreamID == nil || !shouldFollowLatestMessage)
+        find == nil && !isScrolledNearBottom && (viewModel.activeStreamID == nil || !shouldFollowLatestMessage)
     }
 
     /// Leaves the draft to the composer: reading it here would re-run the whole chat on every keystroke (TAL-852).
@@ -2672,11 +2734,11 @@ struct ChatView: View {
 
     private var transcriptBottomInsetHeight: CGFloat {
         if tabletopIsActive { return 8 }
-        let inset = max(96, composerHeight + 44 + composerAccessorySpacerHeight())
+        let inset = max(96, visibleComposerHeight + 44 + composerAccessorySpacerHeight())
         guard composerAvailableHeight > 0 else { return inset }
         // A short pane, as on an iPhone in landscape with the keyboard up, keeps the transcript's minimum in view
         // above the composer instead of scrolling it all out of the viewport (TAL-680).
-        return min(inset, max(composerHeight, composerAvailableHeight - ComposerCardSizing.minimumTranscriptHeight))
+        return min(inset, max(visibleComposerHeight, composerAvailableHeight - ComposerCardSizing.minimumTranscriptHeight))
     }
 
     private var isComposerBusyOrUnavailable: Bool {
@@ -2729,6 +2791,10 @@ struct ChatView: View {
             height += compactStatusHeight
             itemCount += 1
         }
+        if find != nil {
+            height += findBarHeight
+            itemCount += 1
+        }
 
         if itemCount > 1 {
             height += CGFloat(itemCount - 1) * composerAccessoryVerticalSpacing
@@ -2737,7 +2803,7 @@ struct ChatView: View {
     }
 
     private var composerAccessoryVisibleItemCount: Int {
-        var count = 0
+        var count = find == nil ? 0 : 1
         if viewModel.currentNotice != nil {
             count += 1
         }
@@ -3036,8 +3102,8 @@ struct ChatView: View {
     }
 
     private func loadOlderMessages(beforePrepend: @MainActor () -> Void) async -> Bool {
-        followLatch.isFollowing = false
-        if !isReadingOlderTranscript {
+        if find == nil { followLatch.isFollowing = false }
+        if find == nil, !isReadingOlderTranscript {
             withAnimation(ChatMotion.quickState(reduceMotion: reduceMotion)) {
                 isReadingOlderTranscript = true
             }
@@ -4383,6 +4449,7 @@ struct ChatView: View {
     }
 
     private func handleFollowEvent(_ event: ChatScrollPolicy.FollowEvent) {
+        guard find == nil else { return }
         viewModel.handleTranscriptScroll(event)
         if event == .userScrollBegin || event == .reset { retained?.searchLandingRowID = nil }
         // A landing may be close enough to the latest message for a layout tick to report the bottom.
@@ -4416,7 +4483,7 @@ struct ChatView: View {
 
     /// Keeps where the reader is, for the view the navigation may rebuild around it (TAL-1477).
     private func recordReadingRow(_ rowID: () -> String?) {
-        guard let retained, retained.searchLandingRowID == nil else { return }
+        guard find == nil, let retained, retained.searchLandingRowID == nil else { return }
         retained.readingRowID = followLatch.isFollowing ? nil : rowID()
     }
 
@@ -4455,7 +4522,7 @@ struct ChatView: View {
         )
         let wasNearBottom = isScrolledNearBottom
         isScrolledNearBottom = isNearBottom
-        if metrics.permitsFollowChanges {
+        if find == nil && metrics.permitsFollowChanges {
             let isAtBottom = ChatScrollPolicy.isAtBottom(distanceFromBottom: metrics.distanceFromBottom)
             let leftSearchAnchor = metrics.didScrollWithoutGesture && retained?.searchLandingRowID != nil
             if leftSearchAnchor { retained?.searchLandingRowID = nil }

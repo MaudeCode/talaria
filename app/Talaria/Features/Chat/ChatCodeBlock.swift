@@ -3,6 +3,7 @@ import MarkdownUI
 import OSLog
 import Splash
 import SwiftUI
+import UIKit
 import TalariaKit
 
 extension EnvironmentValues {
@@ -22,11 +23,14 @@ struct ChatCodeBlock: View {
     @Environment(\.chatAllowsCodePreview) private var allowsCodePreview
     @Environment(\.transcriptMediaParagraphImages) private var projectedMedia
     @Environment(\.chatOpenCodeBlockPreview) private var openPreview
+    @Environment(\.chatFindMatch) private var findMatch
+    @Environment(\.chatFindBlockID) private var selectedFindBlockID
     @AppStorage(ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey) private var wrapsCodeBlockLines = false
     @State private var highlightedCode: NSAttributedString?
     @State private var scrollViewportWidth: CGFloat = 0
     @State private var columnWidth: CGFloat = 0
     @State private var naturalCodeWidth: CGFloat = 0
+    @State private var findBlockID = UUID()
 
     private static let codeHorizontalPadding: CGFloat = 16
 
@@ -126,7 +130,14 @@ struct ChatCodeBlock: View {
     @ViewBuilder
     private var codeText: some View {
         // A settled block highlighted before draws from the cache at once instead of flashing plain text (TAL-854).
-        if let highlightedCode = MarkdownCodeHighlighter.cachedHighlightedCode(for: highlightRequest) ?? highlightedCode {
+        let highlightedCode = MarkdownCodeHighlighter.cachedHighlightedCode(for: highlightRequest) ?? highlightedCode
+        if let findMatch, findBlockID == selectedFindBlockID,
+           let range = findMatch.range.nsRange(in: content) {
+            let original = highlightedCode.flatMap { $0.string == content ? $0 : nil } ?? NSAttributedString(string: content)
+            let styled = NSMutableAttributedString(attributedString: original)
+            let _ = styled.addAttribute(.backgroundColor, value: ChatFindBlocks.highlight, range: range)
+            HighlightedCodeBlockText(content: styled, wraps: wrapsCodeBlockLines)
+        } else if let highlightedCode {
             HighlightedCodeBlockText(content: highlightedCode, wraps: wrapsCodeBlockLines)
         } else {
             PlainCodeBlockText(
@@ -144,6 +155,7 @@ struct ChatCodeBlock: View {
     /// line's tint reaches the block's edge even when every line is short.
     private func styledCodeText(fixedHorizontal: Bool) -> some View {
         codeText
+            .preference(key: ChatFindBlocks.self, value: ChatFindBlocks.includes(findMatch?.block, text: content, isCode: true) ? [findBlockID] : [])
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { naturalCodeWidth = $0 }
             .frame(minWidth: fixedHorizontal ? max(scrollViewportWidth - 2 * Self.codeHorizontalPadding, 0) : nil, alignment: .leading)
             .fixedSize(horizontal: fixedHorizontal, vertical: true)

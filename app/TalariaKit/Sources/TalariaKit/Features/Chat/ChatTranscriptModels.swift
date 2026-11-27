@@ -31,7 +31,7 @@ public struct AssistantActivityRow: Identifiable, Equatable, Sendable {
     public let id: String
     public var content: Content
     var createdAt: Double? = nil
-    var isFinalAnswer = false
+    public internal(set) var isFinalAnswer = false
     /// A prose row's text as the server rewrote it for display, with its media (TAL-186).
     public var display: TranscriptDisplayBody? = nil
     /// TAL-2332: a reasoning or tool row's server activity group, and that group's latest record; nil from an older server.
@@ -199,6 +199,7 @@ public struct CompletedAssistantTurn: Equatable, Sendable {
     private let finalSegmentIndex: Int?
 
     public var hasSteering: Bool { phases.contains { $0.steeringAfter != nil } }
+    public var finalAnswerSegmentID: String? { finalSegmentIndex.map { segments[$0].id } }
 
     public var workSegments: [Segment] {
         guard let finalSegmentIndex else { return segments }

@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Find text within an App conversation and step through the highlighted matches.",
+      "highlight": true,
+      "components": ["app", "web"],
+      "announcement": {
+        "icon": "search",
+        "title": "Find in chat",
+        "description": "Search inside a conversation, step through matches, and open search results at the message."
+      }
+    }
+  ]
+}

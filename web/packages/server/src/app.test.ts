@@ -462,6 +462,7 @@ describe('password auth', () => {
     const cookie = `${s.deps.auth.cookieName()}=${s.deps.auth.createSession({ authType: 'password' })}`
     const signedIn = HealthSchema.parse(await (await s.get('/health', { headers: { cookie } })).json())
     expect(signedIn.release?.version).toBe('development')
+    expect(signedIn.session_find).toBe(true)
     expect(signedIn.accept_loop?.requests_total).toBeGreaterThan(0)
     expect(await json(await s.get('/api/auth/status', { headers: { cookie } }))).toMatchObject({ logged_in: true, passkeys_count: 0 })
     expect(await json(await s.get('/api/bootstrap', { headers: { cookie } }))).toMatchObject({ webui_version: 'web-v0.0.0-test', auth: { passkeys_count: 0 } })

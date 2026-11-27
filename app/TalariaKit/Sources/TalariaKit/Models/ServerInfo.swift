@@ -2,9 +2,18 @@ import Foundation
 
 public struct HealthResponse: Decodable, Sendable {
     public let status: String?
+    public let sessionFind: Bool?
     let sessions: Int?
     let activeStreams: Int?
     let uptimeSeconds: Double?
+
+    init(status: String?, sessions: Int?, activeStreams: Int?, uptimeSeconds: Double?, sessionFind: Bool? = nil) {
+        self.status = status
+        self.sessions = sessions
+        self.activeStreams = activeStreams
+        self.uptimeSeconds = uptimeSeconds
+        self.sessionFind = sessionFind
+    }
 }
 
 public struct AuthStatusResponse: Decodable, Sendable {

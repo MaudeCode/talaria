@@ -89,6 +89,7 @@ struct UITestFixtureEnvironment {
     /// Opens the fixture session through the deep-link route at launch, as `simctl openurl` would without the system's
     /// confirmation prompt (TAL-1412's `scripts/benchmark-display-phases`).
     nonisolated static let openSessionArgument = "--ui-test-open-session"
+    nonisolated static let sessionFindArgument = "--ui-test-session-find"
     /// TAL-70: a password server that answers every API read with 401 until `/api/auth/login` gets `fixturePassword`.
     nonisolated static let authRequiredArgument = "--ui-test-auth-required"
     nonisolated static let fixturePassword = "fixture-password"
@@ -878,6 +879,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
         case "/v1/publisher-keys" where request.httpMethod == "DELETE":
             relayKeysRevoked.withLock { $0 = true }
             return json(["ok": true])
+        case "/health" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.sessionFindArgument):
+            return json(["status": "ok", "session_find": true])
         case "/health":
             return json(["status": "ok"])
         case "/api/auth/status" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.personIsolationArgument):
@@ -963,6 +966,18 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return json(["results": ids.map { ["session_id": $0, "ok": true] }])
         case "/api/session/execution-modes" where servesExecutionModes:
             return executionModesResponse()
+        case "/api/session/find" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.sessionFindArgument):
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            guard items.first(where: { $0.name == "session_id" })?.value == sessionID,
+                  let fixture = sessionFindFixture, var response = fixture["response"] as? [String: Any] else {
+                return json(["error": "Unknown fixture session"])
+            }
+            response["session_id"] = sessionID
+            if items.first(where: { $0.name == "q" })?.value != fixture["query"] as? String {
+                response["matches"] = []
+                response["count"] = 0
+            }
+            return json(response)
         case "/api/session" where sessionDetail.withLock({ $0 }) != nil:
             return sessionDetail.withLock { $0 } ?? Data()
         case "/api/session/anchor-scene" where anchorScenePage.withLock({ $0 }) != nil:
@@ -1606,6 +1621,32 @@ final class UITestFixtureURLProtocol: URLProtocol {
             ]
         }
         messages.append(contentsOf: linkInteractionMessages)
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.sessionFindArgument),
+           let source = sessionFindFixture?["session"] as? [String: Any],
+           let sample = source["messages"] as? [[String: Any]] {
+            let rendered = sample.map { original -> [String: Any] in
+                guard original["message_id"] as? String == "a2", let answer = original["content"] as? String else { return original }
+                var row = original
+                row["_anchor_activity_scene"] = [
+                    "version": "activity_scene_v1", "terminal_state": "completed",
+                    "final_answer": answer, "expanded_by_default": false,
+                    "activity_rows": [["row_id": "fixture:answer", "order_index": 0, "role": "assistant",
+                                       "kind": "prose", "text": answer]],
+                ]
+                return row
+            }
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            // A reader starts at the recent window. The match page also needs an answer when Find seeks past it.
+            messages.insert(contentsOf: rendered, at: 0)
+            let end = min(messages.count, Int(items.first(where: { $0.name == "msg_before" })?.value ?? "") ?? messages.count)
+            let start = max(0, end - 50)
+            var detail = session(id: sessionID, title: sessionTitle)
+            detail["messages"] = Array(messages[start..<end])
+            detail["_messages_offset"] = start
+            detail["_messages_truncated"] = start > 0
+            detail["message_count"] = messages.count
+            return json(["session": detail])
+        }
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages
         if UITestFixtureEnvironment.hasSessionNotices {
@@ -1618,6 +1659,12 @@ final class UITestFixtureURLProtocol: URLProtocol {
             ]
         }
         return json(["session": detail])
+    }
+
+    private static var sessionFindFixture: [String: Any]? {
+        guard let url = Bundle.main.url(forResource: "session-find", withExtension: "json"),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
     /// The fixture chat, branched from the list's "Fixture Session 01", or that parent, which links nowhere (TAL-454).

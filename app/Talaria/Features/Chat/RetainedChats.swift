@@ -28,6 +28,7 @@ final class RetainedChat {
     var didPlaceUnreadRule = false
     /// Registered by the mounted transcript; layout admission calls it before publishing a new wrap width.
     var widthChangePreparation: (owner: ObjectIdentifier, action: () -> Void)?
+    weak var transcriptPositionController: ChatScrollPositionController?
     /// Whether a view finished the chat's first load. One taken over before then loads it again, since its own was
     /// cancelled with the view it ran in.
     var hasLoaded = false

@@ -1,5 +1,8 @@
 /** TAL-2666: find in chat, over the text a chat's public (projected, redacted) messages show on their own rows. */
 import type { SessionFindMatch } from '@maudecode/talaria-web-contracts'
+import { fromMarkdown } from 'mdast-util-from-markdown'
+import type { Nodes } from 'mdast'
+import { createHash } from 'node:crypto'
 import { messageText } from './merge.js'
 import { transcriptRowKey } from './transcript-row.js'
 
@@ -17,6 +20,29 @@ function shownText(m: Row): string {
   if (m.role !== 'assistant' || !isDict(scene) || scene.terminal_state === 'running') return ''
   const shown = scene.final_answer_display ?? scene.final_answer
   return typeof shown === 'string' ? shown : ''
+}
+
+/** Inline markup contributes its drawn characters, including the label of a link. */
+function inlineText(node: Nodes): string {
+  switch (node.type) {
+    case 'text':
+    case 'inlineCode':
+      return node.value
+    case 'break':
+      return ' '
+    default:
+      return 'children' in node ? node.children.map(inlineText).join('') : ''
+  }
+}
+
+function* markdownTextBlocks(node: Nodes): Iterable<{ text: string; code: boolean }> {
+  if (node.type === 'paragraph' || node.type === 'heading') {
+    yield { text: inlineText(node).replaceAll('\n', ' '), code: false }
+  } else if (node.type === 'code' && !['math', 'latex', 'tex'].includes(node.lang?.toLowerCase() ?? '')) {
+    yield { text: node.value, code: true }
+  } else if ('children' in node) {
+    for (const child of node.children) yield* markdownTextBlocks(child)
+  }
 }
 
 /**
@@ -72,13 +98,37 @@ export function findRanges(text: string, query: string, limit = Number.POSITIVE_
 export const FIND_MATCH_LIMIT = 1000
 
 /** The first `FIND_MATCH_LIMIT` matches among public detail `rows` starting at absolute `offset`, in transcript order. */
-export function sessionFindMatches(rows: readonly unknown[], offset: number, query: string): { matches: SessionFindMatch[]; truncated: boolean } {
+export function sessionFindMatches(rows: readonly unknown[], offset: number, query: string): {
+  matches: SessionFindMatch[]
+  count: number
+  truncated: boolean
+} {
   const matches: SessionFindMatch[] = []
   for (const [index, m] of rows.entries()) {
     if (matches.length > FIND_MATCH_LIMIT) break
     if (!isDict(m)) continue
-    // One past the limit, to know whether more exist.
-    for (const range of findRanges(shownText(m), query, FIND_MATCH_LIMIT + 1 - matches.length)) matches.push({ message_id: transcriptRowKey(m, offset + index), range })
+    const source = shownText(m)
+    if (!source) continue
+    const markdown = m.role === 'assistant'
+    const blocks = markdown ? markdownTextBlocks(fromMarkdown(source)) : [{ text: source, code: false }]
+    const occurrences = new Map<string, number>()
+    const message_id = transcriptRowKey(m, offset + index)
+    for (const { text, code } of blocks) {
+      // One past the limit, to know whether more exist.
+      const ranges = findRanges(text, query, FIND_MATCH_LIMIT + 1 - matches.length)
+      let block: SessionFindMatch['block']
+      if (markdown && ranges.length) {
+        const digest = createHash('sha256').update(code ? `code\0${text}` : text).digest('hex')
+        const occurrence = occurrences.get(digest) ?? 0
+        occurrences.set(digest, occurrence + 1)
+        block = { digest, occurrence }
+      }
+      for (const range of ranges) {
+        matches.push({ message_id, range, ...(block ? { block } : {}) })
+      }
+      if (matches.length > FIND_MATCH_LIMIT) break
+    }
   }
-  return { matches: matches.slice(0, FIND_MATCH_LIMIT), truncated: matches.length > FIND_MATCH_LIMIT }
+  const visible = matches.slice(0, FIND_MATCH_LIMIT)
+  return { matches: visible, count: visible.length, truncated: matches.length > FIND_MATCH_LIMIT }
 }

@@ -173,6 +173,7 @@ function fullHealthPayload(ctx: RequestContext, deep: boolean): { status: number
   const now = deps.auth.now()
   const body: Health = {
     release: deps.release,
+    session_find: true,
     status: 'ok',
     sessions: h.sessions,
     active_streams: h.activeStreams,

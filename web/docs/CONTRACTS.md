@@ -172,6 +172,14 @@ Evidence needed before claiming done:
 
 ## Contract changes
 
+Chat Find uses `GET /api/session/find`. Authenticated `GET /health` advertises
+`session_find: true` when the response names rendered assistant text blocks.
+Matches carry the transcript row key and a half-open UTF-16 range. A user
+message's range starts at the beginning of its body. An assistant range is
+relative to the text block identified by its digest and occurrence. Hidden
+Markdown link destinations and folded work do not produce matches. Older
+servers omit the capability, so the App leaves the Find action hidden.
+
 Scheduled task delivery choices include manageable Group Chats from the requesting
 profile's existing room catalog, using the caller's native grant. Choices require
 the Agent's room-delivery parser. Named-profile targets carry `@profile`.

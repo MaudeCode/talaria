@@ -14,6 +14,7 @@ public enum Endpoint: Sendable {
         visibility: AutomatedSessionVisibility? = nil
     )
     case sessionsSearch(query: String, content: Bool, depth: Int, projectID: String? = nil, visibility: AutomatedSessionVisibility? = nil)
+    case sessionFind(id: String, query: String)
     case session(id: String, includeMessages: Bool, messageLimit: Int?, messageBefore: Int?, expandRenderable: Bool = false)
     case sessionStatus(id: String)
     case anchorScene(sessionID: String, messageRef: String?, messageIndex: Int, before: Int, limit: Int)
@@ -236,6 +237,8 @@ public enum Endpoint: Sendable {
             return "/api/sessions"
         case .sessionsSearch:
             return "/api/sessions/search"
+        case .sessionFind:
+            return "/api/session/find"
         case .session:
             return "/api/session"
         case .sessionStatus:
@@ -661,6 +664,8 @@ public enum Endpoint: Sendable {
                 items.append(URLQueryItem(name: "show_webhook_sessions", value: visibility.showsWebhook ? "1" : "0"))
             }
             return items
+        case let .sessionFind(id, query):
+            return [URLQueryItem(name: "session_id", value: id), URLQueryItem(name: "q", value: query)]
         case let .session(id, includeMessages, messageLimit, messageBefore, expandRenderable):
             var items = [
                 URLQueryItem(name: "session_id", value: id),

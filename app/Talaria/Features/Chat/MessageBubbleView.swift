@@ -2,6 +2,8 @@ import SwiftUI
 import TalariaKit
 
 struct MessageBubbleView: View {
+    @Environment(\.chatFindMatch) private var findMatch
+    @State private var findBlocks: [UUID] = []
     @Environment(\.pendingSteerControls) private var pendingSteerControls
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -66,6 +68,8 @@ struct MessageBubbleView: View {
             userMessageRow
         } else {
             assistantMessageRow
+                .environment(\.chatFindBlockID, selectedFindBlock)
+                .onPreferenceChange(ChatFindBlocks.self) { findBlocks = $0 }
         }
     }
 
@@ -350,7 +354,7 @@ struct MessageBubbleView: View {
     }
 
     private var userBubble: some View {
-        Text(verbatim: userBubbleText)
+        userBubbleLabel
             .font(.body)
             .lineLimit(isFoldedPrompt ? Self.foldedPromptLineLimit : nil)
             .modifier(FoldedPromptFadeModifier(isActive: isFoldedPrompt))
@@ -364,6 +368,24 @@ struct MessageBubbleView: View {
                     .stroke(userBubbleBorder, style: isPendingSteer ? StrokeStyle(lineWidth: 1, dash: [4, 3]) : StrokeStyle(lineWidth: 0.5))
             )
             .modifier(PendingSteerMenuModifier(isEnabled: message.messageId.flatMap { pendingSteerControls.actions[$0] }?.any == true) { pendingSteerMenu })
+    }
+
+    private var userBubbleLabel: Text {
+        let text = userBubbleText
+        guard let match = findMatch, match.block == nil,
+              let range = match.range.nsRange(in: text), let indices = Range(range, in: text) else {
+            return Text(verbatim: text)
+        }
+        var attributed = AttributedString(text)
+        if let range = Range(indices, in: attributed) {
+            attributed[range].backgroundColor = Color(uiColor: ChatFindBlocks.highlight)
+        }
+        return Text(attributed)
+    }
+
+    private var selectedFindBlock: UUID? {
+        guard let index = findMatch?.block?.occurrence, findBlocks.indices.contains(index) else { return nil }
+        return findBlocks[index]
     }
 
     /// A steer the Agent has not taken yet is drawn dashed (TAL-426), like Web's pending bubble.
@@ -539,12 +561,12 @@ struct MessageBubbleView: View {
 
     /// A long prompt the server marked collapsible, shown as its first lines with a fade until expanded (TAL-452).
     private var isFoldedPrompt: Bool {
-        isUserMessage && message.collapsible && !isStreaming && !isExpanded
+        isUserMessage && message.collapsible && !isStreaming && !isExpanded && findMatch == nil
     }
 
     /// The server's excerpt while this settled row is collapsed; `nil` shows the whole body.
     private var collapsedExcerpt: String? {
-        guard !isStreaming, !isExpanded else { return nil }
+        guard !isStreaming, !isExpanded, findMatch == nil else { return nil }
         return message.displayExcerpt
     }
 
