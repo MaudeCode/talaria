@@ -1,13 +1,76 @@
 import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
-import { internalMutation } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
+import { internalMutation, type MutationCtx } from "./_generated/server";
 import { enqueueDisplacedActivityEnd } from "./delivery";
+import type { ActivityMode } from "./lib/model";
 import {
   activityModeValidator,
   apsEnvironmentValidator,
   preferencesValidator,
 } from "./lib/validators";
+
+const revocationBatchSize = 128;
+
+function findDevice(ctx: MutationCtx, userId: string, deviceId: string) {
+  return ctx.db.query("devices")
+    .withIndex("by_user_id_and_device_id", (query) => query.eq("userId", userId).eq("deviceId", deviceId))
+    .unique();
+}
+
+function openDeviceActivities(ctx: MutationCtx, userId: string, deviceId: string, mode: ActivityMode) {
+  return ctx.db.query("liveActivities")
+    .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
+      query.eq("userId", userId).eq("deviceId", deviceId).eq("mode", mode).eq("endedAt", undefined),
+    );
+}
+
+async function endDeviceActivitiesBatch(ctx: MutationCtx, device: Doc<"devices">, endedAt: number) {
+  let moreActivities = false;
+  for (const mode of ["per_session", "all_running"] as const) {
+    const activities = await openDeviceActivities(ctx, device.userId, device.deviceId, mode)
+      .take(revocationBatchSize);
+    for (const activity of activities) {
+      await ctx.db.patch(activity._id, { endedAt, updatedAt: endedAt });
+    }
+    moreActivities ||= activities.length === revocationBatchSize;
+  }
+  return moreActivities;
+}
+
+export async function revokeDeviceRegistration(ctx: MutationCtx, device: Doc<"devices">, now: number) {
+  let activityCleanupAt = device.activityCleanupAt;
+  if (activityCleanupAt === undefined && await endDeviceActivitiesBatch(ctx, device, now)) {
+    activityCleanupAt = now;
+    await ctx.scheduler.runAfter(0, internal.devices.finishActivityRevocation, {
+      deviceRowId: device._id, endedAt: now,
+    });
+  }
+  await ctx.db.patch(device._id, {
+    revokedAt: now,
+    pushToken: undefined,
+    pushToStartToken: undefined,
+    pushToStartIssuedAt: undefined,
+    activityCleanupAt,
+    updatedAt: now,
+  });
+}
+
+export const finishActivityRevocation = internalMutation({
+  args: { deviceRowId: v.id("devices"), endedAt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const device = await ctx.db.get(args.deviceRowId);
+    if (!device || device.activityCleanupAt !== args.endedAt) return null;
+    if (await endDeviceActivitiesBatch(ctx, device, args.endedAt)) {
+      await ctx.scheduler.runAfter(0, internal.devices.finishActivityRevocation, args);
+    } else {
+      await ctx.db.patch(device._id, { activityCleanupAt: undefined });
+    }
+    return null;
+  },
+});
 
 export const upsertDevice = internalMutation({
   args: {
@@ -25,14 +88,9 @@ export const upsertDevice = internalMutation({
     preferences: preferencesValidator,
     now: v.number(),
   },
-  returns: v.object({ ok: v.boolean() }),
+  returns: v.object({ ok: v.boolean(), activityCleanupPending: v.optional(v.literal(true)) }),
   handler: async (ctx, args) => {
-    const device = await ctx.db
-      .query("devices")
-      .withIndex("by_user_id_and_device_id", (query) =>
-        query.eq("userId", args.userId).eq("deviceId", args.deviceId),
-      )
-      .unique();
+    const device = await findDevice(ctx, args.userId, args.deviceId);
     if (device?.revokedAt !== undefined && device.sessionId === args.sessionId) {
       return { ok: false };
     }
@@ -53,6 +111,11 @@ export const upsertDevice = internalMutation({
     const transfers = [pushTokenOwner, pushToStartTokenOwner]
       .map((owner) => (owner && owner._id !== device?._id ? owner : null));
     if (transfers.some((owner) => owner && owner.userId !== args.userId)) return { ok: false };
+    // A replacement session must not reactivate registrations that revocation is still ending.
+    if (device?.activityCleanupAt !== undefined &&
+        await endDeviceActivitiesBatch(ctx, device, device.activityCleanupAt)) {
+      return { ok: false, activityCleanupPending: true as const };
+    }
     const [pushTokenTransfer, pushToStartTokenTransfer] = transfers;
     if (pushTokenTransfer) {
       await ctx.db.patch(pushTokenTransfer._id, { pushToken: undefined, updatedAt: args.now });
@@ -85,6 +148,7 @@ export const upsertDevice = internalMutation({
         : undefined,
       preferences: args.preferences,
       revokedAt: undefined,
+      activityCleanupAt: undefined,
       createdAt: device?.createdAt ?? args.now,
       updatedAt: args.now,
     };
@@ -112,12 +176,7 @@ export const registerActivity = internalMutation({
   },
   returns: v.object({ ok: v.boolean(), reason: v.optional(v.string()) }),
   handler: async (ctx, args) => {
-    const device = await ctx.db
-      .query("devices")
-      .withIndex("by_user_id_and_device_id", (query) =>
-        query.eq("userId", args.userId).eq("deviceId", args.deviceId),
-      )
-      .unique();
+    const device = await findDevice(ctx, args.userId, args.deviceId);
     if (!device || device.revokedAt !== undefined) {
       return { ok: false, reason: "unauthorized" };
     }
@@ -162,14 +221,16 @@ export const registerActivity = internalMutation({
       if (tokenOwner.endedAt !== undefined) {
         return { ok: false, reason: "ended" };
       }
+      const sourceDevice = tokenOwner.deviceId === args.deviceId
+        ? device
+        : await findDevice(ctx, args.userId, tokenOwner.deviceId);
+      if (sourceDevice?.activityCleanupAt !== undefined) {
+        return { ok: false, reason: "ended" };
+      }
       await ctx.db.delete(tokenOwner._id);
     }
 
-    const sameMode = await ctx.db
-      .query("liveActivities")
-      .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
-        query.eq("userId", args.userId).eq("deviceId", args.deviceId).eq("mode", args.mode).eq("endedAt", undefined),
-      )
+    const sameMode = await openDeviceActivities(ctx, args.userId, args.deviceId, args.mode)
       .take(10);
     for (const activity of sameMode) {
       if (activity.activityId !== args.activityId) {
@@ -227,12 +288,7 @@ export const endActivity = internalMutation({
   returns: v.object({ ok: v.boolean() }),
   handler: async (ctx, args) => {
     const [device, activity] = await Promise.all([
-      ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_device_id", (query) =>
-          query.eq("userId", args.userId).eq("deviceId", args.deviceId),
-        )
-        .unique(),
+      findDevice(ctx, args.userId, args.deviceId),
       ctx.db
         .query("liveActivities")
         .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
@@ -250,31 +306,9 @@ export const revokeDevice = internalMutation({
   args: { userId: v.string(), deviceId: v.string(), now: v.number() },
   returns: v.object({ ok: v.boolean() }),
   handler: async (ctx, args) => {
-    const device = await ctx.db
-      .query("devices")
-      .withIndex("by_user_id_and_device_id", (query) =>
-        query.eq("userId", args.userId).eq("deviceId", args.deviceId),
-      )
-      .unique();
+    const device = await findDevice(ctx, args.userId, args.deviceId);
     if (!device) return { ok: false };
-    await ctx.db.patch(device._id, {
-      revokedAt: args.now,
-      pushToken: undefined,
-      pushToStartToken: undefined,
-      pushToStartIssuedAt: undefined,
-      updatedAt: args.now,
-    });
-    const activities = await ctx.db
-      .query("liveActivities")
-      .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
-        query.eq("userId", args.userId).eq("deviceId", args.deviceId),
-      )
-      .take(100);
-    for (const activity of activities) {
-      if (activity.endedAt === undefined) {
-        await ctx.db.patch(activity._id, { endedAt: args.now, updatedAt: args.now });
-      }
-    }
+    await revokeDeviceRegistration(ctx, device, args.now);
     const exclusions = await ctx.db
       .query("devicePublisherExclusions")
       .withIndex("by_user_id_and_device_id_and_publisher_id", (query) =>

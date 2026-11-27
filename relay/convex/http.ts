@@ -866,7 +866,7 @@ http.route({
       ) {
         return json(400, { error: "invalid_device" });
       }
-      const result = await ctx.runMutation(internal.devices.upsertDevice, {
+      const registration = {
         userId: auth.userId,
         sessionId: auth.sessionId,
         sessionExpiresAt: auth.expiresAt,
@@ -880,7 +880,12 @@ http.route({
         clearPushToStartToken,
         preferences,
         now: Date.now(),
-      });
+      };
+      let result = await ctx.runMutation(internal.devices.upsertDevice, registration);
+      while (result.activityCleanupPending) {
+        if (!await authenticateUser(ctx, request)) return json(401, { error: "unauthorized" });
+        result = await ctx.runMutation(internal.devices.upsertDevice, { ...registration, now: Date.now() });
+      }
       return result.ok ? json(200, result) : json(401, { error: "unauthorized" });
     }
 

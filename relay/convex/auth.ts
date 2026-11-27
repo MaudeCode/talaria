@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
+import { revokeDeviceRegistration } from "./devices";
 
 export async function revokeDevicesForSession(
   ctx: MutationCtx,
@@ -15,28 +16,7 @@ export async function revokeDevicesForSession(
     )
     .collect();
   for (const device of devices) {
-    await ctx.db.patch(device._id, {
-      revokedAt: now,
-      pushToken: undefined,
-      pushToStartToken: undefined,
-      pushToStartIssuedAt: undefined,
-      updatedAt: now,
-    });
-    for (const mode of ["per_session", "all_running"] as const) {
-      const activities = await ctx.db
-        .query("liveActivities")
-        .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
-          query
-            .eq("userId", userId)
-            .eq("deviceId", device.deviceId)
-            .eq("mode", mode)
-            .eq("endedAt", undefined),
-        )
-        .collect();
-      for (const activity of activities) {
-        await ctx.db.patch(activity._id, { endedAt: now, updatedAt: now });
-      }
-    }
+    await revokeDeviceRegistration(ctx, device, now);
   }
   return devices.length;
 }

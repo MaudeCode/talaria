@@ -310,7 +310,7 @@ Register an aggregate ActivityKit token with `PUT /v1/devices/{deviceId}/live-ac
 
 Set `seededLocally` to `true` only when the foreground app created a short-lived placeholder before the publisher emitted its first state. The relay preserves that empty placeholder for 30 seconds so authoritative publisher state can repaint it.
 
-End an activity with `DELETE /v1/devices/{deviceId}/live-activities/{activityId}` and revoke a device with `DELETE /v1/devices/{deviceId}`. A token cannot be claimed by another relay user.
+End an activity with `DELETE /v1/devices/{deviceId}/live-activities/{activityId}` and revoke a device with `DELETE /v1/devices/{deviceId}`. Revocation disables delivery immediately and ends all existing activity registrations for that device. A token cannot be claimed by another relay user.
 
 ## Publisher subscriptions and revocation
 
