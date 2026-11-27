@@ -231,6 +231,9 @@ describe('SystemSection "Check now"', () => {
   })
 
   it('keeps the last server status when a poll fails and reports failure only without one', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: target('up_to_date', {
+      latest_release_tag: 'web-exp-v2.0.0', latest_release_tag_distinct: true,
+    }) })
     const qc = renderSystem()
     expect(await screen.findByText('Talaria Web is up to date')).toBeInTheDocument()
     vi.mocked(api.fetchUpdatesCheck).mockRejectedValue(new Error('Failed to fetch'))
@@ -240,6 +243,7 @@ describe('SystemSection "Check now"', () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     expect(screen.queryByText(/update check failed/i)).toBeNull()
     expect(screen.getByText('Talaria Web is up to date')).toBeInTheDocument()
+    expect(screen.getByText('Latest release tag: web-exp-v2.0.0')).toBeInTheDocument()
     qc.clear()
     renderSystem()
     expect(await screen.findByText('Talaria Web update check failed')).toBeInTheDocument()
@@ -400,6 +404,7 @@ describe('SystemSection "Check now"', () => {
     }) }))
     renderSystem()
     expect(await screen.findByText('Talaria Web is up to date')).toBeInTheDocument()
+    expect(screen.queryByText(/latest release tag/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^update web$/i })).not.toBeInTheDocument()
   })
 
@@ -418,6 +423,40 @@ describe('SystemSection "Check now"', () => {
 describe('SystemSection update paths', () => {
   beforeEach(() => { settingsState = { ...SERVER_FIELDS, bot_name: 'Hermes', check_for_updates: true, update_channel: 'stable', agent_update_channel: 'stable' }; vi.mocked(api.applyUpdates).mockReset(); vi.mocked(api.fetchUpdatesSummary).mockReset() })
   const path = (name: string) => screen.getByRole('region', { name })
+
+  it('shows the tag at its own component and renders a target version only once', async () => {
+    const tag = 'v2.0.0'
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({
+      webui: target('release_ready', { ...behind(1), latest_release_tag: tag, latest_release_tag_distinct: false, target_version: tag }),
+      agent: target('commits_behind', { ...behind(2), latest_release_tag: tag, latest_release_tag_distinct: true }),
+    }))
+    renderSystem()
+    await screen.findByText('Hermes Agent is 2 commits behind')
+    const web = within(path('Talaria Web'))
+    const agent = within(path('Hermes Agent'))
+    expect(web.getAllByText(new RegExp(tag.replaceAll('.', '\\.')))).toHaveLength(1)
+    expect(agent.getByText(`Latest release tag: ${tag}`)).toBeInTheDocument()
+    expect(agent.getByRole('button', { name: 'Update Agent' })).toBeEnabled()
+  })
+
+  it('replaces the Agent release tag after changing only the Agent channel', async () => {
+    const webui = target('manual', { latest_release_tag: 'web-v2.0.0', latest_release_tag_distinct: true })
+    vi.mocked(api.saveSettings).mockImplementation((patch) => { settingsState = { ...settingsState, ...patch }; return Promise.resolve(settingsState) })
+    vi.mocked(api.fetchUpdatesCheck).mockImplementation(() => {
+      const experimental = settingsState.agent_update_channel === 'experimental'
+      return Promise.resolve({ webui, agent: target('up_to_date', {
+        latest_release_tag: experimental ? 'v3.0.0' : 'v2.0.0', latest_release_tag_distinct: true,
+      }) })
+    })
+    renderSystem()
+    const agent = within(await screen.findByRole('region', { name: 'Hermes Agent' }))
+    expect(await agent.findByText('Latest release tag: v2.0.0')).toBeInTheDocument()
+    await userEvent.click(agent.getByRole('combobox', { name: 'Agent update channel' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Experimental' }))
+    expect(await agent.findByText('Latest release tag: v3.0.0')).toBeInTheDocument()
+    expect(agent.queryByText('Latest release tag: v2.0.0')).not.toBeInTheDocument()
+    expect(within(path('Talaria Web')).getByText('Latest release tag: web-v2.0.0')).toBeInTheDocument()
+  })
 
   it('uses decorative Talaria logos for Web updates and health while keeping the Agent icons (TAL-2264)', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: current })

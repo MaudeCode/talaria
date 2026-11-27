@@ -1939,6 +1939,7 @@
 	"switched_workspace": "Przełączono na obszar roboczy: ",
 	"symlink_link_to": "Symlink → {target}",
 	"system_apply_agent_update": "Zaktualizuj Agent",
+	"system_latest_release_tag": "Tag najnowszego wydania: {tag}",
 	"system_not_responding": "Nie odpowiada",
 	"system_running_normally": "Działa normalnie",
 	"system_server_disk": "Dysk serwera",

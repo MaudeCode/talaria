@@ -618,6 +618,7 @@ async function checkNpmExperimental(result: Dict, installed: NpmInstallInfo, id:
   let ahead = false
   try {
     release = await registry.release(channel)
+    result.latest_release_tag = release.tag
     ahead = await aheadOfNightly(channel, switching, current, release.sourceRevision, getJson)
     if (await experimentalUpdateBlocked(channel, switching, current, release.sourceRevision, getJson)) {
       return { ...result, install_kind: 'npm', current_sha: current, behind: 0, manual_update: true, message: EXPERIMENTAL_NOT_AHEAD }
@@ -660,6 +661,8 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
     return { ...result, manual_update: true, error: 'Talaria release metadata is unavailable. Private repositories require TALARIA_RELEASE_TOKEN with Contents read access.' }
   }
   Object.assign(result, { latest_version: release.tag, latest_sha: release.sourceRevision, branch: release.tag, release_based: true, release_url: release.release_url, image: release.image })
+  // The release-set fallback has no Nightly publication identity. Nightly's own check reads its registry artifact.
+  if (channel !== 'nightly') result.latest_release_tag = release.tag
   {
     if (npmInstall && channel === 'stable' && release.npm && npmInstallChannel(npmInstall, id) === 'experimental') {
       // A channel switch installs the newest Stable package regardless of version order (TAL-343).
@@ -837,8 +840,8 @@ export async function applyWebUpdate(webRoot: string | null, channel: WebChannel
   return applyNpmWebUpdate(webRoot, channel, getJson, id, npmRun, canApply, packaged, version)
 }
 
-async function releaseTags(path: string, git: GitRun): Promise<string[]> {
-  const out = await git(['tag', '--list', AGENT_TAG_GLOB, '--sort=-v:refname'], path)
+async function releaseTags(path: string, git: GitRun, mergedInto?: string): Promise<string[]> {
+  const out = await git(['tag', '--list', AGENT_TAG_GLOB, '--sort=-v:refname', ...(mergedInto ? ['--merged', mergedInto] : [])], path)
   if (!out.ok) return []
   return sortedReleaseTags(out.out)
 }
@@ -930,10 +933,12 @@ async function agentVersions(path: string, tags: string[], repoUrl: string, git:
 }
 
 /** The checkout's update target: `version` (a listed Stable tag) or the channel's newest. */
-async function agentTarget(path: string, git: GitRun, channel: Channel, version?: string, published?: PublishedAgentTag): Promise<Dict> {
+async function agentTarget(path: string, git: GitRun, channel: Channel, version?: string, published?: PublishedAgentTag): Promise<{ info: Dict; stableReleaseTag: string | undefined }> {
   if (version !== undefined && channel !== 'stable') throw new Error(ONLY_STABLE_VERSIONS)
   const remote = normalizeRemoteUrl((await git(['remote', 'get-url', 'origin'], path)).out)
-  const tags = channel === 'stable' ? publishedTags(await releaseTags(path, git), await published?.(remote)) : []
+  const localTags = channel === 'stable' ? await releaseTags(path, git) : []
+  const publishedTag = channel === 'stable' ? await published?.(remote) : undefined
+  const tags = publishedTags(localTags, publishedTag)
   const newest = channel === 'experimental' ? `origin/${await detectDefaultBranch(path, git)}` : tags[0]
   if (!newest) throw new Error('No stable Agent release is available')
   const versions = await agentVersions(path, tags, remote, git)
@@ -944,13 +949,14 @@ async function agentTarget(path: string, git: GitRun, channel: Channel, version?
   const count = await git(['rev-list', '--count', `${current.out}..${latest.out}`], path)
   const behind = count.ok && /^\d+$/.test(count.out) ? Number.parseInt(count.out, 10) : null
   const manual = current.out !== latest.out && !(await canFastForwardTo(path, latest.out, git))
-  return {
+  const info = {
     name: 'agent', channel, branch: ref, current_sha: current.out, latest_sha: latest.out,
     current_version: await currentReleaseTag(path, git) ?? current.out.slice(0, 12), latest_version: ref,
     behind, release_based: channel === 'stable', repo_url: remote, compare_url: compareUrl(remote, current.out, latest.out), versions,
     ...(behind === null ? { error: 'Agent commit count is unavailable' } : {}),
     ...(manual ? { manual_update: true, message: 'Agent checkout is ahead of or divergent from this channel; refusing to rewind it.' } : {}),
   }
+  return { info, stableReleaseTag: publishedTag ?? tags[0] }
 }
 
 export interface AgentUpdatePolicy {
@@ -1028,7 +1034,10 @@ export async function checkAgentUpdate(path: string | null, git: GitRun, channel
   }
   try {
     const pending = await pendingAutostashes(path, git)
-    return { ...await agentTarget(path, git, channel, undefined, published), dirty: await isDirty(path, git),
+    const { info, stableReleaseTag } = await agentTarget(path, git, channel, undefined, published)
+    // The Experimental target is a branch tip. Only tags in that branch's fetched history add context.
+    const latestReleaseTag = channel === 'experimental' ? (await releaseTags(path, git, str(info.latest_sha)))[0] : stableReleaseTag
+    return { ...info, dirty: await isDirty(path, git), ...(latestReleaseTag ? { latest_release_tag: latestReleaseTag } : {}),
       ...(pending.length ? RETAINED_LOCAL_EDITS : {}) }
   }
   catch (error) { return { name: 'agent', channel, behind: null, error: (error as Error).message } }
@@ -1123,7 +1132,7 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
   const fetched = await fetchOrigin(git, path)
   if (!fetched.ok) return { ok: false, ...gitFailure('fetch failed', fetched.out, 'Could not reach the remote repository. Check your internet connection and try again.') }
   let info: Dict
-  try { info = await agentTarget(path, git, channel, version, published) } catch (error) { return { ok: false, message: (error as Error).message } }
+  try { ({ info } = await agentTarget(path, git, channel, version, published)) } catch (error) { return { ok: false, message: (error as Error).message } }
   if (info.current_sha === info.latest_sha) {
     const pending = await pendingAutostashes(path, git)
     let recovered = false
@@ -1255,7 +1264,7 @@ export async function forceAgentUpdate(path: string | null, git: GitRun, log: (l
   const fetched = await fetchOrigin(git, path)
   if (!fetched.ok) return { ok: false, ...gitFailure('fetch failed', fetched.out, 'Could not reach the remote repository. Check your connection.') }
   let info: Dict
-  try { info = await agentTarget(path, git, channel, version, published) } catch (error) { return { ok: false, message: (error as Error).message } }
+  try { ({ info } = await agentTarget(path, git, channel, version, published)) } catch (error) { return { ok: false, message: (error as Error).message } }
   const ref = str(info.branch)
   const revision = str(info.latest_sha)
   if ((await headContainsRef(path, revision, git)) && !(await canFastForwardTo(path, revision, git))) {
@@ -2209,7 +2218,7 @@ export class UpdateService {
       const fetched = await fetchOrigin(this.git, path)
       if (fetched.ok) {
         try {
-          const chosen = await agentTarget(path, this.git, options.agentChannel ?? this.agentChannel(), options.version, this.publishedTag)
+          const { info: chosen } = await agentTarget(path, this.git, options.agentChannel ?? this.agentChannel(), options.version, this.publishedTag)
           if (chosen.latest_sha !== chosen.current_sha && chosen.latest_sha === options.confirmedRevision && !await agentHasDependencySync(path, options.confirmedRevision, this.git)) repairCurrent = false
         } catch { /* An unverified replacement cannot bypass recovery of the installed revision. */ }
       }
@@ -2521,6 +2530,8 @@ export function updateTargetView(name: 'webui' | 'agent', target: Dict, off: boo
     : 'unknown'
   const latest = typeof info.latest_version === 'string' ? info.latest_version : null
   const current = typeof info.current_version === 'string' ? info.current_version : ''
+  const targetVersion = state === 'finish' || state === 'release_ready' || (state === 'manual' && info.release_based === true && (behind ?? 0) > 0) ? latest : null
+  const latestReleaseTag = str(info.latest_release_tag)
   const canApply = ['release_ready', 'commits_behind', 'finish'].includes(state) && info.manual_update !== true && (info.no_git !== true || info.install_kind === 'npm')
   // TAL-946: every installable Stable release, newest first; all but the newest fold behind one disclosure.
   const versions = state === 'release_ready' && canApply && Array.isArray(info.versions) ? info.versions.map((v, i) => ({ ...dict(v), latest: i === 0, folded: i > 0 })) : []
@@ -2531,7 +2542,8 @@ export function updateTargetView(name: 'webui' | 'agent', target: Dict, off: boo
     // Stable Agent reports a bare 12-hex revision when its checkout sits on no release tag.
     installed_unverified: state === 'release_ready' && (!current || /^[0-9a-f]{12}$/.test(current)),
     manual_link: name === 'webui' && state !== 'off' && info.manual_update === true && Boolean(info.error || info.dirty || info.behind !== 0),
-    target_version: state === 'finish' || state === 'release_ready' || (state === 'manual' && info.release_based === true && (behind ?? 0) > 0) ? latest : null,
+    target_version: targetVersion,
+    ...(latestReleaseTag ? { latest_release_tag_distinct: state !== 'off' && latestReleaseTag !== current && latestReleaseTag !== targetVersion } : {}),
     summary_available: state === 'release_ready' || state === 'commits_behind',
   }
 }

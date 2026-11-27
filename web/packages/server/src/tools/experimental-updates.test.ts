@@ -441,7 +441,7 @@ describe('Nightly npm updates (TAL-1569)', () => {
     const n = npmInstall(EXPERIMENTAL, { [tgzKey]: OLD })
     const g = nightly(OLD_EXP, OLD.version)
     expect(await checkWebUpdate(n.packageRoot, 'web-exp', 'nightly', runGit, main, identity(EXPERIMENTAL), n.npm, g.registry))
-      .toMatchObject({ behind: 0, manual_update: true, current_sha: NEW_EXP, latest_sha: OLD_EXP, message: 'This npm installation is ahead of the Nightly build; it updates once Nightly passes it.' })
+      .toMatchObject({ behind: 0, manual_update: true, current_sha: NEW_EXP, latest_sha: OLD_EXP, latest_release_tag: OLD.tag, message: 'This npm installation is ahead of the Nightly build; it updates once Nightly passes it.' })
     expect(await applyWebUpdate(n.packageRoot, 'nightly', runGit, main, identity(EXPERIMENTAL), n.npm, () => true, { registry: g.registry, stateDir: tmp() }))
       .toMatchObject({ ok: false, manual_update: true })
     expect(n.installs).toEqual([])

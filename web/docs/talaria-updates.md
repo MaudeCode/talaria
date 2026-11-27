@@ -223,6 +223,11 @@ manifest. `/api/updates/check` decides each target's `state` (up to date, releas
 ready, commits behind, local changes, finish, manual, check failed, off, unknown),
 `can_apply`, `installed_unverified`, `manual_link`, and `target_version`; Web and
 the App only word those fields. Manual installations link to the releases page.
+Each target also carries `latest_release_tag` when known. It comes from the
+selected Web release, the Stable Agent release lookup, or the Agent release tags
+reachable from the Experimental branch tip. Web shows it when
+`latest_release_tag_distinct` says the component's installed and target versions
+do not already show it.
 
 Validation lives in `packages/server/src/tools/updates.test.ts` and the frontend
 System settings/browser tests. Source tests own their repositories, tags, worktrees, locks, and state;

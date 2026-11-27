@@ -1832,6 +1832,7 @@
 	"switched_workspace": "ワークスペースを切り替えました: ",
 	"symlink_link_to": "シンボリックリンク → {target}",
 	"system_apply_agent_update": "Agent を更新",
+	"system_latest_release_tag": "最新のリリースタグ: {tag}",
 	"system_not_responding": "応答なし",
 	"system_running_normally": "正常に動作中",
 	"system_server_disk": "サーバーのディスク",

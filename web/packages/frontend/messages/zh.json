@@ -1792,6 +1792,7 @@
 	"switched_workspace": "已切换工作区：",
 	"symlink_link_to": "符号链接 → {target}",
 	"system_apply_agent_update": "更新 Agent",
+	"system_latest_release_tag": "最新发布版本标签：{tag}",
 	"system_not_responding": "无响应",
 	"system_running_normally": "运行正常",
 	"system_server_disk": "服务器磁盘",

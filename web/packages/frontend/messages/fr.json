@@ -1923,6 +1923,7 @@
 	"switched_workspace": "Passé à l'espace de travail : ",
 	"symlink_link_to": "Lien symbolique → {target}",
 	"system_apply_agent_update": "Mettre à jour Agent",
+	"system_latest_release_tag": "Tag de la dernière version : {tag}",
 	"system_not_responding": "Ne répond pas",
 	"system_running_normally": "Fonctionne normalement",
 	"system_server_disk": "Disque du serveur",

@@ -1897,6 +1897,7 @@
 	"switched_workspace": "Çalışma alanına geçildi:",
 	"symlink_link_to": "Symlink → {target}",
 	"system_apply_agent_update": "Agent güncelle",
+	"system_latest_release_tag": "En yeni sürüm etiketi: {tag}",
 	"system_not_responding": "Yanıt vermiyor",
 	"system_running_normally": "Normal çalışıyor",
 	"system_server_disk": "Sunucu diski",

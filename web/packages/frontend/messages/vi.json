@@ -1830,6 +1830,7 @@
 	"switched_workspace": "Đã chuyển workspace sang: ",
 	"symlink_link_to": "Liên kết mềm → {target}",
 	"system_apply_agent_update": "Cập nhật Agent",
+	"system_latest_release_tag": "Thẻ bản phát hành mới nhất: {tag}",
 	"system_not_responding": "Không phản hồi",
 	"system_running_normally": "Đang chạy bình thường",
 	"system_server_disk": "Ổ đĩa máy chủ",

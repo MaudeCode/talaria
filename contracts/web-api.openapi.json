@@ -152310,6 +152310,15 @@
                               ],
                               "description": "The version the update path leads to, when one is shown."
                             },
+                            "latest_release_tag": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "The latest known release tag for this component and channel, independent of the installed version or branch target."
+                            },
+                            "latest_release_tag_distinct": {
+                              "type": "boolean",
+                              "description": "Show the latest release tag when this component’s installed and target lines do not already name it."
+                            },
                             "summary_available": {
                               "type": "boolean",
                               "description": "TAL-759: offer \"Summarize with AI\" for this target (`release_ready` or `commits_behind`)."
@@ -152585,6 +152594,15 @@
                                 }
                               ],
                               "description": "The version the update path leads to, when one is shown."
+                            },
+                            "latest_release_tag": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "The latest known release tag for this component and channel, independent of the installed version or branch target."
+                            },
+                            "latest_release_tag_distinct": {
+                              "type": "boolean",
+                              "description": "Show the latest release tag when this component’s installed and target lines do not already name it."
                             },
                             "summary_available": {
                               "type": "boolean",
@@ -153046,6 +153064,15 @@
                               ],
                               "description": "The version the update path leads to, when one is shown."
                             },
+                            "latest_release_tag": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "The latest known release tag for this component and channel, independent of the installed version or branch target."
+                            },
+                            "latest_release_tag_distinct": {
+                              "type": "boolean",
+                              "description": "Show the latest release tag when this component’s installed and target lines do not already name it."
+                            },
                             "summary_available": {
                               "type": "boolean",
                               "description": "TAL-759: offer \"Summarize with AI\" for this target (`release_ready` or `commits_behind`)."
@@ -153321,6 +153348,15 @@
                                 }
                               ],
                               "description": "The version the update path leads to, when one is shown."
+                            },
+                            "latest_release_tag": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "The latest known release tag for this component and channel, independent of the installed version or branch target."
+                            },
+                            "latest_release_tag_distinct": {
+                              "type": "boolean",
+                              "description": "Show the latest release tag when this component’s installed and target lines do not already name it."
                             },
                             "summary_available": {
                               "type": "boolean",
