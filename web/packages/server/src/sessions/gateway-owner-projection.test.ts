@@ -257,12 +257,56 @@ describe('canonical owner attachment', () => {
     await vi.waitFor(async () => { expect(await row()).toMatchObject({ is_streaming: false, active_stream_id: null }) })
   })
 
-  it('publishes Web audio only for a live owner-confirmed successful completion', async () => {
+  it('publishes a generic completion for a live owner-confirmed turn with no answer', async () => {
     const changes = vi.spyOn(s.deps.events, 'publish')
-    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    const prompt = admission()
+    const watch = await observeOwner(snapshot({ running: true, pending: [prompt], messages: [
+      { role: 'user', content: 'Previous prompt', message_id: 'previous' },
+      { role: 'assistant', content: 'Previous answer', message_id: 'previous-answer' },
+      { role: 'user', content: 'Current prompt', message_id: prompt.admission_id },
+    ], message_count: 3 }))
     watch.finish()
     await watch.read
     await vi.waitFor(() => { expect(changes.mock.calls.some(([reason]) => reason === 'web_completion')).toBe(true) })
+    expect(changes.mock.calls.find(([reason]) => reason === 'web_completion')?.[1]?.webAudio?.notification?.body).toBe('Completed')
+  })
+
+  it('quotes the native final answer when the completion frame windows out its prompt', async () => {
+    const changes = vi.spyOn(s.deps.events, 'publish')
+    const prompt = admission()
+    const user = { role: 'user', content: 'Run the checks', message_id: prompt.admission_id }
+    const watch = await observeOwner(snapshot({ running: true, pending: [prompt], messages: [user], message_count: 1 }))
+    const messages = [
+      user,
+      ...Array.from({ length: 119 }, (_, i) => ({ role: 'assistant', content: `Check ${String(i + 1)} passed`, message_id: `check-${String(i + 1)}` })),
+      { role: 'assistant', content: '**All checks passed**', message_id: 'final-answer' },
+    ]
+    watch.snapshot({ messages, message_count: messages.length }, false, false)
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.find(({ event }) => event === 'done')?.data).toMatchObject({ session: { _messages_offset: 1, _messages_truncated: true } })
+    await vi.waitFor(() => { expect(changes.mock.calls.some(([reason]) => reason === 'web_completion')).toBe(true) })
+    expect(changes.mock.calls.find(([reason]) => reason === 'web_completion')?.[1]?.webAudio?.notification?.body).toBe('All checks passed')
+  })
+
+  it('keeps the native completion answer when the read already sees the next execution', async () => {
+    const changes = vi.spyOn(s.deps.events, 'publish')
+    const prompt = admission()
+    const messages = [
+      { role: 'user', content: 'Current prompt', message_id: prompt.admission_id },
+      { role: 'assistant', content: '**Current answer** with ghp_abcdefghij0123456789', message_id: 'current-answer' },
+    ]
+    const watch = await observeOwner(snapshot({ running: true, pending: [prompt], messages, message_count: messages.length }))
+    const receipt = holdOwnerReceipt()
+    watch.finish()
+    watch.snapshot({ execution_generation: 2, running: true, messages: [...messages,
+      { role: 'user', content: 'Newer prompt', message_id: 'newer' },
+      { role: 'assistant', content: 'Newer answer', message_id: 'newer-answer' },
+    ], message_count: 4 }, false, false)
+    try { await vi.waitFor(() => { expect(receipt.requested).toBe(true) }) } finally { receipt.release() }
+    await watch.read
+    await vi.waitFor(() => { expect(changes.mock.calls.some(([reason]) => reason === 'web_completion')).toBe(true) })
+    expect(changes.mock.calls.find(([reason]) => reason === 'web_completion')?.[1]?.webAudio?.notification?.body).toBe('Current answer with ghp_ab...6789')
   })
 
   it.each(['failed', 'cancelled'])('keeps native %s completions quiet', async (outcome) => {

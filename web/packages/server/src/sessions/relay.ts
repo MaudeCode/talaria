@@ -25,7 +25,7 @@ import type { SessionStore } from './store.js'
 import { str } from '../util.js'
 import { ActivityStates, activityRowFields, hasSessionData, TERMINAL_PHASES, type AgentNotice } from './notify/activity.js'
 import type { NotificationChannel, ServerNotice } from './notify/channel.js'
-import { completionNotification } from './notify/alerts.js'
+import { completionNotification, type OwnerCompletionRun } from './notify/alerts.js'
 
 export const PRESENCE_LEASE_SECONDS = 90
 export const PRESENCE_MAX_LEASES = 256
@@ -779,13 +779,14 @@ export class RelayService implements NotificationChannel {
     }).catch(() => undefined)
   }
 
-  /** Shared Web-only projection for direct turns and receipt-confirmed native owner executions; `session` holds the finished turn. */
-  noteWebCompletion(profileName: string, sessionId: string, runIdentity: string, session: { title?: unknown; messages?: unknown } | null): void {
+  /** Shared Web-only projection for direct turns and receipt-confirmed native owner executions. */
+  noteWebCompletion(profileName: string, sessionId: string, run: string | OwnerCompletionRun, session: { title?: unknown; messages?: unknown } | null): void {
     const profile = this.deps.canonicalProfile(profileName)
     const expires = this.deps.now() * 1000 + 60_000
-    const notification = completionNotification(sessionId, session, this.deps.redactEnabled?.() ?? true)
+    const notification = completionNotification(sessionId, session, this.deps.redactEnabled?.() ?? true, run)
     void (async () => {
       const scope = await profileIdentity(this.deps, profile)
+      const runIdentity = typeof run === 'string' ? run : run.identity
       const identity = createHash('sha256').update(JSON.stringify([scope, runIdentity])).digest('hex')
       this.deps.events.publish('web_completion', { profile, sessionId, webAudio: { identity, scope, profile, eligible: true, expires_at: expires, notification } })
     })().catch(() => undefined)

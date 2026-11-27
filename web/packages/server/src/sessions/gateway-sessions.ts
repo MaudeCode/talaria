@@ -40,6 +40,7 @@ import { toolProgress } from './tool-display.js'
 import { outsideWorkspace, pathCompletionItems, pathCompletionWord } from './path-completion.js'
 import { deriveTodoState, normalizeTodoSnapshot, type PlanProgress } from './todo.js'
 import { catalogNames, offeredMove, ownerConnection, settledConnection, type ConnectorMove } from '../tools/connectors.js'
+import type { OwnerCompletionRun } from './notify/alerts.js'
 
 type Row = Record<string, unknown>
 interface Target { sid: string; profile: string; home: string; key: string }
@@ -282,7 +283,7 @@ export class GatewaySessions {
     return undefined
   }
   constructor(private readonly deps: {
-    onWebCompletion?: (profile: string, sessionId: string, identity: string, session: Row | null) => void;
+    onWebCompletion?: (profile: string, sessionId: string, run: OwnerCompletionRun, session: Row | null) => void;
     service: SessionService; sidecar: () => SidecarLike | null; registry: StreamRegistry;
     launchStore?: BackgroundTaskStore;
     activityDocuments?: DocumentBackend;
@@ -1621,9 +1622,15 @@ export class GatewaySessions {
           ...(failed ? refusal ?? { message: 'The owning Agent could not complete this turn', type: current.reason ?? 'owner_turn_failed' } : {}),
           ...(Object.keys(usage).length ? { usage } : {}),
           ...(session ? { session } : {}) })
-        if (liveRunning && !cancelled && !failed && receipt?.admission_id === activeAdmission && receipt?.authority_epoch === watch.snapshot.authority_epoch
+        if (liveRunning && !cancelled && !failed && activeAdmission && receipt?.admission_id === activeAdmission && receipt.authority_epoch === watch.snapshot.authority_epoch
             && receipt.execution_generation === watch.snapshot.execution_generation) {
-          this.deps.onWebCompletion?.(target.profile, target.sid, JSON.stringify(['owner', target.sid, watch.snapshot.authority_epoch, watch.snapshot.replay_epoch, watch.snapshot.execution_generation, receipt.admission_id]), session ?? null)
+          const { authority_epoch, replay_epoch, execution_generation } = watch.snapshot
+          const run = { identity: JSON.stringify(['owner', target.sid, authority_epoch, replay_epoch, execution_generation, activeAdmission]), promptId: activeAdmission }
+          // The display window may omit the admission prompt. Use the owner snapshot even if it contains a newer turn.
+          const snapshot = current.snapshot
+          const transcript = snapshot?.authority_epoch === authority_epoch && snapshot.replay_epoch === replay_epoch
+            ? { title: str(snapshot.info.title) || base.title, messages: snapshot.messages } : null
+          this.deps.onWebCompletion?.(target.profile, target.sid, run, transcript)
         }
         await put('stream_end', { session_id: target.sid })
         watch.controller.abort()

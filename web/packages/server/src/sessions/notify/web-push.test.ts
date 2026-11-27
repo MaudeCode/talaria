@@ -148,21 +148,27 @@ describe('Web Push channel', () => {
     s.deps.registry.activeRuns.delete('stream-other')
   })
 
-  it('sends a finished reply as its chat title and the start of its answer (TAL-2157)', async () => {
+  it('uses the same redacted completed-run answer in Web Push and the open tab after a new turn starts', async () => {
     const on = { notify_on_approval: true, notify_on_input: true, notify_on_completion: true, notify_on_failure: true }
     expect((await send(s, 'POST', PUSH_PATH, { endpoint: ENDPOINT, keys: { p256dh: keys.p256dh, auth: keys.auth }, preferences: on })).status).toBe(200)
     const sid = String(((await json(await send(s, 'POST', '/api/session/new', {}))).session as Json).session_id)
     const session = await s.deps.sessionStore.get(sid)
     session.title = 'Release'
-    session.messages = [{ role: 'user', content: 'ship it' }, { role: 'assistant', content: '**Shipped** with ghp_abcdefghij0123456789' }]
+    session.messages = [{ role: 'user', content: 'ship it', _turn_id: 'stream-done' }, { role: 'assistant', content: '**Shipped** with ghp_abcdefghij0123456789', _turn_id: 'stream-done' }]
     s.deps.registry.activeRuns.set('stream-done', { stream_id: 'stream-done', session_id: sid, started_at: 6, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
     await settle()
     const before = push.pushes.length
-    s.deps.notifications.noteTerminal('stream-done', 'completed')
-    s.deps.registry.activeRuns.delete('stream-done')
-    await settle()
-    expect(push.pushes).toHaveLength(before + 1)
-    expect(keys.decrypt(Buffer.from(push.pushes.at(-1)!.init.body as Uint8Array))).toEqual({ title: 'Release', body: 'Shipped with ghp_ab...6789', tag: sid, url: `/session/${sid}` })
+    const feed = s.deps.events.subscribe()
+    try {
+      s.deps.notifications.noteTerminal('stream-done', 'completed')
+      s.deps.registry.activeRuns.delete('stream-done')
+      session.messages.push({ role: 'user', content: 'What is next?', _turn_id: 'newer' }, { role: 'assistant', content: 'A newer answer', _turn_id: 'newer' })
+      await settle()
+      const event = await feed.next(AbortSignal.timeout(15_000))
+      const expected = { title: 'Release', body: 'Shipped with ghp_ab...6789', tag: sid, url: `/session/${sid}` }
+      expect(push.pushes).toHaveLength(before + 1)
+      expect({ push: keys.decrypt(Buffer.from(push.pushes.at(-1)!.init.body as Uint8Array)), tab: event?.web_audio?.[0]?.notification }).toEqual({ push: expected, tab: expected })
+    } finally { feed.close() }
   })
 
   it('deletes a subscription the push service reports gone (410)', async () => {

@@ -334,7 +334,7 @@ export class WebPushChannel implements NotificationChannel {
       : alert === 'decision' && row.decisionReviewId
         ? { title: ALERT_BODY.decision, body: row.decisionReviewTitle ?? '', tag: `decision:${row.decisionReviewId}`, url: `/decisions/${encodeURIComponent(row.decisionReviewId)}` }
         : alert === 'completion'
-          ? completionNotification(row.sessionId, await this.deps.session?.(row.sessionId).catch(() => null) ?? { title: row.title }, this.deps.redactEnabled?.() ?? true)
+          ? completionNotification(row.sessionId, await this.deps.session?.(row.sessionId).catch(() => null) ?? { title: row.title }, this.deps.redactEnabled?.() ?? true, row.streamId)
           : { title: row.title, body: alertBody(alert, row.currentTool), tag: row.sessionId, url: session })
     await this.send(sub, payload, typeof alert === 'object' ? alert.level === 'attention' : alert === 'approval' || alert === 'input')
   }

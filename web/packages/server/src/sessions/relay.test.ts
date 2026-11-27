@@ -24,7 +24,7 @@ it('projects a live Web completion without pairing and keeps terminal failures q
   try {
     const session = await server.deps.sessionStore.newSession()
     session.title = 'Release'
-    session.messages = [{ role: 'user', content: 'ship it' }, { role: 'assistant', content: '**Shipped** with ghp_abcdefghij0123456789' }]
+    session.messages = [{ role: 'user', content: 'ship it', _turn_id: 'audio-run' }, { role: 'assistant', content: '**Shipped** with ghp_abcdefghij0123456789', _turn_id: 'audio-run' }]
     server.deps.registry.registerActiveRun({ stream_id: 'audio-run', session_id: session.session_id, started_at: 1, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false })
     const sub = server.deps.events.subscribe()
     server.deps.notifications.noteTerminal('audio-run', 'completed')
