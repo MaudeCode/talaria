@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Continue an open iPhone chat in Talaria Web on your Mac with Handoff.",
+      "highlight": false,
+      "components": ["app", "web"],
+      "announcement": {
+        "title": "Chat Handoff",
+        "description": "Continue the chat open on your iPhone in Talaria Web on your Mac.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

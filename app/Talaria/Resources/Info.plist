@@ -105,6 +105,7 @@
 	<array>
 		<string>com.apple.corespotlightitem</string>
 		<string>dev.kil.talaria.open-window</string>
+		<string>house.thezoo.talaria.chat</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

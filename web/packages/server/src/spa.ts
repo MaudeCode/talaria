@@ -11,7 +11,7 @@ import { weakEtag } from './fs/stat.js'
 import { PREVIEW_PREFIX } from './workspace/preview.js'
 
 export const SPA_EXACT_PATHS = new Set([
-  '/', '/index.html', '/sessions', '/tasks', '/kanban', '/skills', '/memory', '/workspaces', '/profiles', '/todos', '/insights', '/logs',
+  '/', '/index.html', '/open', '/sessions', '/tasks', '/kanban', '/skills', '/memory', '/workspaces', '/profiles', '/todos', '/insights', '/logs',
   '/settings', '/onboarding', '/login', '/share', '/groups', '/decisions',
 ])
 export const SPA_PREFIX_PATHS = ['/session/', '/tasks/', '/kanban/', '/skills/', '/memory/', '/workspaces/', '/profiles/', '/settings/', '/ext/', '/share/', '/decisions/']

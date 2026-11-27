@@ -89,10 +89,8 @@ struct ContentView: View {
                 intentRouter.requestDeepLink(url)
                 drainPendingIntentRoute()
             }
-            .onContinueUserActivity(CSSearchableItemActionType) { activity in
-                TalariaApp.openSpotlightSession(activity, servers: authManager.servers.map(\.id), in: intentRouter)
-                drainPendingIntentRoute()
-            }
+            .onContinueUserActivity(CSSearchableItemActionType, perform: continueSessionActivity)
+            .onContinueUserActivity(ChatHandoff.activityType, perform: continueSessionActivity)
             .background(WindowSceneReader { sceneID = $0 })
             .onChange(of: sceneID) { drainPendingIntentRoute() }
             .task {
@@ -139,6 +137,11 @@ struct ContentView: View {
 
     private var newChatDraftWindow: String? {
         windowSelections.newChatDraftWindow(proposed: opensBesideAnotherWindow ? window.uuidString : nil)
+    }
+
+    private func continueSessionActivity(_ activity: NSUserActivity) {
+        TalariaApp.openSessionActivity(activity, servers: authManager.servers.map(\.id), in: intentRouter)
+        drainPendingIntentRoute()
     }
 
     @ViewBuilder

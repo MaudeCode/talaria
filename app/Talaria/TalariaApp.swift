@@ -147,10 +147,18 @@ struct TalariaCommands: Commands {
 
 @main
 struct TalariaApp: App {
-    static func openSpotlightSession(_ activity: NSUserActivity, servers: [String], in router: AppIntentRouter) {
-        guard activity.activityType == CSSearchableItemActionType,
-              let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
-              let url = URL(string: identifier), TalariaDeepLink.sessionID(from: url) != nil,
+    static func openSessionActivity(_ activity: NSUserActivity, servers: [String], in router: AppIntentRouter) {
+        let link: URL?
+        switch activity.activityType {
+        case CSSearchableItemActionType:
+            let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String
+            link = identifier.flatMap { URL(string: $0) }
+        case ChatHandoff.activityType:
+            link = ChatHandoff.sessionURL(from: activity)
+        default:
+            return
+        }
+        guard let url = link, TalariaDeepLink.sessionID(from: url) != nil,
               let server = TalariaDeepLink.publisherID(from: url), servers.contains(server)
         else { return }
         router.requestDeepLink(url)

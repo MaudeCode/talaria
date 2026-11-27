@@ -281,6 +281,55 @@ final class ToolbarPriorityHostedTests: XCTestCase {
 /// The row swipe that reveals Archive is a system gesture; the phone check covers it (`app/docs/phone-checks.md`).
 @MainActor
 final class SessionListHostedTests: XCTestCase {
+    func testHandoffFollowsTheOpenChatAndEndsWhenItCloses() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.forkSessionArgument], for: self)
+        var current: NSUserActivity?
+        let restore = try [
+            (#selector(NSUserActivity.becomeCurrent), true),
+            (#selector(NSUserActivity.resignCurrent), false),
+            (#selector(NSUserActivity.invalidate), false),
+        ].map { selector, begins in
+            let method = try XCTUnwrap(class_getInstanceMethod(NSUserActivity.self, selector))
+            let original = method_getImplementation(method)
+            typealias Call = @convention(c) (AnyObject, Selector) -> Void
+            let call = unsafeBitCast(original, to: Call.self)
+            let observer: @convention(block) (NSUserActivity) -> Void = { activity in
+                call(activity, selector)
+                guard activity.activityType == "house.thezoo.talaria.chat" else { return }
+                MainActor.assumeIsolated {
+                    if begins { current = activity } else if current === activity { current = nil }
+                }
+            }
+            let replacement = imp_implementationWithBlock(observer)
+            method_setImplementation(method, replacement)
+            return {
+                method_setImplementation(method, original)
+                imp_removeBlock(replacement)
+            }
+        }
+        defer { restore.forEach { $0() } }
+
+        let window = try await openChat(fixture, size: HostedSize.phone)
+        let base = UITestFixtureEnvironment.serverURL.absoluteString
+        let first = "\(base)/open?session=\(UITestFixtureURLProtocol.sessionID)"
+        let opened = await awaitCondition { current?.webpageURL?.absoluteString == first }
+        XCTAssertTrue(opened, "An open chat should publish its browser URL for Handoff")
+        guard opened else { return }
+        XCTAssertEqual(current?.isEligibleForHandoff, true)
+        attachHostedScreenshot(window, name: "handoff-first-chat")
+
+        fixture.pendingSessionID = UITestFixtureURLProtocol.forkSessionID
+        _ = try await requireElement(in: window, label: "Fork fixture reply")
+        let fork = "\(base)/open?session=\(UITestFixtureURLProtocol.forkSessionID)"
+        let switched = await awaitCondition { current?.webpageURL?.absoluteString == fork }
+        XCTAssertTrue(switched, "Handoff should follow the replacement chat")
+        attachHostedScreenshot(window, name: "handoff-replacement-chat")
+
+        fixture.pendingDestination = .tasks
+        let closed = await awaitCondition { fixture.pendingDestination == nil && current == nil }
+        XCTAssertTrue(closed, "Leaving chat should retire its Handoff activity")
+    }
+
     private let sessionTitle = UITestFixtureURLProtocol.sessionTitle
 
     private func isFixtureRow(_ element: NSObject) -> Bool {
