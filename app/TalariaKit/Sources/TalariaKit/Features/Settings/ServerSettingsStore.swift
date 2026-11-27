@@ -51,6 +51,11 @@ public final class ServerSettingsStore {
     }
 
     public func load() async {
+        _ = await reloadSettings()
+    }
+
+    /// Returns this read's result even when the store keeps a previously confirmed snapshot.
+    func reloadSettings() async -> SettingsResponse? {
         while pendingWrites > 0 { await writeTask?.value }
         generation += 1
         let current = generation
@@ -58,16 +63,20 @@ public final class ServerSettingsStore {
         errorMessage = nil
         async let toolsets: Void = loadToolsets()
         defer { if generation == current { isLoading = false } }
+        let response: SettingsResponse
         do {
-            let response = try await client.settings()
-            guard generation == current else { return }
+            response = try await client.settings()
+            guard generation == current else { return response }
             confirmedSettings = response
             clearResolvedOverrides(for: \.confirmedSettings)
         } catch {
-            guard generation == current else { return }
+            guard generation == current else { return nil }
             if !APIError.isCancellation(error) { errorMessage = error.localizedDescription }
+            await toolsets
+            return nil
         }
         await toolsets
+        return response
     }
 
     private func loadToolsets() async {
