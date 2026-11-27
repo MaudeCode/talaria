@@ -23,11 +23,13 @@ final class FeedbackComposerTests: XCTestCase {
         var finish: CheckedContinuation<FeedbackResult, Error>?
         let model = FeedbackComposer(server: server, defaults: storage, clientMetadata: metadata, submit: { _ in
             try await withCheckedThrowingContinuation { finish = $0; started.fulfill() }
-        })
+        }, options: { self.options() })
         fill(model)
+        await model.loadAttachmentOptions()
         let id = model.draft.requestId
         let task = try XCTUnwrap(model.send())
         XCTAssertFalse(model.isPresented)
+        XCTAssertFalse(model.canOfferScreenshotFeedback, "A dismissed sheet cannot offer a screenshot while sending")
         XCTAssertNotNil(model.confirmation.success)
         XCTAssertEqual(model.draft.requestId, id)
         XCTAssertNil(model.send(), "Repeated taps cannot submit concurrently")
@@ -369,11 +371,13 @@ final class FeedbackComposerTests: XCTestCase {
 
         let unloaded = FeedbackComposer(server: server, defaults: defaults(), clientMetadata: metadata, stagingRoot: root)
         XCTAssertFalse(unloaded.attachmentsEnabled, "Attaching stays hidden until the server publishes its options")
+        XCTAssertFalse(unloaded.canOfferScreenshotFeedback)
         XCTAssertNil(unloaded.addImage(photo))
 
         let disabled = await attachmentComposer(root: root, options: options(enabled: false))
         XCTAssertFalse(disabled.attachmentsEnabled)
         XCTAssertEqual(disabled.remainingAttachmentSlots, 0)
+        XCTAssertFalse(disabled.canOfferScreenshotFeedback)
         XCTAssertNil(disabled.addImage(photo))
 
         let imagesOnly = await attachmentComposer(root: root, options: options(videoAllowed: false))
@@ -382,10 +386,15 @@ final class FeedbackComposerTests: XCTestCase {
         XCTAssertNil(imagesOnly.addVideo(at: clip), "Videos are offered only when the server allows them")
 
         let capped = await attachmentComposer(root: root, options: options(maxCount: 2))
+        XCTAssertTrue(capped.canOfferScreenshotFeedback)
+        capped.isPresented = true
+        XCTAssertFalse(capped.canOfferScreenshotFeedback)
+        capped.isPresented = false
         await capped.addImage(photo)?.value
         await capped.addImage(try XCTUnwrap(TestImages.pngData(width: 30, height: 60)), isScreenCapture: true)?.value
         XCTAssertEqual(capped.attachments.map(\.contentType), ["image/jpeg", "image/png"])
         XCTAssertEqual(capped.remainingAttachmentSlots, 0)
+        XCTAssertFalse(capped.canOfferScreenshotFeedback)
         XCTAssertNil(capped.addImage(photo), "maxCount bounds the attachments")
     }
 

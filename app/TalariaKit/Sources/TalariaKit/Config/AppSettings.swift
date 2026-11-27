@@ -180,6 +180,8 @@ public enum SectionVisibilitySettings {
     public static let chatScreenKey = "sectionVisibility.chatScreen"
     public static let sidebarFeedbackKey = "sectionVisibility.sidebarFeedback"
     public static let defaultShowsSidebarFeedbackButton = false
+    public static let feedbackOnScreenshotKey = "feedback.onScreenshot"
+    public static let defaultFeedbackOnScreenshot = false
 
     /// Existing entries remain visible by default; the feedback shortcut is opt-in.
     public static func isVisible(_ key: String, in defaults: UserDefaults = .standard) -> Bool {

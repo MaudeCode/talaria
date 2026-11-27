@@ -153,6 +153,10 @@ public final class FeedbackComposer {
         attachmentsEnabled ? max(0, (attachmentOptions?.maxCount ?? 0) - attachments.count) : 0
     }
 
+    public var canOfferScreenshotFeedback: Bool {
+        !isPresented && remainingAttachmentSlots > 0
+    }
+
     /// The attachments as the shared composer strip shows them, each with its own upload state.
     public var pendingAttachments: [PendingAttachment] {
         attachments.map { attachment in
@@ -516,7 +520,7 @@ public final class FeedbackComposer {
     private static func displayName(for attachment: FeedbackAttachment) -> String {
         switch attachment.contentType {
         case "video/mp4": String(localized: "Video")
-        case "image/png": String(localized: "Current screen")
+        case "image/png": String(localized: "Screenshot")
         default: String(localized: "Photo")
         }
     }

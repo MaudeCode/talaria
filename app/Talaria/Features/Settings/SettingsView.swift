@@ -107,6 +107,7 @@ struct SettingsPaneView: View {
     @Bindable var authManager: AuthManager
     let server: URL
     let pane: SettingsPane
+    var feedback: FeedbackComposer?
     var onProfileChanged: () async -> Void = {}
 
     var body: some View {
@@ -119,6 +120,7 @@ struct SettingsPaneView: View {
         case .indexed(let anchor):
             if let entry = anchor.entry {
                 SettingsPaneView(authManager: authManager, server: server, pane: entry.page,
+                                 feedback: feedback,
                                  onProfileChanged: onProfileChanged)
                     .environment(\.settingsScrollAnchor, anchor)
             } else {
@@ -165,7 +167,7 @@ struct SettingsPaneView: View {
         case .logs:
             LogsSettingsView(server: server)
         case .system:
-            ServerUpdateSettingsSection(authManager: authManager, server: server)
+            ServerUpdateSettingsSection(authManager: authManager, server: server, feedback: feedback)
         case .chats:
             ChatsSettingsView()
         case .liveActivitiesAndWidgets:
@@ -179,8 +181,7 @@ struct SettingsPaneView: View {
         case .dataAndStorage:
             DataStorageSettingsView(server: server)
         case .about:
-            AboutSettingsView(server: connectedServer)
-                .id(connectedServer)
+            AboutSettingsView(feedback: feedback)
         case .developer:
             #if DEBUG
             DeveloperSettingsView()
@@ -188,11 +189,6 @@ struct SettingsPaneView: View {
             EmptyView()
             #endif
         }
-    }
-
-    private var connectedServer: URL? {
-        guard case .loggedIn(let connected) = authManager.state, connected == server else { return nil }
-        return connected
     }
 }
 

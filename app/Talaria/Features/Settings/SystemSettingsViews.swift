@@ -128,15 +128,15 @@ private struct AppLockSettingsSection: View {
 
 struct AboutSettingsView: View {
     @Environment(\.settingsScrollAnchor) private var scrollAnchor
-    @State private var feedback: FeedbackComposer
+    let feedback: FeedbackComposer?
     @State private var replayedWhatsNew: WhatsNewAnnouncement?
     /// This build's What's New, replayable here whether or not launch already offered it (TAL-182).
     private let whatsNew: WhatsNewAnnouncement?
     private let defaults: UserDefaults
 
-    init(server: URL? = nil, feedback: FeedbackComposer? = nil,
+    init(feedback: FeedbackComposer? = nil,
          whatsNew: WhatsNewAnnouncement? = .installed(), defaults: UserDefaults = .standard) {
-        _feedback = State(initialValue: feedback ?? .forApp(server: server))
+        self.feedback = feedback
         self.whatsNew = whatsNew
         self.defaults = defaults
     }
@@ -156,12 +156,7 @@ struct AboutSettingsView: View {
                         .disabled(whatsNew == nil)
                 }
 
-                Button { feedback.isPresented = true } label: {
-                    SettingsAccessoryRow(title: FeedbackSheet.title, systemImage: FeedbackSheet.systemImage)
-                }
-                .buttonStyle(.plain)
-                .disabled(feedback.server == nil || feedback.isSending)
-                .accessibilityIdentifier("settings-send-feedback")
+                FeedbackSettingsRow(feedback: feedback, entry: .aboutSendFeedback)
 
                 Link(destination: AppConfig.privacyPolicyURL) {
                     SettingsAccessoryRow(
@@ -192,7 +187,6 @@ struct AboutSettingsView: View {
                 .accessibilityHint("Opens the copyright and license notices for the open-source software in Talaria.")
             }
         }
-        .feedbackPresentation(feedback)
         .whatsNewPresentation($replayedWhatsNew, defaults: defaults)
     }
 
@@ -202,6 +196,20 @@ struct AboutSettingsView: View {
 
     private var appBuild: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? String(localized: "Unknown")
+    }
+}
+
+struct FeedbackSettingsRow: View {
+    let feedback: FeedbackComposer?
+    let entry: SettingsIndex
+
+    var body: some View {
+        Button { feedback?.isPresented = true } label: {
+            SettingsAccessoryRow(title: entry.title, systemImage: FeedbackSheet.systemImage)
+        }
+        .buttonStyle(.plain)
+        .disabled(feedback?.server == nil || feedback?.isSending == true)
+        .indexedSettingsRow(title: entry.title, identifier: entry.id)
     }
 }
 

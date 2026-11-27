@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Enable Feedback on Screenshot in System settings to open a report with the screenshot attached.",
+      "highlight": true,
+      "components": ["app"],
+      "announcement": {
+        "title": "Report a problem from a screenshot",
+        "description": "Open feedback with the screenshot attached and include available diagnostics.",
+        "icon": "attachment"
+      }
+    }
+  ]
+}

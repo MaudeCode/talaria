@@ -70,6 +70,8 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     case systemRefreshTitlesEvery = "settings-chat-title-refresh"
     case systemActivityCallDetails = "settings-system-activity-call-details"
     case systemScreen = "settings-system-screen"
+    case systemSendFeedback = "settings-system-send-feedback"
+    case systemFeedbackOnScreenshot = "settings-system-feedback-on-screenshot"
     case providersManageProviders = "settings-providers-providers"
     case toolsAgentApprovals = "settings-tools-agent-approvals"
     case profilesList = "settings-profile-row-"
@@ -299,6 +301,8 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
         case .systemRefreshTitlesEvery: .init(category: .system, section: "System", title: "Refresh Titles Every", scope: .server)
         case .systemActivityCallDetails: .init(category: .system, section: "System", title: "Tool Call Details in Live Activities and Alerts", scope: .server)
         case .systemScreen: .init(category: .system, section: "System", title: "Screen", scope: .device)
+        case .systemSendFeedback: .init(category: .system, section: "Feedback", title: "Send Feedback", scope: .server)
+        case .systemFeedbackOnScreenshot: .init(category: .system, section: "Feedback", title: "Feedback on Screenshot", scope: .device)
         case .providersManageProviders: .init(category: .providers, section: "Providers", title: "Providers", scope: .profile)
         case .toolsAgentApprovals: .init(category: .tools, section: "Approvals", title: "Agents can approve other chats' commands", scope: .profile)
         case .profilesList: .init(category: .profiles, section: "Profiles", title: "Profiles", scope: .server)

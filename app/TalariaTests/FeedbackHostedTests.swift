@@ -7,6 +7,89 @@ import XCTest
 
 @MainActor
 final class FeedbackHostedTests: XCTestCase {
+    private func screenshotDefaults(enabled: Bool = false) -> UserDefaults {
+        let name = "FeedbackScreenshot.\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        if enabled { defaults.set(true, forKey: SectionVisibilitySettings.feedbackOnScreenshotKey) }
+        return defaults
+    }
+
+    func testScreenshotOffersFeedbackWithTheCapturedImageAttached() async throws {
+        let model = model(attachments: true)
+        await model.loadAttachmentOptions()
+        let window = try hostWindow(
+            ScreenshotSource(model: model)
+                .feedbackPresentation(model)
+                .defaultAppStorage(screenshotDefaults(enabled: true))
+        )
+        commitDisplay(of: window)
+        attachHostedScreenshot(window, name: "feedback-before-screenshot")
+        NotificationCenter.default.post(name: UIApplication.userDidTakeScreenshotNotification, object: nil)
+        _ = try await requireElement(in: window, label: "Screenshot taken")
+        let action = try await requireElement(in: window, label: "Send Feedback")
+        attachHostedScreenshot(window, name: "feedback-screenshot-prompt")
+        XCTAssertTrue(model.attachments.isEmpty, "The screenshot belongs to the draft only after the user taps")
+
+        model.edit { $0.body = "The screen changed after capture" }
+        commitDisplay(of: window)
+        let current = try XCTUnwrap(committedWindowImage(window))
+        let currentPixel = try screenshotPixel(in: current)
+        XCTAssertGreaterThan(currentPixel[0], currentPixel[2], "The visible screen turned red before the action")
+        HostedAccessibility.activate(action)
+        _ = try await requireElement(in: window, label: "Remove attachment Screenshot")
+        XCTAssertEqual(model.attachments.map(\.contentType), ["image/png"])
+        let uploaded = await awaitCondition { model.attachments.first?.attachmentId != nil }
+        XCTAssertTrue(uploaded)
+        let attachment = try XCTUnwrap(model.attachments.first)
+        let preview = try XCTUnwrap(model.previewReference(of: attachment.id))
+        let url = try XCTUnwrap(URL(string: preview.url))
+        let image = try XCTUnwrap(UIImage(contentsOfFile: url.path)?.cgImage)
+        let capturedPixel = try screenshotPixel(in: image)
+        XCTAssertGreaterThan(capturedPixel[2], capturedPixel[0], "The attachment kept the blue screen from the notification")
+        attachHostedScreenshot(window, name: "feedback-screenshot-attached")
+    }
+
+    private struct ScreenshotSource: View {
+        let model: FeedbackComposer
+
+        var body: some View {
+            Text("Synthetic chat")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(model.draft.body.isEmpty ? Color.blue : Color.red)
+        }
+    }
+
+    private func screenshotPixel(in image: CGImage) throws -> [UInt8] {
+        let point = CGRect(x: image.width / 4, y: image.height * 3 / 4, width: 1, height: 1)
+        let sample = try XCTUnwrap(image.cropping(to: point))
+        var rgba = [UInt8](repeating: 0, count: 4)
+        try rgba.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                                                 bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(sample, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        return rgba
+    }
+
+    func testScreenshotDoesNothingByDefault() async throws {
+        let model = model(attachments: true)
+        await model.loadAttachmentOptions()
+        let window = try hostWindow(
+            Text("Synthetic chat").feedbackPresentation(model).defaultAppStorage(screenshotDefaults())
+        )
+        commitDisplay(of: window)
+        NotificationCenter.default.post(name: UIApplication.userDidTakeScreenshotNotification, object: nil)
+        XCTAssertNil(model.confirmation.success)
+        XCTAssertFalse(model.isPresented)
+        XCTAssertTrue(model.attachments.isEmpty)
+    }
+
+    private func aboutSettings(feedback: FeedbackComposer) -> some View {
+        NavigationStack { AboutSettingsView(feedback: feedback) }.feedbackPresentation(feedback)
+    }
+
     private func model(
         connected: Bool = true,
         attachments: Bool = false,
@@ -130,7 +213,7 @@ final class FeedbackHostedTests: XCTestCase {
 
     func testOpeningTheSheetOffersNoScreenCapture() async throws {
         let model = model(attachments: true)
-        let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
+        let window = try hostWindow(aboutSettings(feedback: model))
         HostedAccessibility.activate(try await requireElement(in: window, label: "Send Feedback"))
         _ = try await requireElement(in: window, label: "Add Photo or Video")
         attachHostedScreenshot(window, name: "feedback-no-screen-offer")
@@ -143,7 +226,7 @@ final class FeedbackHostedTests: XCTestCase {
 
     func testAttachingIsHiddenWhenTheServerDisablesIt() async throws {
         let model = model(attachments: false)
-        let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
+        let window = try hostWindow(aboutSettings(feedback: model))
         HostedAccessibility.activate(try await requireElement(in: window, label: "Send Feedback"))
         _ = try await requireElement(in: window, label: "Include Diagnostics")
         let loaded = await awaitCondition { model.attachmentOptions != nil }
@@ -206,7 +289,7 @@ final class FeedbackHostedTests: XCTestCase {
         let model = model(attachments: true)
         await model.loadAttachmentOptions()
         await model.addImage(syntheticPhoto())?.value
-        let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
+        let window = try hostWindow(aboutSettings(feedback: model))
         HostedAccessibility.activate(try await requireElement(in: window, label: "Send Feedback"))
         HostedAccessibility.activate(try await requireElement(in: window, label: "Open attachment Photo"))
         _ = try await requireElement(in: window, label: "Photo")
@@ -223,7 +306,7 @@ final class FeedbackHostedTests: XCTestCase {
         await model.loadAttachmentOptions()
         await model.addImage(syntheticPhoto())?.value
         model.edit { $0.title = "Synthetic report"; $0.body = "Synthetic details" }
-        let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
+        let window = try hostWindow(aboutSettings(feedback: model))
         HostedAccessibility.activate(try await requireElement(in: window, label: "Send Feedback"))
         _ = try await requireElement(in: window, label: "Remove attachment Photo")
         attachHostedScreenshot(window, name: "feedback-photo-attached")
@@ -246,7 +329,7 @@ final class FeedbackHostedTests: XCTestCase {
     }
 
     func testDisconnectedAboutDisablesFeedback() async throws {
-        let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model(connected: false)) })
+        let window = try hostWindow(aboutSettings(feedback: model(connected: false)))
         let row = try await requireElement(in: window, label: "Send Feedback")
         XCTAssertTrue(row.accessibilityTraits.contains(.notEnabled))
     }
@@ -298,7 +381,7 @@ final class FeedbackHostedTests: XCTestCase {
         })
         model.edit { $0.title = "Synthetic report"; $0.body = "Synthetic details" }
         let id = model.draft.requestId
-        let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
+        let window = try hostWindow(aboutSettings(feedback: model))
         HostedAccessibility.activate(try await requireElement(in: window, label: "Send Feedback"))
         _ = try await requireElement(in: window, label: "Include Diagnostics")
         let send = try XCTUnwrap(HostedAccessibility.toolbarItem("Send", in: window))
@@ -328,7 +411,7 @@ final class FeedbackHostedTests: XCTestCase {
         for variant in HostedVariant.gallery {
             let model = model()
             model.edit { $0.body = "Please keep completed background work easy to find."; $0.kind = "feature" }
-            let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) }, size: variant.size) {
+            let window = try hostWindow(aboutSettings(feedback: model), size: variant.size) {
                 $0.userInterfaceStyle = variant.style
                 $0.preferredContentSizeCategory = variant.textSize
             }
