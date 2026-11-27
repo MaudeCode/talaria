@@ -480,17 +480,18 @@ class ImagePastingTextView: UITextView {
         guard isEditable else { return }
         let pasteboard = UIPasteboard.general
         if handleImageProviders(pasteboard.itemProviders) { return }
-        if let images = pasteboard.images, !images.isEmpty {
-            onPasteImages?(images)
+        if let onPasteImages, let images = pasteboard.images, !images.isEmpty {
+            onPasteImages(images)
             return
         }
         super.paste(sender)
     }
 
     private func handleImageProviders(_ providers: [NSItemProvider]) -> Bool {
+        guard let onPasteImageProviders else { return false }
         let images = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }
         guard !images.isEmpty else { return false }
-        onPasteImageProviders?(images)
+        onPasteImageProviders(images)
         return true
     }
 }

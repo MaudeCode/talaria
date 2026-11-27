@@ -113,6 +113,21 @@ final class FeedbackHostedTests: XCTestCase {
         window.endEditing(true)
     }
 
+    func testMixedPasteReachesNativeTextPasteWhenImagesAreDisabled() {
+        // Observe the UIKit paste action without accessing the simulator's clipboard.
+        final class TextPasteObserver: ImagePastingTextView {
+            var didPaste = false
+            override func paste(_ sender: Any?) { didPaste = true }
+        }
+
+        let editor = TextPasteObserver()
+        let responder: any UIPasteConfigurationSupporting = editor
+        let providers = photoProviders(1) + [NSItemProvider(object: "Copied text" as NSString)]
+        XCTAssertEqual(responder.canPaste?(providers), true)
+        responder.paste?(itemProviders: providers)
+        XCTAssertTrue(editor.didPaste, "The text must reach UIKit when the image has no handler")
+    }
+
     func testOpeningTheSheetOffersNoScreenCapture() async throws {
         let model = model(attachments: true)
         let window = try hostWindow(NavigationStack { AboutSettingsView(feedback: model) })
