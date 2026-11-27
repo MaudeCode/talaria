@@ -4,11 +4,12 @@ import type { LogEntry, LogLevel, LogLevelFilter } from '@maudecode/talaria-web-
 /** A leading timestamp as Hermes, Python logging and ISO 8601 write it, optionally in brackets: `2026-11-08 12:01:03,123`, `2026-11-08T12:01:03Z`, `12:01:03`. */
 const TIMESTAMP = /^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\]?(?:\s+|$)/
 /** A `[tag]` that opens a record of its own, as this server writes (`[webui]`, `[updates]`): it starts a line, not a continuation. */
-const RECORD_TAG = /^\[[A-Za-z][\w.:-]*\](?:\s|$)/
-const TOKEN = /\b(CRITICAL|FATAL|ERROR|WARNING|WARN|INFO|DEBUG|TRACE)\b/i
+const RECORD_TAG = /^\[[A-Za-z][\w.:-]*\](?:\s+|$)/
 const TOKEN_LEVEL: Record<string, LogLevel> = { critical: 'error', fatal: 'error', error: 'error', warning: 'warning', warn: 'warning', info: 'info', debug: 'debug', trace: 'debug' }
-/** Only a token this close to the start of a line names its level; one further in is message text. */
-const TOKEN_WINDOW = 80
+const LEVEL_WORDS = Object.keys(TOKEN_LEVEL).join('|')
+const LEVEL_HEADER = new RegExp(String.raw`^(?:\[(${LEVEL_WORDS})\]|(${LEVEL_WORDS}))(?=[:\s]|$):?\s*`, 'i')
+/** Hermes verbose logs use `time - logger - LEVEL [optional session] - message`. */
+const VERBOSE_HEADER = new RegExp(String.raw`^- ([\w.:-]+) - (${LEVEL_WORDS})( \[[^\]\r\n]+\])? - `, 'i')
 /** The most search highlights one answer carries; lines past it still match, unmarked, so a one-letter query over a large log stays small. */
 export const MAX_MATCHES = 2000
 
@@ -19,26 +20,31 @@ export interface ClassifiedLog {
   matched: number
 }
 
-/** Drops the token (with brackets around it and a colon after it) and joins what is left with one space. */
-function withoutToken(rest: string, index: number, length: number): string {
-  let before = rest.slice(0, index)
-  let after = rest.slice(index + length)
-  if (before.endsWith('[') && after.startsWith(']')) { before = before.slice(0, -1); after = after.slice(1) }
-  after = after.replace(/^:/, '').trimStart()
-  before = before.trimEnd()
-  return before && after ? `${before} ${after}` : before + after
-}
-
-/** One line's level, time and text. A line with no token, timestamp or `[tag]` (a traceback continuation) takes `previous`. */
+/** Only a recognized header sets severity. Untimed, untagged continuations inherit it. */
 export function classifyLine(line: string, previous: LogLevel | null): Omit<LogEntry, 'matches'> {
   const stamp = TIMESTAMP.exec(line)
+  const time = stamp?.[1] ?? null
   const rest = stamp ? line.slice(stamp[0].length) : line
-  const offset = stamp ? stamp[0].length : 0
-  const token = TOKEN.exec(rest)
-  if (token && offset + token.index < TOKEN_WINDOW) {
-    return { text: withoutToken(rest, token.index, token[0].length), level: TOKEN_LEVEL[token[0].toLowerCase()] ?? null, time: stamp?.[1] ?? null }
+  // Forwarded logs can stack source tags. Check for severity before treating each bracketed word as a tag.
+  let content = rest
+  let token = LEVEL_HEADER.exec(content)
+  while (!token) {
+    const tag = RECORD_TAG.exec(content)
+    if (!tag) break
+    content = content.slice(tag[0].length)
+    token = LEVEL_HEADER.exec(content)
   }
-  return { text: rest, level: stamp || RECORD_TAG.test(line) ? null : previous, time: stamp?.[1] ?? null }
+  const tagEnd = rest.length - content.length
+  if (token) {
+    const text = [rest.slice(0, tagEnd).trimEnd(), content.slice(token[0].length)].filter(Boolean).join(' ')
+    return { text, level: TOKEN_LEVEL[(token[1] ?? token[2] ?? '').toLowerCase()] ?? null, time }
+  }
+  const verbose = stamp ? VERBOSE_HEADER.exec(rest) : null
+  if (verbose) {
+    const text = `${verbose[1]}${verbose[3] ?? ''}: ${rest.slice(verbose[0].length)}`
+    return { text, level: TOKEN_LEVEL[verbose[2]?.toLowerCase() ?? ''] ?? null, time }
+  }
+  return { text: rest, level: stamp || tagEnd > 0 ? null : previous, time }
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
