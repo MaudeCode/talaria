@@ -3939,6 +3939,22 @@ final class SessionActionsHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "chat-find-restored")
     }
 
+    func testFindScrollsTheSelectedBlockIntoViewInALongReply() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.sessionFindArgument,
+                                      UITestFixtureEnvironment.sessionFindLongAnswerArgument], for: self)
+        let window = try await openChat(fixture, size: HostedSize.phone)
+        let query = try await searchFindFixture(in: window)
+        let next = try await requireElement(in: window, label: "Next Match")
+        XCTAssertTrue(HostedAccessibility.activate(next))
+        _ = try await requireElement(in: window, label: "2 of 3")
+        _ = try await requireElement(in: window, "The highlighted answer must be visible above Find") {
+            let frame = window.convert($0.accessibilityFrame, from: window.screen.coordinateSpace)
+            return $0.accessibilityLabel?.hasPrefix("The CAFÉ is on Main Street") == true
+                && frame.minY >= 0 && frame.maxY < query.convert(query.bounds, to: window).minY
+        }
+        attachHostedScreenshot(window, name: "chat-find-long-answer")
+    }
+
     func testFindGalleryPhoneLight() async throws { try await renderFind("phone-light") }
     func testFindGalleryPhoneDark() async throws { try await renderFind("phone-dark") }
     func testFindGalleryAccessibility() async throws { try await renderFind("phone-ax5") }

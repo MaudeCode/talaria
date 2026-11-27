@@ -197,6 +197,13 @@ final class ChatScrollPositionController {
         measuredScrollOffsetY(for: id, anchor: .top) != nil
     }
 
+    func isRegionVisible(_ region: CGRect, inRow id: String, bottomOverlay: CGFloat) -> Bool {
+        guard let scrollView, let rowTop = rowMinY[id], let viewportTop else { return false }
+        let inset = scrollView.adjustedContentInset
+        let viewportBottom = viewportTop + scrollView.bounds.height - inset.top - max(inset.bottom, bottomOverlay)
+        return rowTop + region.minY >= viewportTop && rowTop + region.maxY <= viewportBottom
+    }
+
     struct ReadingBookmark {
         let id: String
         let offset: CGFloat

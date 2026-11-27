@@ -90,6 +90,7 @@ struct UITestFixtureEnvironment {
     /// confirmation prompt (TAL-1412's `scripts/benchmark-display-phases`).
     nonisolated static let openSessionArgument = "--ui-test-open-session"
     nonisolated static let sessionFindArgument = "--ui-test-session-find"
+    nonisolated static let sessionFindLongAnswerArgument = "--ui-test-session-find-long-answer"
     /// TAL-70: a password server that answers every API read with 401 until `/api/auth/login` gets `fixturePassword`.
     nonisolated static let authRequiredArgument = "--ui-test-auth-required"
     nonisolated static let fixturePassword = "fixture-password"
@@ -1625,8 +1626,13 @@ final class UITestFixtureURLProtocol: URLProtocol {
            let source = sessionFindFixture?["session"] as? [String: Any],
            let sample = source["messages"] as? [[String: Any]] {
             let rendered = sample.map { original -> [String: Any] in
-                guard original["message_id"] as? String == "a2", let answer = original["content"] as? String else { return original }
+                guard original["message_id"] as? String == "a2", var answer = original["content"] as? String else { return original }
+                if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.sessionFindLongAnswerArgument) {
+                    let paragraphs = (1...24).map { "Paragraph \($0) explains how to follow the directions in this reply." }
+                    answer = (paragraphs + [answer]).joined(separator: "\n\n")
+                }
                 var row = original
+                row["content"] = answer
                 row["_anchor_activity_scene"] = [
                     "version": "activity_scene_v1", "terminal_state": "completed",
                     "final_answer": answer, "expanded_by_default": false,

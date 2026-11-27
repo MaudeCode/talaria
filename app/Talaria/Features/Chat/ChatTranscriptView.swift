@@ -33,6 +33,7 @@ struct ChatTranscriptView: View {
     @State private var nativeScrollRevision = 0
     @State private var scrollDestination: (id: String, anchor: UnitPoint, animation: Animation?, rowOffset: CGFloat?)?
     @State private var findBookmark: ChatScrollPositionController.ReadingBookmark?
+    @State private var findLanding: FindLanding?
     @State private var scrollDestinationNeedsMount = false
     @State private var readyScrollRevision: Int?
     @State private var ownRowCache = ChatTranscriptRowCache()
@@ -156,6 +157,12 @@ struct ChatTranscriptView: View {
     var find: ChatFindPresentation? = nil
     var findRow: (String) -> String? = { _ in nil }
 
+    private struct FindLanding {
+        let selection: UUID
+        let rowID: String
+        var precision = 0
+    }
+
     private var rowCache: ChatTranscriptRowCache { retainedRowCache ?? ownRowCache }
 
     private var isPlacingSearchResult: Bool {
@@ -255,20 +262,26 @@ struct ChatTranscriptView: View {
                         if searching {
                             didReaderScroll = true
                             findBookmark = find?.bookmark ?? scrollPositionController.readingBookmark
-                        } else if let bookmark = findBookmark {
-                            findBookmark = nil
-                            scrollCommands.scrollTo(id: bookmark.id, anchor: .top, rowOffset: bookmark.offset)
+                        } else {
+                            findLanding = nil
+                            if let bookmark = findBookmark {
+                                findBookmark = nil
+                                scrollCommands.scrollTo(id: bookmark.id, anchor: .top, rowOffset: bookmark.offset)
+                            }
                         }
                     }
                     .task(id: find?.selection) {
-                        guard let match = find?.match else { return }
+                        guard let find, let match = find.match else { return }
+                        let selection = find.selection
                         var row = findRow(match.messageId)
                         while row == nil, !Task.isCancelled {
                             guard await loadOlderMessagesPreservingPosition(proxy: proxy) else { break }
                             row = findRow(match.messageId)
                         }
-                        guard !Task.isCancelled, let row else { return }
-                        scrollCommands.scrollTo(id: Self.containerID(for: row), anchor: .top)
+                        guard !Task.isCancelled, find.selection == selection, let row else { return }
+                        let rowID = Self.containerID(for: row)
+                        findLanding = FindLanding(selection: selection, rowID: rowID)
+                        scrollCommands.scrollTo(id: rowID, anchor: .top)
                     }
                     // After this update's own follow scrolls, so placing the reader at the rule wins over them.
                     // The row count re-runs it after each older page, until the row arrives.
@@ -541,6 +554,8 @@ struct ChatTranscriptView: View {
         let controller = scrollPositionController
         let revision = historyLayoutRevision
         return row
+            .coordinateSpace(.named(ChatFindReveal.rowSpace))
+            .environment(\.chatFindReveal, findReveal(for: id))
             .onGeometryChange(for: ChatScrollPositionController.RowGeometry.self) { [transcriptContentID] in
                 ChatScrollPositionController.RowGeometry(revision: revision,
                     contentMinY: $0.frame(in: .named(transcriptContentID)).minY,
@@ -553,6 +568,23 @@ struct ChatTranscriptView: View {
             .chatDisclosureToggled {
                 pinReaderForDisclosure(anchorRowID: id)
             }
+    }
+
+    private func findReveal(for rowID: String) -> ChatFindReveal? {
+        guard let find, let landing = findLanding, landing.selection == find.selection,
+              landing.rowID == rowID else { return nil }
+        return ChatFindReveal(selection: landing.selection) { region, exact in
+            let precision = exact ? 2 : 1
+            guard find.selection == landing.selection, findLanding?.selection == landing.selection,
+                  findLanding?.rowID == rowID, let previous = findLanding?.precision,
+                  previous < precision, region.minY.isFinite else { return }
+            findLanding?.precision = precision
+            if !scrollPositionController.isNavigating,
+               scrollPositionController.isRegionVisible(region, inRow: rowID, bottomOverlay: transcriptBottomInsetHeight) {
+                return
+            }
+            scrollCommands.scrollTo(id: rowID, anchor: .top, rowOffset: max(0, region.minY - 12))
+        }
     }
 
     /// Runs an automatic follow only while `isFollowingLatestContent` holds.
@@ -615,6 +647,7 @@ struct ChatTranscriptView: View {
                         nativeScrollRevision: nativeScrollRevision,
                         onFollowEvent: { event in
                             if case .userScrollBegin = event {
+                                findLanding = nil
                                 didReaderScroll = true
                                 isPlacingRestoredReader = false
                                 initialScrollAnchor = nil

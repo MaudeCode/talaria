@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { useJsonStorage } from '../test/storage.js'
@@ -63,6 +64,18 @@ describe('GET /api/session/find (TAL-2666)', () => {
       .toEqual([[0, 3, 0], [0, 3, 1], [5, 8, 0]])
     expect(matches[0]?.block?.digest).toBe(matches[1]?.block?.digest)
     expect(matches[2]?.block?.digest).not.toBe(matches[0]?.block?.digest)
+  })
+
+  it('returns table-cell digests and ranges without counting separator markup', async () => {
+    const sid = await seeded('find-table', [
+      { role: 'user', content: 'Compare the choices.', message_id: 'u1', timestamp: 1 },
+      { role: 'assistant', content: '| Fruit | Colour |\n| --- | --- |\n| Plum | **Purple** |\n| Fig | Purple |', message_id: 'a1', timestamp: 2 },
+    ])
+    const digest = createHash('sha256').update('Purple').digest('hex')
+    expect((await find(sid, 'purple')).matches).toEqual([0, 1].map(occurrence => ({
+      message_id: 'a1', range: { start: 0, end: 6 }, block: { digest, occurrence },
+    })))
+    expect((await find(sid, '---')).matches).toEqual([])
   })
 
   it('matches the redacted text the transcript shows, never the credential behind it', async () => {

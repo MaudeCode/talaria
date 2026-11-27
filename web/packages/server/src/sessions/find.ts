@@ -1,13 +1,16 @@
 /** TAL-2666: find in chat, over the text a chat's public (projected, redacted) messages show on their own rows. */
 import type { SessionFindMatch } from '@maudecode/talaria-web-contracts'
 import { fromMarkdown } from 'mdast-util-from-markdown'
+import { gfmTableFromMarkdown } from 'mdast-util-gfm-table'
 import type { Nodes } from 'mdast'
+import { gfmTable } from 'micromark-extension-gfm-table'
 import { createHash } from 'node:crypto'
 import { messageText } from './merge.js'
 import { transcriptRowKey } from './transcript-row.js'
 
 type Row = Record<string, unknown>
 const isDict = (v: unknown): v is Row => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
+const transcriptMarkdown = { extensions: [gfmTable()], mdastExtensions: [gfmTableFromMarkdown()] }
 
 /**
  * The text a row shows on its own: a user message's text, or a settled turn's answer on the reply row carrying its scene.
@@ -36,7 +39,7 @@ function inlineText(node: Nodes): string {
 }
 
 function* markdownTextBlocks(node: Nodes): Iterable<{ text: string; code: boolean }> {
-  if (node.type === 'paragraph' || node.type === 'heading') {
+  if (node.type === 'paragraph' || node.type === 'heading' || node.type === 'tableCell') {
     yield { text: inlineText(node).replaceAll('\n', ' '), code: false }
   } else if (node.type === 'code' && !['math', 'latex', 'tex'].includes(node.lang?.toLowerCase() ?? '')) {
     yield { text: node.value, code: true }
@@ -110,7 +113,7 @@ export function sessionFindMatches(rows: readonly unknown[], offset: number, que
     const source = shownText(m)
     if (!source) continue
     const markdown = m.role === 'assistant'
-    const blocks = markdown ? markdownTextBlocks(fromMarkdown(source)) : [{ text: source, code: false }]
+    const blocks = markdown ? markdownTextBlocks(fromMarkdown(source, transcriptMarkdown)) : [{ text: source, code: false }]
     const occurrences = new Map<string, number>()
     const message_id = transcriptRowKey(m, offset + index)
     for (const { text, code } of blocks) {

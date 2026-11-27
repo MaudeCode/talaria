@@ -136,7 +136,7 @@ struct ChatCodeBlock: View {
             let original = highlightedCode.flatMap { $0.string == content ? $0 : nil } ?? NSAttributedString(string: content)
             let styled = NSMutableAttributedString(attributedString: original)
             let _ = styled.addAttribute(.backgroundColor, value: ChatFindBlocks.highlight, range: range)
-            HighlightedCodeBlockText(content: styled, wraps: wrapsCodeBlockLines)
+            HighlightedCodeBlockText(content: styled, wraps: wrapsCodeBlockLines, findRange: range)
         } else if let highlightedCode {
             HighlightedCodeBlockText(content: highlightedCode, wraps: wrapsCodeBlockLines)
         } else {

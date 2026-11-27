@@ -7,7 +7,7 @@ final class ChatFindPresentation {
     let bookmark: ChatScrollPositionController.ReadingBookmark?
     var query = ""
     private(set) var index = 0
-    private(set) var selection = 0
+    private(set) var selection = UUID()
     private(set) var response: SessionFindResponse?
     private(set) var failed = false
 
@@ -25,14 +25,14 @@ final class ChatFindPresentation {
         response = nil
         failed = false
         index = 0
-        selection += 1
+        selection = UUID()
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         do {
             try await Task.sleep(for: .milliseconds(250))
             let response = try await client.findInSession(id: sessionID, query: query)
             guard !Task.isCancelled, self.query == query, response.sessionId == sessionID else { return }
             self.response = response
-            selection += 1
+            selection = UUID()
         } catch {
             guard !Task.isCancelled, !APIError.isCancellation(error), self.query == query else { return }
             failed = true
@@ -42,7 +42,7 @@ final class ChatFindPresentation {
     func move(by step: Int) {
         guard let count = response?.matches.count, count > 0 else { return }
         index = (index + step + count) % count
-        selection += 1
+        selection = UUID()
     }
 }
 

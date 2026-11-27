@@ -4,6 +4,7 @@ import TalariaKit
 struct MessageBubbleView: View {
     @Environment(\.chatFindMatch) private var findMatch
     @State private var findBlocks: [UUID] = []
+    @State private var messageFindTextID = UUID()
     @Environment(\.pendingSteerControls) private var pendingSteerControls
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -358,7 +359,6 @@ struct MessageBubbleView: View {
             .font(.body)
             .lineLimit(isFoldedPrompt ? Self.foldedPromptLineLimit : nil)
             .modifier(FoldedPromptFadeModifier(isActive: isFoldedPrompt))
-            .textSelection(.enabled)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(userBubbleBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -370,17 +370,28 @@ struct MessageBubbleView: View {
             .modifier(PendingSteerMenuModifier(isEnabled: message.messageId.flatMap { pendingSteerControls.actions[$0] }?.any == true) { pendingSteerMenu })
     }
 
-    private var userBubbleLabel: Text {
+    @ViewBuilder
+    private var userBubbleLabel: some View {
         let text = userBubbleText
-        guard let match = findMatch, match.block == nil,
-              let range = match.range.nsRange(in: text), let indices = Range(range, in: text) else {
-            return Text(verbatim: text)
+        if let match = findMatch, match.block == nil,
+           let range = match.range.nsRange(in: text),
+           let highlight = ChatFindBlocks.characters(in: text, at: range) {
+            Text(highlightedUserText(text, at: range))
+                .modifier(ChatFindTextTracking(renderer: ChatLinkRegionTextRenderer(
+                    links: [], expectedCharacterCount: text.count, store: nil, paragraphID: messageFindTextID,
+                    highlight: highlight, paintsHighlight: false, textWithLineBreaks: text
+                )))
+        } else {
+            Text(verbatim: text).textSelection(.enabled)
         }
+    }
+
+    private func highlightedUserText(_ text: String, at range: NSRange) -> AttributedString {
         var attributed = AttributedString(text)
-        if let range = Range(indices, in: attributed) {
+        if let indices = Range(range, in: text), let range = Range(indices, in: attributed) {
             attributed[range].backgroundColor = Color(uiColor: ChatFindBlocks.highlight)
         }
-        return Text(attributed)
+        return attributed
     }
 
     private var selectedFindBlock: UUID? {
