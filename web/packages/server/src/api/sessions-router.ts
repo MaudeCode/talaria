@@ -828,7 +828,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot save to a symlinked entry')
         if (!existsSync(target)) throw new HttpError(404, 'File not found')
         if (statSync(target).isDirectory()) throw new HttpError(400, 'Cannot save: path is a directory')
-        const data = Buffer.from(input.content ?? '', 'utf8')
+        const data = Buffer.from(input.content, 'utf8')
         replaceAnchoredFile(root, target, data)
         return { ok: true as const, path: input.path, size: data.length }
       } catch (error) {
@@ -854,7 +854,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
         if (!format) throw new HttpError(400, 'Office save is only available for .docx, .xlsx, and .pptx files')
         if (format !== 'docx') throw new HttpError(400, `${format} is preview-only`)
         return await ctx.deps.git.holdWrite(root, async () => {
-          const saved = await saveDocx(readFileBytes(root, input.path), input.content ?? '')
+          const saved = await saveDocx(readFileBytes(root, input.path), input.content)
           replaceAnchoredFile(root, target, saved.bytes)
           return { ...saved.preview, ok: true as const, path: input.path, size: saved.bytes.length, preview: 'office' as const, source: 'workspace' as const }
         })

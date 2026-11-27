@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Workspace files keep their contents if a save request omits the replacement text.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

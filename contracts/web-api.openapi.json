@@ -86473,20 +86473,21 @@
                   "path": {
                     "type": "string"
                   },
+                  "content": {
+                    "type": "string"
+                  },
                   "source": {
                     "enum": [
                       "workspace",
                       "managed"
                     ],
                     "type": "string"
-                  },
-                  "content": {
-                    "type": "string"
                   }
                 },
                 "required": [
                   "session_id",
-                  "path"
+                  "path",
+                  "content"
                 ]
               }
             }
@@ -86556,7 +86557,8 @@
                 },
                 "required": [
                   "session_id",
-                  "path"
+                  "path",
+                  "content"
                 ]
               }
             }
