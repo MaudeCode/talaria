@@ -288,6 +288,34 @@ describe('live logins', () => {
   })
 })
 
+it('pushes each successive approval head once while the run waits for approval', async () => {
+  const server = await bootTestServer()
+  try {
+    const push = stubPushService(server)
+    const keys = browserKeys()
+    expect((await send(server, 'POST', PUSH_PATH, { endpoint: ENDPOINT, keys })).status).toBe(200)
+    const sid = String(((await json(await send(server, 'POST', '/api/session/new', {}))).session as Json).session_id)
+    server.deps.registry.activeRuns.set('stream-approvals', { stream_id: 'stream-approvals', session_id: sid, started_at: 1, phase: 'running', workspace: server.state, model: null, provider: null, ephemeral: false })
+    const settle = async (): Promise<void> => { server.deps.notifications.changed(); await server.deps.webPush.idle() }
+    await settle()
+
+    server.deps.pending.submitApproval(sid, { request_id: 'first', tool: { name: 'terminal', kind: 'shell', target: 'git status' } })
+    server.deps.pending.submitApproval(sid, { request_id: 'second', tool: { name: 'terminal', kind: 'shell', target: 'git diff' } })
+    await settle()
+    expect(push.pushes).toHaveLength(1)
+
+    server.deps.pending.resolveApproval(sid, 'first')
+    await settle()
+    await settle()
+    expect(push.pushes.map((sent) => keys.decrypt(Buffer.from(sent.init.body as Uint8Array)).body)).toEqual([
+      'Approval needed · Run git status',
+      'Approval needed · Run git diff',
+    ])
+  } finally {
+    await server.close()
+  }
+})
+
 describe('Web Push under person isolation (TAL-48)', () => {
   it('alerts only the person whose session needs them', async () => {
     const issuer = 'https://identity.invalid'

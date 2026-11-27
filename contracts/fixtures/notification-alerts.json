@@ -145,6 +145,95 @@
       "expected": null
     },
     {
+      "name": "successive approval head",
+      "previous": "waiting_for_approval",
+      "next": "waiting_for_approval",
+      "previousApprovalHeadId": "head-1",
+      "approvalHeadId": "head-2",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "approval"
+    },
+    {
+      "name": "approval head heartbeat",
+      "previous": "waiting_for_approval",
+      "next": "waiting_for_approval",
+      "previousApprovalHeadId": "head-2",
+      "approvalHeadId": "head-2",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "ineligible successive approval head",
+      "previous": "waiting_for_approval",
+      "next": "waiting_for_approval",
+      "previousApprovalHeadId": "head-1",
+      "approvalHeadId": "head-2",
+      "alertEligible": false,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "successive approval head with approval alerts disabled",
+      "previous": "waiting_for_approval",
+      "next": "waiting_for_approval",
+      "previousApprovalHeadId": "head-1",
+      "approvalHeadId": "head-2",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": false,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "same approval head after leaving the phase",
+      "previous": "running",
+      "next": "waiting_for_approval",
+      "previousApprovalHeadId": "head-2",
+      "approvalHeadId": "head-2",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": null
+    },
+    {
+      "name": "approval phase change without an incoming head",
+      "previous": "running",
+      "next": "waiting_for_approval",
+      "previousApprovalHeadId": "head-1",
+      "alertEligible": true,
+      "preferences": {
+        "notify_on_approval": true,
+        "notify_on_input": true,
+        "notify_on_completion": true,
+        "notify_on_failure": true
+      },
+      "expected": "approval"
+    },
+    {
       "name": "unchanged completed",
       "previous": "completed",
       "next": "completed",

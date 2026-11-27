@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Browser push sends a notification for each approval as it reaches the front of the queue.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
