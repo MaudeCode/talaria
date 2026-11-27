@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Paste photos directly into the Details field when sending feedback.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

@@ -123,8 +123,7 @@ struct ComposerTextView: UIViewRepresentable {
         let isRTL = context.environment.layoutDirection == .rightToLeft
         textView.semanticContentAttribute = isRTL ? .forceRightToLeft : .unspecified
         textView.textAlignment = isRTL ? .right : .natural
-        context.coordinator.applyEditability(!isDisabled, to: textView)
-        textView.textColor = isDisabled ? .secondaryLabel : .label
+        textView.applyEditability(!isDisabled)
         applyInputHandling(to: textView, coordinator: context.coordinator)
         context.coordinator.syncFocus(for: textView, shouldFocus: isFocused, isDisabled: isDisabled)
         context.coordinator.reportHeight(for: textView)
@@ -159,8 +158,6 @@ struct ComposerTextView: UIViewRepresentable {
         // away would drop the marked text, so it waits for the composition to end and
         // is then applied exactly once.
         private var pendingExternalText: String?
-        // The editability the latest update asked for; a deferred disable applies this value.
-        private var targetEditability = true
 
         init(
             text: Binding<String>,
@@ -191,25 +188,6 @@ struct ComposerTextView: UIViewRepresentable {
 
             pendingExternalText = nil
             textView.text = boundText
-        }
-
-        func applyEditability(_ isEditable: Bool, to textView: UITextView) {
-            targetEditability = isEditable
-            guard textView.isEditable != isEditable else { return }
-            guard !isEditable, textView.isFirstResponder else {
-                textView.isEditable = isEditable
-                textView.isSelectable = isEditable
-                return
-            }
-
-            // Disabling the focused field resigns it, and the keyboard animation lays out the
-            // hosting view inside this SwiftUI update: an AttributeGraph cycle that hangs the
-            // main thread (TAL-415). Disable it once the update has finished.
-            Task { @MainActor [weak self, weak textView] in
-                guard let self, let textView, textView.delegate === self else { return }
-                textView.isEditable = self.targetEditability
-                textView.isSelectable = self.targetEditability
-            }
         }
 
         func syncFocus(for textView: UITextView, shouldFocus: Bool, isDisabled: Bool) {
@@ -320,7 +298,7 @@ struct ComposerTextView: UIViewRepresentable {
         }
     }
 
-    final class PastingTextView: UITextView {
+    final class PastingTextView: ImagePastingTextView {
         var isKeyboardSendEnabled = false
         var keyboardSendKey = ComposerSendKey.defaultValue
         var alternateSendBehavior = StreamingSendBehavior.steer.alternate
@@ -328,36 +306,24 @@ struct ComposerTextView: UIViewRepresentable {
         var onKeyboardSend: (StreamingSendBehavior?) -> Void = { _ in }
         var onPasteFileProviders: ([NSItemProvider]) -> Void = { _ in }
         var onPasteFileURLs: ([URL]) -> Void = { _ in }
-        var onPasteImageProviders: ([NSItemProvider]) -> Void = { _ in }
-        var onPasteImages: ([UIImage]) -> Void = { _ in }
 
-        func canPasteItemProviders(_ itemProviders: [NSItemProvider]) -> Bool {
-            itemProviders.contains {
+        override func canPasteItemProviders(_ itemProviders: [NSItemProvider]) -> Bool {
+            super.canPasteItemProviders(itemProviders) || (isEditable && itemProviders.contains {
                 $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-                    || $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
-                    || $0.hasItemConformingToTypeIdentifier(UTType.text.identifier)
-            }
+            })
         }
 
-        func pasteItemProviders(_ itemProviders: [NSItemProvider]) {
+        override func pasteItemProviders(_ itemProviders: [NSItemProvider]) {
+            guard isEditable else { return }
             let fileProviders = itemProviders.filter {
                 $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
             }
 
             if fileProviders.isEmpty {
-                let imageProviders = itemProviders.filter {
-                    $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
-                }
-
-                if imageProviders.isEmpty {
-                    paste(nil)
-                } else {
-                    onPasteImageProviders(imageProviders)
-                }
-                return
+                super.pasteItemProviders(itemProviders)
+            } else {
+                onPasteFileProviders(fileProviders)
             }
-
-            onPasteFileProviders(fileProviders)
         }
 
         override var keyCommands: [UIKeyCommand]? {
@@ -395,7 +361,7 @@ struct ComposerTextView: UIViewRepresentable {
                 return isKeyboardSendEnabled && markedTextRange == nil
             case #selector(insertNewlineFromKeyboard):
                 return isEditable && markedTextRange == nil
-            case #selector(paste(_:)) where hasPasteboardContent:
+            case #selector(paste(_:)) where isEditable && (!pasteboardFileProviders.isEmpty || !pasteboardFileURLs.isEmpty):
                 return true
             default:
                 return super.canPerformAction(action, withSender: sender)
@@ -430,6 +396,7 @@ struct ComposerTextView: UIViewRepresentable {
         }
 
         override func paste(_ sender: Any?) {
+            guard isEditable else { return }
             let fileProviders = pasteboardFileProviders
 
             if !fileProviders.isEmpty {
@@ -443,28 +410,7 @@ struct ComposerTextView: UIViewRepresentable {
                 return
             }
 
-            let imageProviders = pasteboardImageProviders
-            if !imageProviders.isEmpty {
-                onPasteImageProviders(imageProviders)
-                return
-            }
-
-            let images = UIPasteboard.general.images ?? []
-            if !images.isEmpty {
-                onPasteImages(images)
-                return
-            }
-
             super.paste(sender)
-        }
-
-        private var hasPasteboardContent: Bool {
-            let pasteboard = UIPasteboard.general
-            return pasteboard.hasStrings
-                || !pasteboardFileProviders.isEmpty
-                || !pasteboardFileURLs.isEmpty
-                || !pasteboardImageProviders.isEmpty
-                || !(pasteboard.images?.isEmpty ?? true)
         }
 
         private var pasteboardFileProviders: [NSItemProvider] {
@@ -476,11 +422,76 @@ struct ComposerTextView: UIViewRepresentable {
         private var pasteboardFileURLs: [URL] {
             UIPasteboard.general.urls?.filter(\.isFileURL) ?? []
         }
+    }
+}
 
-        private var pasteboardImageProviders: [NSItemProvider] {
-            UIPasteboard.general.itemProviders.filter {
-                $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
-            }
+/// Routes image paste to the owning editor's attachment pipeline and leaves text paste to UIKit.
+class ImagePastingTextView: UITextView {
+    var onPasteImageProviders: (([NSItemProvider]) -> Void)?
+    var onPasteImages: (([UIImage]) -> Void)?
+    private var targetEditability = true
+
+    func applyEditability(_ isEditable: Bool) {
+        targetEditability = isEditable
+        let color: UIColor = isEditable ? .label : .secondaryLabel
+        if textColor != color { textColor = color }
+        guard self.isEditable != isEditable else { return }
+        guard !isEditable, isFirstResponder else {
+            self.isEditable = isEditable
+            isSelectable = isEditable
+            return
         }
+
+        // Resigning the focused editor can lay out its hosting view during the SwiftUI update (TAL-415).
+        Task { @MainActor [weak self, weak currentDelegate = delegate] in
+            guard let self, let currentDelegate, self.delegate === currentDelegate else { return }
+            self.isEditable = self.targetEditability
+            self.isSelectable = self.targetEditability
+        }
+    }
+
+    @objc(canPasteItemProviders:)
+    func canPasteItemProviders(_ itemProviders: [NSItemProvider]) -> Bool {
+        isEditable && itemProviders.contains {
+            $0.hasItemConformingToTypeIdentifier(UTType.text.identifier)
+                || (onPasteImageProviders != nil && $0.hasItemConformingToTypeIdentifier(UTType.image.identifier))
+        }
+    }
+
+    @objc(pasteItemProviders:)
+    func pasteItemProviders(_ itemProviders: [NSItemProvider]) {
+        guard isEditable else { return }
+        if !handleImageProviders(itemProviders), canPasteItemProviders(itemProviders) {
+            paste(nil)
+        }
+    }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(paste(_:)), isEditable {
+            let pasteboard = UIPasteboard.general
+            if pasteboard.hasStrings
+                || (onPasteImages != nil && pasteboard.hasImages)
+                || canPasteItemProviders(pasteboard.itemProviders) { return true }
+        }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    override func paste(_ sender: Any?) {
+        guard isEditable else { return }
+        let pasteboard = UIPasteboard.general
+        if handleImageProviders(pasteboard.itemProviders) { return }
+        if let onPasteImages, let images = pasteboard.images, !images.isEmpty {
+            onPasteImages(images)
+            return
+        }
+        super.paste(sender)
+    }
+
+    private func handleImageProviders(_ providers: [NSItemProvider]) -> Bool {
+        guard let onPasteImageProviders else { return false }
+        let images = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }
+        guard !images.isEmpty else { return false }
+        onPasteImageProviders(images)
+        return true
     }
 }

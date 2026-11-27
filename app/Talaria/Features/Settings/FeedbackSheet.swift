@@ -26,9 +26,7 @@ struct FeedbackSheet: View {
                     }
                     TextField("Title (optional)", text: field(\.title))
                         .accessibilityIdentifier("feedback-title")
-                    TextField("Details", text: field(\.body), axis: .vertical)
-                        .lineLimit(5...12)
-                        .accessibilityIdentifier("feedback-details")
+                    detailsEditor
                     Toggle("Include Diagnostics", isOn: field(\.includeDiagnostics))
                 }
                 .disabled(model.hasUnknownOutcome)
@@ -104,6 +102,19 @@ struct FeedbackSheet: View {
         .adaptiveFormPresentation()
     }
 
+    private var detailsEditor: some View {
+        let paste: (([NSItemProvider]) -> Void)? = model.attachmentsEnabled ? { pasteImages($0) } : nil
+        return ZStack(alignment: .topLeading) {
+            FeedbackDetailsEditor(text: field(\.body), onPasteImageProviders: paste)
+            if model.draft.body.isEmpty {
+                Text("Details")
+                    .foregroundStyle(Color(uiColor: .placeholderText))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
     private func diagnosticTitle(_ kind: FeedbackDiagnosticReport.Kind) -> String {
         switch kind {
         case .crash: String(localized: "Crash Report")
@@ -143,17 +154,15 @@ struct FeedbackSheet: View {
                 }
                 .accessibilityIdentifier("feedback-add-attachment")
             }
-            if model.attachmentsEnabled {
-                PasteButton(supportedContentTypes: [.image]) { providers in
-                    Task { await attachImages(from: providers) }
-                }
-                .accessibilityIdentifier("feedback-paste-attachment")
-            }
             if let error = model.attachmentError {
                 SettingsErrorFootnote(error)
             }
         }
         .disabled(model.hasUnknownOutcome)
+    }
+
+    private func pasteImages(_ providers: [NSItemProvider]) {
+        Task { await attachImages(from: providers) }
     }
 
     private func attachImages(from providers: [NSItemProvider]) async {
@@ -168,7 +177,7 @@ struct FeedbackSheet: View {
             if let data { images.append(data) }
         }
         // The user may have picked another photo while the providers were loading.
-        guard model.checkAttachmentCapacity(images.count) else { return }
+        guard model.checkAttachmentCapacity(providers.count) else { return }
         for data in images { model.addImage(data) }
         if images.count != providers.count { model.reportUnloadableAttachment() }
     }
@@ -193,6 +202,56 @@ struct FeedbackSheet: View {
 
     private func field<Value>(_ path: WritableKeyPath<FeedbackRequest, Value>) -> Binding<Value> {
         Binding(get: { model.draft[keyPath: path] }, set: { value in model.edit { $0[keyPath: path] = value } })
+    }
+}
+
+private struct FeedbackDetailsEditor: UIViewRepresentable {
+    @Binding var text: String
+    let onPasteImageProviders: (([NSItemProvider]) -> Void)?
+
+    func makeUIView(context: Context) -> ImagePastingTextView {
+        let editor = ImagePastingTextView()
+        editor.delegate = context.coordinator
+        editor.backgroundColor = .clear
+        editor.font = .preferredFont(forTextStyle: .body)
+        editor.adjustsFontForContentSizeCategory = true
+        editor.textContainerInset = .zero
+        editor.textContainer.lineFragmentPadding = 0
+        editor.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [UTType.image.identifier, UTType.text.identifier])
+        editor.accessibilityLabel = String(localized: "Details")
+        editor.accessibilityIdentifier = "feedback-details"
+        return editor
+    }
+
+    func updateUIView(_ editor: ImagePastingTextView, context: Context) {
+        context.coordinator.text = $text
+        if editor.text != text, editor.markedTextRange == nil { editor.text = text }
+        editor.applyEditability(context.environment.isEnabled)
+        let isRTL = context.environment.layoutDirection == .rightToLeft
+        editor.semanticContentAttribute = isRTL ? .forceRightToLeft : .unspecified
+        editor.textAlignment = isRTL ? .right : .natural
+        editor.onPasteImageProviders = onPasteImageProviders
+        editor.onPasteImages = onPasteImageProviders.map { action in
+            { images in action(images.map { NSItemProvider(object: $0) }) }
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: ImagePastingTextView, context: Context) -> CGSize? {
+        guard let width = proposal.width, let font = uiView.font else { return nil }
+        let height = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        return CGSize(width: width, height: ceil(min(max(height, 5 * font.lineHeight), 12 * font.lineHeight)))
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) { self.text = text }
+
+        func textViewDidChange(_ textView: UITextView) {
+            text.wrappedValue = textView.text
+        }
     }
 }
 
