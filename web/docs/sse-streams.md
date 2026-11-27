@@ -312,6 +312,11 @@ provider session. The frames are `TranscribeStream*Schema` in
 `packages/contracts/src/transcribe-stream.ts`, with an example exchange in
 `contracts/fixtures/transcribe-stream.json`.
 
+On Stop, the browser flushes its microphone worklet and sends the final PCM
+block before EOS. If the worklet cannot acknowledge the flush, the browser
+uses the recorded audio fallback. Cancel during capture discards buffered
+audio and closes the stream without EOS.
+
 The server sets `has_usable_transcript` on the final frame and on the
 `POST /api/transcribe` result. A false value tells the composer to keep the
 draft and show its no-speech notice.

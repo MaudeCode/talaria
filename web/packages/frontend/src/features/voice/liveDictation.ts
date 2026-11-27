@@ -26,6 +26,8 @@ export class NoSpeechError extends Error {
 
 /** The sidecar's finalize waits up to 20 s for the provider. */
 const FINAL_TIMEOUT_MS = 25_000
+/** An interrupted audio context can stop answering. Use the recording fallback instead of holding the microphone. */
+const FLUSH_TIMEOUT_MS = 1_000
 
 export function liveDictationSupported(): boolean {
   return typeof window !== 'undefined' && window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === 'function' && typeof AudioContext !== 'undefined' && typeof WebSocket !== 'undefined'
@@ -45,6 +47,8 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
   const upload = new AbortController()
   let settle: () => void = () => undefined
   const settled = new Promise<void>((resolve) => { settle = resolve })
+  let acknowledgeFlush: (flushed: true) => void = () => undefined
+  const flushAcknowledged = new Promise<true>((resolve) => { acknowledgeFlush = resolve })
   const fail = () => { failed = true; settle() }
 
   ws.onopen = () => {
@@ -70,8 +74,9 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
   ws.onerror = fail
   ws.onclose = () => { if (final === null) fail() }
 
-  tap.port.onmessage = (event: MessageEvent<Float32Array>) => {
+  tap.port.onmessage = (event: MessageEvent<Float32Array | 'flushed'>) => {
     if (failed || ended) return
+    if (event.data === 'flushed') { acknowledgeFlush(true); return }
     const pcm = toPcm16(event.data)
     if (ws.readyState === WebSocket.OPEN) ws.send(pcm)
     else if (ws.readyState === WebSocket.CONNECTING) early.push(pcm)
@@ -80,10 +85,19 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
   // Connected to the output so every browser renders it; the tap writes nothing, so nothing is heard.
   tap.connect(audio.destination)
 
+  const flushCapture = async () => {
+    if (failed || ws.readyState !== WebSocket.OPEN) return false
+    tap.port.postMessage('flush')
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const acknowledged = await Promise.race([flushAcknowledged, settled, new Promise<void>((resolve) => { timer = setTimeout(resolve, FLUSH_TIMEOUT_MS) })])
+    clearTimeout(timer)
+    return acknowledged === true
+  }
   const release = () => {
     if (ended) return
     ended = true
     tap.port.onmessage = null
+    tap.port.close()
     tap.disconnect()
     source.disconnect()
     void audio.close()
@@ -109,9 +123,10 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
   return {
     stop: () => {
       stopping ??= (async () => {
+        const flushed = await flushCapture()
         release()
         const blob = recording()
-        if (ws.readyState === WebSocket.OPEN && !failed) ws.send(JSON.stringify({ eos: true }))
+        if (flushed && ws.readyState === WebSocket.OPEN && !failed) ws.send(JSON.stringify({ eos: true }))
         else fail()
         let timer: ReturnType<typeof setTimeout> | undefined
         await Promise.race([settled, new Promise((resolve) => { timer = setTimeout(resolve, FINAL_TIMEOUT_MS) })])
