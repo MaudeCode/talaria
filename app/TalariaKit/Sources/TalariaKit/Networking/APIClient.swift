@@ -300,7 +300,8 @@ public actor APIClient {
         encodedBody: Data?,
         timeout: TimeInterval? = nil,
         accept: String = "application/json",
-        contentType: String = "application/json"
+        contentType: String = "application/json",
+        bodyFile: URL? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         if method != "GET" && method != "HEAD" {
             switch endpoint {
@@ -319,7 +320,7 @@ public actor APIClient {
         AppConfig.applyClientIdentity(to: &request)
         request.setValue(accept, forHTTPHeaderField: "Accept")
 
-        if let encodedBody {
+        if encodedBody != nil || bodyFile != nil {
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
             request.httpBody = encodedBody
         }
@@ -327,7 +328,14 @@ public actor APIClient {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request, delegate: redirectHeaderStripper)
+            if let bodyFile {
+                let redirectGuard = CrossOriginHeaderStripper(
+                    baseURL: baseURL, customHeaderProvider: customHeaderProvider, allowsCrossOrigin: false
+                )
+                (data, response) = try await session.upload(for: request, fromFile: bodyFile, delegate: redirectGuard)
+            } else {
+                (data, response) = try await session.data(for: request, delegate: redirectHeaderStripper)
+            }
         } catch {
             throw APIError.network(underlying: error)
         }

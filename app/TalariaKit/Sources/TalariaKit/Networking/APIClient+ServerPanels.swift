@@ -255,6 +255,34 @@ extension APIClient {
         return try await downloadPrivateZIP(from: url, filename: archiveName ?? "agent-home.zip")
     }
 
+    public func agentRestoreStatus() async throws -> AgentRestoreStatus {
+        try await send(endpoint: .agentRestore, method: "GET")
+    }
+
+    public func stageAgentRestore(archive: URL) async throws -> AgentRestoreStatus {
+        guard archive.isFileURL else { throw APIError.invalidServerURL }
+        let didAccess = archive.startAccessingSecurityScopedResource()
+        defer { if didAccess { archive.stopAccessingSecurityScopedResource() } }
+        let (data, _) = try await sendDataReturningResponse(
+            endpoint: .stageAgentRestore(filename: archive.lastPathComponent),
+            method: "POST", encodedBody: nil, contentType: "application/zip", bodyFile: archive
+        )
+        return try decode(AgentRestoreStatus.self, from: data)
+    }
+
+    public func confirmAgentRestore(id: String) async throws -> AgentRestoreStatus {
+        try await send(endpoint: .agentRestore, method: "POST", body: AgentRestoreConfirmation(id: id))
+    }
+
+    public func downloadAgentRestoreRecovery(_ job: AgentRestoreJob) async throws -> URL {
+        let recoveryPath = Endpoint.agentRestoreRecovery.url(relativeTo: baseURL).path
+        guard let path = job.recoveryUrl, let url = appRelativeURL(path), url.path == recoveryPath,
+              URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "id", value: job.id)] else {
+            throw APIError.invalidServerURL
+        }
+        return try await downloadPrivateZIP(from: url, filename: "hermes-pre-restore-backup.zip")
+    }
+
     /// Forces a *live* update check: `POST /api/updates/check` with `{ "force": true }`.
     /// Upstream runs a real `git fetch` for this path (`check_for_updates(force=True)`),
     /// whereas the plain GET only returns the cached status. Same response shape, so
@@ -311,6 +339,11 @@ extension APIClient {
     public func insights(days: Int, start: String? = nil, end: String? = nil) async throws -> InsightsResponse {
         try await send(endpoint: .insights(days: days, start: start, end: end), method: "GET")
     }
+}
+
+private struct AgentRestoreConfirmation: Encodable {
+    let id: String
+    let confirmed = true
 }
 
 private struct AuxiliaryModelSetRequest: Encodable {

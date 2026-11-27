@@ -131,6 +131,9 @@ public enum Endpoint: Sendable {
     case updatesSummary
     case agentBackup
     case discardAgentBackup(id: String)
+    case agentRestore
+    case stageAgentRestore(filename: String)
+    case agentRestoreRecovery
     case updateNotifications
     case updateNotificationsClear
     case updateNotificationRead(id: String)
@@ -451,6 +454,12 @@ public enum Endpoint: Sendable {
             return "/api/updates/summary"
         case .agentBackup, .discardAgentBackup:
             return "/api/agent-backup"
+        case .agentRestore:
+            return "/api/agent-backup/restore"
+        case .stageAgentRestore:
+            return "/api/agent-backup/restore/upload"
+        case .agentRestoreRecovery:
+            return "/api/agent-backup/recovery"
         case .updateNotifications:
             return "/api/update-notifications"
         case .updateNotificationsClear:
@@ -729,6 +738,8 @@ public enum Endpoint: Sendable {
             return items
         case let .workspaceSuggestions(prefix):
             return [URLQueryItem(name: "prefix", value: prefix)]
+        case let .stageAgentRestore(filename):
+            return [URLQueryItem(name: "name", value: filename)]
         case let .file(sessionID, path),
             let .rawFile(sessionID, path):
             return [

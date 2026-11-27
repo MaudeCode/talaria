@@ -3,6 +3,7 @@ import TalariaKit
 
 struct AgentBackupSettingsRow: View {
     let backup: AgentBackupSettings
+    let archiveDownload: AgentArchiveDownload
     let server: URL
     let confirm: (AgentBackupStatus) -> Void
     @Environment(\.settingsScrollAnchor) private var scrollAnchor
@@ -15,12 +16,12 @@ struct AgentBackupSettingsRow: View {
                 detail: detail(for: status.job),
                 containsActions: true,
                 isLoading: backup.write == .create || (status.job?.knownState == .running && backup.write == nil)
-                    || backup.isDownloading
+                    || isDownloading
             ) {
                 Image(systemName: "externaldrive").accessibilityHidden(true)
             } accessory: {
-                if backup.isDownloading {
-                    action("Cancel Download", icon: "xmark", id: "cancel-download", backup.stopDownloading)
+                if isDownloading {
+                    action("Cancel Download", icon: "xmark", id: "cancel-download", archiveDownload.stop)
                 } else if backup.write == nil, backup.readback == nil {
                     controls(for: status)
                 }
@@ -44,7 +45,7 @@ struct AgentBackupSettingsRow: View {
             case .ready:
                 if job.downloadUrl != nil {
                     action("Download Backup", icon: "arrow.down.to.line", id: "download") {
-                        backup.download(job, from: server)
+                        backup.download(job, from: server, using: archiveDownload)
                     }
                 }
             case .failed, .cancelled:
@@ -62,17 +63,13 @@ struct AgentBackupSettingsRow: View {
     }
 
     private func action(_ title: LocalizedStringKey, icon: String, id: String, _ run: @escaping () -> Void) -> some View {
-        Button(action: run) {
-            Image(systemName: icon).frame(width: 44, height: 44)
-        }
-        .buttonStyle(.borderless)
-        .help(title)
-        .accessibilityLabel(title)
-        .accessibilityIdentifier("agent-backup-\(id)")
+        agentArchiveAction(title, icon: icon, id: "agent-backup-\(id)", run)
     }
 
+    private var isDownloading: Bool { archiveDownload.source == .systemAgentBackup }
+
     private func detail(for job: AgentBackupJob?) -> String? {
-        if backup.isDownloading { return String(localized: "Downloading backup…") }
+        if isDownloading { return String(localized: "Downloading backup…") }
         if backup.write == .create { return String(localized: "Starting backup…") }
         if case .cancel = backup.readback { return String(localized: "Checking backup status…") }
         if case .cancel = backup.write, backup.error == nil { return String(localized: "Backup cancelled") }
@@ -101,6 +98,16 @@ struct AgentBackupSettingsRow: View {
     }
 }
 
+func agentArchiveAction(_ title: LocalizedStringKey, icon: String, id: String, _ run: @escaping () -> Void) -> some View {
+    Button(action: run) {
+        Image(systemName: icon).frame(width: 44, height: 44)
+    }
+    .buttonStyle(.borderless)
+    .help(title)
+    .accessibilityLabel(title)
+    .accessibilityIdentifier(id)
+}
+
 /// Owns the confirmed status and the local state of the System page's backup actions.
 @MainActor @Observable
 final class AgentBackupSettings {
@@ -119,11 +126,7 @@ final class AgentBackupSettings {
     private(set) var write: Write?
     private(set) var error: String?
     private(set) var readback: Write?
-    var shareItem: SessionExportShareItem?
     @ObservationIgnored private var readRevision = 0
-    private var downloadTask: Task<Void, Never>?
-
-    var isDownloading: Bool { downloadTask != nil }
 
     var poll: Poll? {
         if readback != nil { return .status }
@@ -229,14 +232,33 @@ final class AgentBackupSettings {
         }
     }
 
-    func download(_ job: AgentBackupJob, from server: URL) {
-        guard downloadTask == nil, shareItem == nil else { return }
-        error = nil
+    func download(_ job: AgentBackupJob, from server: URL, using archive: AgentArchiveDownload) {
         let client = APIClient(baseURL: server)
-        downloadTask = Task {
-            defer { downloadTask = nil }
+        if archive.start(.systemAgentBackup, load: { try await client.downloadAgentBackup(job) }, onFailure: {
+            self.error = String(localized: "Could not download the backup.")
+            await self.load(using: client)
+        }) { error = nil }
+    }
+}
+
+/// One private archive and its native share sheet per System page.
+@MainActor @Observable
+final class AgentArchiveDownload {
+    private(set) var source: SettingsIndex?
+    var shareItem: SessionExportShareItem?
+    @ObservationIgnored private var task: Task<Void, Never>?
+
+    @discardableResult
+    func start(_ source: SettingsIndex, load: @escaping () async throws -> URL, onFailure: @escaping () async -> Void) -> Bool {
+        guard task == nil, shareItem == nil else { return false }
+        self.source = source
+        task = Task {
+            defer {
+                self.source = nil
+                task = nil
+            }
             do {
-                let file = try await client.downloadAgentBackup(job)
+                let file = try await load()
                 if Task.isCancelled {
                     try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
                 } else {
@@ -244,11 +266,11 @@ final class AgentBackupSettings {
                 }
             } catch {
                 guard !Task.isCancelled, !APIError.isCancellation(error) else { return }
-                self.error = String(localized: "Could not download the backup.")
-                await load(using: client)
+                await onFailure()
             }
         }
+        return true
     }
 
-    func stopDownloading() { downloadTask?.cancel() }
+    func stop() { task?.cancel() }
 }
