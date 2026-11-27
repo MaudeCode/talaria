@@ -8,6 +8,8 @@ import TalariaKit
 extension EnvironmentValues {
     /// The room on each side of the transcript's reading column that a wide code block may grow into (TAL-1487).
     @Entry var chatCodeBlockMargin: CGFloat = 0
+    @Entry var chatAllowsCodePreview = true
+    @Entry var chatOpenCodeBlockPreview: ChatEnvironmentAction<TranscriptDiagramPreview, Void>?
 }
 
 struct ChatCodeBlock: View {
@@ -17,6 +19,9 @@ struct ChatCodeBlock: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.chatCodeBlockMargin) private var margin
+    @Environment(\.chatAllowsCodePreview) private var allowsCodePreview
+    @Environment(\.transcriptMediaParagraphImages) private var projectedMedia
+    @Environment(\.chatOpenCodeBlockPreview) private var openPreview
     @AppStorage(ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey) private var wrapsCodeBlockLines = false
     @State private var highlightedCode: NSAttributedString?
     @State private var scrollViewportWidth: CGFloat = 0
@@ -34,6 +39,21 @@ struct ChatCodeBlock: View {
                     .font(.subheadline.weight(.semibold))
 
                 Spacer()
+
+                if let preview, let openPreview {
+                    Button {
+                        openPreview(preview)
+                    } label: {
+                        Label(preview.kind.action, systemImage: "eye")
+                            .labelStyle(.iconOnly)
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(SwiftUI.Color.primary)
+                    .help(preview.kind.action)
+                }
 
                 Button {
                     wrapsCodeBlockLines.toggle()
@@ -215,6 +235,13 @@ struct ChatCodeBlock: View {
         return normalized
     }
 
+    private var preview: TranscriptDiagramPreview? {
+        guard allowsCodePreview, !isStreaming, let normalizedLanguage else { return nil }
+        return projectedMedia?.display.diagramPreviews?.first {
+            $0.kind.rawValue == normalizedLanguage && $0.source == content
+        }
+    }
+
     /// The Copy button's checkmark state, keyed to the latest copy's expiry.
     struct CopyConfirmation {
         static let displayDuration: Duration = .seconds(2)
@@ -250,6 +277,81 @@ struct ChatCodeBlock: View {
         logger.info(
             "Syntax highlighting fallback reason=\(reason.rawValue, privacy: .public) languageCategory=\(MarkdownHighlightPolicy.languageLogCategory(for: normalizedLanguage), privacy: .public) characters=\(code.count, privacy: .public) lines=\(MarkdownHighlightPolicy.lineCount(in: code), privacy: .public)"
         )
+    }
+}
+
+private extension TranscriptDiagramPreview.Kind {
+    var action: LocalizedStringKey {
+        self == .svg ? "View image" : "View diagram"
+    }
+
+    var title: Text {
+        self == .svg ? Text(verbatim: "SVG") : Text("Diagram")
+    }
+}
+
+struct CodeBlockPreviewView: View {
+    let preview: TranscriptDiagramPreview
+    let client: APIClient
+
+    @State private var imageURL: URL?
+    @State private var frameIsLoading = true
+    @State private var failure: String?
+
+    var body: some View {
+        Group {
+            if let failure {
+                ContentUnavailableView {
+                    Label("Could Not Load Media", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(failure)
+                }
+            } else if let imageURL {
+                ShowFrameView(url: imageURL, onLoad: { frameIsLoading = false }, onFailure: { imageFailed() })
+                    .accessibilityLabel(preview.kind.title)
+                    .background(.white, ignoresSafeAreaEdges: [])
+                    .overlay {
+                        if frameIsLoading {
+                            progress.environment(\.colorScheme, .light)
+                        }
+                    }
+            } else {
+                progress
+            }
+        }
+        .navigationTitle(preview.kind.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .adaptiveNavigationBarBackground()
+        .task(id: preview) { await loadPreview() }
+    }
+
+    private var progress: some View {
+        ProgressView("Loading media...")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func loadPreview() async {
+        imageURL = nil
+        frameIsLoading = true
+        failure = nil
+        do {
+            let result = try await client.renderDiagram(preview)
+            guard !Task.isCancelled else { return }
+            switch result {
+            case .svg(let svg):
+                imageURL = ShowFrameView.svgImageURL(svg)
+                if imageURL == nil { imageFailed() }
+            case .error(let error):
+                failure = error
+            }
+        } catch {
+            guard !Task.isCancelled, !APIError.isCancellation(error) else { return }
+            failure = error.localizedDescription
+        }
+    }
+
+    private func imageFailed() {
+        failure = String(localized: "Could not preview this image.")
     }
 }
 

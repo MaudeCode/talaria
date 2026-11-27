@@ -5,8 +5,8 @@ describe('POST /api/render/diagram (TAL-2678)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
-  const render = async (source: string) => {
-    const res = await s.get('/api/render/diagram', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source }) })
+  const render = async (source: string, kind?: 'svg') => {
+    const res = await s.get('/api/render/diagram', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source, kind }) })
     expect(res.status).toBe(200)
     return (await res.json()) as { svg?: string; error?: string }
   }
@@ -32,5 +32,21 @@ describe('POST /api/render/diagram (TAL-2678)', () => {
     const answer = await render('this is not a diagram')
     expect(answer.svg).toBeUndefined()
     expect(answer.error).toMatch(/diagram/i)
+  })
+
+  it('prepares an SVG fence without a namespace as a standalone SVG', async () => {
+    const answer = await render('<svg viewBox="0 0 10 10"><path d="M0 0L10 10"/></svg>', 'svg')
+    expect(answer).toEqual({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0L10 10"/></svg>',
+    })
+  })
+
+  it.each([
+    ['mismatched tags', '<svg><path></svg>'],
+    ['multiple roots', '<svg/><svg/>'],
+    ['non-SVG root', '<div/>'],
+    ['document type', '<!DOCTYPE svg><svg/>'],
+  ])('returns an SVG error for %s', async (_, source) => {
+    expect(await render(source, 'svg')).toEqual({ error: 'Could not preview this image.' })
   })
 })

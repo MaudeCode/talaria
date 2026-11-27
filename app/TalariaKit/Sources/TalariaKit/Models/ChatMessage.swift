@@ -210,6 +210,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         case collapsible = "_collapsible"
         case displayContent = "_displayContent"
         case media = "_media"
+        case diagramPreviews = "_diagramPreviews"
         case backgroundUpdate = "_backgroundUpdate"
         case talariaActivity = "_talariaActivity"
         case delivery = "_delivery"
@@ -257,7 +258,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable, Sendable {
         collapsible = (try? container.decodeIfPresent(Bool.self, forKey: .collapsible)) == true
         displayBody = TranscriptDisplayBody.decoded(
             text: container.decodeLossyStringIfPresent(forKey: .displayContent),
-            media: try? container.decodeIfPresent([JSONValue].self, forKey: .media)
+            media: try? container.decodeIfPresent([JSONValue].self, forKey: .media),
+            diagrams: try? container.decodeIfPresent([JSONValue].self, forKey: .diagramPreviews)
         )
         backgroundUpdate = try? container.decodeIfPresent(BackgroundUpdate.self, forKey: .backgroundUpdate)
         talariaActivity = try? container.decodeIfPresent(TalariaActivity.self, forKey: .talariaActivity)
@@ -560,6 +562,7 @@ public struct AssistantActivityScene: Codable, Equatable, Sendable {
     /// `finalAnswer` as the server rewrote it for display, and its media (TAL-186); see `finalAnswerDisplay`.
     let finalAnswerDisplayText: String?
     let finalAnswerMedia: [JSONValue]?
+    let finalAnswerDiagramPreviews: [JSONValue]?
     public let activityRows: [AssistantActivitySceneRow]?
     let turnDuration: Double?
     /// Server-decided initial state of the turn's "Worked" disclosure.
@@ -588,6 +591,7 @@ public struct AssistantActivityScene: Codable, Equatable, Sendable {
         case finalAnswerExcerpt
         case finalAnswerDisplayText = "finalAnswerDisplay"
         case finalAnswerMedia
+        case finalAnswerDiagramPreviews
         case activityRows
         case turnDuration
         case expandedByDefault
@@ -607,6 +611,7 @@ public struct AssistantActivityScene: Codable, Equatable, Sendable {
         finalAnswerExcerpt = container.decodeLossyStringIfPresent(forKey: .finalAnswerExcerpt)
         finalAnswerDisplayText = container.decodeLossyStringIfPresent(forKey: .finalAnswerDisplayText)
         finalAnswerMedia = try? container.decodeIfPresent([JSONValue].self, forKey: .finalAnswerMedia)
+        finalAnswerDiagramPreviews = try? container.decodeIfPresent([JSONValue].self, forKey: .finalAnswerDiagramPreviews)
         turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
         expandedByDefault = (try? container.decodeIfPresent(Bool.self, forKey: .expandedByDefault)) ?? false
         terminalState = container.decodeLossyStringIfPresent(forKey: .terminalState)
@@ -678,7 +683,7 @@ public struct ToolResultResponse: Decodable, Equatable, Sendable {
 extension AssistantActivityScene {
     /// `finalAnswer` as the server rewrote it for display, with its media (TAL-186).
     public var finalAnswerDisplay: TranscriptDisplayBody? {
-        TranscriptDisplayBody.decoded(text: finalAnswerDisplayText, media: finalAnswerMedia)
+        TranscriptDisplayBody.decoded(text: finalAnswerDisplayText, media: finalAnswerMedia, diagrams: finalAnswerDiagramPreviews)
     }
 
     public var hasConsumedSteering: Bool {
@@ -702,6 +707,7 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
     /// A prose row's text as the server rewrote it for display, and its media (TAL-186); see `display`.
     let displayText: String?
     let media: [JSONValue]?
+    let diagramPreviews: [JSONValue]?
     /// TAL-2332: the server's activity group of a reasoning or tool row, and that group's record from its scene or page;
     /// the record is encoded with the row, so a scene restored from the offline cache keeps it.
     public let groupID: String?
@@ -729,6 +735,7 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
         case steering
         case displayText
         case media
+        case diagramPreviews
     }
 
     public init(from decoder: Decoder) throws {
@@ -744,6 +751,7 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
         steering = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steering)
         displayText = container.decodeLossyStringIfPresent(forKey: .displayText)
         media = try? container.decodeIfPresent([JSONValue].self, forKey: .media)
+        diagramPreviews = try? container.decodeIfPresent([JSONValue].self, forKey: .diagramPreviews)
         groupID = container.decodeLossyStringIfPresent(forKey: .groupID)
         group = AssistantActivityGroup(try? container.decodeIfPresent(JSONValue.self, forKey: .group))
         mergedCount = container.decodeLossyIntIfPresent(forKey: .mergedCount)
@@ -753,7 +761,7 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
 
     /// A prose row's text as the server rewrote it for display, with its media (TAL-186).
     public var display: TranscriptDisplayBody? {
-        TranscriptDisplayBody.decoded(text: displayText, media: media)
+        TranscriptDisplayBody.decoded(text: displayText, media: media, diagrams: diagramPreviews)
     }
 
     /// Rows decode one by one, so a malformed row never drops its neighbours.

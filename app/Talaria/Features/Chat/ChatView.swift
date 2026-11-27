@@ -237,6 +237,7 @@ struct ChatView: View {
     @State private var selectableResponseText: SelectableTextPresentation?
     @State private var attachmentPreviewItem: ChatAttachmentPreviewItem?
     @State private var transcriptMediaPreviewItem: TranscriptMediaPreviewItem?
+    @State private var openedCodeBlockPreview: TranscriptDiagramPreview?
     @State private var pendingReportLink: URL?
     /// A workspace file a chat link named; shown in the source viewer at its line.
     @State private var openedFileLink: WorkspaceFileLink?
@@ -1597,8 +1598,14 @@ struct ChatView: View {
                     TerminalOutputView(model: openedTerminal)
                 }
             }
+            .navigationDestination(item: $openedCodeBlockPreview) { preview in
+                CodeBlockPreviewView(preview: preview, client: viewModel.client)
+            }
             .onChange(of: offersTerminal) { _, offered in
                 if !offered { openedTerminal = nil }
+            }
+            .onChange(of: openedCodeBlockPreview) { _, preview in
+                if preview == nil { restoreComposerFocusAfterPreviewIfNeeded() }
             }
             .onChange(of: forkedSession) { _, fork in
                 if fork == nil { reportFilesInspector() }
@@ -2540,6 +2547,11 @@ struct ChatView: View {
                 }
                 .chatEnvironmentAction(\.chatShowBlockModel) { blockID in
                     ShowBlockCardModel(blockID: blockID, client: viewModel.client)
+                }
+                .chatEnvironmentAction(\.chatOpenCodeBlockPreview) { preview in
+                    chat.presentPreviewRestoringComposerFocusIfNeeded {
+                        chat.openedCodeBlockPreview = preview
+                    }
                 }
                 .chatEnvironmentAction(\.chatOpenWorkspaceFile) { link in
                     chat.openWorkspaceFile(link)

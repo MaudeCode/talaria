@@ -379,6 +379,22 @@ gallery's in-progress list holds the running tasks the adapter's own task reads
 saw in that profile: at most eight, each until Meshy reports it finished or for
 an hour.
 
+## Chat code previews
+
+Settled assistant replies can carry `_diagram_previews`, final answers can
+carry `final_answer_diagram_previews`, and settled prose rows can carry
+`diagram_previews`. Each item pairs a server-selected kind with the exact code
+text the Markdown renderer receives. The server builds the fields from the
+redacted display text. Running turns and unsupported fences have no preview
+items. An App connected to an older server continues to show and copy the source.
+
+`POST /api/render/diagram` accepts the projected kind and source when the App
+opens a preview. The response is a standalone SVG or an error. SVG input must
+be a single XML SVG document. The server adds the SVG namespace to a bare root.
+Mermaid rendering disables links and images. Calls that omit kind still render
+Mermaid for older clients. The App displays the returned SVG in WebKit image
+mode with JavaScript disabled.
+
 ## Files HTML preview
 
 `files.read` answers an HTML file with `preview_url`,

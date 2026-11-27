@@ -9538,6 +9538,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -10554,6 +10577,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -10984,6 +11030,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -17877,6 +17946,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -18893,6 +18985,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -19323,6 +19438,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -24459,6 +24597,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -25475,6 +25636,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -25905,6 +26089,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -34365,6 +34572,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -35381,6 +35611,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -35811,6 +36064,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -43594,6 +43870,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -44610,6 +44909,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -45040,6 +45362,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -53381,6 +53726,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -54397,6 +54765,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -54827,6 +55218,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -59907,6 +60321,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -60923,6 +61360,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -61353,6 +61813,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -66495,6 +66978,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -67511,6 +68017,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -67941,6 +68470,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -73081,6 +73633,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -74097,6 +74672,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -74527,6 +75125,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -78466,6 +79087,29 @@
                                 "name",
                                 "mime",
                                 "kind"
+                              ]
+                            }
+                          },
+                          "diagram_previews": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "enum": [
+                                    "svg",
+                                    "mermaid"
+                                  ],
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "source"
                               ]
                             }
                           },
@@ -93489,6 +94133,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -94505,6 +95172,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -94935,6 +95625,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -100190,6 +100903,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -101206,6 +101942,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -101636,6 +102395,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -107489,6 +108271,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -108505,6 +109310,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -108935,6 +109763,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },
@@ -114562,6 +115413,29 @@
                                                 ]
                                               }
                                             },
+                                            "diagram_previews": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "svg",
+                                                      "mermaid"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "source": {
+                                                    "type": "string",
+                                                    "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "source"
+                                                ]
+                                              }
+                                            },
                                             "tool": {
                                               "type": "object",
                                               "properties": {
@@ -115250,6 +116124,29 @@
                                           ]
                                         }
                                       },
+                                      "final_answer_diagram_previews": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "enum": [
+                                                "svg",
+                                                "mermaid"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "source": {
+                                              "type": "string",
+                                              "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "source"
+                                          ]
+                                        }
+                                      },
                                       "terminal_state": {
                                         "type": "string",
                                         "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -115680,6 +116577,29 @@
                                         "name",
                                         "mime",
                                         "kind"
+                                      ]
+                                    }
+                                  },
+                                  "_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
                                       ]
                                     }
                                   },
@@ -121030,7 +121950,7 @@
     "/api/render/diagram": {
       "post": {
         "operationId": "renderDiagram",
-        "summary": "Mermaid source drawn as a standalone SVG by Pele, with links and images left out; `error` carries the parse failure instead.",
+        "summary": "Prepare SVG or render Mermaid as a standalone image. Omitted kind uses Mermaid. Return an error when the source cannot be rendered.",
         "tags": [
           "render"
         ],
@@ -121044,6 +121964,13 @@
                   "source": {
                     "type": "string",
                     "maxLength": 100000
+                  },
+                  "kind": {
+                    "enum": [
+                      "svg",
+                      "mermaid"
+                    ],
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -172058,6 +172985,29 @@
                                             ]
                                           }
                                         },
+                                        "diagram_previews": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "svg",
+                                                  "mermaid"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -173074,6 +174024,29 @@
                                       ]
                                     }
                                   },
+                                  "final_answer_diagram_previews": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "svg",
+                                            "mermaid"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "source": {
+                                          "type": "string",
+                                          "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "source"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string",
                                     "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
@@ -173504,6 +174477,29 @@
                                     "name",
                                     "mime",
                                     "kind"
+                                  ]
+                                }
+                              },
+                              "_diagram_previews": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "svg",
+                                        "mermaid"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "description": "The exact code text of a Markdown fence, without its delimiter lines."
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "source"
                                   ]
                                 }
                               },

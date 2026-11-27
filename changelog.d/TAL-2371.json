@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Open diagrams from code blocks in finished chat replies.",
+      "highlight": false,
+      "components": ["app", "web"],
+      "announcement": {
+        "title": "Reports and diagrams in chat",
+        "description": "Read HTML reports and open diagrams from a reply.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

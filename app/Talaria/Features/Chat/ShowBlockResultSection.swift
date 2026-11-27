@@ -307,7 +307,7 @@ struct InlineReportView<Fallback: View>: View {
     }
 }
 
-/// A server-sandboxed show block or delivered report in a web view with no stored data.
+/// A server-sandboxed show block, delivered report or prepared SVG image in a web view with no stored data.
 struct ShowFrameView: UIViewRepresentable {
     let url: URL
     var openLink: ((URL) -> Void)? = nil
@@ -322,6 +322,9 @@ struct ShowFrameView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        if url.scheme == "data" {
+            configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        }
         if openLink != nil {
             let controller = configuration.userContentController
             controller.add(context.coordinator, contentWorld: .defaultClient, name: "report")
@@ -362,6 +365,18 @@ struct ShowFrameView: UIViewRepresentable {
         coordinator.onFailure = nil
         view.stopLoading()
         view.configuration.userContentController.removeScriptMessageHandler(forName: "report", contentWorld: .defaultClient)
+    }
+
+    static func svgImageURL(_ image: String) -> URL? {
+        // Image mode disables SVG scripts, interactive links and external resources. The wrapper only sets the layout.
+        let encodedImage = Data(image.utf8).base64EncodedString()
+        let html = """
+        <!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">
+        <style>html{color-scheme:light;background:#fff}body{margin:0}img{display:block;width:100%;height:auto}</style>
+        <img alt="" src="data:image/svg+xml;charset=utf-8;base64,\(encodedImage)">
+        """
+        return URL(string: "data:text/html;charset=utf-8;base64,\(Data(html.utf8).base64EncodedString())")
     }
 
     private var themedURL: URL {

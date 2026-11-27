@@ -1,7 +1,7 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { ModelChangeSchema, OwnerActionRequestSchema, PathCompletionRequestSchema, PathCompletionsSchema, SideLaunchSchema } from '../gateway-session.js'
-import { ChatStartRequestSchema, ChatStartResponseSchema, StreamStatusSchema, CancelResponseSchema, SteerResponseSchema, SteerWithdrawRequestSchema, SteerWithdrawResponseSchema, SteerSendNowRequestSchema, SteerSendNowResponseSchema, ApprovalPendingEnvelopeSchema, ApprovalRespondResponseSchema, ClarifyPendingEnvelopeSchema, ClarifyRespondResponseSchema, ClarifyAnswersSchema, GoalResponseSchema, SessionSchema, BackgroundTaskSchema, BackgroundTasksResponseSchema, BackgroundTaskResultSchema, BackgroundDismissRequestSchema, BackgroundDismissResponseSchema, BackgroundStopResponseSchema, BackgroundSteerRequestSchema, BackgroundSteerResponseSchema } from '../views.js'
+import { ChatStartRequestSchema, ChatStartResponseSchema, StreamStatusSchema, CancelResponseSchema, SteerResponseSchema, SteerWithdrawRequestSchema, SteerWithdrawResponseSchema, SteerSendNowRequestSchema, SteerSendNowResponseSchema, ApprovalPendingEnvelopeSchema, ApprovalRespondResponseSchema, ClarifyPendingEnvelopeSchema, ClarifyRespondResponseSchema, ClarifyAnswersSchema, GoalResponseSchema, SessionSchema, BackgroundTaskSchema, BackgroundTasksResponseSchema, BackgroundTaskResultSchema, BackgroundDismissRequestSchema, BackgroundDismissResponseSchema, BackgroundStopResponseSchema, BackgroundSteerRequestSchema, BackgroundSteerResponseSchema, DiagramKindSchema } from '../views.js'
 
 /** Agent turns, approvals, clarify prompts, goals, background tasks, and side questions. */
 
@@ -49,7 +49,8 @@ export const chatContract = {
     dismiss: oc.route({ method: 'POST', path: '/api/background/dismiss', tags }).input(BackgroundDismissRequestSchema).output(BackgroundDismissResponseSchema),
     ack: oc.route({ method: 'POST', path: '/api/bg-task-complete-ack', tags }).input(z.object({ session_id: z.string().optional(), task_id: z.string().optional(), process_id: z.string().optional() }).catchall(Json)).output(z.object({ ok: z.literal(true), session_id: z.string(), task_id: z.string(), noop: z.literal(true) })),
   },
-  /** TAL-2678: a client without a Mermaid renderer (the App) draws a `mermaid` fence with the server's Pele, the version Web ships. */
-  renderDiagram: oc.route({ method: 'POST', path: '/api/render/diagram', tags: ['render'], summary: 'Mermaid source drawn as a standalone SVG by Pele, with links and images left out; `error` carries the parse failure instead.' }).input(z.object({ source: z.string().max(100_000) })).output(z.union([z.object({ svg: z.string() }), z.object({ error: z.string() })])),
+  renderDiagram: oc.route({ method: 'POST', path: '/api/render/diagram', tags: ['render'], summary: 'Prepare SVG or render Mermaid as a standalone image. Omitted kind uses Mermaid. Return an error when the source cannot be rendered.' })
+    .input(z.object({ source: z.string().max(100_000), kind: DiagramKindSchema.optional() }))
+    .output(z.union([z.object({ svg: z.string() }), z.object({ error: z.string() })])),
   btw: oc.route({ method: 'POST', path: '/api/btw', tags, summary: 'Side question outside the parent transcript, on its native owner or in a hidden Web session.' }).input(z.object({ session_id: z.string().optional(), question: z.string().optional() }).catchall(Json)).output(z.object({ stream_id: z.string(), session_id: z.string(), parent_session_id: z.string(), task_id: z.string().optional(), launch: SideLaunchSchema.optional() })),
 }

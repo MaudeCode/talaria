@@ -52,6 +52,7 @@ public enum Endpoint: Sendable {
     case renameProject
     case deleteProject
     case chatStart
+    case renderDiagram
     case chatStream(streamID: String)
     case chatCancel(streamID: String)
     case chatStreamStatus(streamID: String)
@@ -294,6 +295,8 @@ public enum Endpoint: Sendable {
             return "/api/projects/delete"
         case .chatStart:
             return "/api/chat/start"
+        case .renderDiagram:
+            return "/api/render/diagram"
         case .chatStream:
             return "/api/chat/stream"
         case .chatCancel:

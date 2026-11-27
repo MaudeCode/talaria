@@ -91,21 +91,44 @@ public struct TranscriptMediaReference: Codable, Equatable, Identifiable, Sendab
     }
 }
 
+/// A fence the server marked as previewable, carrying the exact body used by the Markdown renderer.
+public struct TranscriptDiagramPreview: Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, Hashable, Sendable {
+        case svg, mermaid
+    }
+
+    public let kind: Kind
+    public let source: String
+
+    static func decodeLossily(_ values: [JSONValue]?) -> [Self]? {
+        values?.compactMap { value in
+            guard case let .object(object) = value,
+                  case let .string(rawKind)? = object["kind"],
+                  let kind = Kind(rawValue: rawKind),
+                  case let .string(source)? = object["source"] else { return nil }
+            return Self(kind: kind, source: source)
+        }
+    }
+}
+
 /// The server's display text for a body, with its media references rewritten to Markdown that
 /// points at their URLs, and the media it references (TAL-186). The body's own text stays for copy and edit.
 public struct TranscriptDisplayBody: Codable, Equatable, Sendable {
     public let text: String
     public let media: [TranscriptMediaReference]
+    public let diagramPreviews: [TranscriptDiagramPreview]?
 
-    public init(text: String, media: [TranscriptMediaReference]) {
+    public init(text: String, media: [TranscriptMediaReference], diagramPreviews: [TranscriptDiagramPreview]? = nil) {
         self.text = text
         self.media = media
+        self.diagramPreviews = diagramPreviews
     }
 
     /// The server's fields as decoded; nil when it sent no display text.
-    static func decoded(text: String?, media: [JSONValue]?) -> TranscriptDisplayBody? {
+    static func decoded(text: String?, media: [JSONValue]?, diagrams: [JSONValue]? = nil) -> TranscriptDisplayBody? {
         guard let text else { return nil }
-        return TranscriptDisplayBody(text: text, media: TranscriptMediaReference.decodeLossily(media))
+        return TranscriptDisplayBody(text: text, media: TranscriptMediaReference.decodeLossily(media),
+                                     diagramPreviews: TranscriptDiagramPreview.decodeLossily(diagrams))
     }
 
     /// The referenced media that is not an inline image, shown as tiles after the text.

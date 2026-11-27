@@ -3,6 +3,7 @@ import { timingOutcome } from '../startup-timing.js'
 import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE } from '../sessions/turn.js'
 import { implement } from '@orpc/server'
 import { PeleError, renderAsync } from 'pele/lazy'
+import { prepareSvg } from './prepare-svg.js'
 import { chatContract, type ApprovalAnswerer, type BackgroundTask, type OwnerAttachment, type PromptWithdrawal } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
@@ -392,6 +393,10 @@ export const chatRouter = os.router({
   },
   // TAL-2678: the same Pele options as Web's diagram plugin, so a drawing never fetches or links anywhere.
   renderDiagram: os.renderDiagram.handler(async ({ input }) => {
+    if (input.kind === 'svg') {
+      const svg = prepareSvg(input.source)
+      return svg === null ? { error: 'Could not preview this image.' } : { svg }
+    }
     try {
       return { svg: (await renderAsync(input.source, { links: false, images: false })).svg }
     } catch (error) {

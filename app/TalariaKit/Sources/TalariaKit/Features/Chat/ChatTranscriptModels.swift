@@ -651,9 +651,11 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
                     rows[index].display = row.display
                 } else if let previous, previous.display != nil || row.display != nil {
                     // Consecutive prose rows merge into one; their display text merges the same way.
+                    let diagrams = (previous.display?.diagramPreviews ?? []) + (row.display?.diagramPreviews ?? [])
                     rows[index].display = TranscriptDisplayBody(
                         text: (previous.display?.text ?? previous.text ?? "") + (row.display?.text ?? row.text ?? ""),
-                        media: (previous.display?.media ?? []) + (row.display?.media ?? [])
+                        media: (previous.display?.media ?? []) + (row.display?.media ?? []),
+                        diagramPreviews: diagrams.isEmpty ? nil : diagrams
                     )
                 }
             }

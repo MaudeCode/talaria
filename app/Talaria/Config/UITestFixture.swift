@@ -22,6 +22,7 @@ struct UITestFixtureEnvironment {
     nonisolated static let longPromptArgument = "--ui-test-long-prompt"
     /// Serves a reply with `diff`, `patch`, `log` and `text` code blocks (TAL-447).
     nonisolated static let diffBlocksArgument = "--ui-test-diff-blocks"
+    nonisolated static let diagramPreviewsArgument = "--ui-test-diagram-previews"
     /// Serves a reply whose media references the server rewrote for display (TAL-186), and the media bytes.
     nonisolated static let transcriptMediaArgument = "--ui-test-transcript-media"
     /// Serves a transcript with automatic background wakeups in the server's `_background_update` shape (TAL-371).
@@ -941,6 +942,16 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return branchedSessionResponse(url)
         case "/api/session":
             return sessionResponse(url)
+        case "/api/render/diagram" where request.httpMethod == "POST"
+            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.diagramPreviewsArgument):
+            let body = requestJSON(request)
+            switch (body["kind"] as? String, body["source"] as? String) {
+            case ("svg", previewSVGSource): return json(["svg": previewSVGSource])
+            case ("svg", invalidSVGSource): return json(["error": "Could not preview this image."])
+            case ("mermaid", previewDiagramSource): return json(["svg": previewDiagramImage])
+            case ("mermaid", invalidMermaidSource): return json(["error": "Expected a Mermaid diagram."])
+            default: return json(["error": "Unexpected fixture diagram request."])
+            }
         case "/api/media" where UITestFixtureEnvironment.hasTranscriptMedia:
             return url.query?.contains(".mp3") == true ? transcriptMediaAudio : transcriptMediaImage
         case "/api/background/tasks" where servesOwnerWork:
@@ -1535,6 +1546,20 @@ final class UITestFixtureURLProtocol: URLProtocol {
             detail["messages"] = diffBlockMessages
             return json(["session": detail])
         }
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.diagramPreviewsArgument) {
+            var detail = session(id: sessionID, title: sessionTitle)
+            detail["messages"] = [
+                ["role": "user", "content": "Show me the diagrams.", "message_id": "diagram-prompt", "_ts": 2_000_000_300],
+                ["role": "assistant", "content": previewFences, "message_id": "diagram-reply", "_ts": 2_000_000_301,
+                 "_display_content": previewFences, "_diagram_previews": [
+                    ["kind": "svg", "source": previewSVGSource],
+                    ["kind": "mermaid", "source": previewDiagramSource],
+                    ["kind": "svg", "source": invalidSVGSource],
+                    ["kind": "mermaid", "source": invalidMermaidSource]
+                 ]]
+            ] as [[String: Any]]
+            return json(["session": detail])
+        }
         if UITestFixtureEnvironment.hasTranscriptMedia {
             var detail = session(id: sessionID, title: sessionTitle)
             detail["messages"] = transcriptMediaMessages
@@ -1736,6 +1761,62 @@ final class UITestFixtureURLProtocol: URLProtocol {
             ["role": "assistant", "content": "Read the whole prompt.", "message_id": "long-prompt-reply", "_ts": 2_000_000_003]
         ]
     }
+
+    private static let previewDiagramSource = """
+    flowchart LR
+      Draft --> Review --> Ship
+    """
+
+    private static let previewDiagramImage = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 110">
+      <path d="M102 55H135l-7-7m7 7-7 7 M222 55H255l-7-7m7 7-7 7" fill="none" stroke="#334155" stroke-width="2"/>
+      <g fill="#dbeafe" stroke="#3b82f6">
+        <rect x="18" y="35" width="84" height="40" rx="5"/>
+        <rect x="138" y="35" width="84" height="40" rx="5"/>
+        <rect x="258" y="35" width="84" height="40" rx="5"/>
+      </g>
+      <g fill="#172554" font-family="system-ui" font-size="16" text-anchor="middle">
+        <text x="60" y="61">Draft</text><text x="180" y="61">Review</text><text x="300" y="61">Ship</text>
+      </g>
+    </svg>
+    """
+
+    static let previewSVGSource = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 100">
+      <rect width="240" height="100" fill="#eff6ff"/>
+      <circle cx="65" cy="50" r="30" fill="#2563eb"/>
+      <path d="M116 74L158 25l46 49Z" fill="#0f766e"/>
+    </svg>
+    """
+
+    static let invalidSVGSource = "<svg><path></svg>"
+    static let invalidMermaidSource = "This is not a diagram."
+
+    private static let previewFences = """
+    SVG
+
+    ```svg
+    \(previewSVGSource)
+    ```
+
+    Mermaid
+
+    ```mermaid
+    \(previewDiagramSource)
+    ```
+
+    Invalid SVG
+
+    ```svg
+    \(invalidSVGSource)
+    ```
+
+    Invalid Mermaid
+
+    ```mermaid
+    \(invalidMermaidSource)
+    ```
+    """
 
     /// Mixed text-and-link content that pins deterministic long-press targets for
     /// the message-action interaction tests (TAL-49).
