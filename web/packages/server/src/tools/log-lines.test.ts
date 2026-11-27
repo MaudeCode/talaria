@@ -21,14 +21,28 @@ describe('classifyLine', () => {
     expect(classifyLine(`2026-11-08 12:00:00,000 ${token} name: message`, null)).toEqual({ time: '2026-11-08 12:00:00,000', level, text: 'name: message' })
   })
 
-  it('reads only whole-word tokens in the first 80 characters', () => {
-    expect(classifyLine('12:00:00 ErrorBoundary rendered', null).level).toBeNull()
-    expect(classifyLine(`12:00:00 ${'x'.repeat(80)} ERROR late`, null).level).toBeNull()
+  it.each([
+    'ErrorBoundary rendered',
+    'ERROR-rate held steady',
+    'logger: INFO is the default',
+    'logger: No error occurred',
+    '- logger - ERROR rate held steady',
+    '[ERROR text without a closing bracket',
+  ])('preserves timestamped message text without a severity header: %s', (text) => {
+    expect(classifyLine(`12:00:00 ${text}`, 'warning')).toEqual({ time: '12:00:00', level: null, text })
   })
 
   it('drops a bracketed token and the colon after it', () => {
     expect(classifyLine('[2026-11-08T12:00:00Z] [ERROR] boot failed', null)).toEqual({ time: '2026-11-08T12:00:00Z', level: 'error', text: 'boot failed' })
     expect(classifyLine('[bootstrap] ERROR: port in use', null)).toEqual({ time: null, level: 'error', text: '[bootstrap] port in use' })
+    expect(classifyLine('12:00:00 [sidecar] [DEBUG]:  INFO  remains in the message', null)).toEqual({ time: '12:00:00', level: 'debug', text: '[sidecar] INFO  remains in the message' })
+    expect(classifyLine('[ERROR] WARNING comes from the message', null)).toEqual({ time: null, level: 'error', text: 'WARNING comes from the message' })
+  })
+
+  it('reads the severity field of an Agent verbose header', () => {
+    expect(classifyLine('12:00:00 - agent.turn - DEBUG [session_01] - No error occurred', null)).toEqual({
+      time: '12:00:00', level: 'debug', text: 'agent.turn [session_01]: No error occurred',
+    })
   })
 
   it('gives a timestamped line without a token no level, and an untimed one the previous level', () => {
@@ -57,6 +71,19 @@ describe('classifyLog', () => {
     expect(classifyLog(web).entries.map((e) => e.level)).toEqual(['warning', null, null, null])
     expect(classifyLog(web, { level: 'warning' }).matched).toBe(1)
     expect(classifyLog(web).counts).toMatchObject({ warning: 1 })
+  })
+
+  it('keeps ordinary severity words searchable without counting their records as errors', () => {
+    const text = '[webui] No error occurred'
+    const continuation = '    retry(error)'
+    const web = ['[webui] ERROR: connection failed', continuation, text]
+    const errors = classifyLog(web, { level: 'error' })
+    expect(classifyLog(web, { q: 'error' }).entries).toContainEqual({ time: null, level: null, text, matches: [[11, 16]] })
+    expect(errors.entries).toEqual([
+      { time: null, level: 'error', text: '[webui] connection failed' },
+      { time: null, level: 'error', text: continuation },
+    ])
+    expect(errors).toMatchObject({ matched: 2, counts: { error: 2, warning: 0, lines: 3 } })
   })
 
   it('keeps errors and their continuation lines for level error, warnings too for level warning', () => {
