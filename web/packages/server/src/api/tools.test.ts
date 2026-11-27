@@ -2171,18 +2171,31 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     const body = [`--${boundary}`, 'Content-Disposition: form-data; name="file"; filename="clip.webm"', 'Content-Type: audio/webm', '', 'audio-bytes', `--${boundary}--`, ''].join('\r\n')
     let res = await s.get('/api/transcribe', { method: 'POST', body, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } })
     expect(res.status).toBe(200)
-    expect(await json(res)).toEqual({ ok: true, transcript: 'heard 11 bytes.webm', filtered: false, no_speech: false })
+    expect(await json(res)).toEqual({ ok: true, transcript: 'heard 11 bytes.webm', filtered: false, no_speech: false, has_usable_transcript: true })
     // TAL-1608: the sidecar's clean-empty command-provider result is a successful empty transcript, flagged no_speech.
     sidecar.respond('stt.transcribe', () => ({ transcript: '', filtered: false, no_speech: true }))
     res = await s.get('/api/transcribe', { method: 'POST', body, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } })
     expect(res.status).toBe(200)
-    expect(await json(res)).toEqual({ ok: true, transcript: '', filtered: false, no_speech: true })
+    expect(await json(res)).toEqual({ ok: true, transcript: '', filtered: false, no_speech: true, has_usable_transcript: false })
     sidecar.respond('stt.transcribe', () => { throw new SidecarError("STT command provider 'x' exited with code 3: produced no stdout", { condition: 'stt_failed' }) })
     res = await s.get('/api/transcribe', { method: 'POST', body, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } })
     expect(res.status).toBe(400)
     expect(await json(res)).toEqual({ error: "STT command provider 'x' exited with code 3: produced no stdout" })
     res = await s.get('/api/transcribe', { method: 'POST', body: '--x--', headers: { 'content-type': 'multipart/form-data; boundary=x' } })
     expect(res.status).toBe(400)
+  })
+
+  it.each([
+    { result: 'empty text', transcript: '', filtered: false },
+    { result: 'whitespace', transcript: ' \n ', filtered: false },
+    { result: 'filtered silence', transcript: '', filtered: true },
+  ])('marks $result unusable in the recorded transcription response', async ({ transcript, filtered }) => {
+    sidecar.respond('stt.transcribe', () => ({ transcript, filtered }))
+    const body = new FormData()
+    body.set('file', new Blob(['audio'], { type: 'audio/webm' }), 'clip.webm')
+    const res = await s.get('/api/transcribe', { method: 'POST', body })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true, transcript: '', filtered, no_speech: false, has_usable_transcript: false })
   })
 
   it('client events are sanitised and csp reports are accepted without auth', async () => {

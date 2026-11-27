@@ -10,6 +10,7 @@ import { activeProfileName } from '../auth/gate.js'
 import type { RequestContext } from '../http/context.js'
 import { acceptUpgrade, pendingUpgrade } from '../http/websocket.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
+import { transcriptionResult } from './transcription-result.js'
 
 /** One PCM frame; a browser sends a few hundred milliseconds at a time. */
 const MAX_FRAME_BYTES = 1024 * 1024
@@ -103,7 +104,7 @@ function relay(ws: WebSocket, sidecar: SidecarLike, profileHome: string, log: (l
           send({ type: 'partial', text: data.text })
         }
       },
-    }).then((result) => { finish({ type: 'final', transcript: result.transcript, filtered: result.filtered, provider: result.provider }) }, (error: unknown) => {
+    }).then((result) => { finish({ type: 'final', ...transcriptionResult(result), provider: result.provider }) }, (error: unknown) => {
       if (!done) log(`[webui] live transcription ended: ${message(error)}`)
       fail(message(error))
     })

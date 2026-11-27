@@ -299,6 +299,8 @@ Selections over 16,000 characters are left to the browser selection menu.
 
 Editing the draft during dictation keeps your changes. Further speech results from that recording
 leave the draft alone, and you can still stop the recording with the microphone button.
+When live dictation finishes without usable speech, any temporary transcript gives way to the draft
+you started with. Edits you made during the recording stay in place.
 
 Automatic read-aloud claims each watched reply once across tabs on the same browser origin and app mount,
 account, profile, and session. The browser retains the last 1024 automatic attempts, including interrupted

@@ -16,14 +16,23 @@ export const TRANSCRIBE_STREAM_MAX_RATE = 48000
 export const TranscribeStreamStartSchema = z.object({ sample_rate: z.number().int().min(TRANSCRIBE_STREAM_MIN_RATE).max(TRANSCRIBE_STREAM_MAX_RATE) })
 export const TranscribeStreamEndSchema = z.object({ eos: z.literal(true) })
 
+/** Final transcription fields shared by the WebSocket and recording upload. Older servers omit `has_usable_transcript`. */
+export const TranscribeResultSchema = z.object({
+  transcript: z.string(),
+  /** `filtered` (TAL-917): the server emptied a phrase Whisper invents on silent audio. */
+  filtered: z.boolean(),
+  /** Whether the client should commit this result to its draft. */
+  has_usable_transcript: z.boolean().optional(),
+})
+
 export const TranscribeStreamEventSchema = z.discriminatedUnion('type', [
   /** The provider's current text for the whole recording so far; each one replaces the last. */
   z.object({ type: z.literal('partial'), text: z.string() }),
-  /** `filtered` (TAL-917): the server emptied a phrase Whisper invents on silent audio. */
-  z.object({ type: z.literal('final'), transcript: z.string(), filtered: z.boolean(), provider: z.string() }),
+  TranscribeResultSchema.extend({ type: z.literal('final'), provider: z.string() }),
   z.object({ type: z.literal('error'), message: z.string() }),
 ])
 
 export type TranscribeStreamStart = z.infer<typeof TranscribeStreamStartSchema>
 export type TranscribeStreamEnd = z.infer<typeof TranscribeStreamEndSchema>
 export type TranscribeStreamEvent = z.infer<typeof TranscribeStreamEventSchema>
+export type TranscribeResult = z.infer<typeof TranscribeResultSchema>

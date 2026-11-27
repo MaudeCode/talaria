@@ -312,6 +312,10 @@ provider session. The frames are `TranscribeStream*Schema` in
 `packages/contracts/src/transcribe-stream.ts`, with an example exchange in
 `contracts/fixtures/transcribe-stream.json`.
 
+The server sets `has_usable_transcript` on the final frame and on the
+`POST /api/transcribe` result. A false value tells the composer to keep the
+draft and show its no-speech notice.
+
 The handshake passes the same authentication and profile cookie as every
 `/api/*` route, plus the same-origin browser check. The provider session and
 its keys stay on the server. A reverse proxy must forward WebSocket upgrades

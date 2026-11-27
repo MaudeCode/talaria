@@ -63,7 +63,7 @@ describe('local STT warm-up (TAL-916)', () => {
       expect(warms).toHaveLength(1)
       const transcribed = await within(transcribe(s))
       expect(transcribed).not.toBe('blocked')
-      expect(await (transcribed as Response).json()).toEqual({ ok: true, transcript: 'hot', filtered: false, no_speech: false })
+      expect(await (transcribed as Response).json()).toEqual({ ok: true, transcript: 'hot', filtered: false, no_speech: false, has_usable_transcript: true })
     } finally {
       finish()
     }

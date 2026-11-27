@@ -21,6 +21,7 @@ import { DisplayMediaSchema } from './display-media.js'
 import { ProviderPhaseSchema, RateLimitWaitSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema, AgentUpdateOperationSchema, CronRunNowRefusalSchema } from './sidecar-shared.js'
 import { SpeedTierSchema } from './speed.js'
+import { TranscribeResultSchema } from './transcribe-stream.js'
 import { ExecutionModeSchema, OwnerAttachmentSchema, MessageReactionViewSchema, SideLaunchStateSchema } from './gateway-session.js'
 import { NousAccountSchema, KanbanInspectionNodeSchema, KanbanInspectionSnapshotSchema, CanonicalBotChatSchema, GatewayModeSchema, PluginDisabledReasonSchema, PluginOAuthClientSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar-shared.js'
 
@@ -1181,9 +1182,9 @@ export const TranscribeCapabilitySchema = z.looseObject({ ok: z.literal(true), a
 export const SpeechPrepareSchema = z.object({ spoken_text: z.string() })
 /**
  * `POST /api/transcribe`: the recording's transcript; `filtered` (TAL-917) when the server emptied a phrase Whisper invents on silent audio.
- * `no_speech` (TAL-1608): the provider ran cleanly and produced no transcript; clients show their no-speech notice and keep the draft.
+ * `no_speech` (TAL-1608): the provider ran cleanly and produced no transcript.
  */
-export const TranscribeResponseSchema = z.looseObject({ ok: z.literal(true), transcript: z.string(), filtered: z.boolean(), no_speech: z.boolean().default(false) })
+export const TranscribeResponseSchema = TranscribeResultSchema.loose().extend({ ok: z.literal(true), no_speech: z.boolean().default(false) })
 
 // ── settings, profiles, models, providers ───────────────────────────────
 
