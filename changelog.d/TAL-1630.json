@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Confirm and install a Talaria Web update from Settings when running chats are blocking it.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

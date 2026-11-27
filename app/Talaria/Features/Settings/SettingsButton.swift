@@ -3,14 +3,16 @@ import TalariaKit
 
 struct SettingsButton: View {
     let title: String
+    var systemImage: String?
     var role: ButtonRole?
     var isLoading = false
     let action: () -> Void
 
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
-    init(_ title: String, role: ButtonRole? = nil, isLoading: Bool = false, action: @escaping () -> Void) {
+    init(_ title: String, systemImage: String? = nil, role: ButtonRole? = nil, isLoading: Bool = false, action: @escaping () -> Void) {
         self.title = title
+        self.systemImage = systemImage
         self.role = role
         self.isLoading = isLoading
         self.action = action
@@ -23,13 +25,15 @@ struct SettingsButton: View {
             Group {
                 if isLoading {
                     ProgressView()
+                } else if let systemImage {
+                    Image(systemName: systemImage)
                 } else {
                     Text(title)
                 }
             }
             .font(AppFont.subheadline(weight: .medium))
             .foregroundStyle(role == .destructive ? .red : .primary)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: systemImage == nil ? .infinity : 46)
             .frame(minHeight: 46)
             .background {
                 shape.fill((role == .destructive ? Color.red : Color.primary).opacity(0.08))
@@ -49,6 +53,8 @@ struct SettingsButton: View {
             .contentShape(shape)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .help(title)
         .indexedSettingsRow(title: title)
     }
 
