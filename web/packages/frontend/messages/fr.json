@@ -782,6 +782,7 @@
 	"logs_loading": "Chargement des journaux…",
 	"logs_matching_lines": "{matched} lignes correspondantes parmi les {n} dernières",
 	"logs_no_mtime": "pas encore écrit",
+	"logs_refresh_failed": "Impossible d’actualiser les journaux.",
 	"logs_search": "Rechercher dans ce journal",
 	"logs_severity": "Sévérité",
 	"logs_severity_all": "Tout",

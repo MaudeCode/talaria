@@ -720,6 +720,7 @@
 	"logs_loading": "加载日志中…",
 	"logs_matching_lines": "最近 {n} 行中有 {matched} 行匹配",
 	"logs_no_mtime": "尚未写入",
+	"logs_refresh_failed": "无法刷新日志。",
 	"logs_search": "搜索此日志",
 	"logs_severity": "严重性",
 	"logs_severity_all": "全部",

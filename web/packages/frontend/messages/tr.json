@@ -756,6 +756,7 @@
 	"logs_loading": "Günlükler yükleniyor…",
 	"logs_matching_lines": "Son {n} satırda {matched} eşleşen satır",
 	"logs_no_mtime": "henüz yazılmadı",
+	"logs_refresh_failed": "Günlükler yenilenemedi.",
 	"logs_search": "Bu günlükte ara",
 	"logs_severity": "Şiddet",
 	"logs_severity_all": "Tüm",

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDownToLine, Copy, Search } from 'lucide-react'
+import { ArrowDownToLine, Copy, RefreshCw, Search } from 'lucide-react'
 import type { LogEntry, LogLevel, LogLevelFilter } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -65,10 +65,11 @@ export function LogsPage() {
   const data = logs.data
   const [list, setList] = useState<HTMLOListElement | null>(null)
   // Following keeps the newest line in view, and turning it on goes there; scrolling up stops following.
+  // A failed refresh changes the height below the tail even though the log rows stay the same.
   useLayoutEffect(() => {
     const pane = follow ? scrollParent(list) : null
     if (pane) pane.scrollTop = pane.scrollHeight
-  }, [data, follow, list])
+  }, [data, follow, list, logs.isRefetchError])
   useEffect(() => {
     const pane = scrollParent(list)
     if (!pane) return
@@ -80,9 +81,10 @@ export function LogsPage() {
     pane.addEventListener('scroll', onScroll, { passive: true })
     return () => pane.removeEventListener('scroll', onScroll)
   }, [list])
+  const refresh = () => { void logs.refetch() }
   const onFollow = (on: boolean) => {
     setFollow(on)
-    if (on) void logs.refetch()
+    if (on) refresh()
   }
 
   const entries = data?.entries ?? []
@@ -100,7 +102,7 @@ export function LogsPage() {
         {files.length > 0 && <TabStrip label={m.logs_file_label()} tabs={files.map((f) => ({ id: f.id, label: FILE_LABEL[f.id] ?? (() => f.id) }))} value={file} onChange={(id) => { setFile(id); setFollow(true) }} panelPrefix="logs" />}
         <div role={files.length > 0 ? 'tabpanel' : undefined} id={`logs-${file}`} className={SETTINGS_PAGE}>
           {logs.isPending && <LoadingState compact />}
-          {logs.isError && !data && <ErrorState error={logs.error} onRetry={() => { void logs.refetch() }} />}
+          {logs.isLoadingError && <ErrorState error={logs.error} onRetry={refresh} />}
           {data && missing && <EmptyState compact>{data.hint || m.logs_empty()}</EmptyState>}
           {data && !missing && (
             <>
@@ -144,6 +146,14 @@ export function LogsPage() {
                 </p>
               </div>
             </>
+          )}
+          {logs.isRefetchError && (
+            <ErrorState>
+              <div className="flex items-center justify-between gap-2">
+                <span>{m.logs_refresh_failed()}</span>
+                <IconButton variant="default" label={m.retry()} onClick={refresh} disabled={logs.isFetching}><RefreshCw aria-hidden="true" /></IconButton>
+              </div>
+            </ErrorState>
           )}
         </div>
       </div>

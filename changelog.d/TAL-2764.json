@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Logs show a retry button when a refresh fails and keep the last successful read visible.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

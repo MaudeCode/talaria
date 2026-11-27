@@ -743,6 +743,7 @@
 	"logs_loading": "Đang tải log…",
 	"logs_matching_lines": "{matched} dòng khớp trong {n} dòng cuối",
 	"logs_no_mtime": "chưa được ghi",
+	"logs_refresh_failed": "Không thể làm mới nhật ký.",
 	"logs_search": "Tìm trong nhật ký này",
 	"logs_severity": "Mức độ",
 	"logs_severity_all": "Tất cả",
