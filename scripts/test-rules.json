@@ -49,6 +49,15 @@
       ],
       "message": "test-audit snapshot: sample a per-frame check right after each display commit (sampleCommittedLayouts(in:), UIUpdateLink .afterCATransactionCommit), never from a run-loop observer (docs/testing.md)"
     },
+    "snapshot-backup-cancel-confirmation": {
+      "paths": [
+        "app/TalariaTests/AgentBackupHostedTests.swift"
+      ],
+      "patterns": [
+        "^\\s*HostedAccessibility\\.elements\\(in:\\s*window,\\s*labelContaining:\\s*\"Backup cancelled\"\\)\\.count\\s*==\\s*1\\s*$"
+      ],
+      "message": "test-audit snapshot: await the confirmed Create Backup action before checking cancellation text or counting the request (docs/testing.md)"
+    },
     "ready-report-layout": {
       "paths": [
         "app/TalariaTests/TranscriptMediaRenderingTests.swift"
