@@ -1,10 +1,22 @@
 import SafariServices
 import SwiftUI
+import UIKit
 
-/// A web page a transcript link opened in the in-app Safari sheet (TAL-442).
+/// The in-app Safari destination when iOS cannot open the link in its associated app.
 struct InAppSafariPage: Identifiable {
     let url: URL
     var id: URL { url }
+
+    @MainActor
+    static func fallback(
+        for url: URL,
+        openUniversalLink: @MainActor (URL) async -> Bool = { url in
+            await UIApplication.shared.open(url, options: [.universalLinksOnly: true])
+        }
+    ) async -> Self? {
+        guard !(await openUniversalLink(url)) else { return nil }
+        return Self(url: url)
+    }
 }
 
 /// The system Safari view; its own dismiss button closes the sheet.
