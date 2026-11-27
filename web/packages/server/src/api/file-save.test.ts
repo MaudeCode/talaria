@@ -40,6 +40,7 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 
 import { bootTestServer, type TestServer } from '../test/harness.js'
+import { docx } from '../test/office-fixtures.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 
 let server: TestServer | undefined
@@ -72,6 +73,24 @@ async function fixture() {
 }
 
 describe('workspace save preserves the last complete file', () => {
+  it.each([
+    ['/api/file/save', 'valuable.txt', () => Buffer.from('original valuable content')],
+    ['/api/file/office-save', 'valuable.docx', () => docx('original valuable content')],
+  ] as const)('%s rejects a missing content field and preserves the original bytes', async (route, path, makeOriginal) => {
+    const f = await fixture()
+    const original = await makeOriginal()
+    const target = join(f.ws, path)
+    writeFileSync(target, original)
+
+    const response = await f.post(route, { session_id: f.sid, path })
+    const body = await response.json() as { error?: string }
+    expect({ status: response.status, error: body.error, preserved: readFileSync(target).equals(original) }).toEqual({
+      status: 400,
+      error: 'Missing required field(s): content',
+      preserved: true,
+    })
+  })
+
   // A full disk answers 507 with the storage-full condition (TAL-2716); any other write failure stays a 400.
   it.each([['first write', 507], ['partial write', 507], ['sync', 400], ['replace', 400]] as const)('preserves original bytes and mode after a %s failure', async (at, status) => {
     const f = await fixture()
@@ -97,6 +116,26 @@ describe('workspace save preserves the last complete file', () => {
     expect(readdirSync(f.ws)).toEqual(['valuable.txt'])
     expect([...faults.fds]).toEqual([])
   })
+
+  it('saves explicit empty content as an editable DOCX', async () => {
+    const f = await fixture()
+    const path = 'valuable.docx'
+    writeFileSync(join(f.ws, path), await docx('original valuable content'))
+
+    const saved = await f.post('/api/file/office-save', { session_id: f.sid, path, content: '' })
+    expect(saved.status).toBe(200)
+    const read = await server!.get(`/api/file?session_id=${f.sid}&path=${path}`)
+    expect(read.status).toBe(200)
+    expect(await read.json()).toMatchObject({ office_format: 'docx', editable: true, content: '' })
+  })
+})
+
+it('creates an empty text file when content is omitted', async () => {
+  const f = await fixture()
+  const path = 'new.txt'
+  const response = await f.post('/api/file/create', { session_id: f.sid, path })
+  expect(response.status).toBe(200)
+  expect(readFileSync(join(f.ws, path))).toHaveLength(0)
 })
 
 // TAL-2716: a full disk while creating the destination answers 507, not the 400, 403 or 500 a refused path gets.

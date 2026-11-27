@@ -10,6 +10,7 @@ export const WorkspacesMutation = z.object({ ok: z.literal(true), workspaces: z.
 
 const FileSource = FileSourceSchema.optional()
 const SessionPath = z.object({ session_id: z.string(), path: z.string() })
+const FileReplacement = SessionPath.extend({ content: z.string() })
 const OkPath = z.object({ ok: z.literal(true), path: z.string() })
 /** TAL-263: `token` is the grant from `files.escapeAuthorize`; `path` is workspace-relative and must sit under the granted symlink. */
 const EscapeQuery = z.object({ session_id: z.string().optional(), token: z.string().optional(), path: z.string().optional() })
@@ -36,9 +37,9 @@ export const workspacesContract = {
   files: {
     list: oc.route({ method: 'GET', path: '/api/list', tags: ['files'] }).input(z.object({ session_id: z.string(), path: z.string().optional(), source: FileSource })).output(DirListingSchema),
     read: oc.route({ method: 'GET', path: '/api/file', tags: ['files'] }).input(SessionPath.extend({ source: FileSource })).output(FileContentSchema),
-    save: oc.route({ method: 'POST', path: '/api/file/save', tags: ['files'] }).input(SessionPath.extend({ source: FileSource, content: z.string().optional() })).output(OkPath.extend({ size: z.number().int(), source: FileSource })),
+    save: oc.route({ method: 'POST', path: '/api/file/save', tags: ['files'] }).input(FileReplacement.extend({ source: FileSource })).output(OkPath.extend({ size: z.number().int(), source: FileSource })),
     /** TAL-262: saves an editable `.docx` preview's text as its paragraphs; `.xlsx` and `.pptx` are preview-only (400). */
-    officeSave: oc.route({ method: 'POST', path: '/api/file/office-save', tags: ['files'] }).input(SessionPath.extend({ content: z.string().optional() })).output(FileContentSchema.extend({ ok: z.literal(true), path: z.string(), size: z.number().int() })),
+    officeSave: oc.route({ method: 'POST', path: '/api/file/office-save', tags: ['files'] }).input(FileReplacement).output(FileContentSchema.extend({ ok: z.literal(true), path: z.string(), size: z.number().int() })),
     create: oc.route({ method: 'POST', path: '/api/file/create', tags: ['files'] }).input(SessionPath.extend({ content: z.string().optional() })).output(OkPath),
     createDir: oc.route({ method: 'POST', path: '/api/file/create-dir', tags: ['files'] }).input(SessionPath).output(OkPath),
     delete: oc.route({ method: 'POST', path: '/api/file/delete', tags: ['files'] }).input(SessionPath.extend({ recursive: Json.optional() })).output(OkPath),

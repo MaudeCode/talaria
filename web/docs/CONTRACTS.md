@@ -418,6 +418,12 @@ page loads its own folder's assets but cannot fetch, post or open an unsandboxed
 popup. A page can still navigate itself to another site carrying its address;
 that address unlocks only its folder, minus dotfiles, until the grant expires.
 
+## File replacement
+
+`files.save` and `files.officeSave` require a string `content` field. Send `""`
+to clear the text. An omitted field returns 400 before any replacement.
+`files.create` accepts an omitted `content` field to create an empty file.
+
 ## Managed session buffers
 
 The Files list/read/save procedures accept `source: "managed"` for the fixed
