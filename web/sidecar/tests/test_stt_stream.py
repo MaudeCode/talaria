@@ -246,6 +246,34 @@ def test_cancel_during_a_slow_finalize_cancels_the_session():
         session.release.set()
 
 
+def test_finalize_exception_returns_safe_error_and_cancels_the_session(monkeypatch):
+    session = ScriptedSession()
+    thread_errors = []
+
+    def fail_finalize():
+        session.calls.append("finalize")
+        raise RuntimeError("private provider details")
+
+    def end_on_ready(event, data):
+        assert event == "ready"
+        stt.stream_audio(data["stream_id"], "", True)
+        stream_ids.append(data["stream_id"])
+
+    stream_ids = []
+    ctx = CallContext(RpcServer({}, stdout=io.BytesIO()), 7, "stt.stream")
+    monkeypatch.setattr(ctx, "emit", end_on_ready)
+    monkeypatch.setattr(session, "finalize", fail_finalize)
+    monkeypatch.setattr(threading, "excepthook", thread_errors.append)
+
+    with pytest.raises(RpcError, match="^Live transcription failed$") as failure:
+        stt.run_stream(ctx, session, 16000)
+
+    assert failure.value.data["condition"] == "stt_failed"
+    assert session.calls == ["rate 16000", "finalize", "cancel"]
+    assert _closed(stream_ids[0]) == "stt_stream_closed"
+    assert thread_errors == []
+
+
 @pytest.mark.parametrize("sample_rate", [7999, 48001, 16000.0])
 def test_stream_refuses_an_invalid_rate_before_opening_a_session(monkeypatch, tmp_path, sample_rate):
     opened = []

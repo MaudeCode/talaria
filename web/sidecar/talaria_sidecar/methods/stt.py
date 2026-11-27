@@ -105,13 +105,25 @@ def run_stream(ctx: CallContext, session, sample_rate: int) -> dict:
         while not ended.wait(0.1):
             ctx.check_cancelled()
         # Finalize off this thread so a cancel still reaches the session while the provider flushes.
-        finalized: dict = {}
-        finalizer = threading.Thread(target=lambda: finalized.update(result=session.finalize()), name="stt-stream-finalize", daemon=True)
+        result = None
+        failure = None
+
+        def finalize():
+            nonlocal result, failure
+            try:
+                result = session.finalize()
+            except BaseException as exc:
+                failure = exc
+
+        finalizer = threading.Thread(target=finalize, name="stt-stream-finalize", daemon=True)
         finalizer.start()
-        while finalizer.is_alive():
+        while True:
             finalizer.join(0.1)
             ctx.check_cancelled()
-        result = finalized.get("result")
+            if not finalizer.is_alive():
+                break
+        if failure is not None:
+            raise RpcError("Live transcription failed", condition="stt_failed") from failure
     except BaseException:
         session.cancel()
         raise

@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Live dictation releases its provider session when transcription fails to finish.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
