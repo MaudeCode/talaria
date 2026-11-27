@@ -49,7 +49,7 @@ describe('session-list storage reads (TAL-1226)', () => {
 function listed(stored: Row[], liveStreamIds: string[]): Row[] {
   const payload = { sessions: stored, sidebar_reference_sessions: [], archived_limit: null } as unknown as ListPayload
   const overlay: RuntimeOverlay = { activeStreamIds: new Set(liveStreamIds), runningCronJobs: new Map(), live: () => undefined, attention: () => null }
-  return sessionListResponse(payload, overlay, false, 0, () => null).body.sessions
+  return sessionListResponse(payload, overlay, false, 0, () => ({ workspace_name: null })).body.sessions
 }
 
 describe('session-list row validation (TAL-1218)', () => {
@@ -157,7 +157,7 @@ describe('sidebar_source per profile (TAL-1863)', () => {
 
 describe('detailed row meta (TAL-2153)', () => {
   const overlay: RuntimeOverlay = { activeStreamIds: new Set(), runningCronJobs: new Map(), live: () => undefined, attention: () => null }
-  const meta = (row: Row, allProfiles: boolean) => sessionListResponse({ sessions: [{ session_id: 'a', title: 'a', ...row }], sidebar_reference_sessions: [], archived_limit: null, all_profiles: allProfiles } as unknown as ListPayload, overlay, false, 0, () => null, true).body.sessions[0]?.meta
+  const meta = (row: Row, allProfiles: boolean) => sessionListResponse({ sessions: [{ session_id: 'a', title: 'a', ...row }], sidebar_reference_sessions: [], archived_limit: null, all_profiles: allProfiles } as unknown as ListPayload, overlay, false, 0, () => ({ workspace_name: null }), true).body.sessions[0]?.meta
 
   it('orders model, message count, outside source and profile, each only where it applies', () => {
     const cli = { model: 'gpt-5.4', message_count: 7, source_tag: 'cli', source_label: 'CLI', profile: 'work' }
@@ -249,7 +249,7 @@ describe('one switch per outside source (TAL-2159)', () => {
 
 describe('sidebar groups (TAL-1534)', () => {
   const overlay: RuntimeOverlay = { activeStreamIds: new Set(), runningCronJobs: new Map(), live: () => undefined, attention: () => null }
-  const body = (stored: Row[]) => sessionListResponse({ sessions: stored, sidebar_reference_sessions: [], archived_limit: null } as unknown as ListPayload, overlay, false, 0, () => null).body
+  const body = (stored: Row[]) => sessionListResponse({ sessions: stored, sidebar_reference_sessions: [], archived_limit: null } as unknown as ListPayload, overlay, false, 0, () => ({ workspace_name: null })).body
   const row = (id: string, ts: number, extra: Row = {}): Row => ({ session_id: id, title: id, updated_at: ts, last_message_at: ts, ...extra })
   const groups = (stored: Row[]) => { const b = body(stored); return { rows: b.sessions.map((r) => [r.session_id, r.sidebar_group]), groups: b.sidebar_groups } }
   const PINNED = { kind: 'pinned', title: 'Pinned' }

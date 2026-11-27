@@ -1019,10 +1019,12 @@ function automatedSidebarGroup(kind: SourceKind): 'scheduled' | 'webhook' | null
   return kind === 'cron' ? 'scheduled' : kind === 'webhook' ? 'webhook' : null
 }
 
-export function sidebarSessionResponseItem(row: Row, redactEnabled: boolean, attention: Row | null, activeStreamIds: ReadonlySet<string>, workspaceName: (row: Row) => string | null): Row {
+type SidebarRowLabels = (row: Row) => { workspace_name: string | null; project_name?: string | null }
+
+function sidebarSessionResponseItem(row: Row, redactEnabled: boolean, attention: Row | null, activeStreamIds: ReadonlySet<string>, labels: SidebarRowLabels): Row {
   const item: Row = {}
   for (const [k, v] of Object.entries(row)) if (SIDEBAR_SESSION_RESPONSE_FIELDS.has(k)) item[k] = v
-  item.workspace_name = workspaceName(row)
+  Object.assign(item, labels(row))
   if (typeof item.title === 'string') item.title = redactText(item.title, redactEnabled)
   for (const field of ['display_title', '_state_db_title', 'parent_title']) if (typeof item[field] === 'string') item[field] = redactText(item[field], redactEnabled)
   // Python reconciles stale stream state before serialising (#2157): a dead stream id is not exposed as active.
@@ -1077,13 +1079,13 @@ export function serverTz(date = new Date()): string {
 }
 
 /** Python `_session_list_payload_to_response`; the ETag covers everything but `server_time`. */
-export function sessionListResponse(payload: ListPayload, overlay: RuntimeOverlay, redactEnabled: boolean, now: number, workspaceName: (row: Row) => string | null, detailedRows = false): { body: ListResponse; etag: string } {
+export function sessionListResponse(payload: ListPayload, overlay: RuntimeOverlay, redactEnabled: boolean, now: number, labels: SidebarRowLabels, detailedRows = false): { body: ListResponse; etag: string } {
   const runtimeRows = withSidebarChildren(overlayRuntimeRows(payload.sessions, overlay))
   const sessions = runtimeRows.map((r) => {
-    const item = sidebarSessionResponseItem(r, redactEnabled, overlay.attention(str(r.session_id)), overlay.activeStreamIds, workspaceName)
+    const item = sidebarSessionResponseItem(r, redactEnabled, overlay.attention(str(r.session_id)), overlay.activeStreamIds, labels)
     return detailedRows ? { ...item, meta: sidebarRowMeta(r, payload.all_profiles) } : item
   })
-  const references = payload.sidebar_reference_sessions.map((r) => ({ ...sidebarSessionResponseItem(r, redactEnabled, overlay.attention(str(r.session_id)), overlay.activeStreamIds, workspaceName), _sidebar_reference_only: true }))
+  const references = payload.sidebar_reference_sessions.map((r) => ({ ...sidebarSessionResponseItem(r, redactEnabled, overlay.attention(str(r.session_id)), overlay.activeStreamIds, labels), _sidebar_reference_only: true }))
   const tz = serverTz()
   const body: ListResponse = {
     server_time: now,

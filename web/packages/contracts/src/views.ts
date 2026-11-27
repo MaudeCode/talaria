@@ -838,6 +838,7 @@ export const SessionRowSchema = z.looseObject({
   active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), share_url: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.enum(['title', 'metadata', 'content']).optional(), match_preview: NullableString.optional(),
   match_message_idx: z.number().int().nonnegative().optional().describe('TAL-1922: on a content hit, the matched message\'s absolute index (the `_messages_offset` space of `GET /api/session`); omitted on title and metadata hits and when the transcript does not show that message on its own.'),
   match_message_key: z.string().optional().describe('TAL-1922: the transcript row key of the matched message (its `message_id` or `id`, else `<index>-<role>`), for `?msg=`; present exactly when `match_message_idx` is.'),
+  project_name: NullableString.optional().describe('TAL-1472: the visible project name on the session list and its sidebar search, or null when no visible project is assigned.'),
   workspace_name: WorkspaceNameSchema,
   place_label: NullableString.optional().describe("The chat header place: its workspace label, else its profile display name, else null."),
   sidebar_group: SidebarGroupKindSchema.nullable().optional().describe('TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. TAL-2518: other routes that return a session row set only `scheduled` or `webhook`, else null.'),

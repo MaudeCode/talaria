@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Find chats by title in iPhone Spotlight and open them in Talaria.",
+      "highlight": false,
+      "components": ["app"],
+      "announcement": {
+        "title": "Chats in Spotlight",
+        "description": "Search for a chat from your iPhone Home Screen and tap it to open Talaria.",
+        "icon": "search"
+      }
+    }
+  ]
+}

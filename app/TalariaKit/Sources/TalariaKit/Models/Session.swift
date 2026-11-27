@@ -382,6 +382,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     /// The server's sidebar group (`sidebar_group`, TAL-1534); nil from older servers and detail payloads.
     public let sidebarGroup: String?
     public let projectId: String?
+    /// The visible project's name from the server's session list.
+    public let projectName: String?
     public let profile: String?
     public let inputTokens: Int?
     public let outputTokens: Int?
@@ -438,6 +440,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         archived: Bool? = nil,
         sidebarGroup: String? = nil,
         projectId: String? = nil,
+        projectName: String? = nil,
         profile: String? = nil,
         inputTokens: Int? = nil,
         outputTokens: Int? = nil,
@@ -484,6 +487,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         self.archived = archived
         self.sidebarGroup = sidebarGroup
         self.projectId = projectId
+        self.projectName = projectName
         self.profile = profile
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
@@ -518,7 +522,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         case sessionId, title, workspace, workspaceName, placeLabel, model, modelProvider
         case modelOptionID = "modelOptionId"
         case messageCount, createdAt, updatedAt, lastMessageAt, sortTs
-        case pinned, archived, sidebarGroup, projectId, profile
+        case pinned, archived, sidebarGroup, projectId, projectName, profile
         case inputTokens, outputTokens, estimatedCost
         case activeStreamId, isStreaming, isCliSession
         case userMessageCount, hasPendingUserMessage, pendingStartedAt, worktreePath
@@ -558,6 +562,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         archived = container.decodeLossyBoolIfPresent(forKey: .archived)
         sidebarGroup = container.decodeLossyStringIfPresent(forKey: .sidebarGroup)
         projectId = container.decodeLossyStringIfPresent(forKey: .projectId)
+        projectName = container.decodeLossyStringIfPresent(forKey: .projectName)
         profile = container.decodeLossyStringIfPresent(forKey: .profile)
         inputTokens = container.decodeLossyIntIfPresent(forKey: .inputTokens)
         outputTokens = container.decodeLossyIntIfPresent(forKey: .outputTokens)
@@ -629,6 +634,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         archived = detail.archived
         sidebarGroup = detail.sidebarGroup
         projectId = detail.projectId
+        projectName = nil
         profile = detail.profile
         inputTokens = detail.inputTokens
         outputTokens = detail.outputTokens
@@ -685,6 +691,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
             archived: archived,
             sidebarGroup: sidebarGroup,
             projectId: projectId,
+            projectName: projectName,
             profile: profile,
             inputTokens: inputTokens,
             outputTokens: outputTokens,
@@ -750,6 +757,7 @@ extension SessionSummary {
             // pinned or recent group is stale.
             sidebarGroup: sidebarGroup ?? (pinned == nil && archived == nil ? row.sidebarGroup : nil),
             projectId: projectId ?? row.projectId,
+            projectName: projectName ?? (projectId == nil || projectId == row.projectId ? row.projectName : nil),
             profile: profile ?? row.profile,
             inputTokens: inputTokens ?? row.inputTokens,
             outputTokens: outputTokens ?? row.outputTokens,
