@@ -423,8 +423,10 @@ public final class TalariaRelayClient: Sendable {
         let completionAlertsEnabled = liveActivitiesEnabled && defaults.bool(
             forKey: ResponseCompletionNotifications.isEnabledKey
         )
-        let updateAlerts = updateAvailableAlertsEnabled
-            ?? defaults.bool(forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey)
+        let unconfirmedKey = TalariaRelayNotifications.unconfirmedUpdateAvailableAlertsKey
+        let previousUnconfirmed = defaults.object(forKey: unconfirmedKey) as? Bool
+        let unconfirmed = updateAvailableAlertsEnabled ?? previousUnconfirmed
+        let updateAlerts = unconfirmed ?? defaults.bool(forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey)
         let notificationsEnabled = pushToken != nil
             && (approvalInputAlertsEnabled || completionAlertsEnabled || updateAlerts)
         let preferences: [String: Bool] = [
@@ -455,16 +457,23 @@ public final class TalariaRelayClient: Sendable {
         }
         let path = "v1/devices/\(credentials.deviceID)"
         let data = try JSONSerialization.data(withJSONObject: body)
+        // The next full registration must reassert an unconfirmed choice, even after leaving Settings or relaunching.
+        if let updateAvailableAlertsEnabled { defaults.set(updateAvailableAlertsEnabled, forKey: unconfirmedKey) }
         do {
             try await send(path: path, method: "PUT", body: data)
-        } catch let unconfirmed where updateAvailableAlertsEnabled != nil
-            && (unconfirmed as? ClientError)?.definitivelyRefusedWrite != true && !Task.isCancelled {
+        } catch let firstError where updateAvailableAlertsEnabled != nil {
+            if (firstError as? ClientError)?.definitivelyRefusedWrite == true {
+                defaults.set(previousUnconfirmed, forKey: unconfirmedKey)
+                throw firstError
+            }
+            guard !Task.isCancelled else { throw firstError }
             // Relay has no device-preferences GET. Reasserting the same absolute preference is idempotent.
             do { try await send(path: path, method: "PUT", body: data) }
-            catch { throw unconfirmed }
+            catch { throw firstError }
         }
-        if let updateAvailableAlertsEnabled {
-            defaults.set(updateAvailableAlertsEnabled, forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey)
+        if let unconfirmed {
+            defaults.set(unconfirmed, forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey)
+            defaults.removeObject(forKey: unconfirmedKey)
         }
     }
 

@@ -340,6 +340,7 @@ public enum TalariaRelayNotifications {
     /// TAL-873: completion alerts for turns a finished sub-agent or background process started; off by default.
     public static let backgroundAlertsEnabledKey = "talariaRelay.backgroundAlertsEnabled"
     public static let updateAvailableAlertsEnabledKey = "talariaRelay.updateAvailableAlertsEnabled"
+    public static let unconfirmedUpdateAvailableAlertsKey = "talariaRelay.unconfirmedUpdateAvailableAlerts"
     public static let pushTokenKey = "talariaRelay.pushToken"
     public static let pushToStartTokenKey = "talariaRelay.pushToStartToken"
 }
