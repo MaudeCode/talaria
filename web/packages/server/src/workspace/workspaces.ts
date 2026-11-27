@@ -328,13 +328,13 @@ export class WorkspaceRegistry {
       if (record) {
         const resolved = this.configResolved(profile)
         const cleaned = this.cleanWorkspaceList(record.value, profile, forNames)
-        if (!forNames && resolved && this.configResolved(profile) && Array.isArray(record.value) && cleaned.length !== record.value.length) {
+        if (!forWrite && !forNames && resolved && this.configResolved(profile) && Array.isArray(record.value) && cleaned.length !== record.value.length) {
           try { await this.deps.documents.put('workspaces', key, cleaned, record.revision) } catch { /* next read reconciles a competing edit */ }
         }
         return cleaned.length ? cleaned : [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
       }
     } catch (error) {
-      if (forWrite && error instanceof ConfigUnavailable) throw error
+      if (forWrite) throw error
       // Malformed or unavailable registry falls back to the profile default.
     }
     return [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
@@ -346,7 +346,7 @@ export class WorkspaceRegistry {
     await updateDocument(this.deps.documents, 'workspaces', key, () => {
       this.requireResolvedConfig(profile)
       return { value: workspaces, result: undefined }
-    }, { replaceInvalid: true })
+    })
   }
 
   private validLastWorkspace(raw: string, profile: string | null, remoteCwd: string | null): string | null {

@@ -834,6 +834,9 @@ request. All workspace file operations exclude Web state. The full rule is in
 [security-model.md](security-model.md#5-filesystem).
 If the boot workspace is inside Web state, configure a writable workspace
 outside it via `TALARIA_WEB_DEFAULT_WORKSPACE`.
+Workspace registry edits fail when the stored registry cannot be read. Listing
+workspaces can still show the default, and a profile without a registry can
+add its first workspace.
 
 `/api/media` gives a non-owner login its profile's home, without other
 profiles or Web state, and the attachment folder of the session it names, in
