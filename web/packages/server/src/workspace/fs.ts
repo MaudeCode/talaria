@@ -288,15 +288,23 @@ export function openAnchoredWriteFd(root: string, target: string): number {
   }
 }
 
+export class FileRevisionConflict extends Error {}
+
+function fileRevision(file: Stats, bytes: Uint8Array): string {
+  // The inode distinguishes a replacement with identical bytes. The digest detects in-place edits, even at the same size.
+  return createHash('sha256').update(`${file.dev}:${file.ino}:${file.birthtimeMs}:`).update(bytes).digest('hex')
+}
+
 /** Stage and replace an existing regular file without truncating it on a failed save. */
-export function replaceAnchoredFile(root: string, target: string, data: Uint8Array): void {
+export function replaceAnchoredFile(root: string, target: string, data: Uint8Array, baseRevision?: string): string | undefined {
   const { dir, leaf } = openAnchoredParent(root, target)
   try {
     // Keep staging, commit and cleanup in one cwd anchor, even if the parent pathname is swapped mid-write.
-    dir.anchored(() => {
+    return dir.anchored(() => {
       const dest = dir.child(leaf)
       let original: number
-      try { original = openSync(dest, constants.O_WRONLY | O_NOFOLLOW | O_NONBLOCK) } catch { throw new NotFoundError(`Not found: ${target}`) }
+      const access = baseRevision === undefined ? constants.O_WRONLY : constants.O_RDWR
+      try { original = openSync(dest, access | O_NOFOLLOW | O_NONBLOCK) } catch { throw new NotFoundError(`Not found: ${target}`) }
       try {
         const before = fstatSync(original)
         if (!before.isFile()) throw new NotFoundError(`Not a file: ${target}`)
@@ -313,10 +321,17 @@ export function replaceAnchoredFile(root: string, target: string, data: Uint8Arr
           const stagedStat = fstatSync(fd)
           closeSync(fd)
           fd = undefined
-          // Refuse a swapped destination or staging entry; rename never follows a symlink's referent.
-          if (!sameFile(before, lstatSync(dest)) || !sameFile(stagedStat, lstatSync(staged))) throw new NotFoundError(`File changed: ${target}`)
+          // Refuse a swapped staging entry; rename never follows a symlink's referent.
+          if (!sameFile(stagedStat, lstatSync(staged))) throw new NotFoundError(`File changed: ${target}`)
+          if (baseRevision === undefined) {
+            if (!sameFile(before, lstatSync(dest))) throw new NotFoundError(`File changed: ${target}`)
+          } else {
+            const current = readFdUpTo(original, MAX_FILE_BYTES + 1)
+            if (current.length > MAX_FILE_BYTES || fileRevision(before, current) !== baseRevision || !sameFile(before, lstatSync(dest))) throw new FileRevisionConflict()
+          }
           renameSync(staged, dest)
           committed = true
+          return baseRevision === undefined ? undefined : fileRevision(stagedStat, data)
         } finally {
           if (fd !== undefined) { try { closeSync(fd) } catch { /* already closed */ } }
           if (created && !committed) { try { unlinkSync(staged) } catch { /* already removed */ } }
@@ -621,7 +636,7 @@ function sortKeysDeep(value: unknown): unknown {
 }
 
 /** A text read carries `content`/`lines`; a stat-only read and a binary file carry only the size. */
-export interface FileContent { path: string; size: number; content?: string; lines?: number; binary?: true }
+export interface FileContent { path: string; size: number; content?: string; lines?: number; binary?: true; revision?: string }
 
 export class FileTooLargeError extends Error {}
 
@@ -635,18 +650,23 @@ export function decodeText(raw: Buffer): string | null {
   return isBinary(raw) ? null : raw.toString('utf8')
 }
 
-/** Python `read_file_content`; an Office file's preview reads its bytes with `readFileBytes` (TAL-262). */
-export function readFileContent(workspace: string, rel: string, opts: { statOnly?: boolean } = {}): FileContent {
+/** Python `read_file_content`; an Office preview reads its package with `readFileSnapshot`. */
+export function readFileContent(workspace: string, rel: string, opts: { statOnly?: boolean; revision?: boolean } = {}): FileContent {
   if (opts.statOnly) return { path: rel, size: readAnchoredFile(workspace, rel, false).size }
-  return decodedContent(rel, readAnchoredFile(workspace, rel, true).raw ?? Buffer.alloc(0))
+  const { raw, stat } = readAnchoredFile(workspace, rel, true)
+  const file = decodedContent(rel, raw)
+  return opts.revision && !file.binary ? { ...file, revision: fileRevision(stat, raw) } : file
 }
 
-/** A workspace file's bytes through the anchored walk, refused past `MAX_FILE_BYTES`. */
-export function readFileBytes(workspace: string, rel: string): Buffer {
-  return readAnchoredFile(workspace, rel, true).raw ?? Buffer.alloc(0)
+/** The file's bytes and their revision come from the same anchored descriptor. */
+export function readFileSnapshot(workspace: string, rel: string): { bytes: Buffer; revision: string } {
+  const { raw, stat } = readAnchoredFile(workspace, rel, true)
+  return { bytes: raw, revision: fileRevision(stat, raw) }
 }
 
-function readAnchoredFile(workspace: string, rel: string, read: boolean): { size: number; raw?: Buffer } {
+function readAnchoredFile(workspace: string, rel: string, read: false): { size: number }
+function readAnchoredFile(workspace: string, rel: string, read: true): { raw: Buffer; stat: Stats }
+function readAnchoredFile(workspace: string, rel: string, read: boolean): { size: number } | { raw: Buffer; stat: Stats } {
   const target = safeResolveWs(workspace, rel)
   let st
   try {
@@ -662,7 +682,8 @@ function readAnchoredFile(workspace: string, rel: string, read: boolean): { size
     if (!read) return { size: fst.size }
     if (fst.size > MAX_FILE_BYTES) throw new FileTooLargeError(`File too large (${fst.size} bytes, max ${MAX_FILE_BYTES})`)
     const raw = readFdUpTo(fd, MAX_FILE_BYTES + 1)
-    return { size: raw.length, raw }
+    if (raw.length > MAX_FILE_BYTES) throw new FileTooLargeError(`File exceeds ${MAX_FILE_BYTES} bytes`)
+    return { raw, stat: fst }
   } finally {
     closeSync(fd)
   }

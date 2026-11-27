@@ -10,7 +10,13 @@ export const WorkspacesMutation = z.object({ ok: z.literal(true), workspaces: z.
 
 const FileSource = FileSourceSchema.optional()
 const SessionPath = z.object({ session_id: z.string(), path: z.string() })
-const FileReplacement = SessionPath.extend({ content: z.string() })
+const FileRevision = z.string().regex(/^[a-f0-9]{64}$/)
+const FileReplacement = SessionPath.extend({
+  content: z.string(),
+  base_revision: FileRevision.optional().describe('Revision of the workspace file when editing started. A stale revision returns 409 with condition file_revision_conflict. Older clients may omit it.'),
+})
+const SavedFileRevision = FileRevision.optional().describe('Opaque revision of the committed workspace file after a conditional save.')
+const FileRead = FileContentSchema.extend({ revision: FileRevision.optional().describe('Opaque revision of this editable workspace file. Send it back as base_revision when saving.') })
 const OkPath = z.object({ ok: z.literal(true), path: z.string() })
 /** TAL-263: `token` is the grant from `files.escapeAuthorize`; `path` is workspace-relative and must sit under the granted symlink. */
 const EscapeQuery = z.object({ session_id: z.string().optional(), token: z.string().optional(), path: z.string().optional() })
@@ -36,10 +42,10 @@ export const workspacesContract = {
   },
   files: {
     list: oc.route({ method: 'GET', path: '/api/list', tags: ['files'] }).input(z.object({ session_id: z.string(), path: z.string().optional(), source: FileSource })).output(DirListingSchema),
-    read: oc.route({ method: 'GET', path: '/api/file', tags: ['files'] }).input(SessionPath.extend({ source: FileSource })).output(FileContentSchema),
-    save: oc.route({ method: 'POST', path: '/api/file/save', tags: ['files'] }).input(FileReplacement.extend({ source: FileSource })).output(OkPath.extend({ size: z.number().int(), source: FileSource })),
+    read: oc.route({ method: 'GET', path: '/api/file', tags: ['files'] }).input(SessionPath.extend({ source: FileSource })).output(FileRead),
+    save: oc.route({ method: 'POST', path: '/api/file/save', tags: ['files'] }).input(FileReplacement.extend({ source: FileSource })).output(OkPath.extend({ size: z.number().int(), source: FileSource, revision: SavedFileRevision })),
     /** TAL-262: saves an editable `.docx` preview's text as its paragraphs; `.xlsx` and `.pptx` are preview-only (400). */
-    officeSave: oc.route({ method: 'POST', path: '/api/file/office-save', tags: ['files'] }).input(FileReplacement).output(FileContentSchema.extend({ ok: z.literal(true), path: z.string(), size: z.number().int() })),
+    officeSave: oc.route({ method: 'POST', path: '/api/file/office-save', tags: ['files'] }).input(FileReplacement).output(FileContentSchema.extend({ ok: z.literal(true), path: z.string(), size: z.number().int(), revision: SavedFileRevision })),
     create: oc.route({ method: 'POST', path: '/api/file/create', tags: ['files'] }).input(SessionPath.extend({ content: z.string().optional() })).output(OkPath),
     createDir: oc.route({ method: 'POST', path: '/api/file/create-dir', tags: ['files'] }).input(SessionPath).output(OkPath),
     delete: oc.route({ method: 'POST', path: '/api/file/delete', tags: ['files'] }).input(SessionPath.extend({ recursive: Json.optional() })).output(OkPath),

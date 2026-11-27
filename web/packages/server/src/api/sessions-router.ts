@@ -23,7 +23,7 @@ import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { fileSourceSession, managedBuffers } from '../workspace/managed-buffers.js'
 import { previewUrl, readFilePreview } from '../workspace/preview.js'
 import { OfficeError, officeFormat, saveDocx } from '../workspace/office.js'
-import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, readFileBytes, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
+import { dirSignature, FileExistsError, FileRevisionConflict, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, readFileSnapshot, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
 import { pyOsError, pyRepr, storageFull, str } from '../util.js'
 import { activeProfileName, ensureTrustedAuthSession, requestCanManageServer, sessionCanManageServer } from '../auth/gate.js'
@@ -813,7 +813,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       if (!input.path) throw new HttpError(400, 'path is required')
       try {
         workspaceFileTarget(ctx, s.workspace, input.path)
-        const file = { ...readFilePreview(s.workspace, input.path), source: 'workspace' as const }
+        const file = { ...readFilePreview(s.workspace, input.path, { revision: true }), source: 'workspace' as const }
         return file.preview === 'html' ? { ...file, preview_url: previewUrl(ctx.deps.auth.signingKey(), s.workspace, input.path) } : file
       } catch (error) {
         throw fileError(error, 404)
@@ -832,8 +832,8 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
         if (!existsSync(target)) throw new HttpError(404, 'File not found')
         if (statSync(target).isDirectory()) throw new HttpError(400, 'Cannot save: path is a directory')
         const data = Buffer.from(input.content, 'utf8')
-        replaceAnchoredFile(root, target, data)
-        return { ok: true as const, path: input.path, size: data.length }
+        const revision = replaceAnchoredFile(root, target, data, input.base_revision)
+        return { ok: true as const, path: input.path, size: data.length, ...(revision ? { revision } : {}) }
       } catch (error) {
         throw fileError(error)
       }
@@ -857,9 +857,11 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
         if (!format) throw new HttpError(400, 'Office save is only available for .docx, .xlsx, and .pptx files')
         if (format !== 'docx') throw new HttpError(400, `${format} is preview-only`)
         return await ctx.deps.git.holdWrite(root, async () => {
-          const saved = await saveDocx(readFileBytes(root, input.path), input.content)
-          replaceAnchoredFile(root, target, saved.bytes)
-          return { ...saved.preview, ok: true as const, path: input.path, size: saved.bytes.length, preview: 'office' as const, source: 'workspace' as const }
+          const base = readFileSnapshot(root, input.path)
+          if (input.base_revision !== undefined && base.revision !== input.base_revision) throw new FileRevisionConflict()
+          const saved = await saveDocx(base.bytes, input.content)
+          const revision = replaceAnchoredFile(root, target, saved.bytes, input.base_revision)
+          return { ...saved.preview, ok: true as const, path: input.path, size: saved.bytes.length, preview: 'office' as const, source: 'workspace' as const, ...(revision ? { revision } : {}) }
         })
       } catch (error) {
         throw fileError(error)
@@ -1074,6 +1076,7 @@ function assertWorkspaceFree(deps: AppDeps, path: string): void {
 
 export function fileError(error: unknown, notFoundStatus = 400): Error {
   if (error instanceof HttpError) return error
+  if (error instanceof FileRevisionConflict) return new HttpError(409, 'File changed since you started editing. Copy your draft before discarding it to load the latest version.', { condition: 'file_revision_conflict' })
   if (error instanceof HttpFailure) return new HttpError(error.status, error.message, error.extra)
   if (error instanceof OfficeError) return new HttpError(400, error.message)
   // A full disk reaches the dispatcher unchanged, which answers 507 (TAL-2716).

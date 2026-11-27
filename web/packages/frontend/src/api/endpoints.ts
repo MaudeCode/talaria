@@ -249,9 +249,9 @@ export const listDir = (session_id: string, path = '.', showHidden = false, sour
 export const readFile = (session_id: string, path: string, source?: 'workspace' | 'managed') => orpc().files.read({ session_id, path, ...(source ? { source } : {}) })
 /** `inline` asks for the sandboxed, frameable preview response (HTML, PDF). */
 export const rawFileUrl = (session_id: string, path: string, inline?: boolean) => `api/file/raw${qs({ session_id, path, inline: flag(inline) })}`
-export const saveFile = (session_id: string, path: string, content: string, source?: 'workspace' | 'managed') => orpc().files.save({ session_id, path, content, ...(source ? { source } : {}) })
+export const saveFile = (session_id: string, path: string, content: string, options: { source?: 'workspace' | 'managed'; base_revision?: string | undefined } = {}) => orpc().files.save({ session_id, path, content, ...options })
 /** TAL-262: an editable `.docx` preview's text, saved back as its paragraphs. */
-export const saveOfficeFile = (session_id: string, path: string, content: string) => orpc().files.officeSave({ session_id, path, content })
+export const saveOfficeFile = (session_id: string, path: string, content: string, base_revision?: string) => orpc().files.officeSave({ session_id, path, content, base_revision })
 export const createFile = (session_id: string, path: string) => orpc().files.create({ session_id, path, content: '' })
 export const createDir = (session_id: string, path: string) => orpc().files.createDir({ session_id, path })
 export const renameEntry = (session_id: string, path: string, new_name: string) => orpc().files.rename({ session_id, path, new_name })

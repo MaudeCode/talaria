@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Saving a workspace text or Word file warns you if someone else saved first and keeps your draft available to copy.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "text": {
+    "source": "workspace",
+    "path": "valuable.txt",
+    "preview": "text",
+    "content": "Original"
+  },
+  "office": {
+    "source": "workspace",
+    "path": "valuable.docx",
+    "preview": "office",
+    "office_format": "docx",
+    "editable": true,
+    "content": "Original"
+  },
+  "conflict": {
+    "error": "File changed since you started editing. Copy your draft before discarding it to load the latest version.",
+    "condition": "file_revision_conflict"
+  }
+}

@@ -5,7 +5,7 @@
 import { basename, dirname, extname, relative, sep } from 'node:path'
 import type { FilePreviewKind } from '@maudecode/talaria-web-contracts'
 import { signAssetGrant, assetGrantValue } from '../auth/crypto.js'
-import { readFileBytes, readFileContent, safeResolve, type FileContent } from './fs.js'
+import { readFileSnapshot, readFileContent, safeResolve, type FileContent } from './fs.js'
 import { officeFormat, previewOffice, type OfficePreview } from './office.js'
 import { AUDIO_VIDEO_PDF_TYPES, INLINE_IMAGE_TYPES, mimeFor } from './media.js'
 
@@ -23,13 +23,17 @@ function mediaKind(mime: string): FilePreviewKind | null {
   return null
 }
 
-export function readFilePreview(workspace: string, rel: string): FilePreview {
+export function readFilePreview(workspace: string, rel: string, opts: { revision?: boolean } = {}): FilePreview {
   const mime = mimeFor(rel)
   const media = mediaKind(mime)
   if (media) return { ...readFileContent(workspace, rel, { statOnly: true }), preview: media, mime }
   // TAL-262: an Office file previews as its text; a hostile or unreadable archive throws `OfficeError`.
-  if (officeFormat(rel)) return { ...previewOffice(rel, readFileBytes(workspace, rel)), preview: 'office' }
-  const file = readFileContent(workspace, rel)
+  if (officeFormat(rel)) {
+    const { bytes, revision } = readFileSnapshot(workspace, rel)
+    const office = previewOffice(rel, bytes)
+    return { ...office, preview: 'office', ...(opts.revision && office.editable ? { revision } : {}) }
+  }
+  const file = readFileContent(workspace, rel, opts)
   if (file.binary) return { ...file, preview: 'binary' }
   const preview = TEXT_KINDS[extname(rel).toLowerCase()] ?? 'text'
   if (preview !== 'csv') return { ...file, preview }

@@ -424,6 +424,18 @@ that address unlocks only its folder, minus dotfiles, until the grant expires.
 to clear the text. An omitted field returns 400 before any replacement.
 `files.create` accepts an omitted `content` field to create an empty file.
 
+Editable workspace text and DOCX reads include an opaque `revision` for the
+file that was read. Echo it as `base_revision` when saving, even if the file is
+refetched while a draft is open. The server compares it with the destination
+immediately before replacing the file. A stale save returns HTTP 409 with
+`condition: "file_revision_conflict"` and leaves the current file intact. A
+successful conditional save returns the committed `revision` for subsequent
+edits. The Web editor retains its draft on conflict.
+
+Older clients can omit `base_revision` and keep the existing unconditional
+workspace replacement behavior. Managed session buffers use the unconditional
+semantics below and never issue a workspace revision.
+
 ## Managed session buffers
 
 The Files list/read/save procedures accept `source: "managed"` for the fixed

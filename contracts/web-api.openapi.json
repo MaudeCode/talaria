@@ -86440,6 +86440,11 @@
                     "edit_blocked_reason": {
                       "type": "string",
                       "description": "Why an `office` preview is not editable, in English; clients show it as sent."
+                    },
+                    "revision": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$",
+                      "description": "Opaque revision of this editable workspace file. Send it back as base_revision when saving."
                     }
                   },
                   "required": [
@@ -86475,6 +86480,11 @@
                   },
                   "content": {
                     "type": "string"
+                  },
+                  "base_revision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$",
+                    "description": "Revision of the workspace file when editing started. A stale revision returns 409 with condition file_revision_conflict. Older clients may omit it."
                   },
                   "source": {
                     "enum": [
@@ -86518,6 +86528,11 @@
                         "managed"
                       ],
                       "type": "string"
+                    },
+                    "revision": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$",
+                      "description": "Opaque revision of the committed workspace file after a conditional save."
                     }
                   },
                   "required": [
@@ -86553,6 +86568,11 @@
                   },
                   "content": {
                     "type": "string"
+                  },
+                  "base_revision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$",
+                    "description": "Revision of the workspace file when editing started. A stale revision returns 409 with condition file_revision_conflict. Older clients may omit it."
                   }
                 },
                 "required": [
@@ -86661,6 +86681,11 @@
                     },
                     "ok": {
                       "const": true
+                    },
+                    "revision": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$",
+                      "description": "Opaque revision of the committed workspace file after a conditional save."
                     }
                   },
                   "required": [

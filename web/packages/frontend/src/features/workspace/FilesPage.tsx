@@ -42,7 +42,10 @@ const contentResource = (workspace: string, path: string) => JSON.stringify(['fi
 const createKind = (workspace: string, dir: string) => JSON.stringify(['file-new', workspace, dir])
 /** One unsaved draft per session, source, workspace and file, so a draft never reaches the same name elsewhere. */
 const draftKey = (sessionId: string, source: 'workspace' | 'managed', workspace: string, path: string) => JSON.stringify([sessionId, source, workspace, path])
-type Drafts = Record<string, string>
+interface Draft { text: string; base: { revision: string | undefined } }
+type Drafts = Record<string, Draft>
+// The optimistic text can outlive its response while the file is reread. Associate the revision with that exact save.
+const confirmedSaveRevisions = new WeakMap<Draft, string>()
 type Pending = { kind: 'new-file' } | { kind: 'new-folder' } | { kind: 'rename'; entry: Entry } | { kind: 'delete'; entry: Entry } | null
 
 /** Files a checkpoint restore rewrote in `workspace`; `seq` tells one restore from the next. */
@@ -116,18 +119,17 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   // The draft belongs to the file it was typed in, so a save that finishes later never clears another file's edits.
   const keyOf = (path: string) => draftKey(sessionId, source, workspace, path)
   const draft = file === null ? null : drafts[keyOf(file)] ?? null
-  // Sets or (null) clears one draft; with `ifText`, only while it still holds that text, so a save never clears newer edits.
-  const putDraft = (path: string, text: string | null, ifText?: string) => setDrafts((d) => {
+  const updateDraft = (path: string, update: (draft: Draft | undefined) => Draft | undefined) => setDrafts((d) => {
     const key = keyOf(path)
-    if (ifText !== undefined && d[key] !== ifText) return d
-    return text === null ? Object.fromEntries(Object.entries(d).filter(([k]) => k !== key)) : { ...d, [key]: text }
+    const next = update(d[key])
+    if (next === d[key]) return d
+    return next === undefined ? Object.fromEntries(Object.entries(d).filter(([k]) => k !== key)) : { ...d, [key]: next }
   })
-  const setDraft = (text: string | null) => { if (file !== null) putDraft(file, text) }
   // A renamed or moved entry takes its drafts (a folder, its files' drafts) to the new path; a deleted one drops them.
-  const relocateDrafts = (from: string, to: string | null) => setDrafts((d) => Object.fromEntries(Object.entries(d).flatMap(([key, text]) => {
+  const relocateDrafts = (from: string, to: string | null) => setDrafts((d) => Object.fromEntries(Object.entries(d).flatMap(([key, entry]) => {
     const [s, src, ws, path = ''] = JSON.parse(key) as string[]
-    if (s !== sessionId || src !== source || ws !== workspace || (path !== from && !path.startsWith(`${from}/`))) return [[key, text]]
-    return to === null ? [] : [[keyOf(to + path.slice(from.length)), text]]
+    if (s !== sessionId || src !== source || ws !== workspace || (path !== from && !path.startsWith(`${from}/`))) return [[key, entry]]
+    return to === null ? [] : [[keyOf(to + path.slice(from.length)), entry]]
   })))
   const [pending, setPending] = useState<Pending>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
@@ -152,7 +154,8 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const focusedRow = useRef<HTMLElement | null>(null)
   const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden, ...sourceArgs), staleTime: 10_000, enabled: active })
   const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active && !managed })
-  const effects = useResourceEffects()
+  const effects = useResourceEffects<Draft>()
+  const saving = file ? effects[contentResource(workspace, file)]?.value : undefined
   // The server orders the listing (symlinks, folders, files); rows render in that order. While the user's own write
   // shows a row the server has not listed, that row holds its place in the order and is one row, so the listing's
   // arrival never moves a row out from under a press.
@@ -165,6 +168,13 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   // A row shown ahead of the server may not exist there yet, so its preview reads once the write and the listing have answered.
   const opening = writing.some((e) => pathOf(e) === file)
   const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? '', ...sourceArgs), enabled: !!file && active && !opening, staleTime: 5_000 })
+  // The first edit fixes its base. Refresh and reopen can replace the preview without rebasing the user's draft.
+  const setDraft = (text: string | null) => {
+    if (file === null) return
+    const committed = saving && confirmedSaveRevisions.get(saving)
+    const base = committed === undefined ? saving?.base ?? { revision: content.data?.revision } : { revision: committed }
+    updateDraft(file, (current) => text === null ? undefined : { text, base: current?.base ?? base })
+  }
   useEffect(() => {
     if (!opened?.line || opened.path !== file || !content.data || !textRef.current || revealedSeq.current === opened.seq) return
     revealedSeq.current = opened.seq
@@ -172,11 +182,22 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   }, [opened, file, content.data])
   // The saved text shows until the reread of that same file confirms it; edits typed meanwhile stay as the draft.
   const save = useResourceMutation({
-    resource: ({ path }: { path: string; text: string; office: boolean }) => contentResource(workspace, path),
+    resource: ({ path }: { path: string; draft: Draft; office: boolean }) => contentResource(workspace, path),
+    exclusive: !managed,
     queryKey: keys.files.contents(workspace), readKeys: ({ path }) => [{ queryKey: keys.files.content(workspace, path), exact: true }],
-    effect: ({ text }) => ({ value: text }),
-    mutationFn: ({ path, text, office }) => office ? api.saveOfficeFile(sessionId, path, text) : api.saveFile(sessionId, path, text, ...sourceArgs),
-    onSuccess: (_, { path, text }) => { showToast(m.ws_panel_saved()); putDraft(path, null, text) },
+    effect: ({ draft: submitted }) => ({ value: submitted }),
+    mutationFn: ({ path, draft: submitted, office }) => office
+      ? api.saveOfficeFile(sessionId, path, submitted.text, submitted.base.revision)
+      : api.saveFile(sessionId, path, submitted.text, managed ? { source: 'managed' } : { base_revision: submitted.base.revision }),
+    onSuccess: (saved, { path, draft: submitted }) => {
+      const { revision } = saved
+      if (revision !== undefined) confirmedSaveRevisions.set(submitted, revision)
+      updateDraft(path, (current) => {
+        if (current?.base !== submitted.base) return current
+        return current.text === submitted.text ? undefined : { text: current.text, base: { revision: revision ?? current.base.revision } }
+      })
+      showToast(m.ws_panel_saved())
+    },
     onError: (e) => showErrorToast(e),
   })
   // A path can now name another file (rename, move, delete then create), so cached contents are dropped, not just marked stale.
@@ -247,8 +268,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const atLine = opened?.line !== undefined && opened.path === file
   const renderable = kind === 'markdown' || kind === 'csv' || kind === 'html'
   const rendered = draft === null && !atLine && renderable
-  const saving = file ? effects[contentResource(workspace, file)]?.value : undefined
-  const text = draft ?? (typeof saving === 'string' ? saving : content.data?.content ?? '')
+  const text = draft?.text ?? saving?.text ?? content.data?.content ?? ''
   const rawUrl = (inline?: boolean) => appUrl(api.rawFileUrl(sessionId, file ?? '', inline)).href
   // One list for a row's kebab and its right-click and long-press menu.
   const entryItems = (entry: Entry) => <>
@@ -300,7 +320,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
               )}
               <div className="flex items-center gap-2 border-t border-border-subtle px-2 py-1.5">
                 {rendered && !readOnly && <Button variant="ghost" onClick={() => setDraft(text)}>{m.edit()}</Button>}
-                {!officeBlocked && <Button variant="primary" disabled={draft === null || readOnly} onClick={() => { if (draft !== null && file) save.mutate({ path: file, text: draft, office }) }}>{m.save()}</Button>}
+                {!officeBlocked && <Button variant="primary" disabled={draft === null || readOnly || (!managed && saving !== undefined)} onClick={() => { if (draft !== null && file) save.mutate({ path: file, draft, office }) }}>{m.save()}</Button>}
                 {draft !== null && <Button variant="ghost" onClick={() => setDraft(null)}>{m.cancel()}</Button>}
                 <span className="ml-auto text-[11px] text-muted">{officeBlocked ? content.data.edit_blocked_reason ?? m.ws_panel_read_only() : readOnly ? m.ws_panel_read_only() : ''}</span>
                 {managed && <HelpTip label={m.ws_panel_write_semantics()}>{m.ws_panel_unconditional_save()}</HelpTip>}

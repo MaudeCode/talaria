@@ -179,3 +179,42 @@ test('the Files page previews Office files and saves an edited Word document', a
   await page.request.post('/api/workspaces/remove', { data: { path: workspace } })
   rmSync(workspace, { recursive: true, force: true })
 })
+
+test('a workspace save keeps the editor draft after another editor saves and Files refreshes', async ({ page, errors }, testInfo) => {
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'tal2746-')))
+  const path = 'draft.txt'
+  let sid: string | undefined
+  try {
+    writeFileSync(join(workspace, path), 'Original draft')
+    sid = await workspaceSession(page, workspace)
+    const fileUrl = `/api/file?session_id=${sid}&path=${path}`
+    await page.goto(`/session/${sid}`)
+    const { open } = await filesPanel(page, testInfo, workspace)
+    await open(path)
+    const editor = page.getByRole('textbox', { name: 'Preview' })
+    await expect(editor).toHaveValue('Original draft')
+    await editor.fill('My unsaved draft')
+
+    const baseRead = await page.request.get(fileUrl, { headers: { Connection: 'close' } })
+    expect(baseRead.ok()).toBe(true)
+    const { revision } = await baseRead.json() as { revision?: string }
+    const otherSave = await page.request.post('/api/file/save', {
+      data: { session_id: sid, path, content: 'Saved by another editor', base_revision: revision },
+      headers: { Connection: 'close' },
+    })
+    expect(otherSave.ok()).toBe(true)
+    const refreshed = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/file' && r.request().method() === 'GET')
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    expect(await (await refreshed).json()).toMatchObject({ content: 'Saved by another editor' })
+
+    const result = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/file/save')
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    expect((await result).status()).toBe(409)
+    await expect(page.getByText(/File changed since you started editing/)).toBeVisible()
+    await expect(editor).toHaveValue('My unsaved draft')
+    errors.splice(0, errors.length, ...errors.filter((line) => !/^409 POST .*\/api\/file\/save$|status of 409/.test(line)))
+  } finally {
+    if (sid) await page.request.post('/api/workspaces/remove', { data: { path: workspace }, headers: { Connection: 'close' } })
+    rmSync(workspace, { recursive: true, force: true })
+  }
+})
