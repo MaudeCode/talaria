@@ -3,6 +3,124 @@ import Observation
 import SwiftUI
 import TalariaKit
 
+extension View {
+    /// Attach to the current modal host so an update can open over Settings without dismissing it.
+    func updatingPresentation(
+        _ updates: UpdateNotificationCenterViewModel, isEnabled: Bool = true, onAPIError: @escaping (Error) -> Void
+    ) -> some View {
+        modifier(UpdatingPresentation(updates: updates, isEnabled: isEnabled, onAPIError: onAPIError))
+    }
+}
+
+private struct UpdatingPresentation: ViewModifier {
+    let updates: UpdateNotificationCenterViewModel
+    let isEnabled: Bool
+    let onAPIError: (Error) -> Void
+
+    func body(content: Content) -> some View {
+        let showsUpdate = updates.updating != nil || updates.updateTimedOut
+        return content.sheet(isPresented: Binding {
+            isEnabled && showsUpdate
+        } set: { presented in
+            if !presented, isEnabled { updates.closeUpdating() }
+        }) {
+            UpdatingSheet(updates: updates, onAPIError: onAPIError)
+        }
+    }
+}
+
+struct UpdatingSheet: View {
+    let updates: UpdateNotificationCenterViewModel
+    let onAPIError: (Error) -> Void
+    @State private var retainedContent: SheetContent?
+
+    private enum SheetContent: Equatable {
+        case record(UpdateNotificationRecord)
+        case unverified
+    }
+
+    private var currentContent: SheetContent? {
+        if let record = updates.updating { return .record(record) }
+        return updates.updateTimedOut ? .unverified : nil
+    }
+
+    var body: some View {
+        let content = currentContent ?? retainedContent
+        let record: UpdateNotificationRecord? = if case let .record(value) = content { value } else { nil }
+        NavigationStack {
+            List {
+                if let record {
+                    ForEach(record.steps ?? []) { step in
+                        let appearance = appearance(for: step.state)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(step.label, systemImage: appearance.symbol)
+                                .foregroundStyle(appearance.color)
+                                .accessibilityValue(appearance.status)
+                                .accessibilityIdentifier("updating-step-\(step.id)")
+                            if step.state == "failed" {
+                                Text(record.detail ?? record.message)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    if record.steps?.isEmpty != false { Text(record.detail ?? record.message) }
+                    if let error = updates.updateActionError {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                    }
+                    ForEach(record.actions) { action in
+                        UpdateNotificationActionButton(action: action, isPerforming: updates.isPerforming(action, for: record), fillsRow: true) {
+                            Task {
+                                await updates.perform(action, for: record)
+                                if let error = updates.lastError { onAPIError(error) }
+                            }
+                        }
+                    }
+                    if record.closeBehavior == .restartLater {
+                        Button("Restart later") { updates.closeUpdating() }
+                    }
+                } else if content == .unverified {
+                    Text("Couldn't verify that the update finished. Check the server and its update notifications.")
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("Updating")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if record?.closeBehavior == .close || content == .unverified {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Close", systemImage: "xmark") { updates.closeUpdating() }
+                            .labelStyle(.iconOnly)
+                            .help("Close")
+                    }
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .adaptiveFormPresentation()
+        .interactiveDismissDisabled(record?.presentsDialog == true || (record != nil && record?.closeBehavior != .close))
+        .onChange(of: currentContent, initial: true) { _, content in
+            // SwiftUI draws the sheet while it dismisses, after the center has cleared the record.
+            if let content { retainedContent = content }
+        }
+        .task(id: record?.closeBehavior == .auto ? record?.id : nil) {
+            guard record?.closeBehavior == .auto else { return }
+            do { try await Task.sleep(for: .milliseconds(2_500)) } catch { return }
+            updates.closeUpdating()
+        }
+    }
+
+    private func appearance(for state: String) -> (symbol: String, color: Color, status: LocalizedStringKey) {
+        switch state {
+        case "done": ("checkmark.circle.fill", .primary, "Complete")
+        case "active": ("arrow.triangle.2.circlepath", .primary, "Running")
+        case "failed": ("exclamationmark.circle.fill", .red, "Failed")
+        case "pending": ("circle", .secondary, "Queued")
+        default: ("circle", .secondary, "Unknown")
+        }
+    }
+}
+
 struct UpdateNotificationsSheet: View {
     @Bindable var viewModel: UpdateNotificationCenterViewModel
     let onAPIError: (Error) -> Void
@@ -132,28 +250,7 @@ private struct UpdateNotificationRow: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(notification.actions) { action in
-                    if action.style == "primary" {
-                        Button { perform(action) } label: {
-                            actionLabel(action)
-                        }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                            .disabled(isPerforming(action))
-                    } else if action.style == "destructive" {
-                        Button(role: .destructive) { perform(action) } label: {
-                            actionLabel(action)
-                        }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(isPerforming(action))
-                    } else {
-                        Button { perform(action) } label: {
-                            actionLabel(action)
-                        }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(isPerforming(action))
-                    }
+                    UpdateNotificationActionButton(action: action, isPerforming: isPerforming(action)) { perform(action) }
                 }
                 if let destination = notification.destination, destination.key == "settings.system" {
                     Button(destination.label) { openDestination(destination) }
@@ -200,8 +297,35 @@ private struct UpdateNotificationRow: View {
         UpdateNotificationTimestamp.date(from: value)
     }
 
-    @ViewBuilder
-    private func actionLabel(_ action: UpdateNotificationAction) -> some View {
-        Text(action.label)
+}
+
+private struct UpdateNotificationActionButton: View {
+    let action: UpdateNotificationAction
+    let isPerforming: Bool
+    var fillsRow = false
+    let perform: () -> Void
+
+    var body: some View {
+        Group {
+            if fillsRow {
+                Button(role: role, action: perform) {
+                    Text(action.label)
+                        .foregroundStyle(action.style == "destructive" ? .red : Color.accentColor)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else if action.style == "primary" {
+                Button(action.label, action: perform)
+                    .buttonStyle(.borderedProminent)
+            } else {
+                Button(action.label, role: role, action: perform)
+                    .buttonStyle(.bordered)
+            }
+        }
+        .controlSize(.small)
+        .disabled(isPerforming)
     }
+
+    private var role: ButtonRole? { action.style == "destructive" ? .destructive : nil }
 }

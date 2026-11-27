@@ -21,7 +21,7 @@ public enum ToolCallSetting: String, CaseIterable, Sendable {
 public struct SettingsResponse: Decodable, Equatable, Sendable {
     public internal(set) var botName: String?
     public let webuiVersion: String?
-    let agentVersion: String?
+    public let agentVersion: String?
     let theme: String?
     public internal(set) var checkForUpdates: Bool?
     public internal(set) var maxTokens: Int?
@@ -131,7 +131,7 @@ public struct UpdateTargetInfo: Decodable, Equatable, Sendable {
     public let currentVersion: String?
     /// TAL-559: the server-decided status and apply availability.
     public let state: String?
-    let canApply: Bool?
+    public let canApply: Bool?
     /// The version the update leads to, when the server shows one.
     public let targetVersion: String?
     /// TAL-759: the server offers "Summarize with AI" for this target; nil from older servers.
@@ -249,6 +249,16 @@ public struct UpdatesApplyResponse: Decodable, Equatable, Sendable {
         let expiresAt: String
     }
 
+    public enum AgentConfirmation: Equatable, Sendable {
+        case revision(String)
+        case refresh(token: String, services: [String], revision: String?)
+    }
+
+    private struct RefreshConfirmation: Decodable {
+        let token: String
+        let services: [String]
+    }
+
     let ok: Bool?
     let status: String?
     let message: String?
@@ -256,9 +266,11 @@ public struct UpdatesApplyResponse: Decodable, Equatable, Sendable {
     let recoveryPending: Bool?
     public let notificationId: String?
     public let interruptConfirmation: InterruptConfirmation?
+    public let agentConfirmation: AgentConfirmation?
 
     private enum CodingKeys: String, CodingKey {
         case ok, status, message, restartBlocked, recoveryPending, notificationId, interruptConfirmation
+        case confirmationRequired, candidateRevision, refreshConfirmation
     }
 
     public init(from decoder: Decoder) throws {
@@ -272,6 +284,14 @@ public struct UpdatesApplyResponse: Decodable, Equatable, Sendable {
         let offer = try? values.decode(InterruptConfirmation.self, forKey: .interruptConfirmation)
         interruptConfirmation = offer.flatMap {
             $0.runs > 0 && $0.token.range(of: "^[a-f0-9]{32}$", options: .regularExpression) != nil ? $0 : nil
+        }
+        let revision = try values.decodeIfPresent(String.self, forKey: .candidateRevision)
+        if let refresh = try? values.decode(RefreshConfirmation.self, forKey: .refreshConfirmation) {
+            agentConfirmation = .refresh(token: refresh.token, services: refresh.services, revision: revision)
+        } else if try values.decodeIfPresent(Bool.self, forKey: .confirmationRequired) == true, let revision {
+            agentConfirmation = .revision(revision)
+        } else {
+            agentConfirmation = nil
         }
     }
 }
@@ -290,6 +310,17 @@ public struct UpdateNotificationDismissResponse: Decodable, Equatable, Sendable 
 }
 
 public struct UpdateNotificationRecord: Decodable, Equatable, Identifiable, Sendable {
+    public struct Step: Decodable, Equatable, Identifiable, Sendable {
+        public let id: String
+        public let label: String
+        public let state: String
+    }
+
+    public enum DialogClose: String, Sendable {
+        case none, close, auto
+        case restartLater = "restart_later"
+    }
+
     public let id: String
     let kind: String
     let target: String?
@@ -308,11 +339,23 @@ public struct UpdateNotificationRecord: Decodable, Equatable, Identifiable, Send
     let acknowledgedActionId: String?
     let verifiedRevision: String?
     let verifiedVersion: String?
-    let detail: String?
+    public let detail: String?
     public let unread: Bool
     public let active: Bool
     public let requiresInteraction: Bool
     public let canDismiss: Bool
+    public let steps: [Step]?
+    public let presentsDialog: Bool?
+    private let dialogClose: String?
+
+    public var closeBehavior: DialogClose {
+        if let dialogClose, let behavior = DialogClose(rawValue: dialogClose) { return behavior }
+        // Retained servers can send the record without its dialog fields.
+        if active { return .none }
+        if phase == "succeeded" { return .auto }
+        if phase == "waiting_for_idle" { return .restartLater }
+        return .close
+    }
 }
 
 public struct UpdateNotificationAction: Decodable, Equatable, Identifiable, Sendable {
@@ -343,6 +386,7 @@ extension UpdatesApplyResponse {
     public enum Outcome: Equatable, Sendable {
         /// The server is updating or recovering; follow its notification until it finishes.
         case applying
+        case needsAgentConfirmation
         /// Active chat/agent work blocked the restart. Not a failure — surface
         /// the server's message and let the user retry once work finishes.
         case restartBlocked
@@ -353,6 +397,7 @@ extension UpdatesApplyResponse {
 
     public var outcome: Outcome {
         if recoveryPending == true || status == "already_in_progress" { return .applying }
+        if agentConfirmation != nil { return .needsAgentConfirmation }
 
         // A restart-blocked response always carries `ok: false`, so check the
         // blocked flag first to avoid mislabelling it as a hard failure.
