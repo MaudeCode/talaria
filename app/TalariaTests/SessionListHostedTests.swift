@@ -23,6 +23,7 @@ final class SessionSearchLandingHostedTests: XCTestCase {
         XCTAssertTrue(ready, "The search placement must finish before the reader navigates")
         let start = try XCTUnwrap(readingRow(in: window))
         let scroll = try XCTUnwrap(mountedTranscriptScrollView(in: window))
+        let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
         let session = SessionSummary(sessionId: UITestFixtureURLProtocol.sessionID, title: UITestFixtureURLProtocol.sessionTitle)
         let chat = chats.chat(for: session, server: UITestFixtureEnvironment.serverURL) {
             XCTFail("The open chat was made again")
@@ -30,12 +31,17 @@ final class SessionSearchLandingHostedTests: XCTestCase {
         }
         // UIKit keyboard and accessibility navigation change the offset without starting a pan.
         scroll.contentOffset.y += scroll.bounds.height / 2
+        // Layout can report the offset again before the observed change is delivered to the transcript.
+        coordinator.reportMetrics(delivery: .deferred)
+        coordinator.reportMetrics(delivery: .deferred)
         let moved = await awaitCondition { self.readingRow(in: window).map { $0 != start } == true }
         XCTAssertTrue(moved, "The reader must reach a different transcript row")
         let recorded = await awaitCondition {
             self.readingRow(in: window).map { $0 != start && chat.readingRowID == $0 } == true
         }
-        XCTAssertTrue(recorded, "Gesture-free navigation must replace the search anchor with the reader’s row")
+        XCTAssertTrue(recorded, "Gesture-free navigation must replace the search anchor with the reader’s row. "
+            + "Search anchor: \(chat.searchLandingRowID ?? "nil"), bookmark: \(chat.readingRowID ?? "nil"), "
+            + "visible row: \(readingRow(in: window) ?? "nil")")
     }
 
     func testTitleHitOpensAtTheLatestMessage() async throws {

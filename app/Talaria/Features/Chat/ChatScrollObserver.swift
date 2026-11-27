@@ -320,8 +320,12 @@ struct ChatScrollObserver: UIViewRepresentable {
             // that stays bottom-pinned would make the next gesture-free scroll
             // look like it happened in a different viewport, and be ignored.
             guard metrics != lastMetrics else {
-                scrollAway.deliver(geometry)
-                pendingGeometry = hasScheduledMetricDelivery ? geometry : nil
+                if hasScheduledMetricDelivery {
+                    // Compare every queued report against the geometry the transcript has actually received.
+                    pendingGeometry = geometry
+                } else {
+                    scrollAway.deliver(geometry)
+                }
                 return
             }
 
