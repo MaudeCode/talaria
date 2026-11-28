@@ -1,8 +1,35 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 import XCTest
 @testable import Talaria
 @testable import TalariaKit
+
+@MainActor @Observable
+private final class NotificationSettingsScenario {
+    var phase: ScenePhase = .active
+    var status: UNAuthorizationStatus
+    var relayRefreshes = 0
+
+    init(status: UNAuthorizationStatus) { self.status = status }
+}
+
+@MainActor
+final class NotificationSettingsPermissionTests: XCTestCase {
+    func testRevocationChangesRelayRegistrationOnceAndRestoringPermissionLeavesAlertsOff() {
+        var completionEnabled = true
+        var relayEnabled = true
+        let completion = Binding(get: { completionEnabled }, set: { completionEnabled = $0 })
+        let relay = Binding(get: { relayEnabled }, set: { relayEnabled = $0 })
+
+        XCTAssertTrue(UNAuthorizationStatus.denied.disableUnavailableAlerts(completion: completion, relay: relay, local: []))
+        XCTAssertFalse(completionEnabled)
+        XCTAssertFalse(relayEnabled)
+        XCTAssertFalse(UNAuthorizationStatus.denied.disableUnavailableAlerts(completion: completion, relay: relay, local: []))
+        XCTAssertFalse(UNAuthorizationStatus.authorized.disableUnavailableAlerts(completion: completion, relay: relay, local: []))
+        XCTAssertFalse(relayEnabled)
+    }
+}
 
 /// Page layout, rather than pixel identity. The existing fixture intercepts every server request.
 @MainActor
@@ -22,7 +49,81 @@ final class ScreenGalleryHostedTests: XCTestCase {
     func testAppearanceSettingsPage() async throws { try await category(.appearance) }
     func testChatsSettingsPage() async throws { try await category(.chats) }
     func testNavigationSettingsPage() async throws { try await category(.navigation) }
-    func testNotificationsAndHapticsSettingsPage() async throws { try await category(.notificationsAndHaptics) }
+    func testNotificationsAndHapticsSettingsPage() async throws {
+        let category = SettingsCategory.notificationsAndHaptics
+        try await page("settings-\(category.id)", title: category.title, prepare: { window in
+            _ = try await self.requireElement(in: window, label: "iOS notifications disabled.")
+        }) {
+            NotificationsHapticsSettingsView(
+                authManager: fixture.environment.authManager,
+                services: NotificationSettingsServices(readAuthorization: { .denied }, refreshRelay: {})
+            )
+        }
+    }
+
+    func testDeniedNotificationSettingsOfferTheIOSSettingsLink() async throws {
+        let scenario = NotificationSettingsScenario(status: .denied)
+        let window = try notificationSettingsWindow(scenario)
+        _ = try await requireElement(in: window, label: "iOS notifications disabled.")
+        attachHostedScreenshot(window, name: "notification-settings-denied-overview")
+
+        for setting in [SettingsIndex.notificationsResponseCompleteAlerts, .notificationsApprovalInputAlerts] {
+            let id = "open-ios-notification-\(setting.id)"
+            let link = try await requireElementScrolling(in: window, "\(setting.title) is missing its iOS Settings link") {
+                HostedAccessibility.identifier(of: $0) == id
+            }
+            XCTAssertEqual(link.accessibilityLabel, "Open iOS Notification Settings")
+            attachHostedScreenshot(window, name: "notification-link-\(setting.id)")
+        }
+    }
+
+    func testAuthorizedNotificationSettingsHideTheIOSSettingsLink() async throws {
+        let scenario = NotificationSettingsScenario(status: .authorized)
+        let window = try notificationSettingsWindow(scenario)
+        _ = try await requireElement(in: window, label: "iOS notifications allowed.")
+        XCTAssertFalse(HostedAccessibility.labels(in: window).contains("Open iOS Notification Settings"))
+    }
+
+    func testReturningWithDeniedPermissionTurnsOffRelayAlertsAndRefreshesOnce() async throws {
+        let scenario = NotificationSettingsScenario(status: .authorized)
+        let key = TalariaRelayNotifications.isEnabledKey
+        _ = try pairRelayForSettings()
+        let window = try notificationSettingsWindow(scenario, relayAlertsEnabled: true)
+        _ = try await requireElement(in: window, label: "iOS notifications allowed.")
+        XCTAssertTrue(defaults.bool(forKey: key))
+        attachHostedScreenshot(window, name: "notification-settings-before-revocation")
+
+        scenario.phase = .background
+        commitDisplay(of: window)
+        scenario.status = .denied
+        scenario.phase = .active
+
+        let switchedOff = await awaitCondition { !self.defaults.bool(forKey: key) }
+        XCTAssertTrue(switchedOff, "Returning with denied permission must turn off Approval & Input Alerts")
+        guard switchedOff else { return }
+        _ = try await requireElement(in: window, label: "Notifications are off in iOS Settings.")
+        XCTAssertEqual(scenario.relayRefreshes, 1)
+        attachHostedScreenshot(window, name: "notification-settings-after-revocation")
+    }
+
+    private func notificationSettingsWindow(
+        _ scenario: NotificationSettingsScenario, relayAlertsEnabled: Bool = false
+    ) throws -> UIWindow {
+        defaults.set(relayAlertsEnabled, forKey: TalariaRelayNotifications.isEnabledKey)
+        let manager = fixture.environment.authManager
+        let services = NotificationSettingsServices(
+            readAuthorization: { scenario.status }, refreshRelay: { scenario.relayRefreshes += 1 }
+        )
+        let window = try hostWindow(GeometryReader { _ in
+            NavigationStack { NotificationsHapticsSettingsView(authManager: manager, services: services) }
+                .environment(\.scenePhase, scenario.phase)
+        }.defaultAppStorage(defaults), size: HostedSize.phone)
+        addTeardownBlock { @MainActor in
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        return window
+    }
 
     func testSessionAlertSoundsSwitchSavesTheChoiceToRelay() async throws {
         let credentials = try pairRelayForSettings()
@@ -635,7 +736,12 @@ final class ScreenGalleryHostedTests: XCTestCase {
             switch name {
             case "settings-models": controlIDs = ["settings-models-default-reasoning", "settings-models-show-thinking"]
             case "settings-default-model", "settings-auxiliary-model-picker": controlIDs = ["settings-model-visibility-fixture-model"]
-            case "settings-notifications": controlIDs = [SettingsIndex.notificationsSessionAlertSounds.id]
+            case "settings-notifications":
+                controlIDs = [
+                    "open-ios-notification-\(SettingsIndex.notificationsResponseCompleteAlerts.id)",
+                    SettingsIndex.notificationsSessionAlertSounds.id,
+                    "open-ios-notification-\(SettingsIndex.notificationsApprovalInputAlerts.id)",
+                ]
             case "settings-system":
                 let updateRows = keepsHostedScreenshots ? ["settings-system-status-web", "settings-system-status-agent"] : []
                 controlIDs = updateRows + [SettingsIndex.systemScreen.id, SettingsIndex.systemFeedbackOnScreenshot.id]
@@ -648,9 +754,9 @@ final class ScreenGalleryHostedTests: XCTestCase {
                     _ = try await requireElementScrolling(in: window, "\(name) is missing \(identifier)") {
                         let frame = window.convert($0.accessibilityFrame, from: window.screen.coordinateSpace)
                         let visible = window.convert(scroll.bounds.inset(by: scroll.adjustedContentInset), from: scroll)
-                        // The last System row can meet the bottom inset at accessibility sizes. Its center
-                        // identifies the visible control without treating its inaccessible row padding as content.
-                        let isVisible = name == "settings-system" && variant.textSize.isAccessibilityCategory
+                        // At accessibility sizes tall rows can straddle a viewport boundary while scrolling.
+                        let tallRow = name == "settings-system" || identifier.hasPrefix("open-ios-notification-")
+                        let isVisible = tallRow && variant.textSize.isAccessibilityCategory
                             ? visible.contains(CGPoint(x: frame.midX, y: frame.midY))
                             : visible.contains(frame)
                         return HostedAccessibility.identifier(of: $0) == identifier

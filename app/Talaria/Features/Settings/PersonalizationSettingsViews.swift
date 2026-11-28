@@ -3,6 +3,16 @@ import UIKit
 import UserNotifications
 import TalariaKit
 
+struct NotificationSettingsServices: Sendable {
+    let readAuthorization: @MainActor @Sendable () async -> UNAuthorizationStatus
+    let refreshRelay: @MainActor @Sendable () async -> Void
+
+    static let system = Self(
+        readAuthorization: { await ResponseCompletionNotificationService.authorizationStatus() },
+        refreshRelay: { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
+    )
+}
+
 struct AppearanceSettingsView: View {
     @Bindable var authManager: AuthManager
 
@@ -57,8 +67,15 @@ struct AppearanceSettingsView: View {
 
 struct NotificationsHapticsSettingsView: View {
     @Bindable var authManager: AuthManager
+    var services: NotificationSettingsServices = .system
 
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var permissionStatus: UNAuthorizationStatus?
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
+    @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var responseCompletionEnabled = false
+    @AppStorage(ApprovalNotifications.isEnabledKey) private var approvalEnabled = false
+    @AppStorage(ProviderQuotaAlertSettings.isEnabledKey) private var providerQuotaEnabled = false
+    @AppStorage(TalariaRelayNotifications.isEnabledKey) private var relayAlertsEnabled = false
 
     var body: some View {
         SettingsCategoryPage(category: .notificationsAndHaptics) {
@@ -69,20 +86,47 @@ struct NotificationsHapticsSettingsView: View {
                     isOn: $isHapticsEnabled
                 )
 
-                NotificationPermissionToggle(kind: .responseCompletion)
+                permissionToggle(.responseCompletion, isEnabled: $responseCompletionEnabled)
 
-                NotificationPermissionToggle(kind: .approval)
+                permissionToggle(.approval, isEnabled: $approvalEnabled)
 
-                RelayNotificationSettingsRow(authManager: authManager)
+                RelayNotificationSettingsRow(
+                    authManager: authManager, services: services, permissionStatus: permissionStatus,
+                    authorizationChanged: applyAuthorization, completionAlertsEnabled: responseCompletionEnabled,
+                    notificationsEnabled: $relayAlertsEnabled
+                )
             }
 
             SettingsSection(
                 title: String(localized: "Provider Quotas"),
                 help: String(localized: "Time Sensitive applies to critical quota alerts only.")
             ) {
-                NotificationPermissionToggle(kind: .providerQuota)
+                permissionToggle(.providerQuota, isEnabled: $providerQuotaEnabled)
                 ProviderQuotaAlertLevelToggles()
             }
+        }
+        .task(id: scenePhase) {
+            guard permissionStatus == nil || scenePhase == .active else { return }
+            let status = await services.readAuthorization()
+            guard !Task.isCancelled else { return }
+            applyAuthorization(status)
+        }
+    }
+
+    private func permissionToggle(_ kind: NotificationPermissionToggle.Kind, isEnabled: Binding<Bool>) -> some View {
+        NotificationPermissionToggle(
+            kind: kind, services: services, permissionStatus: permissionStatus,
+            authorizationChanged: applyAuthorization, isEnabled: isEnabled
+        )
+    }
+
+    private func applyAuthorization(_ status: UNAuthorizationStatus) {
+        permissionStatus = status
+        if status.disableUnavailableAlerts(
+            completion: $responseCompletionEnabled, relay: $relayAlertsEnabled,
+            local: [$approvalEnabled, $providerQuotaEnabled]
+        ) {
+            Task { await services.refreshRelay() }
         }
     }
 }
@@ -128,11 +172,11 @@ struct NotificationPermissionToggle: View {
         case providerQuota
         case approval
 
-        var title: String {
+        var setting: SettingsIndex {
             switch self {
-            case .responseCompletion: SettingsIndex.notificationsResponseCompleteAlerts.title
-            case .providerQuota: SettingsIndex.notificationsProviderQuotaAlerts.title
-            case .approval: SettingsIndex.notificationsApprovalAndQuestionAlerts.title
+            case .responseCompletion: .notificationsResponseCompleteAlerts
+            case .providerQuota: .notificationsProviderQuotaAlerts
+            case .approval: .notificationsApprovalAndQuestionAlerts
             }
         }
 
@@ -146,129 +190,74 @@ struct NotificationPermissionToggle: View {
     }
 
     let kind: Kind
+    let services: NotificationSettingsServices
+    let permissionStatus: UNAuthorizationStatus?
+    let authorizationChanged: @MainActor (UNAuthorizationStatus) -> Void
+    @Binding var isEnabled: Bool
 
-    @State private var permissionStatus: UNAuthorizationStatus?
-    @State private var statusMessage: String?
-    @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var responseCompletionEnabled = false
     @AppStorage(ResponseCompletionNotifications.hasRequestedPermissionKey) private var hasRequestedPermission = false
-    @AppStorage(ApprovalNotifications.isEnabledKey) private var approvalEnabled = false
-    @AppStorage(ProviderQuotaAlertSettings.isEnabledKey) private var providerQuotaEnabled = false
 
     var body: some View {
         Group {
             SettingsToggleRow(
-                title: kind.title,
+                title: kind.setting.title,
                 systemImage: kind.systemImage,
-                isOn: isEnabledBinding
+                isOn: Binding(get: { isEnabled }, set: { enabled in
+                    if enabled {
+                        Task { await enable() }
+                    } else {
+                        disable()
+                    }
+                })
             )
 
-            if let statusText {
-                SettingsFootnote(statusText)
+            if let permissionStatus {
+                SettingsFootnote(permissionLabel(permissionStatus))
+            }
+            if permissionStatus == .denied {
+                NotificationSettingsLink(setting: kind.setting)
             }
         }
-        .task {
-            await refreshPermissionStatus()
-        }
-    }
-
-    private var isEnabledBinding: Binding<Bool> {
-        Binding(
-            get: {
-                switch kind {
-                case .responseCompletion: responseCompletionEnabled
-                case .providerQuota: providerQuotaEnabled
-                case .approval: approvalEnabled
-                }
-            },
-            set: { enabled in
-                if enabled {
-                    Task { await enable() }
-                } else {
-                    disable()
-                }
-            }
-        )
-    }
-
-    private var statusText: String? {
-        statusMessage ?? permissionStatus.map(permissionLabel)
     }
 
     private func disable() {
+        isEnabled = false
         switch kind {
         case .responseCompletion:
-            responseCompletionEnabled = false
-            Task {
-                await refreshPermissionStatus()
-                try? await TalariaAggregateLiveActivityManager.shared.refresh()
-            }
-        case .approval:
-            approvalEnabled = false
-            Task { await refreshPermissionStatus() }
+            Task { await services.refreshRelay() }
         case .providerQuota:
-            providerQuotaEnabled = false
             UserDefaults.standard.removeObject(forKey: ProviderQuotaAlertSettings.stateKey)
-            Task { await refreshPermissionStatus() }
+        case .approval:
+            break
         }
     }
 
     @MainActor
     private func enable() async {
-        let enabled = await requestAccessIfAvailable()
+        guard await requestAccessIfAvailable() else { return }
+        isEnabled = true
         switch kind {
         case .responseCompletion:
-            responseCompletionEnabled = enabled
-            await TalariaAggregateLiveActivityManager.shared.refreshAfterNotificationPreferenceChange(registerForRemoteNotifications: enabled)
-        case .approval:
-            approvalEnabled = enabled
+            await TalariaAggregateLiveActivityManager.shared.refreshAfterNotificationPreferenceChange(registerForRemoteNotifications: true)
         case .providerQuota:
-            providerQuotaEnabled = enabled
-            if enabled {
-                UserDefaults.standard.removeObject(forKey: ProviderQuotaAlertSettings.stateKey)
-            }
+            UserDefaults.standard.removeObject(forKey: ProviderQuotaAlertSettings.stateKey)
+        case .approval:
+            break
         }
-    }
-
-    @MainActor
-    private func refreshPermissionStatus() async {
-        let status = await ResponseCompletionNotificationService.authorizationStatus()
-        permissionStatus = status
-        if !status.allowsSettingsToggleOn {
-            responseCompletionEnabled = false
-            providerQuotaEnabled = false
-            approvalEnabled = false
-        }
-        statusMessage = nil
     }
 
     @MainActor
     private func requestAccessIfAvailable() async -> Bool {
-        let currentStatus = await ResponseCompletionNotificationService.authorizationStatus()
-        permissionStatus = currentStatus
-
-        switch currentStatus {
-        case .authorized, .provisional, .ephemeral:
-            statusMessage = nil
-            return true
-        case .notDetermined:
-            guard !hasRequestedPermission else {
-                statusMessage = String(localized: "Permission not requested.")
-                return false
-            }
-            hasRequestedPermission = true
-            let granted = await ResponseCompletionNotificationService.requestAuthorization()
-            let updatedStatus = await ResponseCompletionNotificationService.authorizationStatus()
-            permissionStatus = updatedStatus
-            let enabled = granted && updatedStatus.allowsSettingsToggleOn
-            statusMessage = enabled ? nil : permissionLabel(updatedStatus)
-            return enabled
-        case .denied:
-            statusMessage = permissionLabel(currentStatus)
-            return false
-        @unknown default:
-            statusMessage = String(localized: "Notifications unavailable.")
-            return false
+        let currentStatus = await services.readAuthorization()
+        authorizationChanged(currentStatus)
+        guard currentStatus == .notDetermined, !hasRequestedPermission else {
+            return currentStatus.allowsSettingsToggleOn
         }
+        hasRequestedPermission = true
+        let granted = await ResponseCompletionNotificationService.requestAuthorization()
+        let updatedStatus = await services.readAuthorization()
+        authorizationChanged(updatedStatus)
+        return granted && updatedStatus.allowsSettingsToggleOn
     }
 
     private func permissionLabel(_ status: UNAuthorizationStatus) -> String {
@@ -285,7 +274,32 @@ struct NotificationPermissionToggle: View {
     }
 }
 
-private extension UNAuthorizationStatus {
+struct NotificationSettingsLink: View {
+    let setting: SettingsIndex
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+            let title = String(localized: "Open iOS Notification Settings")
+            let identifier = "open-ios-notification-\(setting.id)"
+            Button {
+                UIApplication.shared.open(url)
+            } label: {
+                SettingsAccessoryRow(
+                    title: title,
+                    systemImage: dynamicTypeSize.isAccessibilitySize ? nil : "gearshape",
+                    accessorySystemImage: dynamicTypeSize.isAccessibilitySize ? nil : "arrow.up.forward",
+                    accessibilityIdentifier: identifier
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityIdentifier(identifier)
+        }
+    }
+}
+
+extension UNAuthorizationStatus {
     var allowsSettingsToggleOn: Bool {
         switch self {
         case .authorized, .provisional, .ephemeral:
@@ -295,5 +309,20 @@ private extension UNAuthorizationStatus {
         @unknown default:
             false
         }
+    }
+
+    @MainActor
+    func disableUnavailableAlerts(
+        completion: Binding<Bool>, relay: Binding<Bool>, local: [Binding<Bool>]
+    ) -> Bool {
+        guard !allowsSettingsToggleOn else { return false }
+        let relayRegistrationChanged = completion.wrappedValue || (self == .denied && relay.wrappedValue)
+        for preference in [completion] + local where preference.wrappedValue {
+            preference.wrappedValue = false
+        }
+        if self == .denied, relay.wrappedValue {
+            relay.wrappedValue = false
+        }
+        return relayRegistrationChanged
     }
 }

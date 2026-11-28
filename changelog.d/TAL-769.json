@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Open iOS Notification Settings from Talaria when permission is denied. Revoking permission turns off Relay approval and input alerts.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
