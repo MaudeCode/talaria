@@ -105,6 +105,49 @@ final class UpdateSummaryTests: APIClientTestCase {
     }
 
     @MainActor
+    func testSystemShowsTheLatestReleaseTagForEachComponentMarkedDistinct() async throws {
+        var check = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("updates-check")) as? [String: Any])
+        var tags: [String: String] = [:]
+        for (target, identifier) in [("webui", "settings-system-status-web"), ("agent", "settings-system-status-agent")] {
+            var info = try XCTUnwrap(check[target] as? [String: Any])
+            tags[identifier] = try XCTUnwrap(info["latest_release_tag"] as? String)
+            info["state"] = "commits_behind"
+            info["target_version"] = nil
+            info["latest_release_tag_distinct"] = true
+            check[target] = info
+        }
+        let system = try SystemSettingsFixture(test: self, check: String(decoding: JSONSerialization.data(withJSONObject: check), as: UTF8.self))
+        let (window, _) = try await system.present(size: HostedSize.phone)
+        defer { system.close(window) }
+
+        attachHostedScreenshot(window, name: "latest-release-tags-phone")
+        let statuses = HostedAccessibility.elements(in: window)
+        for (identifier, tag) in tags.sorted(by: { $0.key < $1.key }) {
+            let row = try XCTUnwrap(statuses.first { HostedAccessibility.identifier(of: $0) == identifier })
+            let value = try XCTUnwrap(row.accessibilityValue)
+            XCTAssertTrue(value.hasSuffix("Latest release: \(tag)"), "\(identifier) showed '\(value)' for \(tag)")
+        }
+    }
+
+    @MainActor
+    func testSystemOmitsReleaseContextWhenTheServerDoesNotOfferIt() async throws {
+        var check = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("updates-check")) as? [String: Any])
+        var olderAgent = try XCTUnwrap(check["agent"] as? [String: Any])
+        olderAgent["latest_release_tag"] = nil
+        olderAgent["latest_release_tag_distinct"] = nil
+        check["agent"] = olderAgent
+        let system = try SystemSettingsFixture(test: self, check: String(decoding: JSONSerialization.data(withJSONObject: check), as: UTF8.self))
+        let (window, _) = try await system.present(size: HostedSize.phone)
+        defer { system.close(window) }
+
+        for identifier in ["settings-system-status-web", "settings-system-status-agent"] {
+            let row = try XCTUnwrap(HostedAccessibility.element(in: window, identifier: identifier))
+            let status = try XCTUnwrap(row.accessibilityValue)
+            XCTAssertFalse(status.contains("Latest release:"), "\(identifier) showed '\(status)'")
+        }
+    }
+
+    @MainActor
     func testSystemPresentsDashboardConsentAfterTheRevisionAlert() async throws {
         let refreshWire = try sharedContractFixture("agent-update-refresh")
         let offered = try XCTUnwrap(JSONSerialization.jsonObject(with: refreshWire) as? [String: Any])
@@ -369,18 +412,12 @@ final class UpdateSummaryTests: APIClientTestCase {
         private let server: URL
         private unowned let test: UpdateSummaryTests
 
-        init(test: UpdateSummaryTests, apply: ((DeferredMockURLProtocol) -> Void)? = nil) throws {
+        init(test: UpdateSummaryTests, check: String = Self.defaultCheck, apply: ((DeferredMockURLProtocol) -> Void)? = nil) throws {
             self.test = test
             fixture = try FixtureApp(for: test)
             let host = "system-summary-\(UUID().uuidString.lowercased()).test"
             server = try XCTUnwrap(URL(string: "https://\(host)"))
             let checks = checks
-            let check = #"""
-            { "webui": { "state": "release_ready", "can_apply": true, "behind": 1, "current_version": "0.0.1",
-                         "target_version": "0.0.2", "summary_available": true },
-              "agent": { "state": "release_ready", "can_apply": true, "behind": 1, "current_version": "v2026.9.24",
-                         "target_version": "v0.21.7", "summary_available": true } }
-            """#
             DeferredMockURLProtocol.setOnRequest({ request in
                 switch (request.request.httpMethod, request.request.url?.path) {
                 case ("GET", "/api/updates/check"):
@@ -400,6 +437,13 @@ final class UpdateSummaryTests: APIClientTestCase {
                 DeferredMockURLProtocol.setOnRequest(nil, forHost: host)
             }
         }
+
+        private static let defaultCheck = #"""
+        { "webui": { "state": "release_ready", "can_apply": true, "behind": 1, "current_version": "0.0.1",
+                     "target_version": "0.0.2", "summary_available": true },
+          "agent": { "state": "release_ready", "can_apply": true, "behind": 1, "current_version": "v2026.9.24",
+                     "target_version": "v0.21.7", "summary_available": true } }
+        """#
 
         /// Hosts Settings > System in its sheet and waits until both rows offer their summary.
         func present(size: CGSize) async throws -> (UIWindow, UIViewController) {

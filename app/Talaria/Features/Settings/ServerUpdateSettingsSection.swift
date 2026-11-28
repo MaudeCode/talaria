@@ -316,14 +316,16 @@ private extension ServerUpdateSettingsSection {
 
     @ViewBuilder
     private var serverUpdateNote: some View {
-        if model.status.version != nil, let updateState = model.updateTargets?.webuiUpdateState {
-            switch updateState {
-            case .upToDate:
-                updateNoteRow(systemImage: "checkmark.circle", tint: .secondary, text: String(localized: "Up to date"))
-            case let .updateAvailable(behind):
-                updateNoteRow(systemImage: "arrow.up.circle", tint: .blue, text: Self.updateAvailableText(behind: behind))
-            case .unavailable:
-                EmptyView()
+        let detail = latestReleaseDetail(model.updateTargets?.webui)
+        let updateState = model.status.version == nil ? nil : model.updateTargets?.webuiUpdateState
+        switch updateState {
+        case .upToDate:
+            updateNoteRow(systemImage: "checkmark.circle", tint: .secondary, text: String(localized: "Up to date"), detail: detail)
+        case let .updateAvailable(behind):
+            updateNoteRow(systemImage: "arrow.up.circle", tint: .blue, text: Self.updateAvailableText(behind: behind), detail: detail)
+        case .unavailable, nil:
+            if let detail {
+                updateNoteRow(systemImage: "tag", tint: .secondary, text: detail)
             }
         }
     }
@@ -343,6 +345,7 @@ private extension ServerUpdateSettingsSection {
             if let agent {
                 let status = UpdateNote(agent: agent)
                 updateNoteRow(systemImage: status.systemImage, tint: status.tint, text: status.text,
+                              detail: latestReleaseDetail(agent),
                               identifier: "settings-system-status-agent")
                 UpdateSummaryButton(info: agent) {
                     summaryRequest = UpdateSummaryRequest(target: .agent)
@@ -359,9 +362,13 @@ private extension ServerUpdateSettingsSection {
         behind > 0 ? String(localized: "Update available · \(behind) behind") : String(localized: "Update available")
     }
 
-    private func updateNoteRow(systemImage: String, tint: Color, text: String,
+    private func latestReleaseDetail(_ target: UpdateTargetInfo?) -> String? {
+        target?.distinctLatestReleaseTag.map { String(localized: "Latest release: \($0)") }
+    }
+
+    private func updateNoteRow(systemImage: String, tint: Color, text: String, detail: String? = nil,
                                identifier: String = "settings-system-status-web") -> some View {
-        SettingsStatusRow(title: SettingsIndex.systemStatus.title, systemImage: systemImage, status: text, tone: tint,
+        SettingsStatusRow(title: SettingsIndex.systemStatus.title, systemImage: systemImage, status: text, tone: tint, detail: detail,
                           accessibilityIdentifier: identifier)
     }
 
