@@ -245,12 +245,13 @@ export const removeWorkspace = (path: string) => orpc().workspaces.remove({ path
 export const renameWorkspace = (path: string, name: string) => orpc().workspaces.rename({ path, name })
 export const reorderWorkspaces = (paths: string[]) => orpc().workspaces.reorder({ paths })
 export const suggestWorkspaces = (prefix: string) => orpc().workspaces.suggest({ prefix })
-export const listDir = (session_id: string, path = '.', showHidden = false, source?: 'workspace' | 'managed') => orpc().files.list({
+export const listDir = (session_id: string, path = '.', showHidden = false, source?: 'workspace' | 'managed', page?: { cursor: string; signal: AbortSignal }) => orpc().files.list({
   session_id,
   path,
   ...(source ? { source } : {}),
   ...(source === 'managed' ? {} : { show_hidden: showHidden ? '1' : '0' }),
-})
+  ...(page ? { cursor: page.cursor } : {}),
+}, page ? { signal: page.signal } : {})
 export const readFile = (session_id: string, path: string, source?: 'workspace' | 'managed') => orpc().files.read({ session_id, path, ...(source ? { source } : {}) })
 /** `inline` asks for the sandboxed, frameable preview response (HTML, PDF). */
 export const rawFileUrl = (session_id: string, path: string, inline?: boolean) => `api/file/raw${qs({ session_id, path, inline: flag(inline) })}`

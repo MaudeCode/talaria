@@ -2122,6 +2122,7 @@
 	"workspaces_empty_title": "Select a space",
 	"ws_no_results": "워크스페이스를 찾을 수 없습니다",
 	"ws_panel_download_file": "{name} 다운로드",
+	"ws_panel_load_more": "파일 더 불러오기",
 	"ws_search_placeholder": "워크스페이스 검색…",
 	"yolo_disabled": "YOLO 모드 꺼짐",
 	"yolo_enabled": "⚡ YOLO 모드 켜짐 — 이 세션에서 승인 건너뜀",

@@ -2055,6 +2055,7 @@
 	"workspaces_empty_title": "Chọn một space",
 	"ws_no_results": "Không tìm thấy workspace nào",
 	"ws_panel_download_file": "Tải xuống {name}",
+	"ws_panel_load_more": "Tải thêm tệp",
 	"ws_search_placeholder": "Tìm workspace…",
 	"yolo_disabled": "Chế độ YOLO TẮT",
 	"yolo_enabled": "⚡ Chế độ YOLO BẬT — phê duyệt sẽ bị bỏ qua trong phiên này",

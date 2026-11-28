@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Load more files when a workspace folder has more than 200 entries.",
+      "highlight": false,
+      "components": ["web"],
+      "announcement": {
+        "title": "Browse large workspace folders",
+        "description": "Load more entries at the bottom of the Files list.",
+        "icon": "display"
+      }
+    }
+  ]
+}

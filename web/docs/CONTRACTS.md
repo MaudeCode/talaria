@@ -407,11 +407,15 @@ mode with JavaScript disabled.
 
 ## Workspace file listings
 
-`GET /api/list` hides dot-prefixed workspace entries when `show_hidden` is
-omitted or set to `0`. Set it to `1` to include those entries. The server
-applies the filter before the 200-entry limit and computes the signature from
-the returned rows. The App requests `1` to preserve its existing file browser
-behavior. Managed buffers and read-only escape grants use their own listings.
+`GET /api/list` returns up to 200 workspace entries per page in server order.
+When more eligible entries follow, pass the response's `next_cursor` as
+`cursor` with the same session, directory and `show_hidden` value. Each page
+rechecks workspace access and applies the same symlink and visibility rules.
+Omitting `show_hidden` or passing `0` hides dot-prefixed entries. Set it to
+`1` to include them. The signature describes the returned page. A directory
+can change between requests, so refresh to see edits made while browsing.
+The App requests `show_hidden=1` and reads the first page. Managed buffers
+and read-only escape grants use their own listings.
 
 ## Files HTML preview
 

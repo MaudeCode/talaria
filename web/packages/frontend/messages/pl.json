@@ -2308,6 +2308,7 @@
 	"workspaces_empty_title": "Wybierz przestrzeń",
 	"ws_no_results": "Nie znaleziono żadnych obszarów roboczych",
 	"ws_panel_download_file": "Pobierz {name}",
+	"ws_panel_load_more": "Wczytaj więcej plików",
 	"ws_search_placeholder": "Szukaj obszarów roboczych…",
 	"yolo_disabled": "Tryb YOLO WYŁĄCZONY",
 	"yolo_enabled": "⚡ Tryb YOLO WŁĄCZONY — pomijanie aprobat w tej sesji",

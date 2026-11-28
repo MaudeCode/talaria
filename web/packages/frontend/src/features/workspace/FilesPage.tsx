@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type Dispatch, type DragEvent, type KeyboardEvent, type ReactElement, type ReactNode, type SetStateAction } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, Download, Eye, EyeOff, File as FileIcon, FilePlus, Folder, FolderPlus, MoreHorizontal, RefreshCw, X } from 'lucide-react'
+import { useEffect, useEffectEvent, useRef, useState, type Dispatch, type DragEvent, type KeyboardEvent, type ReactElement, type ReactNode, type SetStateAction } from 'react'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
+import { ArrowUp, ChevronsDown, Download, Eye, EyeOff, File as FileIcon, FilePlus, Folder, FolderPlus, MoreHorizontal, RefreshCw, X } from 'lucide-react'
 import { WorkspaceTextSizeErrorSchema } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -113,6 +113,16 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const [dir, setDir] = useState('.')
   const [showHidden, setShowHidden] = useState(false)
   const [file, setFile] = useState<string | null>(null)
+  const pageFocus = useRef<{ button: HTMLButtonElement; pageIndex: number } | null>(null)
+  const navigate = (path: string, hidden: boolean) => {
+    if (path === dir && hidden === showHidden) return
+    pageFocus.current = null
+    const queryKey = keys.files.list(workspace, path, hidden, sessionId)
+    const cached = qc.getQueryData<InfiniteData<Awaited<ReturnType<typeof api.listDir>>>>(queryKey)
+    if (cached && cached.pages.length > 1) void qc.resetQueries({ queryKey, exact: true })
+    setDir(path)
+    setShowHidden(hidden)
+  }
   // The draft belongs to the file it was typed in, so a save that finishes later never clears another file's edits.
   const keyOf = (path: string) => draftKey(sessionId, source, workspace, path)
   const draft = file === null ? null : drafts[keyOf(file)] ?? null
@@ -140,35 +150,53 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   // Take the request only from the mounted workspace tree. Its preview and line selection belong to this tree.
   const [lastOpened, setLastOpened] = useState<OpenFileRequest | null>(null)
   const opened = lastOpened?.sessionId === sessionId ? lastOpened : null
+  const openRequestedFile = useEffectEvent(() => {
+    const request = takeOpenFileRequest(sessionId)
+    if (!request) return
+    const folder = parentOf(request.path)
+    navigate(folder, showHidden)
+    setCursor({ dir: folder, path: request.path, index: 0 })
+    setFile(request.path)
+    setLastOpened({ ...request })
+  })
   useEffect(() => {
     if (!active || managed) return
-    const openRequestedFile = () => {
-      const request = takeOpenFileRequest(sessionId)
-      if (!request) return
-      const folder = parentOf(request.path)
-      setDir(folder)
-      setCursor({ dir: folder, path: request.path, index: 0 })
-      setFile(request.path)
-      setLastOpened({ ...request })
-    }
-    openRequestedFile()
-    return onOpenFileRequest(openRequestedFile)
+    const unsubscribe = onOpenFileRequest(() => openRequestedFile())
+    let subscribed = true
+    queueMicrotask(() => { if (subscribed) openRequestedFile() })
+    return () => { subscribed = false; unsubscribe() }
   }, [active, managed, sessionId])
   const treeRef = useRef<HTMLDivElement>(null)
   // The row focus was last on, until focus moves to something outside the tree.
   const focusedRow = useRef<HTMLElement | null>(null)
-  const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden, ...sourceArgs), staleTime: 10_000, enabled: active })
+  const listing = useInfiniteQuery({
+    queryKey: keys.files.list(workspace, dir, showHidden, sessionId),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) => pageParam
+      ? api.listDir(sessionId, dir, showHidden, undefined, { cursor: pageParam, signal })
+      : api.listDir(sessionId, dir, showHidden, ...sourceArgs),
+    getNextPageParam: (page) => page.next_cursor,
+    staleTime: 10_000,
+    enabled: active,
+  })
   const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active && !managed })
   const effects = useResourceEffects<Draft>()
   const saving = file ? effects[contentResource(workspace, file)]?.value : undefined
   // The server orders the listing (symlinks, folders, files); rows render in that order. While the user's own write
   // shows a row the server has not listed, that row holds its place in the order and is one row, so the listing's
   // arrival never moves a row out from under a press.
-  const listed = listing.data?.entries ?? []
+  const listed = listing.data?.pages.flatMap((page) => page.entries) ?? []
   const pathOf = (e: { name: string; path?: string | undefined }) => e.path ?? joinPath(dir, e.name)
   const shown = withCreated(withEffects(listed, (e) => entryResource(workspace, pathOf(e)), effects), createKind(workspace, dir), effects)
-  const rows = shown.filter((e, i) => shown.findIndex((other) => pathOf(other) === pathOf(e)) === i)
-  const writing = rows.filter((e) => !listed.includes(e))
+  const seen = new Set<string>()
+  const rows = shown.filter((e) => {
+    const path = pathOf(e)
+    if (seen.has(path)) return false
+    seen.add(path)
+    return true
+  })
+  const serverRows = new Set(listed)
+  const writing = rows.filter((e) => !serverRows.has(e))
   const entries = writing.length ? [...rows].sort(inListingOrder) : rows
   // A row shown ahead of the server may not exist there yet, so its preview reads once the write and the listing have answered.
   const opening = writing.some((e) => pathOf(e) === file)
@@ -224,7 +252,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const rename = useResourceMutation({ ...treeWrite, onSuccess: (_, { path, name }) => { relocateDrafts(path, joinPath(parentOf(path), name)); void refresh() }, resource: ({ path, name }: { path: string; name: string }) => [entryResource(workspace, path), entryResource(workspace, joinPath(parentOf(path), name))], readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name }) => ({ fields: { name, path: joinPath(parentOf(path), name) } }), mutationFn: ({ path, name }) => api.renameEntry(sessionId, path, name) })
   const create = useResourceMutation({ ...treeWrite, exclusive: true, resource: ({ resource }: { resource: string; path: string; name: string; isDir: boolean }) => resource, readKeys: ({ path }) => folders(parentOf(path)), effect: ({ path, name, isDir }) => ({ fields: { path, name, is_dir: isDir, type: isDir ? 'dir' : 'file', workspace_sort_rank: isDir ? 1 : 2 } }), mutationFn: ({ path, isDir }) => isDir ? api.createDir(sessionId, path) : api.createFile(sessionId, path) })
   const submitName = (kind: 'file' | 'dir', name: string) => { setNotice(null); const path = joinPath(dir, name); void create.mutateAsync({ resource: newResource(createKind(workspace, dir)), path, name, isDir: kind === 'dir' }).catch(leavePreview(path)) }
-  const go = (path: string) => { setNotice(null); setCursor({ dir: path, path: dir, index: 0 }); setDir(path) }
+  const go = (path: string) => { setNotice(null); setCursor({ dir: path, path: dir, index: 0 }); navigate(path, showHidden) }
   const dropProps = (dest: string) => ({
     onDragOver: (ev: DragEvent) => {
       if (!ev.dataTransfer.types.includes(DRAG_TYPE)) return
@@ -254,6 +282,17 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
     if (!active || !last || last.isConnected || (current && current !== document.body)) return
     treeRef.current?.querySelector<HTMLElement>('[role="treeitem"][tabindex="0"]')?.focus()
   })
+  // Continue keyboard navigation at the first appended row, unless focus already moved elsewhere.
+  useEffect(() => {
+    const pendingFocus = pageFocus.current
+    if (!pendingFocus || listing.isFetching) return
+    pageFocus.current = null
+    const { button, pageIndex } = pendingFocus
+    const entry = listing.data?.pages[pageIndex]?.entries[0]
+    if (!entry || !active || (document.activeElement !== button && (button.isConnected || document.activeElement !== document.body))) return
+    const index = paths.indexOf(pathOf(entry))
+    treeRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]')[index]?.focus()
+  })
   const onTreeKey = (ev: KeyboardEvent<HTMLDivElement>) => {
     const items = Array.from(ev.currentTarget.querySelectorAll<HTMLElement>('[role="treeitem"]'))
     const at = items.indexOf(ev.target as HTMLElement)
@@ -271,7 +310,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const office = kind === 'office'
   const officeBlocked = office && content.data?.editable !== true
   const readOnly = !!sizeError || (managed && (content.data?.read_only !== false || content.isError)) || officeBlocked
-  const fileName = content.data?.name ?? listing.data?.entries.find((entry) => entry.path === file)?.name ?? file
+  const fileName = content.data?.name ?? listed.find((entry) => entry.path === file)?.name ?? file
   const downloadLabel = m.ws_panel_download_file({ name: fileName ?? '' })
   const canDownload = !managed && (!sizeRefused || sizeError?.download_allowed === true)
   // Markdown, CSV and HTML show their rendered form until Edit opens the text; TAL-2323: a file opened at a line shows its text.
@@ -290,13 +329,25 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   </>
   // One list for the toolbar's buttons and the empty area's menu; the managed source has neither.
   const newEntries = [{ kind: 'new-file', label: m.new_file(), Icon: FilePlus }, { kind: 'new-folder', label: m.new_folder(), Icon: FolderPlus }] as const
-  const withTreeMenu = (tree: ReactElement) => managed ? tree : <ContextMenu label={m.ws_panel_files()} trigger={tree}>{newEntries.map(({ kind, label }) => <MenuItem key={kind} onClick={() => setPending({ kind })}>{label}</MenuItem>)}</ContextMenu>
+  const renderTree = (tree: ReactElement) => (
+    <div className="file-tree min-h-0 flex-1 overflow-y-auto p-1">
+      {managed ? tree : <ContextMenu label={m.ws_panel_files()} trigger={tree}>{newEntries.map(({ kind, label }) => <MenuItem key={kind} onClick={() => setPending({ kind })}>{label}</MenuItem>)}</ContextMenu>}
+      {listing.hasNextPage && <div className="flex flex-col items-center gap-1 border-t border-border-subtle py-1">
+        {listing.isFetchNextPageError && <ErrorState error={listing.error} />}
+        <IconButton variant="ghost" label={m.ws_panel_load_more()} aria-disabled={listing.isFetching} aria-busy={listing.isFetchingNextPage} onClick={(event) => {
+          if (listing.isFetching) return
+          pageFocus.current = { button: event.currentTarget, pageIndex: listing.data?.pages.length ?? 0 }
+          void listing.fetchNextPage({ cancelRefetch: false })
+        }}><ChevronsDown aria-hidden="true" /></IconButton>
+      </div>}
+    </div>
+  )
   return (
     <>
       <div className="flex items-center gap-1 border-b border-border-subtle px-3 py-1" data-files-toolbar>
         {sourceControl}
         <span data-files-workspace={managed ? undefined : ''} className="min-w-0 flex-1 truncate font-mono text-xs text-muted" title={managed ? undefined : workspace}>{managed ? '' : `${workspace}${g?.is_git && g.branch ? ` · ${g.branch}${g.dirty ? ` (${g.dirty}±)` : ''}` : ''}`}</span>
-        {!managed && <IconButton label={m.ws_panel_hidden()} active={showHidden} aria-pressed={showHidden} className="h-7 w-7" onClick={() => setShowHidden((h) => !h)}>{showHidden ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}</IconButton>}
+        {!managed && <IconButton label={m.ws_panel_hidden()} active={showHidden} aria-pressed={showHidden} className="h-7 w-7" onClick={() => navigate(dir, !showHidden)}>{showHidden ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}</IconButton>}
         <IconButton label={m.refresh()} className="h-7 w-7" onClick={() => { void listing.refetch(); if (!managed) void git.refetch(); if (file) void content.refetch() }}><RefreshCw size={14} aria-hidden="true" /></IconButton>
       </div>
       {file ? (
@@ -354,10 +405,10 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
               <IconButton label={m.close()} className="h-5 w-5" onClick={() => setNotice(null)}><X size={12} aria-hidden="true" /></IconButton>
             </div>
           )}
-          {withTreeMenu(<div ref={treeRef} className="file-tree min-h-0 flex-1 overflow-y-auto p-1" role="tree" aria-label={m.ws_panel_files()} onKeyDown={onTreeKey} onBlur={(ev) => { if (ev.relatedTarget && !ev.currentTarget.contains(ev.relatedTarget)) focusedRow.current = null }}>
+          {renderTree(<div ref={treeRef} className={listing.hasNextPage ? undefined : 'min-h-full'} role="tree" aria-label={m.ws_panel_files()} onKeyDown={onTreeKey} onBlur={(ev) => { if (ev.relatedTarget && !ev.currentTarget.contains(ev.relatedTarget)) focusedRow.current = null }}>
             {listing.isPending && <LoadingState />}
-            {listing.isError && <ErrorState error={listing.error} onRetry={() => { void listing.refetch() }} />}
-            {listing.isSuccess && entries.length === 0 && <div role="status" className="p-3 text-xs text-muted">{listing.data.unavailable ? m.ws_panel_managed_unavailable() : m.ws_panel_empty()}</div>}
+            {listing.isError && !listing.isFetchNextPageError && <ErrorState error={listing.error} onRetry={() => { void listing.refetch() }} />}
+            {listing.isSuccess && entries.length === 0 && <div role="status" className="p-3 text-xs text-muted">{listing.data.pages[0]?.unavailable ? m.ws_panel_managed_unavailable() : m.ws_panel_empty()}</div>}
             {entries.map((e, i) => {
               const path = paths[i] ?? ''
               const isDir = !!e.is_dir || e.type === 'dir' || e.type === 'directory'
