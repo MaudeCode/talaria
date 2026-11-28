@@ -10,6 +10,7 @@ import { authorizePublisherMutation } from "./publishers";
 import {
   feedbackAttachmentRefusalValidator,
   feedbackAttachmentTypeValidator,
+  feedbackDeliveryFailureStageValidator,
   feedbackPayloadValidator,
   feedbackTierValidator,
 } from "./lib/validators";
@@ -375,6 +376,37 @@ export const listPending = internalQuery({
   },
 });
 
+export const queueStatus = internalQuery({
+  args: {},
+  returns: v.object({
+    oldestPendingCreatedAt: v.union(v.number(), v.null()),
+    lastSuccessfulDeliveryAt: v.union(v.number(), v.null()),
+    failureStage: v.union(feedbackDeliveryFailureStageValidator, v.null()),
+  }),
+  handler: async (ctx) => {
+    const [oldest, deliveryState, latestDelivery, failed] = await Promise.all([
+      ctx.db.query("feedbackReports")
+        .withIndex("by_status_and_created_at", (q) => q.eq("status", "pending")).first(),
+      ctx.db.query("feedbackDeliveryState").unique(),
+      ctx.db.query("feedbackReports")
+        .withIndex("by_status_and_delivered_at", (q) => q.eq("status", "delivered").gt("deliveredAt", undefined))
+        .order("desc").first(),
+      ctx.db.query("feedbackReports")
+        .withIndex("by_status_and_delivery_failure_stage", (q) => q.eq("status", "pending").gt("deliveryFailureStage", undefined))
+        .first(),
+    ]);
+    // A bridge can already have delivered reports before this version first records a timestamp.
+    const lastSuccessfulDeliveryAt = deliveryState
+      ? Math.max(deliveryState.lastSuccessfulDeliveryAt, latestDelivery?.deliveredAt ?? 0)
+      : latestDelivery?.deliveredAt ?? null;
+    return {
+      oldestPendingCreatedAt: oldest?.createdAt ?? null,
+      lastSuccessfulDeliveryAt,
+      failureStage: failed?.deliveryFailureStage ?? null,
+    };
+  },
+});
+
 /**
  * The feedback bridge subscribes over Convex's WebSocket to learn when a report is ready to deliver or retry.
  * Operator-only; IDs only.
@@ -390,17 +422,20 @@ export const pendingSignal = query({
 });
 
 export const deferDelivery = internalMutation({
-  args: { reportId: v.string() },
+  args: { reportId: v.string(), failureStage: v.optional(feedbackDeliveryFailureStageValidator) },
   returns: v.boolean(),
-  handler: async (ctx, { reportId }) => {
+  handler: async (ctx, { reportId, failureStage }) => {
     const id = ctx.db.normalizeId("feedbackReports", reportId);
     const report = id ? await ctx.db.get(id) : null;
     if (!report) return false;
-    if (report.status === "pending" && report.retryAt === undefined) {
+    if (report.status !== "pending") return true;
+    if (report.retryAt === undefined) {
       const retryAt = Date.now() + deliveryRetryMs;
-      await ctx.db.patch(report._id, { retryAt, queuedAt: retryAt });
+      await ctx.db.patch(report._id, { retryAt, queuedAt: retryAt, deliveryFailureStage: failureStage ?? report.deliveryFailureStage });
       // A database write at expiry wakes the WebSocket subscription, even with no new submissions.
       await ctx.scheduler.runAt(retryAt, internal.feedback.resumeDelivery, { reportId: report._id, retryAt });
+    } else if (failureStage !== undefined && failureStage !== report.deliveryFailureStage) {
+      await ctx.db.patch(report._id, { deliveryFailureStage: failureStage });
     }
     return true;
   },
@@ -426,6 +461,14 @@ export const storedAttachment = internalQuery({
   },
 });
 
+export async function recordFeedbackDelivery(ctx: MutationCtx, deliveredAt: number) {
+  const deliveryState = await ctx.db.query("feedbackDeliveryState").unique();
+  if (!deliveryState) await ctx.db.insert("feedbackDeliveryState", { lastSuccessfulDeliveryAt: deliveredAt });
+  else if (deliveredAt > deliveryState.lastSuccessfulDeliveryAt) {
+    await ctx.db.patch(deliveryState._id, { lastSuccessfulDeliveryAt: deliveredAt });
+  }
+}
+
 export const acknowledge = internalMutation({
   args: { reportId: v.string(), ticketKey: v.string(), now: v.number() },
   returns: v.union(
@@ -442,7 +485,8 @@ export const acknowledge = internalMutation({
         ? { status: "delivered" as const }
         : { status: "ticket_key_conflict" as const };
     }
-    await ctx.db.patch(report._id, { status: "delivered", ticketKey: args.ticketKey, deliveredAt: args.now });
+    await ctx.db.patch(report._id, { status: "delivered", ticketKey: args.ticketKey, deliveredAt: args.now, deliveryFailureStage: undefined });
+    await recordFeedbackDelivery(ctx, args.now);
     // The bridge has copied the files by now, so Relay keeps none past delivery.
     await deleteAttachments(ctx, report._id);
     if (report.hasDiagnosticReports) await deleteDiagnosticReports(ctx, report._id);

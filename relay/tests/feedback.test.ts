@@ -385,8 +385,9 @@ describe("feedback operator queue", () => {
 });
 
 it("prunes delivered reports after seven days, pending reports after thirty, and ended budget windows", async () => {
-  const { backend, rows } = await relay();
+  const { backend, operator, rows } = await relay();
   const payload = { ...fixture } as never;
+  const latestDelivery = start - 7 * day + 1_000;
   await backend.run(async (ctx) => {
     const insert = (requestId: string, fields: { status: "pending" | "delivered"; createdAt: number; deliveredAt?: number }) =>
       ctx.db.insert("feedbackReports", {
@@ -394,7 +395,7 @@ it("prunes delivered reports after seven days, pending reports after thirty, and
         ...fields, ...(fields.status === "delivered" ? { ticketKey: "TAL-1" } : {}),
       });
     await insert("old-delivered", { status: "delivered", createdAt: start - 40 * day, deliveredAt: start - 7 * day - 1 });
-    await insert("new-delivered", { status: "delivered", createdAt: start - 40 * day, deliveredAt: start - 7 * day + 1_000 });
+    await insert("new-delivered", { status: "delivered", createdAt: start - 40 * day, deliveredAt: latestDelivery });
     await insert("old-pending", { status: "pending", createdAt: start - 30 * day - 1 });
     await insert("new-pending", { status: "pending", createdAt: start - 30 * day + 1_000 });
     await ctx.db.insert("authRateLimits", { key: "ended", windowStartedAt: start - 30 * day - 1, attempts: 5 });
@@ -404,6 +405,13 @@ it("prunes delivered reports after seven days, pending reports after thirty, and
   expect((await rows()).map((row) => row.requestId).sort()).toEqual(["new-delivered", "new-pending"]);
   const budgets = await backend.run(async (ctx) => await ctx.db.query("authRateLimits").collect());
   expect(budgets.map((row) => row.key)).toEqual(["open"]);
+
+  setClock(start + 1_001);
+  await backend.mutation(internal.cleanup.prune, {});
+  expect(await rows()).toEqual([]);
+  expect(await (await operator("/v1/feedback/queue-status")).json()).toEqual({
+    oldestPendingCreatedAt: null, lastSuccessfulDeliveryAt: latestDelivery, failureStage: null,
+  });
 });
 
 describe("feedback attachments", () => {

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Relay operators can check feedback backlog age, the last delivery and where delivery failed.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
 
+import { isReportFailureStage } from "../bridge/delivery-status";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import releaseInfo from "./releaseInfo.json";
@@ -1267,6 +1268,16 @@ http.route({
 });
 
 http.route({
+  path: "/v1/feedback/queue-status",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const closed = await feedbackGate(request, true);
+    if (closed) return closed;
+    return json(200, await ctx.runQuery(internal.feedback.queueStatus, {}), { "cache-control": "no-store" });
+  }),
+});
+
+http.route({
   path: "/v1/feedback/pending",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
@@ -1288,7 +1299,11 @@ http.route({
     const [, , reportId, operation, ...extra] = pathParts(request);
     if (!reportId || extra.length) return json(404, { error: "not_found" });
     if (operation === "defer") {
-      const found = await ctx.runMutation(internal.feedback.deferDelivery, { reportId });
+      const failureStage = (await readJson(request))?.failureStage;
+      if (failureStage !== undefined && !isReportFailureStage(failureStage)) {
+        return json(400, { error: "invalid_failure_stage" });
+      }
+      const found = await ctx.runMutation(internal.feedback.deferDelivery, { reportId, failureStage });
       return found ? new Response(null, { status: 204 }) : json(404, { error: "not_found" });
     }
     if (operation !== "ack") return json(404, { error: "not_found" });

@@ -5,7 +5,7 @@ import type { Doc } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import { longestBudgetWindowMs, revokeDevicesForSession } from "./auth";
 import { grantMatches } from "./completions";
-import { deleteAttachments, deleteBlob } from "./feedback";
+import { deleteAttachments, deleteBlob, recordFeedbackDelivery } from "./feedback";
 import { activityPhase, isTerminalPhase } from "./lib/model";
 
 const batchSize = 100;
@@ -152,6 +152,9 @@ async function prunePass(ctx: MutationCtx) {
     await deleteBlob(ctx, attachment);
     await ctx.db.patch(attachment._id, { status: "missing", storageId: undefined });
   }
+  // The batch is ordered by delivery time. Keep the latest acknowledgement before deleting legacy reports.
+  const latestPrunedDelivery = deliveredFeedback.at(-1)?.deliveredAt;
+  if (latestPrunedDelivery !== undefined) await recordFeedbackDelivery(ctx, latestPrunedDelivery);
   for (const report of [...deliveredFeedback, ...pendingFeedback]) {
     await deleteAttachments(ctx, report._id);
     if (report.hasDiagnosticReports && report.status === "pending") {

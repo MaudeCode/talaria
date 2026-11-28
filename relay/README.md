@@ -87,8 +87,35 @@ SIGTERM exits 0 after the current delivery.
 
 With `HEALTH_PORT` also set, watch mode serves `GET /healthz` on that port.
 It answers 200 once Relay has answered the subscription (so the token is
-authorized) and while the WebSocket is connected, and 503 otherwise. Any other
-request gets 404. Use it as the readiness probe. Reports and diagnostics remain fenced untrusted text;
+authorized) and while the WebSocket is connected, and 503 otherwise. Use it as
+the readiness probe.
+
+From the bridge's host or private monitoring network, check feedback delivery
+with the feedback operator bearer token:
+
+```sh
+printf 'Authorization: Bearer %s\n' "$FEEDBACK_OPERATOR_TOKEN" |
+  curl -sS --header @- "http://127.0.0.1:${HEALTH_PORT}/deliveryz"
+```
+
+The bridge shares one in-flight Relay read and reuses its result for five
+seconds. The JSON `status` is `idle` (200) for an empty queue, `pending` (200)
+when work is queued, or `degraded` (503) when a delivery failed or Relay's queue
+could not be read. Monitor `oldestPendingAgeMs` against your backlog threshold
+even when the response is 200. This age includes reports deferred for retry
+and is `null` when the queue is empty or its status is unavailable.
+`lastSuccessfulDeliveryAt` is the Unix time in milliseconds of the latest
+acknowledgement, or `null` if none is known. Relay keeps this timestamp after
+the delivered report is pruned.
+
+`failureStage` is `null` or one of `queue_read`, `sanitization`,
+`ticket_creation`, `attachment_transfer`, or `acknowledgement`. The bridge
+logs these same fixed stage names. Relay records a failed report's stage when
+it defers the report. That stage stays visible while the report is pending,
+even if newer reports are delivered. During an
+upgrade, deploy Relay's queue status route before relying on `/deliveryz`.
+
+Reports and diagnostics remain fenced untrusted text;
 install IDs are hashed before inclusion in ticket metadata. The bridge keeps
 its own npm lockfile because its image installs from it; `scripts/check relay`
 installs both before `pnpm check`.
@@ -129,7 +156,7 @@ queue.
 | `SANITIZER_URL` | Cluster-internal base URL of the sanitizer |
 | `SANITIZER_TOKEN` | The sanitizer's bearer token; it grants nothing else |
 | `RELAY_SYNC_URL` | Optional Convex client URL of the Relay deployment (`https://<deployment>.convex.cloud`); enables watch mode |
-| `HEALTH_PORT` | Optional port (1–65535) for watch mode's `/healthz` readiness endpoint |
+| `HEALTH_PORT` | Optional port (1–65535) for watch mode's `/healthz` and `/deliveryz` operator endpoints |
 
 Use the `intake` scope provided by KAN-67. It forces human triage and disables
 automation on created tickets; KAN-77 lets the same key attach files to the

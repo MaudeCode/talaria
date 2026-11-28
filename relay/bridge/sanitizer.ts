@@ -2,7 +2,7 @@
 // container from the bridge image (`node sanitizer.ts`), holds no Relay or Kanvil credential, and answers one
 // authenticated operation: POST /v1/sanitize?type=<declared content type> with the attachment's bytes.
 import { execFile } from "node:child_process";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import sharp from "sharp";
 import { type DropReason, digestHeader, maxOutputBytes, type OutputType } from "./attachments.ts";
+import { bearerVerifier } from "./bearer.ts";
 
 const maxVideoSeconds = 120.5;
 // Covers 48–50 MP phone sensors with headroom.
@@ -135,15 +136,13 @@ async function sanitize(input: Buffer, contentType: string, directory: string): 
   throw new Dropped("failed validation");
 }
 
-const digest = (text: string) => createHash("sha256").update(text).digest();
-
 /**
  * `POST /v1/sanitize?type=<declared type>` with the bearer token and the raw attachment answers 200 with either the
  * cleaned bytes (`content-type` and `x-content-sha256` set) or `{"dropped": <reason>}` JSON. A wrong token is 401, a
  * body without a length or over its type's limit 413, a request while another runs 503. `GET /healthz` is 200.
  */
 export function serveSanitizer(token: string, port: number): Promise<Server> {
-  const expected = digest(token);
+  const verifyBearer = bearerVerifier(token);
   let busy = false;
   const handle = async (request: IncomingMessage, response: ServerResponse) => {
     const url = new URL(request.url ?? "/", "http://sanitizer");
@@ -151,8 +150,7 @@ export function serveSanitizer(token: string, port: number): Promise<Server> {
     // Nothing else reads the body, so every refusal closes the connection instead of draining it.
     const refuse = (status: number) => void response.writeHead(status, { connection: "close" }).end();
     if (request.method !== "POST" || url.pathname !== "/v1/sanitize") return refuse(404);
-    const [scheme, presented] = (request.headers.authorization ?? "").split(" ");
-    if (scheme !== "Bearer" || !presented || !timingSafeEqual(digest(presented), expected)) return refuse(401);
+    if (!verifyBearer(request.headers.authorization)) return refuse(401);
     const contentType = url.searchParams.get("type") ?? "";
     const length = Number(request.headers["content-length"]);
     // An unknown type is read within the largest limit and dropped as failed validation.

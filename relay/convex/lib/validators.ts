@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { reportFailureStages } from "../../bridge/delivery-status";
 
 export const sessionPhaseValidator = v.union(
   v.literal("starting"),
@@ -197,6 +198,8 @@ export const apnsDeliveryResultValidator = v.object({
   status: v.optional(v.number()),
   apnsId: v.optional(v.string()),
 });
+
+export const feedbackDeliveryFailureStageValidator = v.union(...reportFailureStages.map((stage) => v.literal(stage)));
 
 export const feedbackAttachmentTypeValidator = v.union(
   v.literal("image/png"),

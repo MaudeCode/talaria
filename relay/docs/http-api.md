@@ -566,11 +566,22 @@ accepted file is stored or its upload window closes; a file never uploaded is
 listed as `missing`. `attachments` is empty for a text-only report. Reports
 start in submission order.
 
+`GET /v1/feedback/queue-status` returns operator-only delivery metadata.
+`oldestPendingCreatedAt` is the oldest pending report's creation time in Unix
+milliseconds, including reports deferred for retry. `lastSuccessfulDeliveryAt`
+is the latest acknowledgement time in the same unit and survives report pruning. `failureStage`
+is a recorded failure stage from a report that is still pending. Each field is
+`null` when Relay has no matching record. The response contains no report IDs,
+contents or attachments.
+
 After a failed delivery, the bridge calls `POST /v1/feedback/{reportId}/defer`.
 It returns 204 for a known report and 404 for an unknown one. A pending report
 leaves the eligible queue for 120 seconds, then rejoins according to its retry
 time. A repeat during that window leaves the original retry time in place.
-Deferral preserves the report and its attachments for the next attempt.
+The optional JSON `failureStage` records `sanitization`, `ticket_creation`,
+`attachment_transfer`, or `acknowledgement` for queue status. Unsupported stages
+answer 400. Deferral preserves the report and its attachments for the next
+attempt.
 
 Outside HTTP, the Convex query `feedback:pendingSignal({token})` returns the IDs
 of the same first 50 eligible reports and nothing else. The bridge subscribes to
