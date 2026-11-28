@@ -218,10 +218,7 @@ struct NotificationPermissionToggle: View {
         switch kind {
         case .responseCompletion:
             responseCompletionEnabled = enabled
-            if enabled {
-                UIApplication.shared.registerForRemoteNotifications()
-            }
-            try? await TalariaAggregateLiveActivityManager.shared.refresh()
+            await TalariaAggregateLiveActivityManager.shared.refreshAfterNotificationPreferenceChange(registerForRemoteNotifications: enabled)
         case .approval:
             approvalEnabled = enabled
         case .providerQuota:

@@ -7,6 +7,7 @@ import TalariaKit
 @MainActor
 struct UITestFixtureEnvironment {
     nonisolated static let launchArgument = UITestFixtureLaunch.launchArgument
+    nonisolated static let notificationOfferArgument = "--ui-test-notification-offer"
     nonisolated static let panelLoadingArgument = "--ui-test-panels-loading"
     nonisolated static let panelUnavailableArgument = "--ui-test-panels-unavailable"
     nonisolated static let approvalBypassArgument = "--ui-test-approval-bypass"
@@ -214,6 +215,17 @@ struct UITestFixtureEnvironment {
         // Response Complete Alerts start off and unasked, so a journey turns them on in Settings.
         UserDefaults.standard.set(false, forKey: ResponseCompletionNotifications.isEnabledKey)
         UserDefaults.standard.removeObject(forKey: ResponseCompletionNotifications.hasRequestedPermissionKey)
+        let arguments = ProcessInfo.processInfo.arguments
+        let offersNotifications = arguments.contains(notificationOfferArgument)
+            || arguments.contains(UITestFixtureLaunch.relayNotificationOfferArgument)
+        UserDefaults.standard.set(!offersNotifications, forKey: NotificationOffer.hasOfferedKey)
+        if offersNotifications {
+            for key in [ApprovalNotifications.isEnabledKey, TalariaRelayNotifications.isEnabledKey,
+                        TalariaRelayNotifications.updateAvailableAlertsEnabledKey,
+                        TalariaRelayNotifications.unconfirmedUpdateAvailableAlertsKey] {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
         // The scheduled and webhook groups start collapsed and the Tasks sections open, as on a fresh install, rather
         // than as an earlier test left them on this simulator.
         UserDefaults.standard.removeObject(forKey: SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)

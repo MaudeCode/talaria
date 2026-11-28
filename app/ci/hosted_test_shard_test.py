@@ -92,6 +92,16 @@ class PlanTests(unittest.TestCase):
         full = shard.plan({"mode": "full", "identifiers": ["TalariaTests"]}, table=TABLE, classes=["Heavy1", "Heavy2"])
         self.assertEqual([shard.prepare_options(entry) for entry in full["shards"]], [["--without-notifications"], []])
 
+    def test_composer_offer_prepares_notifications_in_focused_and_repeat_shards(self):
+        offer = "ChatHostedTests/testNormalComposerSendPresentsTheNotificationOffer"
+        selected = shard.plan(lane(offer), table=TABLE)["shards"][0]
+        self.assertEqual(shard.prepare_options(selected), [])
+        lane_with_repeat = {**lane("ChatHostedTests/testOfflineComposerStatusHasNoDismissButton"),
+                            "repeat": lane(offer)["identifiers"]}
+        regular, repeat = shard.plan(lane_with_repeat, table=TABLE)["shards"]
+        self.assertEqual(shard.prepare_options(regular), ["--without-notifications"])
+        self.assertEqual(shard.prepare_options(repeat), [])
+
     def test_selection_arguments(self):
         selected = shard.plan(lane("Heavy1/testSlow"), table=TABLE, repetitions=3)["shards"][0]
         self.assertEqual(shard.selection(selected), ["-only-testing:TalariaTests/Heavy1/testSlow", "-test-iterations", "3",

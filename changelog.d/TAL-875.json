@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria offers to turn on notifications after your first chat run from the iPhone, so you can find out when Hermes finishes or needs you.",
+      "highlight": false,
+      "announce": false,
+      "components": ["app"]
+    }
+  ]
+}
