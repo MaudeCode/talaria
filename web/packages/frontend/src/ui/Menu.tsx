@@ -112,11 +112,12 @@ function openingFocus(s: OpeningFocus, search: RefObject<HTMLElement | null> | u
       // A composing key belongs to the IME, so Base UI's list navigation must not move focus and end the composition (TAL-1873).
       if (isImeEnter(event)) { event.preventBaseUIHandler(); return }
       if (event.target === input) {
+        // Keys typed in search belong to the input. Escape still dismisses the popup.
+        if (key !== 'Escape') event.preventBaseUIHandler()
         // From search, ArrowDown and ArrowUp reach the first and last row; a row's focus moves Base UI's highlight with it.
         const rows = event.currentTarget.querySelectorAll<HTMLElement>('[role^=menuitem]:not([aria-disabled=true])')
         const row = key === 'ArrowDown' ? rows[0] : key === 'ArrowUp' ? rows[rows.length - 1] : null
         if (!row) return
-        event.preventBaseUIHandler()
         event.preventDefault()
         row.focus()
       } else if (key.length === 1 && key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) {

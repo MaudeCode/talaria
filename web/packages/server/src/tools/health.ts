@@ -51,10 +51,11 @@ async function logFileRow(id: string, path: string): Promise<LogFile> {
   } catch { return { id, exists: false, total_bytes: null } }
 }
 
-export interface LogQuery { file?: unknown; tail?: unknown; q?: string | undefined; level?: LogLevelFilter | undefined }
+export interface LogQuery { file?: unknown; tail?: unknown; q?: string | undefined; level?: LogLevelFilter | undefined; fallback?: 'agent' | undefined }
 
 export async function readLogTail(catalog: LogCatalog, query: LogQuery, signal?: AbortSignal): Promise<Dict> {
-  const fileKey = (str(query.file ?? 'agent').trim().toLowerCase()) || 'agent'
+  const requested = str(query.file).trim().toLowerCase() || 'agent'
+  const fileKey = query.fallback === 'agent' && !catalog.listed.includes(requested) ? 'agent' : requested
   const path = Object.hasOwn(catalog.paths, fileKey) ? catalog.paths[fileKey] : undefined
   if (!path) throw new HttpFailure(400, 'Unknown log file')
   const parsedTail = Number.parseInt(str(query.tail).trim(), 10)

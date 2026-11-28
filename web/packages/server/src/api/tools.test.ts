@@ -1516,6 +1516,13 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect((await s.get('/api/logs?file=../etc/passwd')).status).toBe(400)
     })
 
+    it('bookmark reads fall back to the profile Agent log for unlisted sources (TAL-2766)', async () => {
+      for (const file of ['constructor', 'errors', 'bootstrap']) {
+        const res = await s.get(`/api/logs?file=${file}&tail=1000&fallback=agent`)
+        expect([res.status, await json(res)]).toEqual([200, expect.objectContaining({ file: 'agent', tail: 1000 })])
+      }
+    })
+
     it('the server owner reads this server\'s own log', async () => {
       writeFileSync(bootstrapLog(), '[bootstrap] ERROR: port in use\n')
       const body = await json(await s.get('/api/logs?file=webui'))

@@ -350,7 +350,7 @@ export const archiveKanbanBoard = (slug: string) => orpc().kanban.deleteBoard({ 
 /** TAL-1117: the Usage period: a `days` preset, or the custom `start`/`end` exactly as typed; the server resolves and validates both. */
 export interface InsightsQuery { days: number; start?: string | undefined; end?: string | undefined }
 export const fetchInsights = ({ days, start, end }: InsightsQuery) => orpc().insights({ days: String(days), ...(start === undefined ? {} : { start }), ...(end === undefined ? {} : { end }) })
-export const fetchLogs = (file: string, tail: number, q?: string, level?: 'warning' | 'error') => orpc().logs({ file, tail: String(tail), ...(q ? { q } : {}), ...(level ? { level } : {}) })
+export const fetchLogs = (file: string, tail: number, q?: string, level?: 'warning' | 'error') => orpc().logs({ file, tail: String(tail), fallback: 'agent', ...(q ? { q } : {}), ...(level ? { level } : {}) })
 export const fetchOnboarding = () => orpc().onboarding.status(undefined, { signal: timeout(45_000) })
 export const onboardingSetup = (body: Record<string, unknown>) => orpc().onboarding.setup(body, { signal: timeout(60_000) })
 export const onboardingProbe = (body: Record<string, unknown>) => orpc().onboarding.probe(body, { signal: timeout(60_000) })

@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type ReactNode, type InputHTMLAttributes } from 'react'
+import { useRef, useState, type ChangeEvent, type ComponentPropsWithRef, type ReactNode } from 'react'
 import { Switch as BaseSwitch } from '@base-ui/react/switch'
 import { Popover } from '@base-ui/react/popover'
 import { CircleHelp, type LucideIcon } from 'lucide-react'
@@ -53,7 +53,7 @@ export function HelpTip({ label, children, className = 'translate-y-[3px] align-
 }
 
 /** A returned save promise releases only its own retained draft, including on refusal. */
-export function TextInput({ className, retainDraft = false, value, onChange, onBlur, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange'> & { retainDraft?: boolean; onChange?: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void> }) {
+export function TextInput({ className, retainDraft = false, value, onChange, onBlur, ...props }: Omit<ComponentPropsWithRef<'input'>, 'onChange'> & { retainDraft?: boolean; onChange?: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void> }) {
   const [draft, setDraft] = useState<string | null>(null)
   const revision = useRef(0)
   return <input {...props} value={retainDraft ? draft ?? value : value} onChange={(e) => {
