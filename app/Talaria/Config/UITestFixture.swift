@@ -1492,10 +1492,13 @@ final class UITestFixtureURLProtocol: URLProtocol {
             let installed = serverUpdate.withLock { $0?.stage == .finished ? $0?.target : nil }
             return json([
                 "webui": ["state": installed == "webui" ? "up_to_date" : "release_ready", "can_apply": installed != "webui", "behind": 1,
-                          "current_version": "0.0.1-fixture", "target_version": "0.0.2-fixture", "summary_available": true],
+                          "current_version": "0.0.1-fixture", "target_version": "0.0.2-fixture", "summary_available": true,
+                          "latest_release_tag": "web-v0.0.3-preview.4-settings-release-layout-fixture", "latest_release_tag_distinct": true],
                 "agent": showsServerUpdates && installed != "agent"
-                    ? ["state": "release_ready", "can_apply": true, "current_version": "0.0.1-fixture", "target_version": "0.0.2-fixture"]
-                    : ["state": "up_to_date", "current_version": "0.0.1-fixture", "summary_available": false]
+                    ? ["state": "release_ready", "can_apply": true, "current_version": "0.0.1-fixture", "target_version": "0.0.2-fixture",
+                       "latest_release_tag": "v0.0.3-fixture", "latest_release_tag_distinct": true]
+                    : ["state": "up_to_date", "current_version": "0.0.1-fixture", "summary_available": false,
+                       "latest_release_tag": "v0.0.3-fixture", "latest_release_tag_distinct": true]
             ])
         case "/api/settings":
             let installed = serverUpdate.withLock { $0?.stage == .finished ? $0?.target : nil }

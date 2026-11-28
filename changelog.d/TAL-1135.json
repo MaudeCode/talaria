@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "See the latest Talaria Web and Hermes Agent releases beside their update status in App Settings.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

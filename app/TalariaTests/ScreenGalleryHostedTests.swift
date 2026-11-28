@@ -596,7 +596,9 @@ final class ScreenGalleryHostedTests: XCTestCase {
             switch name {
             case "settings-models": controlIDs = ["settings-models-default-reasoning", "settings-models-show-thinking"]
             case "settings-default-model", "settings-auxiliary-model-picker": controlIDs = ["settings-model-visibility-fixture-model"]
-            case "settings-system": controlIDs = [SettingsIndex.systemScreen.id, SettingsIndex.systemFeedbackOnScreenshot.id]
+            case "settings-system":
+                let updateRows = keepsHostedScreenshots ? ["settings-system-status-web", "settings-system-status-agent"] : []
+                controlIDs = updateRows + [SettingsIndex.systemScreen.id, SettingsIndex.systemFeedbackOnScreenshot.id]
             default: controlIDs = []
             }
             if !controlIDs.isEmpty {

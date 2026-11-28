@@ -134,10 +134,13 @@ public struct UpdateTargetInfo: Decodable, Equatable, Sendable {
     public let canApply: Bool?
     /// The version the update leads to, when the server shows one.
     public let targetVersion: String?
+    let latestReleaseTag: String?
+    let latestReleaseTagDistinct: Bool?
     /// TAL-759: the server offers "Summarize with AI" for this target; nil from older servers.
     let summaryAvailable: Bool?
 
     public var offersSummary: Bool { summaryAvailable == true }
+    public var distinctLatestReleaseTag: String? { latestReleaseTagDistinct == true ? latestReleaseTag : nil }
 }
 
 /// The two update targets a Web server reports and summarizes.

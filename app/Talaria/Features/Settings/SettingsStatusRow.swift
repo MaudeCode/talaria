@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// SettingsValueRow's status sibling; SettingsStatusPill owns its tint treatment.
 struct SettingsStatusRow: View {
@@ -6,6 +7,7 @@ struct SettingsStatusRow: View {
     let systemImage: String
     let status: String
     var tone: Color = .secondary
+    var detail: String? = nil
     var isLoading = false
     var accessibilityIdentifier: String? = nil
 
@@ -15,11 +17,18 @@ struct SettingsStatusRow: View {
                 SettingsStatusPill(label: status, tint: tone, lineLimit: nil)
                 if isLoading { ProgressView().accessibilityHidden(true) }
             }
+        } supplementary: {
+            if let detail {
+                Text(detail)
+                    .font(AppFont.footnote())
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .environment(\.settingsIndexPage, nil)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue(status)
+        .accessibilityValue(detail.map { "\(status)\n\($0)" } ?? status)
         .indexedSettingsRow(title: title, identifier: accessibilityIdentifier)
     }
 }
