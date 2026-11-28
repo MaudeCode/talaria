@@ -273,6 +273,8 @@ public final class TalariaRelayClient: Sendable {
             switch errorCode(body) {
             case "device_not_registered":
                 return String(localized: "This device isn't registered with Talaria Relay yet. Try again.")
+            case "no_push_token":
+                return String(localized: "Device has no Relay push token.")
             case "device_revoked":
                 return String(localized: "This device was disconnected from Talaria Relay. Sign in again.")
             case "publisher_not_enrolled":
@@ -468,8 +470,10 @@ public final class TalariaRelayClient: Sendable {
         let sound = RegistrationPreferenceValue(
             .sessionAlertSounds, requested: notificationSoundEnabled, registrationID: registrationID, defaults: defaults
         )
-        let notificationsEnabled = pushToken != nil
-            && (approvalInputAlertsEnabled || completionAlertsEnabled || updateAlerts.enabled)
+        let notificationsEnabled = TalariaRelayNotifications.hasAlertsEnabled(
+            pushToken: pushToken, approvalInput: approvalInputAlertsEnabled,
+            completion: completionAlertsEnabled, updateAvailable: updateAlerts.enabled
+        )
         let preferences: [String: Bool] = [
             "liveActivitiesEnabled": liveActivitiesEnabled,
             "notificationsEnabled": notificationsEnabled,
@@ -631,6 +635,16 @@ public final class TalariaRelayClient: Sendable {
 
     public func unregister(activityID: String) async throws {
         try await send(path: "v1/devices/\(credentials.deviceID)/live-activities/\(activityID)", method: "DELETE")
+    }
+
+    public func sendTestNotification() async throws {
+        struct Response: Decodable { let status: String }
+        let url = Self.endpoint(credentials.baseURL, "v1/devices/\(credentials.deviceID)/test-notification")
+        let request = authenticatedRequest(url: url, method: "POST")
+        let data = try await Self.responseData(for: request, session: session)
+        guard (try? JSONDecoder().decode(Response.self, from: data))?.status == "queued" else {
+            throw ClientError.rejected(String(localized: "Relay didn't confirm the test."))
+        }
     }
 
     public func revokeDevice() async throws {

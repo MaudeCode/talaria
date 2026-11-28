@@ -344,6 +344,12 @@ public enum TalariaRelayNotifications {
     public static let pushTokenKey = "talariaRelay.pushToken"
     public static let pushToStartTokenKey = "talariaRelay.pushToStartToken"
 
+    public static func hasAlertsEnabled(
+        pushToken: String?, approvalInput: Bool, completion: Bool, updateAvailable: Bool
+    ) -> Bool {
+        pushToken != nil && (approvalInput || completion || updateAvailable)
+    }
+
     public static func updateAvailableAlertsEnabled(in defaults: UserDefaults) -> Bool {
         (defaults.object(forKey: unconfirmedUpdateAvailableAlertsKey) as? Bool)
             ?? defaults.bool(forKey: updateAvailableAlertsEnabledKey)

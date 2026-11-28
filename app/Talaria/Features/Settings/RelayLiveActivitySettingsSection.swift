@@ -76,18 +76,24 @@ struct RelayNotificationSettingsRow: View {
                 RelayRegistrationPreferenceToggle(
                     .updateAvailableAlerts, registrationID: registrationID, resolveCredentials: { relayCredentials }
                 )
+
+                SettingsFootnote(
+                    permissionMessage
+                        ?? (registrationID != nil
+                            ? String(localized: "Delivered for servers connected to Talaria Relay.")
+                            : String(localized: "Connect a server to Talaria Relay to enable remote alerts."))
+                )
+                if permissionStatus == .denied {
+                    NotificationSettingsLink(setting: .notificationsApprovalInputAlerts)
+                }
+
+                RelayTestNotificationRow(
+                    registrationID: registrationID, resolveCredentials: { relayCredentials },
+                    isAuthorized: permissionStatus?.allowsSettingsToggleOn == true,
+                    approvalInputAlertsEnabled: notificationsEnabled, completionAlertsEnabled: completionAlertsEnabled
+                )
             }
             .id(registrationID)
-
-            SettingsFootnote(
-                permissionMessage
-                    ?? (registrationID != nil
-                        ? String(localized: "Delivered for servers connected to Talaria Relay.")
-                        : String(localized: "Connect a server to Talaria Relay to enable remote alerts."))
-            )
-            if permissionStatus == .denied {
-                NotificationSettingsLink(setting: .notificationsApprovalInputAlerts)
-            }
         }
         .onChange(of: backgroundAlertsEnabled) {
             Task { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
@@ -142,6 +148,76 @@ struct RelayNotificationSettingsRow: View {
         authorizationChanged(status)
         if enabled {
             await TalariaAggregateLiveActivityManager.shared.refreshAfterNotificationPreferenceChange(registerForRemoteNotifications: true)
+        }
+    }
+}
+
+private struct RelayTestNotificationRow: View {
+    let registrationID: String?
+    let resolveCredentials: @MainActor () -> TalariaRelayCredentials?
+    let isAuthorized: Bool
+    let approvalInputAlertsEnabled: Bool
+    let completionAlertsEnabled: Bool
+
+    @AppStorage(TalariaRelayNotifications.pushTokenKey) private var pushToken: String?
+    @AppStorage(TalariaRelayNotifications.updateAvailableAlertsEnabledKey) private var updateAlertsEnabled = false
+    @AppStorage(TalariaRelayNotifications.unconfirmedUpdateAvailableAlertsKey) private var unconfirmedUpdateAlerts: Bool?
+    @State private var state = State.idle
+
+    private enum State: Equatable {
+        case idle, sending, queued, failed(SettingsErrorText)
+    }
+
+    var body: some View {
+        SettingsValueRow(
+            title: SettingsIndex.notificationsTestNotification.title, systemImage: "bell",
+            status: state == .queued ? String(localized: "Test notification queued.") : nil,
+            hasInteractiveTrailingContent: true
+        ) {
+            SettingsButton(String(localized: "Send Test Notification"), systemImage: "paperplane", isLoading: state == .sending) {
+                send()
+            }
+            .disabled(!canSend)
+            .environment(\.settingsIndexPage, nil)
+            .accessibilityIdentifier("send-relay-test-notification")
+        } supplementary: {
+            if case .failed(let error) = state {
+                SettingsErrorFootnote(error)
+            }
+        }
+    }
+
+    private var canSend: Bool {
+        registrationID != nil && isAuthorized && state != .sending && TalariaRelayNotifications.hasAlertsEnabled(
+            pushToken: pushToken, approvalInput: approvalInputAlertsEnabled, completion: completionAlertsEnabled,
+            updateAvailable: unconfirmedUpdateAlerts ?? updateAlertsEnabled
+        )
+    }
+
+    private func send() {
+        guard canSend, let credentials = resolveCredentials(), credentials.deviceRegistrationID == registrationID else { return }
+        state = .sending
+        Task {
+            do {
+                try await TalariaRelayClient(credentials: credentials).sendTestNotification()
+                state = .queued
+            } catch {
+                state = .failed(Self.errorText(error))
+            }
+        }
+    }
+
+    private static func errorText(_ error: any Error) -> SettingsErrorText {
+        let detail = (error as? TalariaRelayClient.ClientError)?.detail
+        switch error {
+        case TalariaRelayClient.ClientError.invalidResponse(404, _):
+            return SettingsErrorText(String(localized: "Test notifications are unavailable."), detail: detail)
+        case TalariaRelayClient.ClientError.invalidResponse(429, _):
+            return SettingsErrorText(String(localized: "Wait before sending another test."), detail: detail)
+        case let error as URLError:
+            return SettingsErrorText(String(localized: "Couldn't reach Talaria Relay."), detail: "URLError \(error.code.rawValue)")
+        default:
+            return SettingsErrorText(error)
         }
     }
 }

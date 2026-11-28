@@ -58,6 +58,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     case notificationsBackgroundAlerts = "settings-notifications-background-alerts"
     case notificationsSessionAlertSounds = "settings-notifications-session-alert-sounds"
     case notificationsUpdateAvailable = "settings-notifications-update-available"
+    case notificationsTestNotification = "settings-notifications-test-notification"
     case notificationsProviderQuotaAlerts = "settings-notifications-provider-quota-alerts"
     case notificationsWarningAlerts = "settings-notifications-warning-alerts"
     case notificationsCriticalAlerts = "settings-notifications-critical-alerts"
@@ -293,6 +294,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
         case .notificationsBackgroundAlerts: .init(category: .notificationsAndHaptics, section: "Alerts & Haptics", title: "Sub-agent and Background Alerts", scope: .device)
         case .notificationsSessionAlertSounds: .init(category: .notificationsAndHaptics, section: "Alerts & Haptics", title: "Session Alert Sounds", scope: .device)
         case .notificationsUpdateAvailable: .init(category: .notificationsAndHaptics, section: "Alerts & Haptics", title: "Update available", scope: .device)
+        case .notificationsTestNotification: .init(category: .notificationsAndHaptics, section: "Alerts & Haptics", title: "Test Notification", scope: .device)
         case .notificationsProviderQuotaAlerts: .init(category: .notificationsAndHaptics, section: "Provider Quotas", title: "Provider Quota Alerts", scope: .synced)
         case .notificationsWarningAlerts: .init(category: .notificationsAndHaptics, section: "Provider Quotas", title: "Warning Alerts", scope: .synced)
         case .notificationsCriticalAlerts: .init(category: .notificationsAndHaptics, section: "Provider Quotas", title: "Critical Alerts", scope: .synced)
