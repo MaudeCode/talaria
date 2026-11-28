@@ -21,6 +21,10 @@ is edited.
 - Server-owned derivation: clients are display-only. The server computes every
   value a client renders and ships it through `packages/contracts`; see
   server-owned state in the root [`AGENTS.md`](../../AGENTS.md).
+- Public shares (`GET /api/share/{token}`) return 404 for unavailable links,
+  including when the server cannot confirm the stored owner. An unexpected
+  share read failure returns a generic 500 error with `retryable: true` for
+  manual retry. The browser can also retry failures without an HTTP response.
 - [`docs/rfcs/webui-run-state-consistency-contract.md`](rfcs/webui-run-state-consistency-contract.md):
   consistency rules for streaming, recovery, replay, model-context
   reconstruction, compression, and sidebar metadata, plus the review

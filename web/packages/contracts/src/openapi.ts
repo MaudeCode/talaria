@@ -2,6 +2,7 @@ import { OpenAPIGenerator } from '@orpc/openapi'
 import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
 import { routeContract } from './router.js'
 import { z } from 'zod'
+import { ErrorBodySchema } from './routes/core.js'
 import { FeedbackErrorSchema } from './routes/settings.js'
 import { ModelConfirmationRequiredSchema } from './routes/sessions.js'
 import { RAW_ROUTES } from './routes/raw.js'
@@ -36,6 +37,11 @@ export async function generateOpenApiDocument(): Promise<Record<string, unknown>
   update.responses['409'] = { description: 'Model selection requires confirmation. No session state changed.', content: { 'application/json': { schema: z.toJSONSchema(ModelConfirmationRequiredSchema) } } }
   const feedback = paths['/api/feedback/submit']?.post as { responses: Record<string, unknown> }
   for (const status of ['400', '429', '502', '503']) feedback.responses[status] = { description: 'Feedback could not be confirmed sent. Only relay_unreachable permits an automatic retry with the same requestId.', content: { 'application/json': { schema: z.toJSONSchema(FeedbackErrorSchema) } } }
+  const share = paths['/api/share/{token}']?.get as { responses: Record<string, unknown> }
+  share.responses['500'] = {
+    description: 'Unexpected share read failure. The retryable field allows the client to offer a manual retry.',
+    content: { 'application/json': { schema: z.toJSONSchema(ErrorBodySchema.pick({ error: true }).extend({ retryable: z.literal(true) })) } },
+  }
   document.paths = paths
   // TAL-1691, TAL-2100: no route carries the Settings section ids or their groups, so the App reads them as named components.
   const components = (document.components ?? {}) as { schemas?: Record<string, unknown> }
