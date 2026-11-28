@@ -84,6 +84,133 @@ final class ScreenGalleryHostedTests: XCTestCase {
         XCTAssertFalse(HostedAccessibility.labels(in: window).contains("Open iOS Notification Settings"))
     }
 
+    func testRelayTestNotificationQueuesAnAlert() async throws {
+        try await checkRelayTestNotification(message: "Test notification queued.") { load in
+            load.complete(withJSON: #"{"status":"queued"}"#, statusCode: 202)
+        }
+    }
+
+    func testRelayTestNotificationReportsMissingRelayToken() async throws {
+        try await checkRelayTestNotification(message: "Device has no Relay push token.") { load in
+            load.complete(withJSON: #"{"error":"no_push_token"}"#, statusCode: 409)
+        }
+    }
+
+    func testRelayTestNotificationReportsRateLimit() async throws {
+        try await checkRelayTestNotification(message: "Wait before sending another test.") { load in
+            load.complete(withJSON: #"{"error":"rate_limited"}"#, statusCode: 429)
+        }
+    }
+
+    func testRelayTestNotificationReportsMissingDevice() async throws {
+        try await checkRelayTestNotification(message: "Test notifications are unavailable.") { load in
+            load.complete(withJSON: #"{"error":"not_found"}"#, statusCode: 404)
+        }
+    }
+
+    func testRelayTestNotificationReportsNetworkErrorWithoutRetrying() async throws {
+        try await checkRelayTestNotification(message: "Couldn't reach Talaria Relay.") { load in
+            load.fail(with: URLError(.notConnectedToInternet))
+        }
+    }
+
+    func testRelayTestNotificationRequiresAConnectedRelay() async throws {
+        try await checkDisabledRelayTestNotification(connected: false)
+    }
+
+    func testRelayTestNotificationRequiresIOSPermission() async throws {
+        defaults.set(true, forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey)
+        try await checkDisabledRelayTestNotification(status: .denied)
+    }
+
+    func testRelayTestNotificationRequiresAnAPNsToken() async throws {
+        try await checkDisabledRelayTestNotification(hasToken: false)
+    }
+
+    func testRelayTestNotificationRequiresAnEnabledRelayAlert() async throws {
+        try await checkDisabledRelayTestNotification(alertsEnabled: false)
+    }
+
+    private func checkDisabledRelayTestNotification(
+        connected: Bool = true, status: UNAuthorizationStatus = .authorized, hasToken: Bool = true,
+        alertsEnabled: Bool = true
+    ) async throws {
+        if connected { _ = try pairRelayForSettings() }
+        if hasToken { defaults.set("fixture-push-token", forKey: TalariaRelayNotifications.pushTokenKey) }
+        let window = try notificationSettingsWindow(NotificationSettingsScenario(status: status), relayAlertsEnabled: alertsEnabled)
+        _ = try await requireElement(in: window, label: status == .denied ? "iOS notifications disabled." : "iOS notifications allowed.")
+        let button = try await relayTestNotificationButton(in: window)
+        XCTAssertTrue(button.accessibilityTraits.contains(.notEnabled))
+    }
+
+    private func checkRelayTestNotification(
+        message: String, respond: @escaping (DeferredMockURLProtocol) -> Void
+    ) async throws {
+        let relay = try XCTUnwrap(URL(string: "https://relay-test-notification.invalid"))
+        _ = try pairRelayForSettings(relay: relay)
+        let tokenKey = TalariaRelayNotifications.pushTokenKey
+        let alertsKey = TalariaRelayNotifications.isEnabledKey
+        let previousToken = UserDefaults.standard.object(forKey: tokenKey)
+        let previousAlerts = UserDefaults.standard.object(forKey: alertsKey)
+        defer {
+            UserDefaults.standard.set(previousToken, forKey: tokenKey)
+            UserDefaults.standard.set(previousAlerts, forKey: alertsKey)
+        }
+        defaults.set("fixture-push-token", forKey: tokenKey)
+        UserDefaults.standard.set("fixture-push-token", forKey: tokenKey)
+        UserDefaults.standard.set(true, forKey: alertsKey)
+
+        let requests = LockedTestValue<[URLRequest]>([])
+        let alertsRegistered = LockedTestValue(false)
+        let registeredBeforePost = LockedTestValue<[Bool]>([])
+        let host = try XCTUnwrap(relay.host)
+        DeferredMockURLProtocol.setOnRequest({ load in
+            switch (load.request.httpMethod, load.request.url?.path) {
+            case ("PUT", "/v1/devices/fixture-device"):
+                let body = UITestFixtureURLProtocol.requestJSON(load.request)
+                let preferences = body["preferences"] as? [String: Bool]
+                alertsRegistered.value = body["pushToken"] as? String == "fixture-push-token"
+                    && preferences?["notificationsEnabled"] == true
+                load.complete(withJSON: #"{"ok":true}"#)
+            case ("POST", "/v1/devices/fixture-device/test-notification"):
+                registeredBeforePost.value.append(alertsRegistered.value)
+                requests.value.append(load.request)
+                respond(load)
+            default:
+                load.complete(withJSON: #"{"error":"not_found"}"#, statusCode: 404)
+            }
+        }, forHost: host)
+        let previousHook = UITestURLSessionHook.configure
+        UITestURLSessionHook.configure = { $0.protocolClasses = [DeferredMockURLProtocol.self] }
+        addTeardownBlock {
+            UITestURLSessionHook.configure = previousHook
+            DeferredMockURLProtocol.setOnRequest(nil, forHost: host)
+        }
+
+        let window = try notificationSettingsWindow(NotificationSettingsScenario(status: .authorized), relayAlertsEnabled: true)
+        _ = try await requireElement(in: window, label: "iOS notifications allowed.")
+        attachHostedScreenshot(window, name: "relay-test-notification-before-send")
+        let button = try await relayTestNotificationButton(in: window)
+        XCTAssertFalse(button.accessibilityTraits.contains(.notEnabled))
+        XCTAssertTrue(HostedAccessibility.activate(button))
+        _ = try await requireElementScrolling(in: window, "Expected Relay to show \(message)") {
+            $0.accessibilityLabel?.contains(message) == true
+        }
+        XCTAssertEqual(registeredBeforePost.value, [true], "Relay must have the current token and alerts enabled before the test POST")
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(requests.value.first?.httpMethod, "POST")
+        XCTAssertEqual(requests.value.first?.value(forHTTPHeaderField: "Authorization"), "Bearer fixture-relay-session")
+        XCTAssertNil(requests.value.first?.httpBody)
+        XCTAssertNil(requests.value.first?.httpBodyStream)
+        attachHostedScreenshot(window, name: "relay-test-notification-after-send")
+    }
+
+    private func relayTestNotificationButton(in window: UIWindow) async throws -> NSObject {
+        try await requireElementScrolling(in: window, "Settings must offer Send Test Notification") {
+            HostedAccessibility.identifier(of: $0) == "send-relay-test-notification"
+        }
+    }
+
     func testReturningWithDeniedPermissionTurnsOffRelayAlertsAndRefreshesOnce() async throws {
         let scenario = NotificationSettingsScenario(status: .authorized)
         let key = TalariaRelayNotifications.isEnabledKey
@@ -174,10 +301,10 @@ final class ScreenGalleryHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "update-available-alerts-off")
     }
 
-    private func pairRelayForSettings() throws -> TalariaRelayCredentials {
+    private func pairRelayForSettings(relay: URL? = nil) throws -> TalariaRelayCredentials {
         let previous = TalariaRelayConfigurationStore.load()
         let credentials = TalariaRelayCredentials(
-            baseURL: server, deviceID: "fixture-device", userID: "fixture-owner", appleUserID: "fixture-apple",
+            baseURL: relay ?? server, deviceID: "fixture-device", userID: "fixture-owner", appleUserID: "fixture-apple",
             sessionToken: "fixture-relay-session", expiresAt: .distantFuture, pairedPublisherIDs: [server.absoluteString]
         )
         try TalariaRelayConfigurationStore.save(credentials)
@@ -741,6 +868,7 @@ final class ScreenGalleryHostedTests: XCTestCase {
                     "open-ios-notification-\(SettingsIndex.notificationsResponseCompleteAlerts.id)",
                     SettingsIndex.notificationsSessionAlertSounds.id,
                     "open-ios-notification-\(SettingsIndex.notificationsApprovalInputAlerts.id)",
+                    "send-relay-test-notification",
                 ]
             case "settings-system":
                 let updateRows = keepsHostedScreenshots ? ["settings-system-status-web", "settings-system-status-agent"] : []

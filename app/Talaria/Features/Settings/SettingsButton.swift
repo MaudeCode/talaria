@@ -27,6 +27,7 @@ struct SettingsButton: View {
                     ProgressView()
                 } else if let systemImage {
                     Image(systemName: systemImage)
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 } else {
                     Text(title)
                 }

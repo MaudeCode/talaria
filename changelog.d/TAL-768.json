@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Send a Relay test notification from Notifications & Haptics settings.",
+      "highlight": false,
+      "components": ["app"],
+      "announcement": {
+        "title": "Test Relay notifications",
+        "description": "Send a test alert to this device to check that Relay notifications reach it.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

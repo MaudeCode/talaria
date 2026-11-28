@@ -4,15 +4,17 @@ import TalariaKit
 struct SettingsValueRow<Trailing: View, Supplementary: View>: View {
     let title: String
     var systemImage: String? = nil
+    let status: String?
     let hasInteractiveTrailingContent: Bool
     @ViewBuilder let trailing: Trailing
     @ViewBuilder let supplementary: Supplementary
 
-    init(title: String, systemImage: String? = nil, hasInteractiveTrailingContent: Bool = false,
+    init(title: String, systemImage: String? = nil, status: String? = nil, hasInteractiveTrailingContent: Bool = false,
          @ViewBuilder trailing: () -> Trailing,
          @ViewBuilder supplementary: () -> Supplementary = { EmptyView() }) {
         self.title = title
         self.systemImage = systemImage
+        self.status = status
         self.hasInteractiveTrailingContent = hasInteractiveTrailingContent
         self.trailing = trailing()
         self.supplementary = supplementary()
@@ -58,8 +60,8 @@ struct SettingsValueRow<Trailing: View, Supplementary: View>: View {
     @ViewBuilder
     private var titleText: some View {
         let label = Group {
-            if let systemImage {
-                SettingsRowLabel(title: title, systemImage: systemImage)
+            if systemImage != nil || status != nil {
+                SettingsRowLabel(title: title, systemImage: systemImage, status: status)
             } else {
                 Text(title).foregroundStyle(.primary)
             }
