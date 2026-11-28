@@ -61,24 +61,28 @@ final class LiveActivityApprovalResponder {
         makeClient: { AppIntentServer.saved(publisherID: $0)?.client() },
         activeServer: { AppIntentServer.saved()?.url.absoluteString },
         appLock: .shared,
-        display: .system
+        display: .system,
+        refreshBadge: { await AppIconBadge.shared.refresh() }
     )
 
     private let makeClient: (String?) -> APIClient?
     private let activeServer: () -> String?
     private let appLock: AppLockModel
     private let display: Display
+    private let refreshBadge: () async -> Void
 
     init(
         makeClient: @escaping (String?) -> APIClient?,
         activeServer: @escaping () -> String?,
         appLock: AppLockModel,
-        display: Display
+        display: Display,
+        refreshBadge: @escaping () async -> Void = {}
     ) {
         self.makeClient = makeClient
         self.activeServer = activeServer
         self.appLock = appLock
         self.display = display
+        self.refreshBadge = refreshBadge
     }
 
     /// How an answer ended. Only a refusal rolls the rows back; Siri says which of the others happened (TAL-2233).
@@ -162,7 +166,10 @@ final class LiveActivityApprovalResponder {
         }
 
         let outcome = await send()
-        guard case let .refused(error) = outcome else { return outcome }
+        guard case let .refused(error) = outcome else {
+            await refreshBadge()
+            return outcome
+        }
         // ActivityKit can still read back the state from before the answer; anything else is a newer snapshot.
         for run in runs
         where [answeredRuns[run.id], run.state].contains(display.runs().first(where: { $0.id == run.id })?.state) {

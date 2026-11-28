@@ -4,7 +4,7 @@ import { isReportFailureStage } from "../bridge/delivery-status";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import releaseInfo from "./releaseInfo.json";
-import { makeAggregate } from "./lib/aggregate";
+import { countWaitingSessions, makeAggregate } from "./lib/aggregate";
 import {
   appleIdentityKeyId,
   appleSigningKey,
@@ -1081,8 +1081,10 @@ http.route({
         userId: auth.userId,
         now,
       });
+      const visible = states.filter((state) => !excluded.has(state.publisherId));
       return json(200, {
-        aggregate: makeAggregate(states.filter((state) => !excluded.has(state.publisherId)), now, true),
+        aggregate: makeAggregate(visible, now, true),
+        ...(url.searchParams.get("includeWaitingCount") === "true" ? { waitingCount: countWaitingSessions(visible, now) } : {}),
       });
     }
     if (mode === "per_session") {

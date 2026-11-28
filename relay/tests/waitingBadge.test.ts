@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
+import { sha256 } from "../convex/lib/crypto";
 import { type Backend, now, publish, runScheduledRecomputes, seed, snapshotState } from "./relayFixture";
 
 const workPublisher = { ...publish, publisherId: "https://work.example", profileId: "work-profile", keyId: "key-2" };
@@ -95,4 +96,38 @@ it("updates the total when a device excludes a publisher", async () => {
   await runScheduledRecomputes(backend);
 
   expect(await latestPush(backend, false)).toEqual({ ...clearPush, payload: { aps: { badge: 1 } } });
+});
+
+it("serves the same device-wide count to the App's snapshot reader as to APNs", async () => {
+  const backend = await seedTwoWaitingChats();
+  const token = "badge-contract-token";
+  await backend.run(async (ctx) => {
+    await ctx.db.insert("relayUsers", {
+      userId: "user-1", appleSubjectHash: "badge-contract-apple", createdAt: now, updatedAt: now,
+    });
+    await ctx.db.insert("userSessions", {
+      userId: "user-1", sessionId: "badge-contract-auth", tokenHash: await sha256(token),
+      expiresAt: now + 60_000, createdAt: now,
+    });
+  });
+  const read = async () => {
+    const response = await backend.fetch("/v1/activity-snapshot?mode=all_running&includeWaitingCount=true", {
+      headers: { authorization: `Bearer ${token}`, "x-talaria-device-id": "device-1" },
+    });
+    expect(response.status).toBe(200);
+    return await response.json();
+  };
+  expect(await read()).toMatchObject({ waitingCount: 2 });
+
+  await publishSnapshot(backend, publish, [snapshotState("session-1", 3, "running")]);
+  await publishSnapshot(backend, workPublisher, [snapshotState("session-1", 2, "running")]);
+  expect(await read()).toMatchObject({ waitingCount: 0 });
+  const emptySnapshot = JSON.parse(readFileSync(new URL("../../contracts/fixtures/relay-waiting-badge-snapshot.json", import.meta.url), "utf8"));
+  await backend.mutation(internal.subscriptions.setForDevice, {
+    userId: "user-1", deviceId: "device-1", publisherId: publish.publisherId, subscribed: false, now,
+  });
+  await backend.mutation(internal.subscriptions.setForDevice, {
+    userId: "user-1", deviceId: "device-1", publisherId: workPublisher.publisherId, subscribed: false, now,
+  });
+  expect(await read()).toEqual(emptySnapshot);
 });

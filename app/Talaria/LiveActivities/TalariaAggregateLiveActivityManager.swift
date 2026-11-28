@@ -111,6 +111,7 @@ final class TalariaAggregateLiveActivityManager {
                     liveActivitiesEnabled: perSessionEnabled,
                     pushToStartEnabled: false
                 )
+                await AppIconBadge.shared.refresh()
             }
             await endAggregateActivities(client: client, preserveCompleted: credentials != nil)
             return
@@ -129,7 +130,7 @@ final class TalariaAggregateLiveActivityManager {
         }
         startObservers(client: client)
         try await client.configureDevice()
-        guard let aggregate = try await client.snapshot() else {
+        guard let aggregate = try await AppIconBadge.shared.snapshot(using: client).aggregate else {
             guard generation == operationGeneration else { return }
             prunePendingSeeds()
             if !pendingSeeds.isEmpty,
@@ -184,7 +185,7 @@ final class TalariaAggregateLiveActivityManager {
         guard !Activity<TalariaAggregateActivityAttributes>.activities.isEmpty else { return }
         let generation = operationGeneration
         let client = TalariaRelayClient(credentials: credentials)
-        let aggregate = try await client.snapshot()
+        let aggregate = try await AppIconBadge.shared.snapshot(using: client).aggregate
         guard generation == operationGeneration, activeDisconnectCount == 0,
               TalariaRelayConfigurationStore.load() == credentials else { return }
         refreshNeedsYou()

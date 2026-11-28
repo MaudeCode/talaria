@@ -284,6 +284,64 @@ final class NotificationAnswerTests: XCTestCase {
         XCTAssertEqual(TalariaAppDelegate.foregroundPresentation(for: content, visibleChats: []), [.banner])
     }
 
+    func testForegroundBadgeOnlyPushCanClearTheBadgeWithoutABanner() {
+        let content = UNMutableNotificationContent()
+        content.badge = 0
+
+        XCTAssertEqual(TalariaAppDelegate.foregroundPresentation(for: content, visibleChats: []), [.badge])
+    }
+
+    func testActivitySnapshotWritesTheUncappedServerCount() async throws {
+        var counts: [Int] = []
+        let (badge, client) = badgeFixture(waitingCount: 6, setCount: { counts.append($0) })
+
+        _ = try await badge.snapshot(using: client)
+
+        XCTAssertEqual(counts, [6])
+    }
+
+    func testBadgeRefreshClearsTheLastWaitingChat() async {
+        var counts: [Int] = []
+        let (badge, _) = badgeFixture(waitingCount: 0, setCount: { counts.append($0) })
+
+        await badge.refresh()
+
+        XCTAssertEqual(counts, [0])
+    }
+
+    func testActivitySnapshotSkipsTheBadgeWhenPermissionWasDeclined() async throws {
+        let (badge, client) = badgeFixture(waitingCount: 1, allowed: false, setCount: { _ in
+            XCTFail("The notification center must not receive a badge write when badges are disabled")
+        })
+
+        let snapshot = try await badge.snapshot(using: client)
+        XCTAssertEqual(snapshot.waitingCount, 1)
+    }
+
+    private func badgeFixture(
+        waitingCount: Int, allowed: Bool = true, setCount: @escaping (Int) -> Void
+    ) -> (AppIconBadge, TalariaRelayClient) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: MockURLProtocol.register { request in
+            XCTAssertEqual(request.url?.path, "/v1/activity-snapshot")
+            let response = try XCTUnwrap(HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil))
+            return (response, Data(#"{"aggregate":null,"waitingCount":\#(waitingCount)}"#.utf8))
+        }]
+        let session = URLSession(configuration: configuration)
+        addTeardownBlock { session.invalidateAndCancel() }
+        let credentials = TalariaRelayCredentials(
+            baseURL: Self.serverURL, deviceID: "badge-device", userID: "badge-user",
+            appleUserID: "badge-apple-user", sessionToken: "badge-token", expiresAt: .distantFuture
+        )
+        let client = TalariaRelayClient(credentials: credentials, session: session)
+        let badge = AppIconBadge(
+            currentCredentials: { credentials }, makeClient: { _ in client },
+            badgeIsEnabled: { allowed }, setCount: setCount
+        )
+        return (badge, client)
+    }
+
     /// TAL-872: the chat on screen already shows its own news, so its notification stays silent; the list still refreshes.
     func testNotificationForTheVisibleChatIsSilentButStillRefreshesTheList() async throws {
         let chat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: Self.serverURL, sessionID: "session-1"))

@@ -1616,6 +1616,7 @@ final class SharedContractTests: XCTestCase {
 
     func testSharedRelaySnapshotAndRegistration() async throws {
         let snapshot = try fixture("relay-snapshot")
+        let badgeSnapshot = try fixture("relay-waiting-badge-snapshot")
         let registration = try JSONSerialization.jsonObject(with: fixture("app-registration")) as! NSDictionary
         let session = session { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer contract-session-token")
@@ -1627,7 +1628,10 @@ final class SharedContractTests: XCTestCase {
             }
             XCTAssertEqual(request.url?.path, "/v1/activity-snapshot")
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Device-Id"), "contract-device")
-            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, snapshot)
+            let includesWaitingCount = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+                .contains(URLQueryItem(name: "includeWaitingCount", value: "true")) == true
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    includesWaitingCount ? badgeSnapshot : snapshot)
         }
         defer { session.invalidateAndCancel() }
         let credentials = TalariaRelayCredentials(
@@ -1641,6 +1645,10 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(aggregate?.rows.first?.sessionId, "contract-session")
         // TAL-1422: the row carries the publisher's plan and worker counts.
         XCTAssertEqual(aggregate?.rows.first?.workCounts?.text, "Plan 2/5 · 3 workers")
+        let waiting = try await client.activitySnapshot()
+        let expected = try JSONDecoder().decode([String: JSONValue].self, from: badgeSnapshot)
+        XCTAssertEqual(waiting.waitingCount.map { JSONValue.number(Double($0)) }, expected["waitingCount"])
+        XCTAssertNil(waiting.aggregate)
         try await client.registerPerSession(
             activityID: "contract-activity", pushToken: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             publisherID: "https://contract.example", sessionID: "contract-session", streamID: "contract-stream"

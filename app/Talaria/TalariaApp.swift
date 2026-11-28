@@ -51,7 +51,9 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         // sooner than the next polling tick would find out. Let the list adopt it
         // now so the row does not lag the notification the user just read.
         let namesASession = SessionNotificationRefresh.namesASession(userInfo: notification.request.content.userInfo)
+        let hasBadge = notification.request.content.badge != nil
         let visibleChats = await MainActor.run {
+            if hasBadge { AppIconBadge.shared.receivedBadgePush() }
             if namesASession {
                 NotificationCenter.default.post(name: .talariaSessionNotificationArrived, object: nil)
             }
@@ -66,8 +68,12 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
     nonisolated static func foregroundPresentation(
         for content: UNNotificationContent, visibleChats: Set<SessionNotificationRefresh.VisibleChat>
     ) -> UNNotificationPresentationOptions {
-        if visibleChats.contains(where: { $0.isNamed(by: content.userInfo) }) { return [] }
-        var presentation: UNNotificationPresentationOptions = [.banner]
+        var presentation: UNNotificationPresentationOptions = content.badge == nil ? [] : [.badge]
+        if visibleChats.contains(where: { $0.isNamed(by: content.userInfo) }) { return presentation }
+        if content.badge != nil, content.title.isEmpty, content.body.isEmpty, content.sound == nil {
+            return presentation
+        }
+        presentation.insert(.banner)
         if content.sound != nil { presentation.insert(.sound) }
         if content.categoryIdentifier == ProviderQuotaAlertSettings.categoryIdentifier { presentation.insert(.list) }
         return presentation
@@ -116,6 +122,57 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         await answer.respond()
         completion()
         if task != .invalid { UIApplication.shared.endBackgroundTask(task) }
+    }
+}
+
+@MainActor
+final class AppIconBadge {
+    static let shared = AppIconBadge(
+        currentCredentials: { TalariaRelayConfigurationStore.load() },
+        badgeIsEnabled: { await UNUserNotificationCenter.current().notificationSettings().badgeSetting == .enabled },
+        setCount: { UNUserNotificationCenter.current().setBadgeCount($0, withCompletionHandler: nil) }
+    )
+
+    private let currentCredentials: () -> TalariaRelayCredentials?
+    private let makeClient: (TalariaRelayCredentials) -> TalariaRelayClient
+    private let badgeIsEnabled: () async -> Bool
+    private let setCount: (Int) -> Void
+    private var snapshotSequence = 0
+    private var latestBadgeSequence = 0
+
+    init(
+        currentCredentials: @escaping () -> TalariaRelayCredentials?,
+        makeClient: @escaping (TalariaRelayCredentials) -> TalariaRelayClient = { TalariaRelayClient(credentials: $0) },
+        badgeIsEnabled: @escaping () async -> Bool,
+        setCount: @escaping (Int) -> Void
+    ) {
+        self.currentCredentials = currentCredentials
+        self.makeClient = makeClient
+        self.badgeIsEnabled = badgeIsEnabled
+        self.setCount = setCount
+    }
+
+    func refresh() async {
+        guard let credentials = currentCredentials(), !credentials.isExpired, credentials.pendingRevocation != true,
+              await badgeIsEnabled() else { return }
+        _ = try? await snapshot(using: makeClient(credentials))
+    }
+
+    func snapshot(using client: TalariaRelayClient) async throws -> TalariaRelayClient.SnapshotResponse {
+        snapshotSequence += 1
+        let sequence = snapshotSequence
+        let snapshot = try await client.activitySnapshot()
+        if let count = snapshot.waitingCount, count >= 0, await badgeIsEnabled(),
+           !Task.isCancelled, sequence > latestBadgeSequence, currentCredentials() == client.credentials {
+            latestBadgeSequence = sequence
+            setCount(count)
+        }
+        return snapshot
+    }
+
+    func receivedBadgePush() {
+        // A read that started before the push must not overwrite the value APNs just delivered.
+        latestBadgeSequence = snapshotSequence
     }
 }
 

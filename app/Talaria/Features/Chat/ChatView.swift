@@ -855,6 +855,10 @@ struct ChatView: View {
             guard approvalID != nil else { return }
             clarificationPanelHeight = 320
         }
+        .onChange(of: viewModel.streamCoordinatorHasPendingPrompt) { wasWaiting, isWaiting in
+            guard wasWaiting, !isWaiting else { return }
+            Task { await AppIconBadge.shared.refresh() }
+        }
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
         }
