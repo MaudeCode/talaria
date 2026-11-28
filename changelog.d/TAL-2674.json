@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Relay notifications carry the number of chats waiting for approval or input and clear the badge when the last chat is answered.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

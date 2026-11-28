@@ -13,6 +13,7 @@ import {
   alertForState,
   agentNotifyAlerts,
   alertForTransition,
+  countWaitingSessions,
   isAttentionTransition,
   makeAggregate,
   rowForState,
@@ -22,12 +23,14 @@ import {
 import {
   liveActivityAlert,
   nativeSessionRequest,
+  makeBadgePush,
   makeLiveActivityEnd,
   makeLiveActivityStart,
   makeLiveActivityUpdate,
   makeNotification,
   makeSessionStartedPush,
   omitApnsSound,
+  withBadge,
   type ApnsRequest,
 } from "./lib/apnsPayload";
 import type { ActivityAggregate, ActivityAlert, SessionState } from "./lib/model";
@@ -119,17 +122,19 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
   };
 }
 
-async function currentStates(ctx: MutationCtx, userId: string, now: number): Promise<SessionState[]> {
+async function currentVisibleSessions(ctx: MutationCtx, userId: string, now: number): Promise<SessionState[]> {
   const states = await ctx.db
     .query("sessionStates")
     .withIndex("by_version_and_user_id_and_expires_at", (query) =>
       query.eq("version", 2).eq("userId", userId).gt("expiresAt", now),
     )
     .take(MAX_STATE_ROWS);
-  return [
-    ...(await visiblePublisherStates(ctx, userId, states.filter(isCurrentActivityState))).map(asSessionState),
-    ...await retainedStates(ctx, userId),
-  ];
+  return (await visiblePublisherStates(ctx, userId, states.filter(isCurrentActivityState))).map(asSessionState);
+}
+
+async function currentStates(ctx: MutationCtx, userId: string, now: number): Promise<SessionState[]> {
+  const [sessions, retained] = await Promise.all([currentVisibleSessions(ctx, userId, now), retainedStates(ctx, userId)]);
+  return [...sessions, ...retained];
 }
 
 async function excludedPublisherIds(
@@ -282,6 +287,31 @@ export async function enqueueTestNotification(
       collapseId: `relay-test:${now}`,
     }),
     stateFingerprint: `notification:test:${device._id}:${now}`,
+    now,
+  });
+}
+
+function latestBadgeJob(ctx: MutationCtx, userId: string, deviceId: string) {
+  return ctx.db.query("deliveryJobs")
+    .withIndex("by_user_id_and_device_id_and_kind", (query) =>
+      query.eq("userId", userId).eq("deviceId", deviceId).eq("kind", "badge"))
+    .order("desc")
+    .first();
+}
+
+async function enqueueBadgeIfChanged(ctx: MutationCtx, device: PushableDevice, badge: number, now: number) {
+  const latest = await latestBadgeJob(ctx, device.userId, device.deviceId);
+  if (latest === null && badge === 0) return;
+  if (latest?.expectedToken === device.pushToken && latest.status !== "dead" && latest.status !== "stale"
+    && (JSON.parse(latest.request.payloadJson) as { aps: { badge: number } }).aps.badge === badge) return;
+
+  await enqueueJob(ctx, {
+    userId: device.userId,
+    deviceId: device.deviceId,
+    kind: "badge",
+    request: makeBadgePush({ token: device.pushToken, bundleId: device.bundleId, environment: device.apsEnvironment, badge }),
+    // A count can recur while one of its previous jobs is still queued.
+    stateFingerprint: `badge:${latest?._id ?? "initial"}`,
     now,
   });
 }
@@ -793,6 +823,11 @@ export const recompute = internalMutation({
           }
       }
     }
+    for (const device of devices) {
+      if (!receivesNotifications(device, now)) continue;
+      const visible = statesForDevice(states, exclusionsByDevice, device.deviceId);
+      await enqueueBadgeIfChanged(ctx, device, countWaitingSessions(visible, now), now);
+    }
     return null;
   },
 });
@@ -891,7 +926,6 @@ export const claimJob = internalMutation({
           || (source && !alertForState(source, device.preferences))) {
           const { alert: _alert, sound: _sound, ...aps } = payload.aps;
           request = { ...job.request, payloadJson: JSON.stringify({ ...payload, aps }) };
-          await ctx.db.patch(job._id, { request });
         }
       }
     } else {
@@ -906,7 +940,7 @@ export const claimJob = internalMutation({
         (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= args.now) ||
         expectedDeviceToken !== job.expectedToken ||
         liveActivitiesDisabled ||
-        (job.kind === "notification" && !device.preferences.notificationsEnabled)
+        ((job.kind === "notification" || job.kind === "badge") && !device.preferences.notificationsEnabled)
       ) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
         if (job.kind === "live_activity_start" && device?.pushToStartToken === job.expectedToken) {
@@ -1007,9 +1041,23 @@ export const claimJob = internalMutation({
           return { status: "stale" as const };
         }
       }
+      if ((job.kind === "notification" || job.kind === "badge") && receivesNotifications(device, args.now)) {
+        if (job.kind === "badge" && (await latestBadgeJob(ctx, job.userId, job.deviceId))?._id !== job._id) {
+          await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
+          return { status: "stale" as const };
+        }
+        // Re-read the device's total before each attempt. A queued alert or retry might outlive the snapshot it came from.
+        const states = await currentVisibleSessions(ctx, job.userId, args.now);
+        const visible = excluded.size === MAX_STATE_ROWS ? [] : states.filter((state) => !excluded.has(state.publisherId));
+        const badge = countWaitingSessions(visible, args.now);
+        const payload = JSON.parse(request.payloadJson) as Record<string, unknown>;
+        request = { ...request, payloadJson: JSON.stringify(withBadge(payload, badge)) };
+        if (job.kind === "notification") await enqueueBadgeIfChanged(ctx, device, badge, args.now);
+      }
     }
     await ctx.db.patch(job._id, {
       status: "running",
+      ...(request !== job.request ? { request } : {}),
       attemptCount: job.attemptCount + 1,
       updatedAt: args.now,
     });

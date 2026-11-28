@@ -158,6 +158,8 @@ class RoutingTests(unittest.TestCase):
             (["contracts/fixtures/feedback-report-agent.json"], FIXTURE_SUITES | {"relay"}),
             (["contracts/fixtures/notification-alerts.json"], {"web_server", "relay"}),
             (["contracts/fixtures/relay-pairing.json"], {"relay"}),
+            (["contracts/fixtures/relay-waiting-badge-push.json"], {"relay"}),
+            (["contracts/fixtures/relay-approval-alert.json"], {"relay", "web_server", "contracts"}),
             # Relay never reads the What's New schema (TAL-2174).
             (["contracts/whats-new.schema.json"], CONSUMERS - {"relay"} | {"tooling"}),
             # Relay and the App's hosted tests never read the What's New fixture (TAL-1981).

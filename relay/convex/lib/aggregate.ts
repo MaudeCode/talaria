@@ -71,6 +71,14 @@ export function rowForState(state: SessionState, phase = activityPhase(state)): 
   };
 }
 
+export function countWaitingSessions(states: readonly SessionState[], now: number): number {
+  return states.filter((state) => {
+    const phase = activityPhase(state, now);
+    return !state.deleted && state.expiresAt > now
+      && (phase === "waiting_for_approval" || phase === "waiting_for_input");
+  }).length;
+}
+
 export function makeAggregate(
   states: readonly SessionState[],
   now: number,
@@ -109,9 +117,7 @@ export function makeAggregate(
     (state) => !isTerminalPhase(state.phase) && state.phase !== "stale",
   ).length;
   const failed = visible.some((state) => state.phase === "failed");
-  const attentionCount = visible.filter(
-    (state) => state.phase === "waiting_for_approval" || state.phase === "waiting_for_input",
-  ).length;
+  const attentionCount = countWaitingSessions(visible, now);
 
   return {
     schemaVersion: 1,
