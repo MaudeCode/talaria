@@ -108,6 +108,61 @@ it('reconciles with the server when a preference write fails', async () => {
   expect(api.fetchWebPushStatus).toHaveBeenCalledTimes(2)
 })
 
+it.each([
+  { outcome: 'refused', approval: true },
+  { outcome: 'accepted', approval: false },
+])('keeps only confirmed edits when the first queued preference is $outcome', async ({ outcome, approval }) => {
+  current = fakeSubscription(ENDPOINT)
+  let stored = ALL
+  const first = Promise.withResolvers<undefined>()
+  vi.mocked(api.fetchWebPushStatus).mockImplementation(() => Promise.resolve({ public_key: KEY, subscription: { preferences: stored } }))
+  const save = (_endpoint: string, preferences: typeof ALL) => {
+    stored = preferences
+    return Promise.resolve({ ok: true as const, preferences: stored })
+  }
+  vi.mocked(api.updateWebPush).mockImplementationOnce(async (endpoint, preferences) => {
+    await first.promise
+    return save(endpoint, preferences)
+  }).mockImplementation(save)
+
+  render(<WebPushSection />)
+  const approvals = await screen.findByRole('switch', { name: 'Approval requests' })
+  const input = screen.getByRole('switch', { name: 'Input requests' })
+  await userEvent.click(approvals)
+  await userEvent.click(input)
+  expect(approvals).not.toBeChecked()
+  expect(input).not.toBeChecked()
+  expect(api.updateWebPush).toHaveBeenCalledTimes(1)
+
+  if (outcome === 'refused') first.reject(new Error('Preference update refused'))
+  else first.resolve(undefined)
+
+  await waitFor(() => { expect(api.updateWebPush).toHaveBeenCalledTimes(2) })
+  expect(stored).toEqual({ ...ALL, notify_on_approval: approval, notify_on_input: false })
+  await waitFor(() => { expect(approvals).toHaveAttribute('aria-checked', String(approval)) })
+  expect(input).not.toBeChecked()
+})
+
+it('skips a queued preference edit after reconciliation finds the subscription removed', async () => {
+  current = fakeSubscription(ENDPOINT)
+  vi.mocked(api.fetchWebPushStatus)
+    .mockResolvedValueOnce({ public_key: KEY, subscription: { preferences: ALL } })
+    .mockResolvedValue({ public_key: KEY, subscription: null })
+  const first = Promise.withResolvers<never>()
+  vi.mocked(api.updateWebPush).mockReturnValue(first.promise)
+
+  render(<WebPushSection />)
+  await userEvent.click(await screen.findByRole('switch', { name: 'Approval requests' }))
+  await userEvent.click(screen.getByRole('switch', { name: 'Input requests' }))
+  expect(main()).toBeChecked()
+  expect(api.updateWebPush).toHaveBeenCalledTimes(1)
+  first.reject(new Error('Push subscription not found'))
+
+  await waitFor(() => { expect(main()).not.toBeChecked() })
+  expect(screen.queryByRole('switch', { name: 'Input requests' })).toBeNull()
+  expect(api.updateWebPush).toHaveBeenCalledTimes(1)
+})
+
 it('keeps the latest choice when the browser is switched off while turning on', async () => {
   vi.mocked(api.fetchWebPushStatus).mockResolvedValue({ public_key: KEY, subscription: null })
   vi.mocked(api.subscribeWebPush).mockResolvedValue({ ok: true, preferences: ALL })

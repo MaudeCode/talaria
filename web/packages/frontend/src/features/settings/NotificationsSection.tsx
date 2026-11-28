@@ -157,12 +157,12 @@ function WebPushSettings() {
   }
 
   const setKind = (current: WebPushPreferences, key: keyof WebPushPreferences, value: boolean) => {
-    const preferences = { ...current, [key]: value }
-    setOverlay({ enabled: true, preferences })
+    setOverlay({ enabled: true, preferences: { ...current, [key]: value } })
     run(async () => {
-      const { endpoint } = latest()
-      if (!endpoint) return
-      const saved = await api.updateWebPush(endpoint, preferences)
+      // A preceding write may have failed and reconciled since this switch was clicked.
+      const { endpoint, preferences } = latest()
+      if (!endpoint || !preferences) return
+      const saved = await api.updateWebPush(endpoint, { ...preferences, [key]: value })
       confirm({ ...latest(), preferences: saved.preferences })
     })
   }
