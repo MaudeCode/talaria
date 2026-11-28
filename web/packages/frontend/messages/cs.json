@@ -2298,6 +2298,7 @@
 	"workspaces_empty_title": "Zvolte prostor",
 	"ws_no_results": "Nenalezeny žádné pracovní prostory",
 	"ws_panel_download_file": "Stáhnout {name}",
+	"ws_panel_load_more": "Načíst další soubory",
 	"ws_search_placeholder": "Hledat pracovní prostory…",
 	"yolo_disabled": "YOLO režim VYPNUT",
 	"yolo_enabled": "⚡ YOLO režim ZAPNUT — schválení přeskočena pro tuto relaci",

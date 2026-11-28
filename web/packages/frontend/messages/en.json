@@ -3905,6 +3905,7 @@
 	"ws_panel_entry_folder": "{name}, folder",
 	"ws_panel_files": "Files",
 	"ws_panel_hidden": "Show hidden files",
+	"ws_panel_load_more": "Load more files",
 	"ws_panel_managed_source": "Session buffers",
 	"ws_panel_managed_unavailable": "Session buffers unavailable. Enable and approve the devkit backend in Plugins.",
 	"ws_panel_open_vscode": "Open in VS Code",

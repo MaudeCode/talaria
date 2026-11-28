@@ -2192,6 +2192,7 @@
 	"workspaces_empty_title": "Keine Arbeitsbereiche",
 	"ws_no_results": "Keine Arbeitsbereiche gefunden",
 	"ws_panel_download_file": "{name} herunterladen",
+	"ws_panel_load_more": "Weitere Dateien laden",
 	"ws_search_placeholder": "Arbeitsbereiche suchen…",
 	"yolo_disabled": "YOLO-Modus AUS",
 	"yolo_enabled": "⚡ YOLO-Modus AN — Genehmigungen übersprungen",

@@ -2061,6 +2061,7 @@
 	"workspaces_empty_title": "Selecione um space",
 	"ws_no_results": "Nenhum espaço de trabalho encontrado",
 	"ws_panel_download_file": "Baixar {name}",
+	"ws_panel_load_more": "Carregar mais arquivos",
 	"ws_search_placeholder": "Buscar espaços de trabalho…",
 	"yolo_unknown": "Não foi possível confirmar o modo YOLO deste chat",
 	"you": "Você"

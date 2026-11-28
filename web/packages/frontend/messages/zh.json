@@ -2001,6 +2001,7 @@
 	"workspaces_empty_title": "选择一个空间",
 	"ws_no_results": "未找到工作区",
 	"ws_panel_download_file": "下载 {name}",
+	"ws_panel_load_more": "加载更多文件",
 	"ws_search_placeholder": "搜索工作区…",
 	"yolo_disabled": "YOLO 模式已关闭",
 	"yolo_enabled": "⚡ YOLO 模式已开启 — 将跳过所有审批",

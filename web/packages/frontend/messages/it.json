@@ -2256,6 +2256,7 @@
 	"workspaces_empty_title": "Seleziona uno spazio",
 	"ws_no_results": "Nessun workspace trovato",
 	"ws_panel_download_file": "Scarica {name}",
+	"ws_panel_load_more": "Carica altri file",
 	"ws_search_placeholder": "Cerca workspace…",
 	"yolo_disabled": "Modalità YOLO OFF",
 	"yolo_enabled": "⚡ Modalità YOLO ON — approvazioni saltate questa sessione",

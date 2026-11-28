@@ -23,7 +23,7 @@ import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { fileSourceSession, managedBuffers } from '../workspace/managed-buffers.js'
 import { previewUrl, readFilePreview } from '../workspace/preview.js'
 import { OfficeError, officeFormat, saveDocx } from '../workspace/office.js'
-import { dirSignature, FileExistsError, FileRevisionConflict, listDir, makeAnchoredDir, MAX_FILE_BYTES, NotFoundError, openAnchoredCreateFd, readFileSnapshot, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
+import { dirSignature, FileExistsError, FileRevisionConflict, listDirPage, makeAnchoredDir, MAX_FILE_BYTES, NotFoundError, openAnchoredCreateFd, readFileSnapshot, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
 import { pyOsError, pyRepr, storageFull, str } from '../util.js'
 import { activeProfileName, ensureTrustedAuthSession, requestCanManageServer, sessionCanManageServer } from '../auth/gate.js'
@@ -799,8 +799,8 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       const rel = input.path ?? '.'
       try {
         workspaceFileTarget(ctx, s.workspace, rel)
-        const entries = listDir(s.workspace, rel, { showHidden: input.show_hidden === '1' })
-        return { source: 'workspace' as const, entries: serializeEntriesForBrowser(entries) as { name: string; path: string; type: 'dir' | 'file' | 'symlink'; workspace_sort_rank: number }[], signature: dirSignature(s.workspace, rel, entries), path: rel, workspace: s.workspace, workspace_recovered: s.recovered }
+        const { entries, nextCursor } = listDirPage(s.workspace, rel, { showHidden: input.show_hidden === '1', cursor: input.cursor })
+        return { source: 'workspace' as const, entries: serializeEntriesForBrowser(entries) as { name: string; path: string; type: 'dir' | 'file' | 'symlink'; workspace_sort_rank: number }[], signature: dirSignature(s.workspace, rel, entries), path: rel, workspace: s.workspace, workspace_recovered: s.recovered, ...(nextCursor ? { next_cursor: nextCursor } : {}) }
       } catch (error) {
         throw fileError(error, 404)
       }

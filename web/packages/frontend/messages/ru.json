@@ -2366,6 +2366,7 @@
 	"workspaces_empty_title": "Выберите пространство",
 	"ws_no_results": "Рабочие пространства не найдены",
 	"ws_panel_download_file": "Скачать {name}",
+	"ws_panel_load_more": "Загрузить ещё файлы",
 	"ws_search_placeholder": "Поиск рабочих пространств…",
 	"yolo_disabled": "YOLO режим ВЫКЛ",
 	"yolo_enabled": "⚡ YOLO режим ВКЛ — подтверждения пропущены",

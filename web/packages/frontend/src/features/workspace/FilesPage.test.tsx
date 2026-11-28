@@ -37,6 +37,30 @@ beforeEach(() => {
   vi.mocked(api.readFile).mockImplementation((_sid, path) => Promise.resolve({ content: path === 'a.txt' ? 'Original A' : 'Original B', size: 10, preview: 'text' } as never))
 })
 
+it('appends the server page in order and starts over when opening a directory', async () => {
+  const firstPage = { ...tree, next_cursor: '2:Yi50eHQ' }
+  const lastPage = { ...tree, entries: [{ name: 'z.txt', path: 'z.txt', workspace_sort_rank: 2 }] }
+  const folder = { ...tree, entries: [{ name: 'inside.txt', path: 'docs/inside.txt', workspace_sort_rank: 2 }] }
+  vi.mocked(api.listDir).mockResolvedValue(firstPage)
+    .mockResolvedValueOnce(firstPage)
+    .mockResolvedValueOnce(lastPage)
+    .mockResolvedValueOnce(folder)
+
+  renderFiles()
+  await userEvent.click(await screen.findByRole('button', { name: 'Load more files' }))
+  expect(await screen.findByRole('treeitem', { name: row('z.txt') })).toHaveFocus()
+  expect(api.listDir).toHaveBeenLastCalledWith('s1', '.', false, undefined, expect.objectContaining({ cursor: firstPage.next_cursor }))
+  expect(names()).toEqual(['docs', 'a.txt', 'b.txt', 'z.txt'])
+  expect(screen.queryByRole('button', { name: 'Load more files' })).not.toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole('treeitem', { name: row('docs') }))
+  expect(await screen.findByRole('treeitem', { name: row('inside.txt') })).toBeInTheDocument()
+  expect(names()).toEqual(['inside.txt'])
+  await userEvent.click(screen.getByRole('button', { name: 'Up one level' }))
+  expect(await screen.findByRole('button', { name: 'Load more files' })).toBeInTheDocument()
+  expect(names()).toEqual(['docs', 'a.txt', 'b.txt'])
+})
+
 it('opens a transcript file at its line once when the workspace mounts late (TAL-2756)', async () => {
   vi.mocked(api.readFile).mockResolvedValue({ source: 'workspace', content: 'one\ntwo\nthree', binary: false, size: 13, preview: 'text' })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

@@ -33,6 +33,7 @@ const OkPath = z.object({ ok: z.literal(true), path: z.string() })
 /** TAL-263: `token` is the grant from `files.escapeAuthorize`; `path` is workspace-relative and must sit under the granted symlink. */
 const EscapeQuery = z.object({ session_id: z.string().optional(), token: z.string().optional(), path: z.string().optional() })
 const EscapeReadOnly = { escape_read_only: z.literal(true).describe('Opened through an escape grant; clients offer no edits.') }
+const DirectoryCursor = z.string().max(2048).regex(/^[0-2]:[A-Za-z0-9_-]{2,}$/)
 
 export const workspacesContract = {
   workspaces: {
@@ -58,7 +59,10 @@ export const workspacesContract = {
       path: z.string().optional(),
       source: FileSource,
       show_hidden: z.enum(['0', '1']).optional().describe('Set to 1 to include dot-prefixed entries in a workspace listing. Omission or 0 hides them. Managed buffers ignore this parameter.'),
-    })).output(DirListingSchema),
+      cursor: DirectoryCursor.optional().describe('The previous page’s next_cursor. Use the same workspace directory and show_hidden setting. Managed buffers ignore this parameter.'),
+    })).output(DirListingSchema.extend({
+      next_cursor: DirectoryCursor.optional().describe('Continuation for the next workspace page. Omitted when there are no more rows.'),
+    })),
     read: oc.route({ method: 'GET', path: '/api/file', tags: ['files'], spec: workspaceTextSizeSpec }).input(SessionPath.extend({ source: FileSource })).output(FileRead),
     save: oc.route({ method: 'POST', path: '/api/file/save', tags: ['files'], spec: workspaceTextSizeSpec }).input(FileReplacement.extend({ source: FileSource })).output(OkPath.extend({ size: z.number().int(), source: FileSource, revision: SavedFileRevision })),
     /** TAL-262: saves an editable `.docx` preview's text as its paragraphs; `.xlsx` and `.pptx` are preview-only (400). */

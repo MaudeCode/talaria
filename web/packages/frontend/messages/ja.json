@@ -2057,6 +2057,7 @@
 	"workspaces_empty_title": "スペースを選択",
 	"ws_no_results": "ワークスペースが見つかりません",
 	"ws_panel_download_file": "{name} をダウンロード",
+	"ws_panel_load_more": "さらにファイルを読み込む",
 	"ws_search_placeholder": "ワークスペースを検索…",
 	"yolo_disabled": "YOLO モード OFF",
 	"yolo_enabled": "⚡ YOLO モード ON — このセッションは承認をスキップ",

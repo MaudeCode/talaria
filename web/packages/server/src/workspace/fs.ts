@@ -518,8 +518,20 @@ function birthtimeNs(st: import('node:fs').BigIntStats | null): bigint | null {
   return st.birthtimeNs > 0n ? st.birthtimeNs : null
 }
 
-/** Python `list_dir`: bounded, sorted (symlinks, dirs, files), symlink-aware listing. */
-export function listDir(workspace: string, rel = '.', { showHidden = true } = {}): DirEntry[] {
+const DIRECTORY_PAGE_SIZE = 200
+interface DirectoryOrder { rank: number; key: string; name: string }
+interface DirectoryPage { entries: DirEntry[]; nextCursor?: string }
+const compareName = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0
+const compareDirectoryOrder = (a: DirectoryOrder, b: DirectoryOrder): number =>
+  a.rank - b.rank || compareName(a.key, b.key) || compareName(a.name, b.name)
+
+/** The bounded first page for callers without a continuation contract. */
+export function listDir(workspace: string, rel = '.'): DirEntry[] {
+  return listDirPage(workspace, rel).entries
+}
+
+/** Bounded, sorted (symlinks, dirs, files), symlink-aware listing. */
+export function listDirPage(workspace: string, rel = '.', { showHidden = true, cursor }: { showHidden?: boolean; cursor?: string | undefined } = {}): DirectoryPage {
   const target = safeResolveWs(workspace, rel)
   let st
   try {
@@ -529,19 +541,21 @@ export function listDir(workspace: string, rel = '.', { showHidden = true } = {}
   }
   if (!st.isDirectory()) throw new NotFoundError(`Not a directory: ${rel}`)
   const wsResolved = resolvePathLikePython(workspace)
-  return withAnchoredDir(workspace, target, (child) => listAnchored(target, rel, wsResolved, child, showHidden))
+  const name = cursor === undefined ? '' : Buffer.from(cursor.slice(2), 'base64url').toString('utf8')
+  const after = cursor === undefined ? null : { rank: Number(cursor[0]), key: name.toLowerCase(), name }
+  return withAnchoredDir(workspace, target, (child) => listAnchored(target, rel, wsResolved, child, showHidden, after))
 }
 
-function listAnchored(target: string, rel: string, wsResolved: string, child: (name: string) => string, showHidden: boolean): DirEntry[] {
+function listAnchored(target: string, rel: string, wsResolved: string, child: (name: string) => string, showHidden: boolean, after: DirectoryOrder | null): DirectoryPage {
   const entries: DirEntry[] = []
   const children = readdirSync(child('.'), { withFileTypes: true })
   const visible = showHidden ? children : children.filter((de) => !de.name.startsWith('.'))
-  // Keys are computed once per entry. The whole directory is sorted because the walk below drops symlinks, so the 200 kept cannot be chosen up front.
-  const ranked = visible.map((de) => ({ de, rank: de.isSymbolicLink() ? 0 : de.isFile() ? 2 : 1, key: de.name.toLowerCase() }))
-  ranked.sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
-  for (const { de } of ranked) {
-    if (entries.length >= 200) break
-    const name = de.name
+  // Skip everything before the boundary without rereading its metadata. The original name breaks case-folded ties.
+  const ranked = visible.map((de) => ({ de, rank: de.isSymbolicLink() ? 0 : de.isFile() ? 2 : 1, key: de.name.toLowerCase(), name: de.name }))
+    .filter((entry) => after === null || compareDirectoryOrder(entry, after) > 0)
+    .sort(compareDirectoryOrder)
+  let cursor = ''
+  for (const { de, rank, name } of ranked) {
     const full = child(name)
     let lst: import('node:fs').BigIntStats | null = null
     try {
@@ -549,6 +563,7 @@ function listAnchored(target: string, rel: string, wsResolved: string, child: (n
     } catch {
       lst = null
     }
+    const entryPath = rel && rel !== '.' ? `${rel}/${name}` : name
     if (de.isSymbolicLink()) {
       let rawLink: string
       try {
@@ -571,9 +586,8 @@ function listAnchored(target: string, rel: string, wsResolved: string, child: (n
       if (isWithin(target, linkTarget)) continue
       const outside = !isWithin(linkTarget, wsResolved)
       if (isBlockedSystemPath(linkTarget)) continue
-      const displayPath = rel && rel !== '.' ? `${rel}/${name}` : name
       if (outside) {
-        entries.push({ name, path: displayPath, type: 'symlink', is_dir: false, workspace_sort_rank: 0, target_outside_workspace: true, mtime_ns: lst?.mtimeNs ?? null, birthtime_ns: birthtimeNs(lst) })
+        entries.push({ name, path: entryPath, type: 'symlink', is_dir: false, workspace_sort_rank: 0, target_outside_workspace: true, mtime_ns: lst?.mtimeNs ?? null, birthtime_ns: birthtimeNs(lst) })
       } else {
         let isDirectory = false
         let size: number | null | undefined
@@ -584,26 +598,31 @@ function listAnchored(target: string, rel: string, wsResolved: string, child: (n
         } catch {
           size = null
         }
-        const entry: DirEntry = { name, path: displayPath, type: 'symlink', target: linkTarget, is_dir: isDirectory, workspace_sort_rank: 0, target_outside_workspace: false, mtime_ns: lst?.mtimeNs ?? null, birthtime_ns: birthtimeNs(lst) }
+        const entry: DirEntry = { name, path: entryPath, type: 'symlink', target: linkTarget, is_dir: isDirectory, workspace_sort_rank: 0, target_outside_workspace: false, mtime_ns: lst?.mtimeNs ?? null, birthtime_ns: birthtimeNs(lst) }
         if (!isDirectory) entry.size = size ?? null
         entries.push(entry)
       }
-      continue
+    } else {
+      const isFile = lst ? lst.isFile() : false
+      const isDirectory = lst ? lst.isDirectory() : false
+      entries.push({
+        name,
+        path: entryPath,
+        type: isDirectory ? 'dir' : 'file',
+        size: isFile && lst ? Number(lst.size) : null,
+        mtime_ns: lst?.mtimeNs ?? null,
+        birthtime_ns: birthtimeNs(lst),
+        workspace_sort_rank: lst ? (isFile ? 2 : 1) : 1,
+      })
     }
-    const entryPath = rel && rel !== '.' ? `${rel}/${name}` : name
-    const isFile = lst ? lst.isFile() : false
-    const isDirectory = lst ? lst.isDirectory() : false
-    entries.push({
-      name,
-      path: entryPath,
-      type: isDirectory ? 'dir' : 'file',
-      size: isFile && lst ? Number(lst.size) : null,
-      mtime_ns: lst?.mtimeNs ?? null,
-      birthtime_ns: birthtimeNs(lst),
-      workspace_sort_rank: lst ? (isFile ? 2 : 1) : 1,
-    })
+    if (entries.length === DIRECTORY_PAGE_SIZE) cursor = `${String(rank)}:${Buffer.from(name).toString('base64url')}`
+    // Only advertise a continuation after finding another eligible entry.
+    if (entries.length > DIRECTORY_PAGE_SIZE) {
+      entries.pop()
+      return { entries, nextCursor: cursor }
+    }
   }
-  return entries
+  return { entries }
 }
 
 /** Python `_browser_timestamp_ns`: nanosecond timestamps are always decimal strings on the wire. */

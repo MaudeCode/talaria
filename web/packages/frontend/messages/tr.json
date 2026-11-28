@@ -2122,6 +2122,7 @@
 	"workspaces_empty_title": "Bir alan seçin",
 	"ws_no_results": "Çalışma alanı bulunamadı",
 	"ws_panel_download_file": "{name} indir",
+	"ws_panel_load_more": "Daha fazla dosya yükle",
 	"ws_search_placeholder": "Çalışma alanlarını arayın…",
 	"yolo_disabled": "YOLO modu KAPALI",
 	"yolo_enabled": "⚡ YOLO modu AÇIK — onaylar bu oturumu atladı",

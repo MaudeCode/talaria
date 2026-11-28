@@ -86171,6 +86171,19 @@
             },
             "allowEmptyValue": true,
             "allowReserved": true
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^[0-2]:[A-Za-z0-9_-]{2,}$",
+              "description": "The previous page’s next_cursor. Use the same workspace directory and show_hidden setting. Managed buffers ignore this parameter."
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
           }
         ],
         "responses": {
@@ -86307,6 +86320,12 @@
                     },
                     "is_git": {
                       "type": "boolean"
+                    },
+                    "next_cursor": {
+                      "type": "string",
+                      "maxLength": 2048,
+                      "pattern": "^[0-2]:[A-Za-z0-9_-]{2,}$",
+                      "description": "Continuation for the next workspace page. Omitted when there are no more rows."
                     }
                   },
                   "required": [

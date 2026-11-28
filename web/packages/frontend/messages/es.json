@@ -2216,6 +2216,7 @@
 	"workspaces_empty_title": "Select a space",
 	"ws_no_results": "No se encontraron espacios de trabajo",
 	"ws_panel_download_file": "Descargar {name}",
+	"ws_panel_load_more": "Cargar más archivos",
 	"ws_search_placeholder": "Buscar espacios de trabajo…",
 	"yolo_disabled": "Modo YOLO desactivado",
 	"yolo_enabled": "⚡ Modo YOLO activado — aprobaciones omitidas",
