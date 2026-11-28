@@ -116,7 +116,7 @@ export function SettingsSection({ section, row, visit, ...props }: { section: Se
       {/* TAL-2131: the content column is 640px at most; Logs keeps the wide column its lines need. */}
       <div className={cn('settings-main w-full mx-auto min-w-0 pt-6 px-7 pb-12 max-[769px]:pt-4 max-[769px]:px-3.5 max-[769px]:pb-10', section === 'logs' ? 'max-w-[820px]' : 'max-w-[696px] max-[769px]:max-w-[668px]')}>
         {/* A provider's own page (TAL-2135) and a page under a section (TAL-2136) put their back link and title where the section title sits. */}
-        {props.providerId === undefined && props.page === undefined && <div className="settings-section-head flex items-center justify-between gap-4 mb-5 pb-3.5 border-b border-border">
+        {props.providerId === undefined && props.page === undefined && <div className={cn('settings-section-head flex items-center justify-between gap-4 mb-5 pb-3.5 border-b border-border', section === 'logs' && 'sticky top-0 z-10 bg-bg')}>
           <div ref={setHelp} className="flex min-w-0 items-center">
             <h1 className={SETTINGS_TITLE}>{SECTION_LABEL[section]()}</h1>
           </div>

@@ -116,7 +116,7 @@ file-based under `packages/frontend/src/routes/`:
 | `/memory` | Memory, notes | required |
 | `/todos` | Current task list | required |
 | `/insights` | Insights; `days` search param | required |
-| `/settings`, `/settings/$section` | Settings; `section` is a `SettingsSectionSchema` id, Profiles, Spaces (`workspaces`) and Logs included. Validated search: `tab` (Tools), `name` (Profiles). Retired ids, and `/settings/agent`, redirect to the section that replaced them | required |
+| `/settings`, `/settings/$section` | Settings; `section` is a `SettingsSectionSchema` id, Profiles, Spaces (`workspaces`) and Logs included. Validated search: `tab` (Tools), `name` (Profiles), `file`, `level`, `query`, and `tail` (Logs). Retired ids, and `/settings/agent`, redirect to the section that replaced them | required |
 | `/profiles`, `/workspaces`, `/logs` | Redirect to `/settings/profiles`, `/settings/workspaces` and `/settings/logs`, search kept | required |
 | `/ext/$extensionId` | Sandboxed extension panel | required |
 | `/onboarding` | First-run wizard | required (server) |

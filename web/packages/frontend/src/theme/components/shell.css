@@ -209,6 +209,7 @@ main.main > .main-view:not([id="mainChat"]):not([id="mainSettings"]) .main-view-
 html.hub-active .rightpanel{width:0 !important;min-width:0 !important;opacity:0;pointer-events:none;overflow:hidden;border-color:transparent;margin-left:0;content-visibility:hidden}
 html.hub-active .rightpanel .workspace-panel-edge-toggle{display:none !important}
 .main-view-actions .panel-head-btn{width:32px;height:32px;border-radius:var(--r-md);border:1px solid var(--border);background:var(--surface)}
+@media (pointer:coarse){.main-view-actions .panel-head-btn{min-width:44px;min-height:44px}}
 .main-view-actions .panel-head-btn:hover{background:var(--hover-bg)}
 .main-view-actions .panel-head-btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 @media (max-width:640px){.tabbar-sheet-item svg{width:18px;height:18px;color:var(--muted)}}

@@ -1,6 +1,6 @@
 import { defaultParseSearch, defaultStringifySearch } from '@tanstack/react-router'
 import { z } from 'zod'
-import { DECISION_FILTERS, type SettingsSectionId } from '@maudecode/talaria-web-contracts'
+import { DECISION_FILTERS, LogLevelFilterSchema, type SettingsSectionId } from '@maudecode/talaria-web-contracts'
 import { SessionIdSchema } from './session'
 
 /**
@@ -9,15 +9,19 @@ import { SessionIdSchema } from './session'
  */
 export function parseAppSearch(search: string) {
   const parsed: Record<string, unknown> = defaultParseSearch(search)
+  // Logs searches for the literal text, even when it looks like a JSON number, boolean or object.
+  if (parsed.query !== undefined) parsed.query = new URLSearchParams(search).get('query')
   if (parsed.project === undefined || typeof parsed.project === 'string') return parsed
   return { ...parsed, project: new URLSearchParams(search).get('project') }
 }
 
 export function stringifyAppSearch(search: Record<string, unknown>) {
-  const { project, ...rest } = search
-  if (typeof project !== 'string' || !project) return defaultStringifySearch(search)
-  const others = defaultStringifySearch(rest)
-  return `${others}${others ? '&' : '?'}project=${encodeURIComponent(project)}`
+  const { project, query, ...rest } = search
+  let url = defaultStringifySearch(typeof project === 'string' && project ? rest : { ...rest, project })
+  for (const [key, value] of [['project', project], ['query', query]] as const) {
+    if (typeof value === 'string' && value) url += `${url ? '&' : '?'}${key}=${encodeURIComponent(value)}`
+  }
+  return url
 }
 
 /** Search params accepted on `/`. Legacy launch flows redirect to canonical routes. */
@@ -47,8 +51,18 @@ export type ToolsTab = z.infer<typeof ToolsTabSchema>
 /** TAL-2138: Settings › Chat's sub-pages, `settings/chat/<page>`. */
 export const ChatPageSchema = z.enum(['workspace-panel', 'advanced', 'tool-calls'])
 export type ChatPage = z.infer<typeof ChatPageSchema>
-/** TAL-2085: `name` opens one profile's detail on Settings > Profiles. */
-export const SettingsSearchSchema = z.object({ tab: ToolsTabSchema.optional().catch(undefined), name: z.string().min(1).max(64).optional().catch(undefined) })
+/** TAL-2766: the tail sizes offered by the Logs filter. */
+export const LOG_TAILS = [200, 500, 1000, 2000] as const
+const LogsSearchSchema = z.object({
+  file: z.string().min(1).max(64).optional().catch(undefined),
+  level: LogLevelFilterSchema.optional().catch(undefined),
+  query: z.string().optional().catch(undefined),
+  tail: z.literal(LOG_TAILS).optional().catch(undefined),
+})
+export type LogsSearch = z.infer<typeof LogsSearchSchema>
+
+/** Tools' `tab`, Profiles' `name`, and Logs' shareable filters. */
+export const SettingsSearchSchema = LogsSearchSchema.extend({ tab: ToolsTabSchema.optional().catch(undefined), name: z.string().min(1).max(64).optional().catch(undefined) })
 
 /**
  * TAL-1691, TAL-2100: where each retired `/settings/<id>` now lives, so bookmarks and older deep links keep working.

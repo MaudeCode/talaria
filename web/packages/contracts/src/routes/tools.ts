@@ -143,7 +143,7 @@ export const toolsContract = {
     start: z.string().optional().describe('TAL-1117: a `YYYY-MM-DD` day (from its midnight) or exact unix seconds. Omitted: the `days` window ending on `end`\'s last day. Blank or unreadable: the `days` preset, `range.fallback_reason` `invalid_start`.'),
     end: z.string().optional().describe('TAL-1117: a `YYYY-MM-DD` day (through its end) or exact unix seconds (exclusive). Omitted or after the clock: through now. Blank or unreadable: the `days` preset, `range.fallback_reason` `invalid_end`.'),
   })).output(InsightsSchema),
-  logs: oc.route({ method: 'GET', path: '/api/logs', tags }).input(z.object({ file: z.string().optional(), tail: z.string().optional(), q: z.string().optional(), level: LogLevelFilterSchema.optional() })).output(LogsSchema),
+  logs: oc.route({ method: 'GET', path: '/api/logs', tags }).input(z.object({ file: z.string().optional(), tail: z.string().optional(), q: z.string().optional(), level: LogLevelFilterSchema.optional(), fallback: z.literal('agent').optional().describe('Resolve the source against the caller’s listed logs and use Agent if it is unlisted.') })).output(LogsSchema),
   ops: {
     agent: oc.route({ method: 'GET', path: '/api/health/agent', tags }).output(AgentHealthSchema),
     system: oc.route({ method: 'GET', path: '/api/system/health', tags }).output(SystemHealthSchema),

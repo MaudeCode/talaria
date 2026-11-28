@@ -279,9 +279,6 @@ export function ReasoningChip({ value, levels, onChange, row, defaultLabel = m.r
   )
 }
 
-/** Keys a menu's search field hands to the menu: ArrowDown and ArrowUp reach the rows, Escape closes it. */
-const SEARCH_LIST_KEYS = new Set(['ArrowDown', 'ArrowUp', 'Escape'])
-
 /**
  * TAL-2096: checkbox rows that apply at once and keep the menu open. `value` is the session's (or a new chat's pending)
  * toolsets as its owner shows them: the choice at once, the previous one again when the server refuses it.
@@ -291,7 +288,7 @@ export function ToolsetsChip({ value, onChange, row, sessionId }: { value: strin
   const [search, setSearch] = useState('')
   const title = m.composer_control_toolsets()
   const label = value === null ? m.toolsets_profile_defaults() : (value.length === 1 && value[0]) || m.toolsets_count({ n: value.length })
-  const header = <div className="p-1"><input ref={searchInput} type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={m.toolsets_search()} aria-label={m.toolsets_search()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(event) => { if (!SEARCH_LIST_KEYS.has(event.key)) event.stopPropagation() }} /></div>
+  const header = <div className="p-1"><input ref={searchInput} type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={m.toolsets_search()} aria-label={m.toolsets_search()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" /></div>
   return (
     <ComposerMenu label={title} search={searchInput} header={header} onOpenChange={(open) => { if (!open) setSearch('') }}
       trigger={<Chip icon={<Wrench size={13} aria-hidden="true" />} label={label} title={title} tooltip={`${title}: ${value?.length ? value.join(', ') : label}`} row={row} size="xs" className="composer-toolsets-chip" />}>

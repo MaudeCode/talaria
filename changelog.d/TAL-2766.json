@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Bookmark or share a Web Logs view with its source, severity, search, and tail size.",
+      "highlight": false,
+      "components": ["web"],
+      "announcement": {
+        "title": "Share filtered logs",
+        "description": "Bookmark a log investigation or share a link that opens with the same filters.",
+        "icon": "share"
+      }
+    }
+  ]
+}

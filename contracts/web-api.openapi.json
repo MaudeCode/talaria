@@ -145173,6 +145173,16 @@
             },
             "allowEmptyValue": true,
             "allowReserved": true
+          },
+          {
+            "name": "fallback",
+            "in": "query",
+            "schema": {
+              "const": "agent",
+              "description": "Resolve the source against the caller’s listed logs and use Agent if it is unlisted."
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
           }
         ],
         "responses": {
