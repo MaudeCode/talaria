@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Notifications sheet shows the server's explanation when an update fails or is blocked.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

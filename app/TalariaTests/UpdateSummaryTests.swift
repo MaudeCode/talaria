@@ -251,6 +251,29 @@ final class UpdateSummaryTests: APIClientTestCase {
     }
 
     @MainActor
+    func testNotificationsShowsMultilineFailureDetailBelowItsMessage() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.updateNotificationsArgument], for: self)
+        let message = "The synthetic update could not be installed."
+        let detail = "The build could not resolve a required package.\nCheck the build log before retrying the update."
+        let variants = keepsHostedScreenshots ? HostedVariant.gallery : Array(HostedVariant.gallery.prefix(1))
+        try await renderHostedPage("update-notifications", variants: variants) {
+            let updates = UpdateNotificationCenterViewModel(server: fixture.client.baseURL, client: fixture.client)
+            UpdateNotificationsSheet(viewModel: updates, onAPIError: { XCTFail("\($0)") }, openDestination: { _ in })
+        } inspect: { window, variant in
+            _ = try await requireElement(in: window, label: message)
+            let labels = HostedAccessibility.labels(in: window)
+            let messageIndex = try XCTUnwrap(labels.firstIndex(of: message))
+            let detailIndex = try XCTUnwrap(labels.firstIndex(of: detail),
+                                           "The failed update's multiline server detail should be visible. Labels: \(labels)")
+            XCTAssertEqual(detailIndex, messageIndex + 1)
+            if variant.name == "phone-light" {
+                XCTAssertEqual(labels.filter { $0 == "Talaria Web update" }.count, 2,
+                               "The null-detail row has only its title and message before the timestamp")
+            }
+        }
+    }
+
+    @MainActor
     private func hostUpdating(initial: String, tracking: String? = nil) async throws -> (UIWindow, UpdateNotificationCenterViewModel) {
         let client = makeClient { request in
             XCTAssertEqual(request.httpMethod, "GET", "Opening or deferring the sheet never writes")
