@@ -119,13 +119,8 @@ struct RelayNotificationSettingsRow: View {
         }
         let granted = await ResponseCompletionNotificationService.requestAuthorization()
         notificationsEnabled = granted
-        if granted {
-            UIApplication.shared.registerForRemoteNotifications()
-            statusMessage = nil
-        } else {
-            statusMessage = String(localized: "Notification permission is required for relay alerts.")
-        }
-        try? await TalariaAggregateLiveActivityManager.shared.refresh()
+        statusMessage = granted ? nil : String(localized: "Notification permission is required for relay alerts.")
+        await TalariaAggregateLiveActivityManager.shared.refreshAfterNotificationPreferenceChange(registerForRemoteNotifications: granted)
     }
 }
 

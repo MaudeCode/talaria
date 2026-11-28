@@ -26,10 +26,9 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
             }
         }
         let defaults = UserDefaults.standard
-        let updateAlerts = (defaults.object(forKey: TalariaRelayNotifications.unconfirmedUpdateAvailableAlertsKey) as? Bool)
-            ?? defaults.bool(forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey)
         if defaults.bool(forKey: TalariaRelayNotifications.isEnabledKey)
-            || updateAlerts || defaults.bool(forKey: ResponseCompletionNotifications.isEnabledKey) {
+            || TalariaRelayNotifications.updateAvailableAlertsEnabled(in: defaults)
+            || defaults.bool(forKey: ResponseCompletionNotifications.isEnabledKey) {
             application.registerForRemoteNotifications()
         }
         return true

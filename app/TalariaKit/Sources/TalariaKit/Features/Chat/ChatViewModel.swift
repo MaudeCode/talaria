@@ -3328,9 +3328,13 @@ extension ChatViewModel {
         queuedAttachments: [PendingAttachment]? = nil,
         modelContext: ModelContext? = nil,
         waitForSession: (@MainActor () async -> Bool)? = nil,
-        sessionAttachments: (@MainActor () -> [PendingAttachment])? = nil
+        sessionAttachments: (@MainActor () -> [PendingAttachment])? = nil,
+        onRunStarted: (@MainActor () -> Void)? = nil
     ) async -> Bool {
-        await performMessageSend(draft, queuedAttachments: queuedAttachments, modelContext: modelContext, waitForSession: waitForSession, sessionAttachments: sessionAttachments).didStart
+        await performMessageSend(
+            draft, queuedAttachments: queuedAttachments, modelContext: modelContext, waitForSession: waitForSession,
+            sessionAttachments: sessionAttachments, onRunStarted: onRunStarted
+        ).didStart
     }
 
     private func performMessageSend(
@@ -3338,7 +3342,8 @@ extension ChatViewModel {
         queuedAttachments: [PendingAttachment]?,
         modelContext: ModelContext?,
         waitForSession: (@MainActor () async -> Bool)? = nil,
-        sessionAttachments: (@MainActor () -> [PendingAttachment])? = nil
+        sessionAttachments: (@MainActor () -> [PendingAttachment])? = nil,
+        onRunStarted: (@MainActor () -> Void)? = nil
     ) async -> ChatSendOutcome {
         // Reentrancy guard, mirroring `sendVoiceNote`. It must run before
         // `prepareForSend` so a rejected send never consumes the composer's
@@ -3391,7 +3396,8 @@ extension ChatViewModel {
             restoresAttachmentsOnFailure: queuedAttachments == nil,
             modelContext: modelContext,
             waitForSession: waitForSession,
-            sessionAttachments: sessionAttachments
+            sessionAttachments: sessionAttachments,
+            onRunStarted: onRunStarted
         )
     }
 
@@ -3419,7 +3425,8 @@ extension ChatViewModel {
 
     @discardableResult
     public func sendVoiceNote(audioData: Data, filename: String, modelContext: ModelContext? = nil,
-                              waitForSession: (@MainActor () async -> Bool)? = nil) async -> ChatSendOutcome {
+                              waitForSession: (@MainActor () async -> Bool)? = nil,
+                              onRunStarted: (@MainActor () -> Void)? = nil) async -> ChatSendOutcome {
         guard !isSubmittingMessage else { return ChatSendOutcome(didStart: false) }
         guard pendingVoiceDraft == nil else {
             let error = VoiceNotePreparationError(String(localized: "Retry or remove the unsent voice note before recording another."))
@@ -3454,7 +3461,7 @@ extension ChatViewModel {
                 setVoicePhase(.failed(String(localized: "Voice note has not been sent. Try again.")), id: id)
                 return ChatSendOutcome(didStart: false)
             }
-            return await prepareAndSendVoiceNote(modelContext: modelContext)
+            return await prepareAndSendVoiceNote(modelContext: modelContext, onRunStarted: onRunStarted)
         } catch {
             setUploadAttachmentError(error.localizedDescription)
             return ChatSendOutcome(didStart: false, error: error)
@@ -3492,7 +3499,9 @@ extension ChatViewModel {
         messages[index].localVoicePhase = phase
     }
 
-    private func prepareAndSendVoiceNote(modelContext: ModelContext?) async -> ChatSendOutcome {
+    private func prepareAndSendVoiceNote(
+        modelContext: ModelContext?, onRunStarted: (@MainActor () -> Void)? = nil
+    ) async -> ChatSendOutcome {
         guard var note = pendingVoiceDraft, note.context == attachmentContextID, let sessionID else {
             return ChatSendOutcome(didStart: false)
         }
@@ -3541,7 +3550,7 @@ extension ChatViewModel {
                 attachmentPreparation: ChatAttachmentSendPreparation(
                     attachments: [PendingAttachment(name: attachment.name ?? note.filename, path: attachment.path ?? "", mime: attachment.mime ?? "audio/mp4", size: attachment.size, isImage: attachment.isImage ?? false)],
                     messageAttachments: [attachment]),
-                restoresAttachmentsOnFailure: false, voiceTurn: true, modelContext: modelContext
+                restoresAttachmentsOnFailure: false, voiceTurn: true, modelContext: modelContext, onRunStarted: onRunStarted
             )
             guard pendingVoiceDraft?.id == note.id, attachmentContextID == note.context, mediaGeneration == generation else { return result }
             if result.didStart {
@@ -3620,7 +3629,8 @@ extension ChatViewModel {
         modelContext: ModelContext?,
         waitForSession: (@MainActor () async -> Bool)? = nil,
         sessionAttachments: (@MainActor () -> [PendingAttachment])? = nil,
-        appendsUserMessage: Bool = true
+        appendsUserMessage: Bool = true,
+        onRunStarted: (@MainActor () -> Void)? = nil
     ) async -> ChatSendOutcome {
         let messageAttachments = attachmentPreparation.messageAttachments
         let attachmentsToRestoreOnFailure = restoresAttachmentsOnFailure ? attachmentPreparation.attachments : []
@@ -3762,6 +3772,7 @@ extension ChatViewModel {
                 armsAggregateForLocalWork: true,
                 runStartedAt: response.runStartedAt(sentAt: sentAt)
             )
+            onRunStarted?()
             return ChatSendOutcome(didStart: true)
         } catch {
             guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return ChatSendOutcome(didStart: false) }

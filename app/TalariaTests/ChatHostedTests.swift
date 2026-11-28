@@ -10,6 +10,24 @@ import XCTest
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
+    func testNormalComposerSendPresentsTheNotificationOffer() async throws {
+        let window = try await hostFixtureChat([UITestFixtureEnvironment.notificationOfferArgument])
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        attachHostedScreenshot(window, name: "notification-offer-before-send")
+
+        try await sendFromComposer("Start a run", in: window)
+        let started = await awaitCondition {
+            UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/chat/start") }
+        }
+        XCTAssertTrue(started, "The composer must start a run before the offer can appear")
+        let presented = await presentedController(in: window, timeout: 10) { $0 is UIAlertController }
+        let alert = try XCTUnwrap(presented as? UIAlertController, "A normal send that starts a run should show the notification offer")
+        XCTAssertEqual(alert.title, "Get notified when Hermes finishes or needs you?")
+        XCTAssertEqual(Set(alert.actions.compactMap(\.title)), ["Notify Me", "Not Now"])
+        commitDisplay(of: window)
+        attachHostedScreenshot(window, name: "notification-offer-local")
+    }
+
     func testOfflineComposerStatusHasNoDismissButton() async throws {
         let fixture = try FixtureApp(for: self)
         let server = UITestFixtureEnvironment.serverURL

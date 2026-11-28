@@ -75,10 +75,10 @@ REPEAT_MAX_BUDGET = 300
 PACKAGE_REPEAT_ATTEMPTS = 50
 PACKAGE_REPEAT_BUDGET = 100
 CANCELED = "Testing was canceled"
-# Classes whose tests await the simulator's notification server. Only a shard that runs one waits for the server in
-# preparation (TAL-2352); the catch-all shard always does. The screen gallery's Notifications page shows the
-# authorization status the server answers (TAL-2468).
+# Tests that await the simulator's notification server. Only a shard that runs one waits for the server in
+# preparation (TAL-2352); the catch-all shard always does.
 NOTIFICATION_CLASSES = ("NotificationAnswerTests", "ScreenGalleryHostedTests")
+NOTIFICATION_METHODS = ("ChatHostedTests/testNormalComposerSendPresentsTheNotificationOffer",)
 RESULT = re.compile(r"(?P<class>[A-Za-z_]\w*)/(?P<method>[A-Za-z_]\w*)(?:\(\))?$")
 LOGGED = re.compile(r"Test Case '-\[(\w+)\.(\w+) (\w+)\]' (?:passed|failed|skipped) \(")
 
@@ -165,6 +165,13 @@ def finish(loads, slots, timeline):
     return round(last, 1)
 
 
+def needs_notifications(identifiers):
+    names = {identifier.removeprefix(f"{TARGET}/") for identifier in identifiers}
+    return any(name.partition("/")[0] in NOTIFICATION_CLASSES for name in names) or any(
+        method in names or method.partition("/")[0] in names for method in NOTIFICATION_METHODS
+    )
+
+
 def plan(lane, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS, reserved=0, native=None):
     """The shard plan for a hosted lane. `table` defaults to hosted-test-weights.json and a full lane's `classes` to the
     checkout's; `at_once` is how many shards the workflow runs at a time (a release runs two). `reserved` counts the
@@ -213,7 +220,7 @@ def plan(lane, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS, rese
             "shard": index, "target": TARGET, "planned": planned, "catch_all": catch_all,
             "only": [TARGET] if catch_all else planned,
             "skip": [f"{TARGET}/{cls}" for cls in others] if catch_all else [],
-            "notifications": catch_all or any(cls in NOTIFICATION_CLASSES for cls in shard["classes"]),
+            "notifications": catch_all or needs_notifications(planned),
             "estimate": round(shard["load"], 1), "repetitions": repetitions,
         })
     if focused_duo:
@@ -240,7 +247,7 @@ def repeat_shard(identifiers, number, table):
     repetitions = max(1, min(REPEAT_ATTEMPTS, int(round(budget / one_pass, 6))))
     budget = math.ceil(round(budget, 6))
     return {"shard": number, "target": TARGET, "planned": identifiers, "catch_all": False, "only": identifiers, "skip": [],
-            "notifications": any(identifier.split("/")[1] in NOTIFICATION_CLASSES for identifier in identifiers),
+            "notifications": needs_notifications(identifiers),
             "estimate": budget, "repetitions": repetitions, "repeat": True, "budget": budget}
 
 
@@ -249,7 +256,7 @@ def duo_shard(identifiers, left_out, number, table):
     leaves its receipt out and proves it on its own. Its estimate is the iPhone 17's measured time, where most skip."""
     return {"shard": number, "target": TARGET, "planned": identifiers, "catch_all": False, "only": identifiers,
             "skip": sorted(left_out), "known_failures": left_out,
-            "notifications": any(identifier.split("/")[1] in NOTIFICATION_CLASSES for identifier in identifiers),
+            "notifications": needs_notifications(identifiers),
             "estimate": round(sum(seconds for _, seconds, _ in groups(identifiers, table).values()), 1),
             "repetitions": 1, "duo": True}
 

@@ -304,6 +304,8 @@ struct ChatView: View {
     @State private var isInitialComposerFocusContentReady = false
     @State private var didApplyInitialComposerFocusPolicy = false
     @State private var shouldRestoreComposerFocusAfterPreview = false
+    @State private var notificationOffer: NotificationOffer?
+    @State private var isNotificationOfferSceneActive = false
     @State private var responseCompletionNotificationTracker = ResponseCompletionNotificationTracker()
     @State private var responseCompletionBackgroundTask: UIBackgroundTaskIdentifier = .invalid
     @State private var activeStreamStatusRefreshTask: Task<Void, Never>?
@@ -876,6 +878,7 @@ struct ChatView: View {
     private func withStreamEvents(_ chat: some View) -> some View {
         chat
             .onChange(of: scenePhase) {
+                isNotificationOfferSceneActive = scenePhase == .active
                 handleScenePhaseChange(scenePhase)
             }
             // A banner's Allow, Deny or Reply answered this chat's prompt outside it (TAL-1469).
@@ -906,6 +909,7 @@ struct ChatView: View {
         withLifecycle(chat)
             .onDisappear {
                 sessionStartGeneration &+= 1
+                notificationOffer = nil
                 sessionStartTask?.cancel()
                 sessionStartTask = nil
                 webLinkOpenTask?.cancel()
@@ -939,6 +943,7 @@ struct ChatView: View {
                 if let retained { retained.viewDidDisappear(release: release) } else { release() }
             }
             .onAppear {
+                isNotificationOfferSceneActive = scenePhase == .active
                 viewModel.showCachedComposerChoices()
                 if let retained {
                     takesOverLiveChat = retained.viewDidAppear()
@@ -1555,6 +1560,10 @@ struct ChatView: View {
 #endif
         chatWithFindCommands
             .alert(item: $gitAlert, content: gitAlertPresentation)
+            .background {
+                Color.clear.frame(width: 0, height: 0)
+                    .alert(item: $notificationOffer, content: notificationOfferPresentation)
+            }
             .sheet(isPresented: $showsGoalSheet) {
                 GoalSubmissionSheet(
                     goalDraft: $goalDraft,
@@ -3167,8 +3176,7 @@ struct ChatView: View {
         let shouldRestoreFocusAfterSend = composerIsFocused
         let commandText = command.map { "/\($0) \(submittedDraft)" } ?? submittedDraft
         let sendsWithChosenBehavior = behavior != nil && viewModel.activeStreamID != nil
-        let parsedSlash = commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/")
-            ? SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands) : nil
+        let parsedSlash = SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands)
 
         if !sendsWithChosenBehavior, viewModel.ownerAttachment == nil,
            parsedSlash?.command?.handler == .clientSide(.new),
@@ -3179,7 +3187,7 @@ struct ChatView: View {
         }
 
         var pendingSlash: ParsedSlashCommand?
-        if needsSessionStart, commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
+        if needsSessionStart, parsedSlash != nil {
             if parsedSlash?.messageForIdleSend != nil {
                 pendingSlash = parsedSlash
             } else {
@@ -3188,13 +3196,11 @@ struct ChatView: View {
         }
 
         // An owner chat's slash text goes to its owner as typed (TAL-1043).
-        if pendingSlash == nil, !sendsWithChosenBehavior, viewModel.ownerAttachment == nil,
-           commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
-            let parsed = parsedSlash
-            let parsedCommand = parsed?.command
+        if pendingSlash == nil, !sendsWithChosenBehavior, viewModel.ownerAttachment == nil, let parsedSlash {
+            let parsedCommand = parsedSlash.command
             // A typed command leaves the composer whatever its result, so it leaves as it is sent, like a message,
             // rather than after a long one (/compress, a server-run /refine) finishes.
-            if command != nil || parsedCommand != nil || parsed?.runsOnServer == true {
+            if command != nil || parsedCommand != nil || parsedSlash.runsOnServer {
                 reconcileConsumedDraft(submittedDraft, submittedDraftRevision: submittedDraftRevision)
             }
             let result = await SlashCommandExecutor.execute(text: commandText, viewModel: viewModel)
@@ -3220,9 +3226,11 @@ struct ChatView: View {
         }
 
         let didStart: Bool
+        var notificationSubmission: NotificationOffer.Submission?
         if viewModel.activeStreamID != nil {
             prepareTranscriptForExplicitSend()
             let behavior = behavior ?? StreamingSendBehavior.storedValue(streamingSendBehaviorRawValue)
+            notificationSubmission = .streaming(behavior)
             reconcileConsumedDraft(submittedDraft, submittedDraftRevision: submittedDraftRevision)
             let result = await viewModel.submitStreamingMessage(submittedDraft, behavior: behavior)
             guard submissionGeneration == sessionStartGeneration else { return }
@@ -3242,7 +3250,8 @@ struct ChatView: View {
             didStart = await sendStandardMessage(
                 submittedDraft,
                 submittedDraftRevision: submittedDraftRevision,
-                pendingSlash: pendingSlash
+                pendingSlash: pendingSlash,
+                onRunStarted: { notificationSubmission = parsedSlash == nil ? .composer : .slashCommand }
             )
         }
 
@@ -3254,6 +3263,9 @@ struct ChatView: View {
             } else {
                 composerIsFocused = false
             }
+            if let notificationSubmission {
+                considerNotificationOffer(after: notificationSubmission, generation: submissionGeneration)
+            }
         }
 
         if let lastError = viewModel.lastError {
@@ -3264,6 +3276,7 @@ struct ChatView: View {
     private func sendVoiceNote(audioData: Data, filename: String) async {
         guard viewModel.clarificationPrompt == nil else { return }
         prepareTranscriptForExplicitSend()
+        let generation = sessionStartGeneration
 
         let waitForSession: (@MainActor () async -> Bool)?
         if needsSessionStart { waitForSession = { await startPendingSession() } }
@@ -3272,7 +3285,8 @@ struct ChatView: View {
             audioData: audioData,
             filename: filename,
             modelContext: modelContext,
-            waitForSession: waitForSession
+            waitForSession: waitForSession,
+            onRunStarted: { considerNotificationOffer(after: .composer, generation: generation) }
         )
 
         if outcome.didStart {
@@ -3285,10 +3299,46 @@ struct ChatView: View {
         }
     }
 
+    private func considerNotificationOffer(after submission: NotificationOffer.Submission, generation: Int) {
+        guard submission.canOffer, isNotificationOfferSceneActive, generation == sessionStartGeneration,
+              !UserDefaults.standard.bool(forKey: NotificationOffer.hasOfferedKey) else { return }
+        Task {
+            let authorizationStatus = await ResponseCompletionNotificationService.authorizationStatus()
+            guard isNotificationOfferSceneActive, generation == sessionStartGeneration else { return }
+            guard let offer = NotificationOffer.claim(
+                after: submission, authorizationStatus: authorizationStatus,
+                relayConnected: TalariaRelayConfigurationStore.operationalCredentials(for: server) != nil
+            ) else { return }
+            notificationOffer = offer
+        }
+    }
+
+    private func notificationOfferPresentation(_ offer: NotificationOffer) -> Alert {
+        let action = offer == .relay ? String(localized: "Turn On") : String(localized: "Notify Me")
+        return Alert(
+            title: Text("Get notified when Hermes finishes or needs you?"),
+            primaryButton: .default(Text(action)) { Task { await enableNotificationOffer(offer) } },
+            secondaryButton: .cancel(Text("Not Now"))
+        )
+    }
+
+    private func enableNotificationOffer(_ offer: NotificationOffer) async {
+        let registrationID = offer == .relay
+            ? TalariaRelayConfigurationStore.operationalCredentials(for: server)?.deviceRegistrationID : nil
+        let enabled = await offer.enable(whileCurrent: {
+            offer == .local || (registrationID != nil &&
+                TalariaRelayConfigurationStore.operationalCredentials(for: server)?.deviceRegistrationID == registrationID)
+        })
+        if enabled {
+            await TalariaAggregateLiveActivityManager.shared.refreshAfterNotificationPreferenceChange(registerForRemoteNotifications: true)
+        }
+    }
+
     private func sendStandardMessage(
         _ submittedDraft: String,
         submittedDraftRevision: Int,
-        pendingSlash: ParsedSlashCommand? = nil
+        pendingSlash: ParsedSlashCommand?,
+        onRunStarted: @MainActor @escaping () -> Void
     ) async -> Bool {
         guard !viewModel.isSubmittingMessage else { return false }
         let message = pendingSlash?.messageForIdleSend ?? submittedDraft
@@ -3348,7 +3398,8 @@ struct ChatView: View {
                     syncDraftAttachments()
                 }
                 return files
-            }
+            },
+            onRunStarted: onRunStarted
         )
         if didStart {
             if let draftTextWriteID {

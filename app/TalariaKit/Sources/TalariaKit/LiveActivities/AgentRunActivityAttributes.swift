@@ -343,6 +343,11 @@ public enum TalariaRelayNotifications {
     public static let unconfirmedUpdateAvailableAlertsKey = "talariaRelay.unconfirmedUpdateAvailableAlerts"
     public static let pushTokenKey = "talariaRelay.pushToken"
     public static let pushToStartTokenKey = "talariaRelay.pushToStartToken"
+
+    public static func updateAvailableAlertsEnabled(in defaults: UserDefaults) -> Bool {
+        (defaults.object(forKey: unconfirmedUpdateAvailableAlertsKey) as? Bool)
+            ?? defaults.bool(forKey: updateAvailableAlertsEnabledKey)
+    }
 }
 
 /// TAL-1422: the plan progress and running workers a Live Activity shows, as the server counted them. The App only words

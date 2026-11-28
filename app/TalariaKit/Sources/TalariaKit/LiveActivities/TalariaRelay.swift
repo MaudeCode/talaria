@@ -72,7 +72,8 @@ public enum TalariaRelayConfigurationStore {
     private static let fixtureCredentials = OSAllocatedUnfairLock<TalariaRelayCredentials?>(initialState: {
         let arguments = ProcessInfo.processInfo.arguments
         guard arguments.contains(UITestFixtureLaunch.relayRecoveryArgument)
-                || arguments.contains(UITestFixtureLaunch.approvalBadgeArgument) else { return nil }
+                || arguments.contains(UITestFixtureLaunch.approvalBadgeArgument)
+                || arguments.contains(UITestFixtureLaunch.relayNotificationOfferArgument) else { return nil }
         return TalariaRelayCredentials(
             baseURL: UITestFixtureLaunch.serverURL, deviceID: "fixture-device", userID: "fixture-owner",
             appleUserID: "fixture-apple", sessionToken: "fixture-relay-session", expiresAt: .distantFuture,

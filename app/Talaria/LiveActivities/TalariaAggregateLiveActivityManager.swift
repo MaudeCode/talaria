@@ -1,6 +1,7 @@
 @preconcurrency import ActivityKit
 import Foundation
 import TalariaKit
+import UIKit
 
 @MainActor
 final class TalariaAggregateLiveActivityManager {
@@ -70,6 +71,11 @@ final class TalariaAggregateLiveActivityManager {
             pendingSeeds.removeValue(forKey: seedID)
             return
         }
+    }
+
+    func refreshAfterNotificationPreferenceChange(registerForRemoteNotifications: Bool) async {
+        if registerForRemoteNotifications { UIApplication.shared.registerForRemoteNotifications() }
+        try? await refresh()
     }
 
     func refresh() async throws {
