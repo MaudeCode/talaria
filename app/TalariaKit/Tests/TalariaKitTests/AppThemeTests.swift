@@ -264,13 +264,16 @@ final class ResponseCompletionNotificationServiceTests: XCTestCase {
         XCTAssertNil(ResponseCompletionOutcome(status: .responding))
     }
 
-    func testRequestCarriesOnlySessionIDPayload() {
-        func request(_ sessionID: String?) -> ResponseCompletionNotificationRequest {
-            ResponseCompletionNotificationRequest(sessionID: sessionID, chatTitle: "Chat", outcome: .completed)
+    func testRequestWithoutSessionHasNoRouteOrThreadAndKeepsUniqueIdentifier() {
+        for sessionID in [nil, ""] {
+            let request = ResponseCompletionNotificationRequest(
+                sessionID: sessionID, publisherID: "https://replies.test", chatTitle: "Chat", outcome: .completed
+            )
+            let notification = request.notificationRequest
+            XCTAssertTrue(notification.content.userInfo.isEmpty)
+            XCTAssertTrue(notification.content.threadIdentifier.isEmpty)
+            XCTAssertNotEqual(notification.identifier, request.notificationRequest.identifier)
         }
-        XCTAssertEqual(request("session-abc").userInfo, ["sessionId": "session-abc"])
-        XCTAssertEqual(request("").userInfo, [:])
-        XCTAssertEqual(request(nil).userInfo, [:])
     }
 
     func testRequestNamesTheChatAndTheOutcome() {
@@ -290,11 +293,12 @@ final class ResponseCompletionNotificationServiceTests: XCTestCase {
         }
     }
 
-    func testSchedulesEachAllowedOutcomeWithItsChat() async {
+    func testSchedulesEachAllowedOutcomeWithItsChatAndPublisher() async throws {
         for outcome in [ResponseCompletionOutcome.completed, .failed] {
             let scheduler = SpyResponseCompletionNotificationScheduler(status: .authorized)
 
             let didSchedule = await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
+                server: URL(string: "https://Replies.test:443/app")!,
                 sessionID: "session-abc",
                 chatTitle: "Deploy plan",
                 outcome: outcome,
@@ -305,10 +309,40 @@ final class ResponseCompletionNotificationServiceTests: XCTestCase {
 
             XCTAssertTrue(didSchedule)
             XCTAssertEqual(scheduler.authorizationStatusCallCount, 1)
-            XCTAssertEqual(scheduler.scheduledRequests, [
-                ResponseCompletionNotificationRequest(sessionID: "session-abc", chatTitle: "Deploy plan", outcome: outcome)
-            ])
+            XCTAssertEqual(scheduler.scheduledRequests.count, 1)
+            let request = try XCTUnwrap(scheduler.scheduledRequests.first)
+            XCTAssertEqual(request.chatTitle, "Deploy plan")
+            XCTAssertEqual(request.outcome, outcome)
+            let payload = request.notificationRequest.content.userInfo
+            XCTAssertEqual(payload[SessionNotificationRefresh.publisherIDKey] as? String, "https://replies.test")
+            let url = try XCTUnwrap(SessionNotificationRefresh.sessionURL(userInfo: payload))
+            XCTAssertEqual(TalariaDeepLink.sessionID(from: url), "session-abc")
+            XCTAssertEqual(TalariaDeepLink.publisherID(from: url), "https://replies.test")
         }
+    }
+
+    func testOnlyNotificationsForTheSameServerAndChatShareAReplacementIdentifier() {
+        let publisher = "https://replies.test"
+        func notification(
+            _ sessionID: String, on server: String, outcome: ResponseCompletionOutcome = .completed
+        ) -> UNNotificationRequest {
+            ResponseCompletionNotificationRequest(
+                sessionID: sessionID, publisherID: server, chatTitle: "Chat", outcome: outcome
+            ).notificationRequest
+        }
+
+        let first = notification("session-abc", on: publisher)
+        let next = notification("session-abc", on: publisher, outcome: .failed)
+        XCTAssertEqual(first.identifier, next.identifier)
+        XCTAssertEqual(first.content.threadIdentifier, first.identifier)
+        XCTAssertEqual(next.content.threadIdentifier, next.identifier)
+        XCTAssertNotEqual(first.identifier, notification("session-def", on: publisher).identifier)
+        let otherServer = "https://replies.test-alt"
+        XCTAssertNotEqual(first.identifier, notification("session-abc", on: otherServer).identifier)
+        XCTAssertNotEqual(
+            notification("alt-session-abc", on: publisher).identifier,
+            notification("session-abc", on: otherServer).identifier
+        )
     }
 
     func testDoesNotScheduleEitherOutcomeWhenAGateBlocks() async {
@@ -324,6 +358,7 @@ final class ResponseCompletionNotificationServiceTests: XCTestCase {
                 let scheduler = SpyResponseCompletionNotificationScheduler(status: status)
 
                 let didSchedule = await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
+                    server: URL(string: "https://replies.test")!,
                     sessionID: "session-abc",
                     chatTitle: "Deploy plan",
                     outcome: outcome,

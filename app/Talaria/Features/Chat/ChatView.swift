@@ -4267,6 +4267,7 @@ struct ChatView: View {
             }
 
             await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
+                server: server,
                 sessionID: session.sessionId,
                 chatTitle: viewModel.displayTitle,
                 outcome: outcome,

@@ -415,6 +415,33 @@ final class NotificationAnswerTests: XCTestCase {
         XCTAssertEqual(auth.state, .loggedIn(server: publisher))
         attachHostedScreenshot(window, name: "relay-update-alert-opens-system-settings")
     }
+
+    func testRetiringTheOldSceneReaderKeepsTheWindowAvailableForNotificationRouting() async throws {
+        let window = try HostedScene.window(size: HostedSize.phone)
+        defer { HostedScene.dismantle(window) }
+        let sceneID = try XCTUnwrap(window.windowScene?.windowSceneID)
+        let initial = expectation(description: "original reader attaches")
+        var reportedSceneID: String?
+        let original = WindowSceneReader.ReaderView { id in
+            reportedSceneID = id
+            if id == sceneID { initial.fulfill() }
+        }
+        window.addSubview(original)
+        await fulfillment(of: [initial], timeout: 10)
+
+        let replacement = WindowSceneReader.ReaderView { reportedSceneID = $0 }
+        // During a server switch the new content can attach before SwiftUI removes the old content.
+        window.addSubview(replacement)
+        original.removeFromSuperview()
+        let laterAttachment = expectation(description: "scene callbacks reach a later attachment")
+        let marker = WindowSceneReader.ReaderView { id in
+            if id == sceneID { laterAttachment.fulfill() }
+        }
+        window.addSubview(marker)
+        await fulfillment(of: [laterAttachment], timeout: 10)
+
+        XCTAssertEqual(reportedSceneID, sceneID, "The old reader erased the scene that receives notification taps")
+    }
 }
 
 /// Decodes UserNotifications objects that have no public initializer from fixed key values.

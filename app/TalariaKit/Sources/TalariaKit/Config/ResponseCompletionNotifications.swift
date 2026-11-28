@@ -38,6 +38,7 @@ enum ResponseCompletionNotificationPolicy {
 
 public struct ResponseCompletionNotificationRequest: Equatable, Sendable {
     let sessionID: String?
+    var publisherID: String? = nil
     /// The chat's display title, as the Chats list shows it.
     let chatTitle: String?
     let outcome: ResponseCompletionOutcome
@@ -56,7 +57,31 @@ public struct ResponseCompletionNotificationRequest: Equatable, Sendable {
 
     var userInfo: [String: String] {
         guard let sessionID, !sessionID.isEmpty else { return [:] }
-        return [SessionNotificationRefresh.sessionIDKey: sessionID]
+        var info = [SessionNotificationRefresh.sessionIDKey: sessionID]
+        if let publisherID { info[SessionNotificationRefresh.publisherIDKey] = publisherID }
+        return info
+    }
+
+    var notificationRequest: UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let payload = userInfo
+        content.userInfo = payload
+
+        let identifier: String
+        if let sessionID = payload[SessionNotificationRefresh.sessionIDKey] {
+            // Escape the separator so hyphens in a hostname can't shift the server/chat boundary.
+            let publisher = (publisherID ?? "")
+                .replacingOccurrences(of: "%", with: "%25")
+                .replacingOccurrences(of: "-", with: "%2D")
+            identifier = "run-alert-\(publisher)-\(sessionID)"
+            content.threadIdentifier = identifier
+        } else {
+            identifier = "response-complete-\(UUID().uuidString)"
+        }
+        return UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
     }
 }
 
@@ -116,23 +141,7 @@ public struct UserNotificationResponseCompletionScheduler: ResponseCompletionNot
     }
 
     public func schedule(_ request: ResponseCompletionNotificationRequest) async {
-        let content = UNMutableNotificationContent()
-        content.title = request.title
-        content.body = request.body
-        content.sound = .default
-        content.userInfo = request.userInfo
-
-        let identifierSessionPart: String
-        if let sessionID = request.sessionID, !sessionID.isEmpty {
-            identifierSessionPart = sessionID
-        } else {
-            identifierSessionPart = UUID().uuidString
-        }
-        let notificationRequest = UNNotificationRequest(
-            identifier: "response-complete-\(identifierSessionPart)-\(UUID().uuidString)",
-            content: content,
-            trigger: nil
-        )
+        let notificationRequest = request.notificationRequest
 
         await withCheckedContinuation { continuation in
             UNUserNotificationCenter.current().add(notificationRequest) { _ in
@@ -155,6 +164,7 @@ public enum ResponseCompletionNotificationService {
 
     @discardableResult
     public static func scheduleResponseCompletedIfAllowed(
+        server: URL,
         sessionID: String?,
         chatTitle: String?,
         outcome: ResponseCompletionOutcome,
@@ -173,6 +183,7 @@ public enum ResponseCompletionNotificationService {
 
         await scheduler.schedule(ResponseCompletionNotificationRequest(
             sessionID: sessionID,
+            publisherID: TalariaRelayClient.originURL(server)?.absoluteString,
             chatTitle: chatTitle,
             outcome: outcome
         ))
@@ -232,7 +243,7 @@ public enum SessionNotificationRefresh {
             self.sessionID = sessionID
         }
 
-        /// A local notification names no publisher: it comes from the active server, the only one a chat shows.
+        /// Notifications without a publisher match the visible session ID alone.
         public func isNamed(by userInfo: [AnyHashable: Any]) -> Bool {
             guard let sessionID = userInfo[sessionIDKey] as? String else { return false }
             return isNamed(sessionID: sessionID, publisherID: userInfo[publisherIDKey] as? String)

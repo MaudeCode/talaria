@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Local reply alerts open the chat on the server that sent them and replace earlier reply alerts for that chat.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
