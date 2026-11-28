@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
 
 test.describe('shell', () => {
@@ -55,14 +56,17 @@ test.describe('shell', () => {
     await page.route('**/api/skills', (route) => route.fulfill({ json: { skills: [{ name: 'demo', description: 'Example', category: 'apple', disabled: false }], total: 1, categories: ['apple'] } }))
     await page.goto('/skills')
     await settle(page)
-    const left = async (selector: string) => Math.round((await page.locator(selector).first().boundingBox())!.x)
-    const edges = [await left('#skillsSearch'), await left('#skillsList > li')]
-    if (testInfo.project.name !== 'mobile') edges.push(await left('#main .main-view-title'))
+    const left = async (element: Locator) => {
+      await expect(element).toBeVisible()
+      return Math.round((await element.boundingBox())!.x)
+    }
+    const edges = [await left(page.locator('#skillsSearch')), await left(page.locator('#skillsList > li').first())]
+    if (testInfo.project.name !== 'mobile') edges.push(await left(page.locator('#main .main-view-title')))
     expect(edges).toEqual(Array(edges.length).fill(edges[0]))
-    // Logs sits in a Settings section, whose heading is its header: its log tabs (TAL-2139) start at that heading's edge.
-    await page.goto('/settings/logs')
+    // Logs opens with a bookmarked search, so its filter chips start at the Settings heading's edge.
+    await page.goto('/settings/logs?query=error')
     await settle(page)
-    expect(await left('#main [role="tablist"]')).toBe(await left('#main .settings-section-title'))
+    expect(await left(page.getByRole('list', { name: 'Log filters' }))).toBe(await left(page.getByRole('heading', { name: 'Logs' })))
   })
 
   // TAL-2089: on a phone the titlebar already names the hub, so the page keeps its h1 for assistive technology only.
