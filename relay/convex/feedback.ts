@@ -461,6 +461,14 @@ export const storedAttachment = internalQuery({
   },
 });
 
+export async function recordFeedbackDelivery(ctx: MutationCtx, deliveredAt: number) {
+  const deliveryState = await ctx.db.query("feedbackDeliveryState").unique();
+  if (!deliveryState) await ctx.db.insert("feedbackDeliveryState", { lastSuccessfulDeliveryAt: deliveredAt });
+  else if (deliveredAt > deliveryState.lastSuccessfulDeliveryAt) {
+    await ctx.db.patch(deliveryState._id, { lastSuccessfulDeliveryAt: deliveredAt });
+  }
+}
+
 export const acknowledge = internalMutation({
   args: { reportId: v.string(), ticketKey: v.string(), now: v.number() },
   returns: v.union(
@@ -478,11 +486,7 @@ export const acknowledge = internalMutation({
         : { status: "ticket_key_conflict" as const };
     }
     await ctx.db.patch(report._id, { status: "delivered", ticketKey: args.ticketKey, deliveredAt: args.now, deliveryFailureStage: undefined });
-    const deliveryState = await ctx.db.query("feedbackDeliveryState").unique();
-    if (!deliveryState) await ctx.db.insert("feedbackDeliveryState", { lastSuccessfulDeliveryAt: args.now });
-    else if (args.now > deliveryState.lastSuccessfulDeliveryAt) {
-      await ctx.db.patch(deliveryState._id, { lastSuccessfulDeliveryAt: args.now });
-    }
+    await recordFeedbackDelivery(ctx, args.now);
     // The bridge has copied the files by now, so Relay keeps none past delivery.
     await deleteAttachments(ctx, report._id);
     if (report.hasDiagnosticReports) await deleteDiagnosticReports(ctx, report._id);

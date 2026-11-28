@@ -17,8 +17,11 @@ def main():
         trial = Path(temporary)
         project = trial / "relay"
         project.mkdir()
-        for name in ("package.json", "pnpm-lock.yaml", "tsconfig.json"):
-            shutil.copy2(ROOT / "relay" / name, project / name)
+        # Convex also imports the failure-stage contract shared with the bridge image.
+        for name in ("package.json", "pnpm-lock.yaml", "tsconfig.json", "bridge/delivery-status.ts"):
+            destination = project / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / "relay" / name, destination)
         shutil.copytree(ROOT / "relay/convex", project / "convex")
         (project / "node_modules").symlink_to(ROOT / "relay/node_modules", target_is_directory=True)
         (trial / "home").mkdir()
