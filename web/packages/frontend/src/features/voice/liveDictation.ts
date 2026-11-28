@@ -28,6 +28,8 @@ export class NoSpeechError extends Error {
 const FINAL_TIMEOUT_MS = 25_000
 /** An interrupted audio context can stop answering. Use the recording fallback instead of holding the microphone. */
 const FLUSH_TIMEOUT_MS = 1_000
+/** About 2.7 seconds of mono PCM at 48 kHz. A longer backlog is better served by the recording. */
+const MAX_STREAM_BUFFER_BYTES = 256 * 1024
 
 export function liveDictationSupported(): boolean {
   return typeof window !== 'undefined' && window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === 'function' && typeof AudioContext !== 'undefined' && typeof WebSocket !== 'undefined'
@@ -39,6 +41,7 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
   const recorded: Blob[] = []
   const { recorder, audio, tap, source, ws } = await openCapture(media, recorded)
   const early: ArrayBuffer[] = []
+  let earlyBytes = 0
   let final: (TranscribeResult & { no_speech?: boolean }) | null = null
   let failed = false
   let ended = false
@@ -49,13 +52,47 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
   const settled = new Promise<void>((resolve) => { settle = resolve })
   let acknowledgeFlush: (flushed: true) => void = () => undefined
   const flushAcknowledged = new Promise<true>((resolve) => { acknowledgeFlush = resolve })
-  const fail = () => { failed = true; settle() }
+  const release = () => {
+    if (ended) return
+    ended = true
+    tap.port.onmessage = null
+    tap.port.close()
+    tap.disconnect()
+    source.disconnect()
+    void audio.close()
+  }
+  const clearEarly = () => {
+    early.length = 0
+    earlyBytes = 0
+  }
+  const fail = () => {
+    if (failed) return
+    failed = true
+    clearEarly()
+    // Stop producing PCM, but leave the MediaRecorder running on the microphone until Stop or Cancel.
+    release()
+    ws.close()
+    settle()
+  }
+  const send = (frame: string | ArrayBuffer) => {
+    if (failed || ws.readyState !== WebSocket.OPEN) return false
+    // The only text frames here are ASCII control frames.
+    const bytes = typeof frame === 'string' ? frame.length : frame.byteLength
+    if (ws.bufferedAmount + bytes > MAX_STREAM_BUFFER_BYTES) {
+      fail()
+      return false
+    }
+    ws.send(frame)
+    return true
+  }
 
   ws.onopen = () => {
-    ws.send(JSON.stringify({ sample_rate: audio.sampleRate }))
-    for (const chunk of early.splice(0)) ws.send(chunk)
+    if (!send(JSON.stringify({ sample_rate: audio.sampleRate }))) return
+    for (const chunk of early) if (!send(chunk)) break
+    clearEarly()
   }
   ws.onmessage = (message) => {
+    if (failed) return
     let parsed
     try {
       parsed = TranscribeStreamEventSchema.safeParse(JSON.parse(String(message.data)))
@@ -65,7 +102,7 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
     if (!parsed.success) return
     const event = parsed.data
     if (event.type === 'partial') {
-      if (!failed && final === null) onPartial(event.text)
+      if (final === null) onPartial(event.text)
     } else if (event.type === 'final') {
       final = event
       settle()
@@ -78,8 +115,13 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
     if (failed || ended) return
     if (event.data === 'flushed') { acknowledgeFlush(true); return }
     const pcm = toPcm16(event.data)
-    if (ws.readyState === WebSocket.OPEN) ws.send(pcm)
-    else if (ws.readyState === WebSocket.CONNECTING) early.push(pcm)
+    if (ws.readyState === WebSocket.CONNECTING) {
+      if (earlyBytes + pcm.byteLength > MAX_STREAM_BUFFER_BYTES) fail()
+      else {
+        early.push(pcm)
+        earlyBytes += pcm.byteLength
+      }
+    } else send(pcm)
   }
   source.connect(tap)
   // Connected to the output so every browser renders it; the tap writes nothing, so nothing is heard.
@@ -93,21 +135,11 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
     clearTimeout(timer)
     return acknowledged === true
   }
-  const release = () => {
-    if (ended) return
-    ended = true
-    tap.port.onmessage = null
-    tap.port.close()
-    tap.disconnect()
-    source.disconnect()
-    void audio.close()
-  }
-  const dropBuffers = () => { recorded.length = 0; early.length = 0 }
   // Stop and Cancel share one finalization, so the recorder and microphone stop once.
   let finalized: Promise<Blob | null> | null = null
   const recording = () => finalized ??= new Promise<Blob | null>((resolve) => {
     const done = () => {
-      if (cancelled) dropBuffers()
+      if (cancelled) recorded.length = 0
       resolve(recorded.length ? new Blob(recorded, { type: recorder?.mimeType || 'audio/webm' }) : null)
     }
     if (!recorder || recorder.state === 'inactive') done()
@@ -126,12 +158,11 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
         const flushed = await flushCapture()
         release()
         const blob = recording()
-        if (flushed && ws.readyState === WebSocket.OPEN && !failed) ws.send(JSON.stringify({ eos: true }))
-        else fail()
+        if (!flushed || !send(JSON.stringify({ eos: true }))) fail()
         let timer: ReturnType<typeof setTimeout> | undefined
         await Promise.race([settled, new Promise((resolve) => { timer = setTimeout(resolve, FINAL_TIMEOUT_MS) })])
         clearTimeout(timer)
-        ws.close()
+        if (!failed) ws.close()
         live()
         let result = final
         if (result === null) {
@@ -150,13 +181,10 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
     cancel: () => {
       if (cancelled) return
       cancelled = true
-      failed = true
       upload.abort()
-      release()
-      dropBuffers()
+      fail()
+      recorded.length = 0
       void recording()
-      ws.close()
-      settle()
     },
   }
 }

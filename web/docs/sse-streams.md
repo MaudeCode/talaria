@@ -313,9 +313,12 @@ provider session. The frames are `TranscribeStream*Schema` in
 `contracts/fixtures/transcribe-stream.json`.
 
 On Stop, the browser flushes its microphone worklet and sends the final PCM
-block before EOS. If the worklet cannot acknowledge the flush, the browser
-uses the recorded audio fallback. Cancel during capture discards buffered
-audio and closes the stream without EOS.
+block before EOS. While connecting, the browser queues at most 256 KiB of
+PCM. Once open, the same limit applies to the WebSocket's send buffer,
+including each frame about to be sent. If either queue would exceed the limit
+or the worklet cannot acknowledge Stop, the browser closes the live stream
+and uses the local recording on Stop. Cancel discards the recording and
+closes the stream without EOS or an upload.
 
 The server sets `has_usable_transcript` on the final frame and on the
 `POST /api/transcribe` result. A false value tells the composer to keep the
