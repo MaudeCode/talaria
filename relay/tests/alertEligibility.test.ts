@@ -6,6 +6,11 @@ import { sha256 } from "../convex/lib/crypto";
 import { defaultNotificationPreferences, type NotificationPreferences, type SessionPhase } from "../convex/lib/model";
 import { type Backend, now, readState, publish, publisherId, runScheduledRecomputes, seed, snapshotState } from "./relayFixture";
 
+const approvalBody = { "loc-key": "Approval needed on %@", "loc-args": ["Home"] };
+const inputBody = { "loc-key": "Input needed on %@", "loc-args": ["Home"] };
+const completedBody = { "loc-key": "Completed on %@", "loc-args": ["Home"] };
+const startBody = { "loc-key": "Work in progress on %@", "loc-args": ["Home"] };
+
 async function jobs(backend: Backend) {
   const rows = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").order("asc").collect());
   return rows.filter((job) => job.kind !== "badge").map((job) => ({
@@ -75,7 +80,7 @@ describe("publisher alert eligibility", () => {
     });
     await runScheduledRecomputes(backend);
     delivered = await jobs(backend);
-    expect(delivered.at(-1)).toMatchObject({ kind: "live_activity_update", aps: { alert: { title: "session-1", body: "Completed on Home", sound: "default" } } });
+    expect(delivered.at(-1)).toMatchObject({ kind: "live_activity_update", aps: { alert: { title: "session-1", body: completedBody, sound: "default" } } });
   });
 
   it("suppresses one transition while selecting the eligible one from a mixed snapshot", async () => {
@@ -86,13 +91,13 @@ describe("publisher alert eligibility", () => {
     const activityJobs = await jobs(withActivity);
     expect(activityJobs.map((job) => job.kind)).toEqual(["live_activity_update", "notification"]);
     expect(activityJobs[0]!.aps).not.toHaveProperty("alert");
-    expect(activityJobs[1]!.aps).toMatchObject({ alert: { title: "session-2", body: "Input needed on Home" }, "interruption-level": "time-sensitive" });
+    expect(activityJobs[1]!.aps).toMatchObject({ alert: { title: "session-2", ...inputBody }, "interruption-level": "time-sensitive" });
 
     const withoutActivity = await seed({ pushToken: "push-token", activity: false });
     await withoutActivity.mutation(internal.publishers.acceptSnapshot, { ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1", states: mixed });
     await runScheduledRecomputes(withoutActivity);
     expect(await jobs(withoutActivity)).toEqual([
-      expect.objectContaining({ kind: "notification", aps: { alert: { title: "session-2", body: "Input needed on Home" }, sound: "default", "thread-id": expect.any(String), "interruption-level": "time-sensitive" } }),
+      expect.objectContaining({ kind: "notification", aps: { alert: { title: "session-2", ...inputBody }, sound: "default", "thread-id": expect.any(String), "interruption-level": "time-sensitive" } }),
     ]);
   });
 
@@ -119,9 +124,9 @@ describe("publisher alert eligibility", () => {
     await runScheduledRecomputes(backend);
     const delivered = await jobs(backend);
     expect(delivered.map((job) => job.kind)).toEqual(["live_activity_update", "notification"]);
-    expect(delivered[0]!.aps.alert).toEqual({ title: "session-1", body: "Completed on Home", sound: "default" });
+    expect(delivered[0]!.aps.alert).toEqual({ title: "session-1", body: completedBody, sound: "default" });
     expect(delivered[1]!.aps).toMatchObject({
-      alert: { "title-loc-key": "Approval required", "loc-key": "An agent run is waiting for your approval." },
+      alert: { title: "session-2", ...approvalBody },
       "interruption-level": "time-sensitive",
     });
   });
@@ -169,7 +174,7 @@ describe("publisher alert eligibility", () => {
     });
     await runScheduledRecomputes(backend);
     expect(await jobs(backend)).toEqual([
-      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "session-2", body: "Input needed on Home", sound: "default" } }) }),
+      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "session-2", body: inputBody, sound: "default" } }) }),
     ]);
     const started = await backend.run(async (ctx) => ctx.db.query("devices").first());
     expect(started?.pushToStartDeferredAt).toBeUndefined();
@@ -192,7 +197,7 @@ describe("publisher alert eligibility", () => {
     });
     await runScheduledRecomputes(startedBackend);
     expect(await jobs(startedBackend)).toEqual([
-      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "Talaria", body: "1 needs attention", sound: "default" } }) }),
+      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "Talaria", body: startBody, sound: "default" } }) }),
     ]);
   });
 
@@ -232,7 +237,7 @@ describe("publisher alert eligibility", () => {
     });
     await runScheduledRecomputes(backend);
     expect(await jobs(backend)).toEqual([
-      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "Talaria", body: "2 active sessions", sound: "default" } }) }),
+      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "Talaria", body: startBody, sound: "default" } }) }),
     ]);
     expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeUndefined();
   });
@@ -254,7 +259,7 @@ describe("publisher alert eligibility", () => {
     expect(state).toMatchObject({ streamId: "run-2" });
     expect(state).not.toHaveProperty("alertEligible");
     expect(await jobs(backend)).toEqual([
-      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "Talaria", body: "1 needs attention", sound: "default" } }) }),
+      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "Talaria", body: startBody, sound: "default" } }) }),
     ]);
   });
 
@@ -332,7 +337,7 @@ describe("publisher alert eligibility", () => {
     await runScheduledRecomputes(backend);
     const queued = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").first());
     expect(queued).toMatchObject({ kind: "live_activity_start", status: "queued" });
-    expect((JSON.parse(queued!.request.payloadJson) as { aps: { alert: unknown } }).aps.alert).toEqual({ title: "session-1", body: "Completed on Home", sound: "default" });
+    expect((JSON.parse(queued!.request.payloadJson) as { aps: { alert: unknown } }).aps.alert).toEqual({ title: "session-1", body: completedBody, sound: "default" });
     await backend.mutation(internal.publishers.acceptSnapshot, {
       ...publish, nonce: "n2", receivedAt: now + 3, snapshotId: "s2",
       states: [{ ...snapshotState("session-1", 3, "completed", false), updatedAt: now + 2 }, snapshotState("session-2", 1, "running")],
@@ -430,7 +435,7 @@ describe("publisher alert eligibility", () => {
     const delivered = await jobs(backend);
     expect(delivered.map((job) => [job.kind, job.status])).toEqual([["live_activity_update", "stale"], ["live_activity_update", "queued"]]);
     expect(delivered[0]!.aps).not.toHaveProperty("alert");
-    expect(delivered[1]!.aps.alert).toEqual({ title: "session-2", body: "Input needed on Home", sound: "default" });
+    expect(delivered[1]!.aps.alert).toEqual({ title: "session-2", body: inputBody, sound: "default" });
   });
 
   it("defers a push-to-start instead of injecting the fallback alert for an ineligible transition", async () => {
@@ -461,7 +466,7 @@ describe("publisher alert eligibility", () => {
     await runScheduledRecomputes(backend);
     const delivered = await jobs(backend);
     expect(delivered.map((job) => job.kind)).toEqual(["live_activity_start"]);
-    expect(delivered[0]!.aps.alert).toEqual({ title: "session-2", body: "Input needed on Home", sound: "default" });
+    expect(delivered[0]!.aps.alert).toEqual({ title: "session-2", body: inputBody, sound: "default" });
   });
 });
 

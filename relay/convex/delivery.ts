@@ -608,7 +608,7 @@ export const recompute = internalMutation({
         environment: device.apsEnvironment,
         aggregate,
         nowEpochSeconds: Math.floor(now / 1_000),
-        alert: startAlert ?? { title: "Talaria", body: aggregate.subtitle },
+        alert: startAlert,
       });
       await enqueueJob(ctx, {
         userId: args.userId,

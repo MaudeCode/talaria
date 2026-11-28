@@ -213,39 +213,35 @@ export function isAttentionTransition(
   return head !== undefined && previousHead !== undefined ? head !== previousHead : previousPhase !== phase;
 }
 
-// The App's local approval fallback shows these same Localizable keys (contracts/fixtures/relay-approval-alert.json).
-const approvalAlertTitleKey = "Approval required";
-const approvalAlertBodyKey = "An agent run is waiting for your approval.";
-
 export function alertForState(
   next: SessionState,
   preferences: NotificationPreferences,
 ): ActivityAlert | null {
   if (next.alertEligible === false) return null;
+  const chatAlert = (key: string) => ({ title: next.title, body: { key, args: [next.publisherLabel] } });
   switch (activityPhase(next)) {
     case "waiting_for_approval":
       return preferences.notifyOnApproval
-        // Generic copy: an approval alert never carries the session title or anything the approval names.
         ? {
-          title: approvalAlertTitleKey, body: approvalAlertBodyKey, localized: true, interruptionLevel: "time-sensitive",
+          ...chatAlert("Approval needed on %@"), interruptionLevel: "time-sensitive",
           ...(next.approvalHeadId ? { category: "talaria.approval" as const, headId: next.approvalHeadId } : {}),
         }
         : null;
     case "waiting_for_input":
       return preferences.notifyOnInput
         ? {
-          title: next.title, body: `Input needed on ${next.publisherLabel}`, interruptionLevel: "time-sensitive",
+          ...chatAlert("Input needed on %@"), interruptionLevel: "time-sensitive",
           ...(next.inputHeadId ? { category: "talaria.input" as const, headId: next.inputHeadId } : {}),
         }
         : null;
     case "completed":
       // TAL-873: a turn a finished sub-agent or background process started completes quietly unless the device opts in.
       return preferences.notifyOnCompletion && (next.origin !== "background" || preferences.notifyOnBackground === true)
-        ? { title: next.title, body: `Completed on ${next.publisherLabel}` }
+        ? chatAlert("Completed on %@")
         : null;
     case "failed":
       return preferences.notifyOnFailure
-        ? { title: next.title, body: `Failed on ${next.publisherLabel}` }
+        ? chatAlert("Failed on %@")
         : null;
     default:
       return null;

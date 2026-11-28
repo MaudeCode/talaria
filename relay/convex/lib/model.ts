@@ -155,9 +155,8 @@ export interface NotificationPreferences {
 
 export interface ActivityAlert {
   title: string;
-  body: string;
-  // `title` and `body` are keys in the App's Localizable strings, so the phone shows them in its own language.
-  localized?: true;
+  // A keyed body is formatted by iOS using the App's Localizable strings.
+  body: string | { key: string; args: string[] };
   // Time Sensitive alerts break through Focus. Any alert with a level arrives as a standalone notification wherever the
   // device can receive one, never only on a Live Activity.
   interruptionLevel?: "time-sensitive" | "active";

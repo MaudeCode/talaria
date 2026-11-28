@@ -216,17 +216,17 @@ final class ApprovalNotificationTests: XCTestCase {
         XCTAssertEqual(request.content.userInfo as? [String: String], request.userInfo)
     }
 
-    /// TAL-59: the relay's approval push reaches the same session route as the local fallback and shows the same
-    /// localized copy. The opened chat's approval stream refreshes the head
+    /// The relay's approval push reaches the same session route as the local fallback.
+    /// The opened chat's approval stream refreshes the head
     /// (`testApprovalStreamPublishesPromptAndRespondsWithoutStoppingChatStream`).
     @MainActor
-    func testRelayApprovalPushOpensItsSessionWithTheLocalFallbackCopy() throws {
+    func testRelayApprovalPushOpensItsSession() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent(
             "contracts/fixtures/relay-approval-alert.json"))) as? [String: Any])
-        let alert = try XCTUnwrap(fixture["notificationAlert"] as? [String: String])
+        let alert = try XCTUnwrap(fixture["notificationAlert"] as? [String: Any])
         let badge = try XCTUnwrap(fixture["notificationBadge"] as? Int)
         // TAL-1469: Relay names the App's Deny-only category, since its alert never shows what the approval runs.
         XCTAssertEqual(fixture["notificationCategory"] as? String, "talaria.approval")
@@ -242,8 +242,6 @@ final class ApprovalNotificationTests: XCTestCase {
 
         let fallback = PendingActionNotificationRequest(kind: .approval, sessionID: "session-abc", publisherID: "https://approval-alert.test")
         XCTAssertEqual(SessionNotificationRefresh.sessionURL(userInfo: fallback.userInfo), url)
-        XCTAssertEqual(fallback.content.title, alert["title-loc-key"])
-        XCTAssertEqual(fallback.content.body, alert["loc-key"])
     }
 
     @MainActor
