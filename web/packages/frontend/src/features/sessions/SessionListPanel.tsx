@@ -32,6 +32,12 @@ import { MotionList } from '../../ui/MotionList'
 import { SwapText } from '../../ui/SwapText'
 
 const SESSION_DRAG_TYPE = 'application/x-talaria-session-pin'
+const DAYS_IN_WEEK = 7
+
+function localCalendarDay(date: Date): number {
+  // Use the local date's UTC ordinal so a 23- or 25-hour day still counts as one day.
+  return new Date(0).setUTCFullYear(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000
+}
 
 /**
  * Session rows as the user's pending writes show them: resource effects applied, and (TAL-2159) a row whose
@@ -51,24 +57,20 @@ export function useSessionListQuery(params: api.SessionListParams = {}) {
 export function relativeTime(ts: number | null | undefined, now = Date.now()): string {
   if (!ts) return m.session_time_unknown()
   const tsMs = ts * 1000
-  const diff = Math.max(0, now - tsMs)
-  const minute = 60_000
-  const hour = 60 * minute
-  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0)
-  const startOfYesterday = new Date(startOfToday); startOfYesterday.setDate(startOfYesterday.getDate() - 1)
-  const startOfWeek = new Date(startOfToday); startOfWeek.setDate(startOfWeek.getDate() - 6)
-  const startOfLastWeek = new Date(startOfToday); startOfLastWeek.setDate(startOfLastWeek.getDate() - 13)
-  if (tsMs >= startOfToday.getTime()) {
-    if (diff < minute) return m.session_time_minutes_ago({ n: 1 })
-    if (diff < hour) return m.session_time_minutes_ago({ n: Math.floor(diff / minute) })
+  const date = new Date(tsMs)
+  const today = new Date(now)
+  const daysAgo = localCalendarDay(today) - localCalendarDay(date)
+  if (daysAgo <= 0) {
+    const diff = Math.max(0, now - tsMs)
+    const minute = 60_000
+    const hour = 60 * minute
+    if (diff < hour) return m.session_time_minutes_ago({ n: Math.max(1, Math.floor(diff / minute)) })
     return m.session_time_hours_ago({ n: Math.floor(diff / hour) })
   }
-  if (tsMs >= startOfYesterday.getTime()) return m.session_time_days_ago({ n: 1 })
-  if (tsMs >= startOfWeek.getTime()) return m.session_time_days_ago({ n: Math.round((startOfToday.getTime() - tsMs) / 86_400_000) + 1 })
-  if (tsMs >= startOfLastWeek.getTime()) return m.session_time_last_week()
-  const date = new Date(tsMs)
+  if (daysAgo <= DAYS_IN_WEEK) return m.session_time_days_ago({ n: daysAgo })
+  if (daysAgo < 2 * DAYS_IN_WEEK) return m.session_time_last_week()
   const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
-  if (date.getFullYear() !== new Date(now).getFullYear()) options.year = 'numeric'
+  if (date.getFullYear() !== today.getFullYear()) options.year = 'numeric'
   return date.toLocaleDateString(undefined, options)
 }
 
@@ -99,14 +101,16 @@ const GROUP_ORDER: GroupId[] = ['pinned', 'today', 'yesterday', 'week', 'older',
 
 /** Files rows under the server's Pinned, Scheduled and Webhook groups (TAL-1534, TAL-1639), the rest under local-date groups by the server's `sort_ts`, keeping the server's order inside each group (TAL-306). */
 export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: GroupId; rows: SessionRow[] }[] {
-  const today = new Date(now); today.setHours(0, 0, 0, 0)
-  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
-  const week = new Date(today); week.setDate(today.getDate() - 7)
-  const todayMs = today.getTime(), yesterdayMs = yesterday.getTime(), weekMs = week.getTime()
+  const today = localCalendarDay(new Date(now))
   const byGroup = new Map<GroupId, SessionRow[]>()
   for (const r of rows) {
-    const ts = r.sort_ts * 1000
-    const g: GroupId = r.sidebar_group === 'pinned' || r.sidebar_group === 'scheduled' || r.sidebar_group === 'webhook' ? r.sidebar_group : ts >= todayMs ? 'today' : ts >= yesterdayMs ? 'yesterday' : ts >= weekMs ? 'week' : 'older'
+    let g: GroupId
+    if (r.sidebar_group === 'pinned' || r.sidebar_group === 'scheduled' || r.sidebar_group === 'webhook') {
+      g = r.sidebar_group
+    } else {
+      const daysAgo = today - localCalendarDay(new Date(r.sort_ts * 1000))
+      g = daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo <= DAYS_IN_WEEK ? 'week' : 'older'
+    }
     const grouped = byGroup.get(g)
     if (grouped) grouped.push(r)
     else byGroup.set(g, [r])
