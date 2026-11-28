@@ -337,7 +337,7 @@ struct ContentView: View {
 /// (TAL-2389).
 struct WindowSceneReader: UIViewRepresentable {
     var title: String?
-    var report: (String?) -> Void = { _ in }
+    var report: (String) -> Void = { _ in }
 
     func makeUIView(context: Context) -> ReaderView { ReaderView(report: report) }
     func updateUIView(_ view: ReaderView, context: Context) {
@@ -346,10 +346,10 @@ struct WindowSceneReader: UIViewRepresentable {
     }
 
     final class ReaderView: UIView {
-        let report: (String?) -> Void
+        let report: (String) -> Void
         var title: String?
 
-        init(report: @escaping (String?) -> Void) {
+        init(report: @escaping (String) -> Void) {
             self.report = report
             super.init(frame: .zero)
             isUserInteractionEnabled = false
@@ -361,10 +361,12 @@ struct WindowSceneReader: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            let id = window?.windowScene?.windowSceneID
             applyTitle()
-            // Outside the view update that moved it.
-            Task { @MainActor in report(id) }
+            // A server switch can detach the old reader after its replacement attaches.
+            Task { @MainActor [weak self] in
+                guard let self, let id = window?.windowScene?.windowSceneID else { return }
+                report(id)
+            }
         }
 
         /// The window's name in the app switcher and the system's window pickers.

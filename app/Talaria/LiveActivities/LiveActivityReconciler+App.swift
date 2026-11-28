@@ -56,6 +56,7 @@ extension LiveActivityReconciler {
                 // The core calls `notify` only for an orphan the server journal maps
                 // to completed or failed; a user Stop is finalized silently.
                 await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
+                    server: server,
                     sessionID: orphan.sessionID.isEmpty ? nil : orphan.sessionID,
                     chatTitle: orphan.sessionTitle,
                     outcome: outcome,

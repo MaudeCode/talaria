@@ -2793,6 +2793,7 @@ final class LiveActivityTests: XCTestCase {
             endOrphan: { _, _ in true },
             notify: { orphan, outcome in
                 await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
+                    server: URL(string: "https://replies.test")!,
                     sessionID: orphan.sessionID,
                     chatTitle: orphan.sessionTitle,
                     outcome: outcome,
