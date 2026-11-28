@@ -85,6 +85,15 @@
       },
       "message": "test-audit ready: move by a fraction of the viewport and wait for the reader to settle away from the latest message before recording a bookmark (docs/testing.md)"
     },
+    "ready-gallery-notification-layout": {
+      "paths": [
+        "app/TalariaTests/ScreenGalleryHostedTests.swift"
+      ],
+      "patterns": [
+        "\\bloadedText\\s*=\\s*\"iOS (?:permission not requested|notifications (?:allowed|disabled))\\.\""
+      ],
+      "message": "test-audit ready: use an app-owned visible control to establish notification Settings layout readiness (docs/testing.md)"
+    },
     "leak-report-webkit-ownership": {
       "paths": [
         "app/TalariaTests/TranscriptMediaRenderingTests.swift"

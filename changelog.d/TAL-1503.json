@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Turn off Relay session alert sounds while keeping banners and Live Activity alerts visible.",
+      "highlight": false,
+      "announcement": {
+        "title": "Session Alert Sounds",
+        "description": "Mute Relay session alerts while keeping banners and Live Activity alerts visible.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

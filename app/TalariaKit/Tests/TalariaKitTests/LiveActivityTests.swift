@@ -757,6 +757,94 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey))
     }
 
+    func testRelaySoundChoiceReconcilesAfterTwoLostResponses() async throws {
+        let defaults = UserDefaults.ephemeral("relay-sound-recovery")
+        let choices = LockedTestValue<[Bool]>([])
+        let session = relaySoundTestSession { request, sound in
+            choices.value.append(sound)
+            if choices.value.count <= 2 { throw URLError(.timedOut) }
+            return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+        }
+        let client = TalariaRelayClient(credentials: Self.relaySoundCredentials, session: session)
+
+        do {
+            try await client.configureDevice(notificationSoundEnabled: false, defaults: defaults)
+            XCTFail("The two lost responses cannot confirm the choice")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .timedOut)
+        }
+        try await client.configureDevice(defaults: defaults)
+
+        XCTAssertEqual(choices.value, [false, false, false])
+    }
+
+    func testRelaySoundChoiceRollsBackWhenRegistrationIsRefused() async throws {
+        let defaults = UserDefaults.ephemeral("relay-sound-refused")
+        let choices = LockedTestValue<[Bool]>([])
+        let session = relaySoundTestSession { request, sound in
+            choices.value.append(sound)
+            return sound
+                ? apiTestJSONResponse(#"{"ok":true}"#, for: request)
+                : apiTestJSONResponse(#"{"error":"unauthorized"}"#, statusCode: 401, for: request)
+        }
+        let client = TalariaRelayClient(credentials: Self.relaySoundCredentials, session: session)
+
+        do {
+            try await client.configureDevice(notificationSoundEnabled: false, defaults: defaults)
+            XCTFail("Relay refused the choice")
+        } catch let error as TalariaRelayClient.ClientError {
+            XCTAssertTrue(error.definitivelyRefusedWrite)
+        }
+        try await client.configureDevice(defaults: defaults)
+
+        XCTAssertEqual(choices.value, [false, true])
+    }
+
+    func testRelaySoundChoiceSurvivesOnlyOnItsOwnRegistration() async throws {
+        let defaults = UserDefaults.ephemeral("relay-sound-registration")
+        let choices = LockedTestValue<[Bool]>([])
+        let session = relaySoundTestSession { request, sound in
+            choices.value.append(sound)
+            return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+        }
+        let client = TalariaRelayClient(credentials: Self.relaySoundCredentials, session: session)
+        var anotherAccount = Self.relaySoundCredentials
+        anotherAccount.userID = "another-account"
+        anotherAccount.sessionToken = "another-session"
+        let anotherClient = TalariaRelayClient(credentials: anotherAccount, session: session)
+
+        try await client.configureDevice(notificationSoundEnabled: false, defaults: defaults)
+        try await anotherClient.configureDevice(defaults: defaults)
+        try await client.configureDevice(defaults: defaults)
+
+        XCTAssertEqual(choices.value, [false, true, false])
+    }
+
+    private static let relaySoundCredentials = TalariaRelayCredentials(
+        baseURL: URL(string: "https://relay.test")!, deviceID: "sound-test", userID: "test-user",
+        appleUserID: "test-apple-id", sessionToken: "test-token", expiresAt: .distantFuture
+    )
+
+    private func relaySoundTestSession(
+        _ handler: @escaping (URLRequest, Bool) throws -> (HTTPURLResponse, Data)
+    ) -> URLSession {
+        let scope = MockURLProtocol.register { request in
+            guard request.httpMethod == "PUT", request.url?.path == "/v1/devices/sound-test" else {
+                return apiTestJSONResponse("{}", statusCode: 404, for: request)
+            }
+            let data = try XCTUnwrap(apiTestBodyData(from: request))
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let preferences = try XCTUnwrap(body["preferences"] as? [String: Bool])
+            return try handler(request, XCTUnwrap(preferences["notificationSoundEnabled"]))
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: scope]
+        let session = URLSession(configuration: configuration)
+        addTeardownBlock { session.finishTasksAndInvalidate() }
+        return session
+    }
+
     func testRelayAppleSignInPairingAndAggregateSnapshotContract() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LiveActivityURLProtocol.self]
@@ -852,6 +940,7 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(registration["pushToken"] as? String, "ordinary-push-token")
         XCTAssertEqual(registration["pushToStartToken"] as? String, "push-to-start-token")
         XCTAssertEqual(preferences["notificationsEnabled"], true)
+        XCTAssertEqual(preferences["notificationSoundEnabled"], true)
         XCTAssertEqual(preferences["notifyOnApproval"], true)
         XCTAssertEqual(preferences["notifyOnInput"], true)
         XCTAssertEqual(preferences["notifyOnCompletion"], false)
