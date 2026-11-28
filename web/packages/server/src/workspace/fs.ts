@@ -694,7 +694,9 @@ function readAnchoredFile(workspace: string, rel: string, read: boolean): { size
 function decodedContent(rel: string, raw: Buffer): FileContent {
   const content = decodeText(raw)
   if (content === null) return { path: rel, size: raw.length, binary: true }
-  return { path: rel, content, size: raw.length, lines: (content.match(/\n/g)?.length ?? 0) + 1 }
+  const unterminatedLine = content.length > 0 && !content.endsWith('\n') ? 1 : 0
+  const lines = (content.match(/\n/g)?.length ?? 0) + unterminatedLine
+  return { path: rel, content, size: raw.length, lines }
 }
 
 /**

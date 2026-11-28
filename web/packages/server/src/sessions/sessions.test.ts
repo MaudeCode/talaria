@@ -1128,7 +1128,7 @@ describe('projects, workspaces, and files over HTTP', () => {
     writeFileSync(join(ws, 'page.html'), '<p>hi</p>')
     writeFileSync(join(ws, 'n.md'), '# hi')
     writeFileSync(join(ws, 'blob.bin'), Buffer.from([0x68, 0, 0xff]))
-    writeFileSync(join(ws, 't.txt'), 'plain')
+    writeFileSync(join(ws, 't.txt'), 'plain\n')
     writeFileSync(join(ws, 'rows.csv'), `name,note\r\n"Ada","said ""hi"", twice"\r\n\r\n${Array.from({ length: 600 }, (_, i) => `r${String(i)},x`).join('\n')}\n`)
     const read = async (path: string) => {
       const res = await s.get(`/api/file?session_id=${sid}&path=${path}`)
@@ -1142,10 +1142,11 @@ describe('projects, workspaces, and files over HTTP', () => {
     expect(await read('i.svg')).toMatchObject({ preview: 'image' })
     expect(await read('page.html')).toMatchObject({ preview: 'html', content: '<p>hi</p>' })
     expect(await read('n.md')).toMatchObject({ preview: 'markdown', content: '# hi' })
-    expect(await read('t.txt')).toMatchObject({ preview: 'text', content: 'plain' })
+    expect(await read('t.txt')).toMatchObject({ preview: 'text', content: 'plain\n', lines: 1 })
     const blob = await read('blob.bin')
     expect(blob).toMatchObject({ preview: 'binary', binary: true, size: 3 })
     expect(blob.content).toBeUndefined()
+    expect(blob.lines).toBeUndefined()
     const csv = await read('rows.csv')
     expect(csv).toMatchObject({ preview: 'csv', table_truncated: true })
     const rows = csv.table as string[][]
