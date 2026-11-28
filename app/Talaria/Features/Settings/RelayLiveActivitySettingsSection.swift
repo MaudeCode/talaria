@@ -44,47 +44,40 @@ struct RelayNotificationSettingsRow: View {
     @Bindable var authManager: AuthManager
 
     @State private var statusMessage: String?
-    @State private var isRelayAvailable = false
-    @State private var updateAlertsOverride: Bool?
-    @State private var updateAlertsWriteID: UUID?
-    @State private var updateAlertsError: (message: SettingsErrorText, whileUnconfirmed: Bool)?
     @AppStorage(TalariaRelayNotifications.isEnabledKey) private var notificationsEnabled = false
     @AppStorage(TalariaRelayNotifications.backgroundAlertsEnabledKey) private var backgroundAlertsEnabled = false
-    @AppStorage(TalariaRelayNotifications.updateAvailableAlertsEnabledKey) private var updateAlertsEnabled = false
-    @AppStorage(TalariaRelayNotifications.unconfirmedUpdateAvailableAlertsKey) private var unconfirmedUpdateAlerts: Bool?
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var completionAlertsEnabled = false
 
     var body: some View {
+        let registrationID = relayCredentials?.deviceRegistrationID
         Group {
             SettingsToggleRow(
                 title: SettingsIndex.notificationsApprovalInputAlerts.title,
                 systemImage: "bell.badge",
                 isOn: notificationBinding
             )
-            .disabled(!isRelayAvailable)
+            .disabled(registrationID == nil)
 
             SettingsToggleRow(
                 title: SettingsIndex.notificationsBackgroundAlerts.title,
                 systemImage: "arrow.triangle.branch",
                 isOn: $backgroundAlertsEnabled
             )
-            .disabled(!isRelayAvailable || !completionAlertsEnabled)
+            .disabled(registrationID == nil || !completionAlertsEnabled)
 
-            SettingsToggleRow(
-                title: SettingsIndex.notificationsUpdateAvailable.title,
-                systemImage: "arrow.down.circle",
-                isOn: Binding(get: { updateAlertsOverride ?? unconfirmedUpdateAlerts ?? updateAlertsEnabled }, set: setUpdateAlerts),
-                accessibilityIdentifier: SettingsIndex.notificationsUpdateAvailable.id
-            )
-            .disabled(!isRelayAvailable)
-
-            if let updateAlertsError, !updateAlertsError.whileUnconfirmed || unconfirmedUpdateAlerts != nil {
-                SettingsErrorFootnote(updateAlertsError.message)
+            Group {
+                RelayRegistrationPreferenceToggle(
+                    .sessionAlertSounds, registrationID: registrationID, resolveCredentials: { relayCredentials }
+                )
+                RelayRegistrationPreferenceToggle(
+                    .updateAvailableAlerts, registrationID: registrationID, resolveCredentials: { relayCredentials }
+                )
             }
+            .id(registrationID)
 
             SettingsFootnote(
                 statusMessage
-                    ?? (isRelayAvailable
+                    ?? (registrationID != nil
                         ? String(localized: "Delivered for servers connected to Talaria Relay.")
                         : String(localized: "Connect a server to Talaria Relay to enable remote alerts."))
             )
@@ -92,7 +85,6 @@ struct RelayNotificationSettingsRow: View {
         .onChange(of: backgroundAlertsEnabled) {
             Task { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
         }
-        .task { isRelayAvailable = relayCredentials != nil }
     }
 
     private var notificationBinding: Binding<Bool> {
@@ -119,45 +111,9 @@ struct RelayNotificationSettingsRow: View {
         return nil
     }
 
-    private func setUpdateAlerts(_ enabled: Bool) {
-        let writeID = UUID()
-        updateAlertsWriteID = writeID
-        updateAlertsOverride = enabled
-        updateAlertsError = nil
-        Task {
-            if enabled {
-                let granted = await ResponseCompletionNotificationService.requestAuthorization()
-                guard updateAlertsWriteID == writeID else { return }
-                guard granted else {
-                    updateAlertsOverride = nil
-                    updateAlertsError = (SettingsErrorText(String(localized: "Notification permission is required for relay alerts.")), false)
-                    return
-                }
-                UIApplication.shared.registerForRemoteNotifications()
-            }
-            guard updateAlertsWriteID == writeID else { return }
-            guard let credentials = relayCredentials else {
-                updateAlertsOverride = nil
-                updateAlertsError = (SettingsErrorText(String(localized: "Connect a server to Talaria Relay to enable remote alerts.")), false)
-                return
-            }
-            defer { if updateAlertsWriteID == writeID { updateAlertsOverride = nil } }
-            do {
-                try await TalariaRelayClient(credentials: credentials).configureDevice(
-                    pushToStartEnabled: TalariaLiveActivityMode.current == .allRunning,
-                    updateAvailableAlertsEnabled: enabled
-                )
-            } catch {
-                guard updateAlertsWriteID == writeID else { return }
-                let refused = (error as? TalariaRelayClient.ClientError)?.definitivelyRefusedWrite == true
-                updateAlertsError = (SettingsErrorText(error), !refused)
-            }
-        }
-    }
-
     @MainActor
     private func enableNotifications() async {
-        guard isRelayAvailable else {
+        guard relayCredentials != nil else {
             notificationsEnabled = false
             return
         }
@@ -170,5 +126,85 @@ struct RelayNotificationSettingsRow: View {
             statusMessage = String(localized: "Notification permission is required for relay alerts.")
         }
         try? await TalariaAggregateLiveActivityManager.shared.refresh()
+    }
+}
+
+private struct RelayRegistrationPreferenceToggle: View {
+    private let preference: TalariaRelayNotifications.RegistrationPreference
+    private let registrationID: String?
+    private let resolveCredentials: @MainActor () -> TalariaRelayCredentials?
+
+    @AppStorage private var confirmed: Bool
+    @AppStorage private var unconfirmed: Bool?
+    @State private var override: Bool?
+    @State private var writeID: UUID?
+    @State private var writeError: (message: SettingsErrorText, whileUnconfirmed: Bool)?
+
+    init(
+        _ preference: TalariaRelayNotifications.RegistrationPreference,
+        registrationID: String?,
+        resolveCredentials: @MainActor @escaping () -> TalariaRelayCredentials?
+    ) {
+        self.preference = preference
+        self.registrationID = registrationID
+        self.resolveCredentials = resolveCredentials
+        _confirmed = AppStorage(
+            wrappedValue: preference.defaultValue, preference.confirmedKey(registrationID: registrationID)
+        )
+        _unconfirmed = AppStorage(preference.unconfirmedKey(registrationID: registrationID))
+    }
+
+    var body: some View {
+        let setting: SettingsIndex = preference == .sessionAlertSounds
+            ? .notificationsSessionAlertSounds : .notificationsUpdateAvailable
+        SettingsToggleRow(
+            title: setting.title,
+            systemImage: preference == .sessionAlertSounds ? "speaker.wave.2" : "arrow.down.circle",
+            isOn: Binding(get: { override ?? unconfirmed ?? confirmed }, set: setEnabled),
+            accessibilityIdentifier: setting.id
+        )
+        .disabled(registrationID == nil)
+
+        if let writeError, !writeError.whileUnconfirmed || unconfirmed != nil {
+            SettingsErrorFootnote(writeError.message)
+        }
+    }
+
+    private func currentCredentials() -> TalariaRelayCredentials? {
+        guard let credentials = resolveCredentials(), credentials.deviceRegistrationID == registrationID else { return nil }
+        return credentials
+    }
+
+    private func setEnabled(_ enabled: Bool) {
+        let id = UUID()
+        writeID = id
+        override = enabled
+        writeError = nil
+        Task {
+            defer { if writeID == id { override = nil } }
+            // Sound only changes the delivery style. The alert switches own notification authorization.
+            if preference == .updateAvailableAlerts, enabled {
+                let granted = await ResponseCompletionNotificationService.requestAuthorization()
+                guard writeID == id, currentCredentials() != nil else { return }
+                guard granted else {
+                    writeError = (SettingsErrorText(String(localized: "Notification permission is required for relay alerts.")), false)
+                    return
+                }
+                UIApplication.shared.registerForRemoteNotifications()
+            }
+            guard writeID == id, let credentials = currentCredentials() else { return }
+            do {
+                try await TalariaRelayClient(credentials: credentials).configureDevice(
+                    pushToStartEnabled: TalariaLiveActivityMode.current == .allRunning,
+                    updateAvailableAlertsEnabled: preference == .updateAvailableAlerts ? enabled : nil,
+                    notificationSoundEnabled: preference == .sessionAlertSounds ? enabled : nil,
+                    whileCurrent: { currentCredentials() != nil }
+                )
+            } catch {
+                guard writeID == id, currentCredentials() != nil else { return }
+                let refused = (error as? TalariaRelayClient.ClientError)?.definitivelyRefusedWrite == true
+                writeError = (SettingsErrorText(error), !refused)
+            }
+        }
     }
 }

@@ -24,29 +24,42 @@ final class ScreenGalleryHostedTests: XCTestCase {
     func testNavigationSettingsPage() async throws { try await category(.navigation) }
     func testNotificationsAndHapticsSettingsPage() async throws { try await category(.notificationsAndHaptics) }
 
+    func testSessionAlertSoundsSwitchSavesTheChoiceToRelay() async throws {
+        let credentials = try pairRelayForSettings()
+        let preference = TalariaRelayNotifications.RegistrationPreference.sessionAlertSounds
+        let key = preference.confirmedKey(registrationID: credentials.deviceRegistrationID)
+        let unconfirmedKey = preference.unconfirmedKey(registrationID: credentials.deviceRegistrationID)
+        let previous = UserDefaults.standard.object(forKey: key)
+        let previousUnconfirmed = UserDefaults.standard.object(forKey: unconfirmedKey)
+        defer {
+            UserDefaults.standard.set(previous, forKey: key)
+            UserDefaults.standard.set(previousUnconfirmed, forKey: unconfirmedKey)
+        }
+        UserDefaults.standard.removeObject(forKey: key)
+        UserDefaults.standard.removeObject(forKey: unconfirmedKey)
+        let (window, control) = try await relaySettingsSwitch("Session Alert Sounds")
+        XCTAssertTrue(control.isOn)
+        attachHostedScreenshot(window, name: "session-alert-sounds-on")
+
+        control.setOn(false, animated: false)
+        control.sendActions(for: .valueChanged)
+
+        let saved = await awaitCondition {
+            UserDefaults.standard.object(forKey: key) as? Bool == false
+                && UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/v1/devices/fixture-device") }
+        }
+        XCTAssertTrue(saved, "Changing sound must refresh the paired device registration")
+        XCTAssertFalse(control.isOn)
+        attachHostedScreenshot(window, name: "session-alert-sounds-off")
+    }
+
     func testUpdateAvailableSwitchSavesTheChoiceToRelay() async throws {
         let key = "talariaRelay.updateAvailableAlertsEnabled"
         let previous = UserDefaults.standard.object(forKey: key)
-        let previousCredentials = TalariaRelayConfigurationStore.load()
-        defer {
-            UserDefaults.standard.set(previous, forKey: key)
-            if let previousCredentials { try? TalariaRelayConfigurationStore.save(previousCredentials) }
-            else { try? TalariaRelayConfigurationStore.clear() }
-        }
+        defer { UserDefaults.standard.set(previous, forKey: key) }
         UserDefaults.standard.set(true, forKey: key)
-        try TalariaRelayConfigurationStore.save(TalariaRelayCredentials(
-            baseURL: server, deviceID: "fixture-device", userID: "fixture-owner", appleUserID: "fixture-apple",
-            sessionToken: "fixture-relay-session", expiresAt: .distantFuture, pairedPublisherIDs: [server.absoluteString]
-        ))
-        let window = try hostWindow(NavigationStack { NotificationsHapticsSettingsView(authManager: fixture.environment.authManager) })
-        let row = try await requireElement(in: window, label: "Update available")
-        let rowBounds = window.convert(row.accessibilityFrame, from: window.screen.coordinateSpace)
-        let control = try XCTUnwrap(window.firstView(ofType: UISwitch.self) { toggle in
-            let bounds = window.convert(toggle.bounds, from: toggle)
-            return (rowBounds.minY...rowBounds.maxY).contains(bounds.midY)
-        })
-        let available = await awaitCondition { control.isEnabled }
-        XCTAssertTrue(available, "The fixture's paired Relay must enable the switch")
+        _ = try pairRelayForSettings()
+        let (window, control) = try await relaySettingsSwitch("Update available")
         XCTAssertTrue(control.isOn)
         attachHostedScreenshot(window, name: "update-available-alerts-on")
         control.setOn(false, animated: false)
@@ -58,6 +71,33 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }
         XCTAssertTrue(saved, "The visible switch must register the disabled preference with Relay")
         attachHostedScreenshot(window, name: "update-available-alerts-off")
+    }
+
+    private func pairRelayForSettings() throws -> TalariaRelayCredentials {
+        let previous = TalariaRelayConfigurationStore.load()
+        let credentials = TalariaRelayCredentials(
+            baseURL: server, deviceID: "fixture-device", userID: "fixture-owner", appleUserID: "fixture-apple",
+            sessionToken: "fixture-relay-session", expiresAt: .distantFuture, pairedPublisherIDs: [server.absoluteString]
+        )
+        try TalariaRelayConfigurationStore.save(credentials)
+        addTeardownBlock {
+            if let previous { try TalariaRelayConfigurationStore.save(previous) }
+            else { try TalariaRelayConfigurationStore.clear() }
+        }
+        return credentials
+    }
+
+    private func relaySettingsSwitch(_ title: String) async throws -> (UIWindow, UISwitch) {
+        let window = try hostWindow(NavigationStack { NotificationsHapticsSettingsView(authManager: fixture.environment.authManager) })
+        let row = try await requireElement(in: window, label: title)
+        let rowBounds = window.convert(row.accessibilityFrame, from: window.screen.coordinateSpace)
+        let control = try XCTUnwrap(window.firstView(ofType: UISwitch.self) { toggle in
+            let bounds = window.convert(toggle.bounds, from: toggle)
+            return (rowBounds.minY...rowBounds.maxY).contains(bounds.midY)
+        })
+        let available = await awaitCondition { control.isEnabled }
+        XCTAssertTrue(available, "The fixture's paired Relay must enable the switch")
+        return (window, control)
     }
 
     func testSpeechSettingsPage() async throws { try await category(.speech) }
@@ -574,7 +614,6 @@ final class ScreenGalleryHostedTests: XCTestCase {
             case "settings-profiles": loadedText = "Fixture Profile"
             case "settings-workspaces": loadedText = "Fixture Workspace"
             case "settings-auxiliary-models": loadedText = "legacy/vision-model"
-            case "settings-notifications": loadedText = "iOS permission not requested."
             case "settings-system":
                 // Wait for both the shared preferences and this variant's update status.
                 let answered = await awaitCondition {
@@ -596,6 +635,7 @@ final class ScreenGalleryHostedTests: XCTestCase {
             switch name {
             case "settings-models": controlIDs = ["settings-models-default-reasoning", "settings-models-show-thinking"]
             case "settings-default-model", "settings-auxiliary-model-picker": controlIDs = ["settings-model-visibility-fixture-model"]
+            case "settings-notifications": controlIDs = [SettingsIndex.notificationsSessionAlertSounds.id]
             case "settings-system":
                 let updateRows = keepsHostedScreenshots ? ["settings-system-status-web", "settings-system-status-agent"] : []
                 controlIDs = updateRows + [SettingsIndex.systemScreen.id, SettingsIndex.systemFeedbackOnScreenshot.id]

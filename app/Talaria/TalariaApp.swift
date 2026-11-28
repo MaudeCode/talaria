@@ -67,9 +67,10 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         for content: UNNotificationContent, visibleChats: Set<SessionNotificationRefresh.VisibleChat>
     ) -> UNNotificationPresentationOptions {
         if visibleChats.contains(where: { $0.isNamed(by: content.userInfo) }) { return [] }
-        return content.categoryIdentifier == ProviderQuotaAlertSettings.categoryIdentifier
-            ? [.banner, .sound, .list]
-            : [.banner, .sound]
+        var presentation: UNNotificationPresentationOptions = [.banner]
+        if content.sound != nil { presentation.insert(.sound) }
+        if content.categoryIdentifier == ProviderQuotaAlertSettings.categoryIdentifier { presentation.insert(.list) }
+        return presentation
     }
 
     nonisolated func userNotificationCenter(

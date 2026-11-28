@@ -19,6 +19,34 @@ public struct TalariaRelayCredentials: Codable, Equatable, Sendable {
     public var pairedPublisherIDs: [String]? = nil
 
     public var isExpired: Bool { expiresAt.map { $0 <= Date() } ?? true }
+
+    public var deviceRegistrationID: String {
+        let identity = [baseURL.absoluteString, userID, deviceID].joined(separator: "\0")
+        return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+extension TalariaRelayNotifications {
+    public enum RegistrationPreference: Sendable {
+        case updateAvailableAlerts
+        case sessionAlertSounds
+
+        public var defaultValue: Bool { self == .sessionAlertSounds }
+
+        public func confirmedKey(registrationID: String?) -> String {
+            switch self {
+            case .updateAvailableAlerts: TalariaRelayNotifications.updateAvailableAlertsEnabledKey
+            case .sessionAlertSounds: "talariaRelay.notificationSoundEnabled.\(registrationID ?? "unregistered")"
+            }
+        }
+
+        public func unconfirmedKey(registrationID: String?) -> String {
+            switch self {
+            case .updateAvailableAlerts: TalariaRelayNotifications.unconfirmedUpdateAvailableAlertsKey
+            case .sessionAlertSounds: "\(confirmedKey(registrationID: registrationID)).unconfirmed"
+            }
+        }
+    }
 }
 
 public enum TalariaRelayConnectionState: Equatable, Sendable {
@@ -389,16 +417,20 @@ public final class TalariaRelayClient: Sendable {
         liveActivitiesEnabled: Bool = true,
         pushToStartEnabled: Bool = true,
         updateAvailableAlertsEnabled: Bool? = nil,
-        defaults: UserDefaults = .standard
+        notificationSoundEnabled: Bool? = nil,
+        defaults: UserDefaults = .standard,
+        whileCurrent: @MainActor @escaping () -> Bool = { true }
     ) async throws {
         // Every registration replaces the full preference object. Take its snapshot after the preceding PUT.
         let preceding = Self.deviceRegistration
         let registration = Task {
             _ = await preceding?.result
             try Task.checkCancellation()
+            guard whileCurrent() else { throw CancellationError() }
             try await putDevice(
                 liveActivitiesEnabled: liveActivitiesEnabled, pushToStartEnabled: pushToStartEnabled,
-                updateAvailableAlertsEnabled: updateAvailableAlertsEnabled, defaults: defaults
+                updateAvailableAlertsEnabled: updateAvailableAlertsEnabled, notificationSoundEnabled: notificationSoundEnabled,
+                defaults: defaults, whileCurrent: whileCurrent
             )
         }
         Self.deviceRegistration = registration
@@ -411,7 +443,8 @@ public final class TalariaRelayClient: Sendable {
 
     @MainActor private func putDevice(
         liveActivitiesEnabled: Bool, pushToStartEnabled: Bool,
-        updateAvailableAlertsEnabled: Bool?, defaults: UserDefaults
+        updateAvailableAlertsEnabled: Bool?, notificationSoundEnabled: Bool?,
+        defaults: UserDefaults, whileCurrent: @MainActor () -> Bool
     ) async throws {
         let pushToken = defaults.string(forKey: TalariaRelayNotifications.pushTokenKey)
         let pushToStartToken = defaults.string(
@@ -423,20 +456,24 @@ public final class TalariaRelayClient: Sendable {
         let completionAlertsEnabled = liveActivitiesEnabled && defaults.bool(
             forKey: ResponseCompletionNotifications.isEnabledKey
         )
-        let unconfirmedKey = TalariaRelayNotifications.unconfirmedUpdateAvailableAlertsKey
-        let previousUnconfirmed = defaults.object(forKey: unconfirmedKey) as? Bool
-        let unconfirmed = updateAvailableAlertsEnabled ?? previousUnconfirmed
-        let updateAlerts = unconfirmed ?? defaults.bool(forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey)
+        let registrationID = credentials.deviceRegistrationID
+        let updateAlerts = RegistrationPreferenceValue(
+            .updateAvailableAlerts, requested: updateAvailableAlertsEnabled, registrationID: registrationID, defaults: defaults
+        )
+        let sound = RegistrationPreferenceValue(
+            .sessionAlertSounds, requested: notificationSoundEnabled, registrationID: registrationID, defaults: defaults
+        )
         let notificationsEnabled = pushToken != nil
-            && (approvalInputAlertsEnabled || completionAlertsEnabled || updateAlerts)
+            && (approvalInputAlertsEnabled || completionAlertsEnabled || updateAlerts.enabled)
         let preferences: [String: Bool] = [
             "liveActivitiesEnabled": liveActivitiesEnabled,
             "notificationsEnabled": notificationsEnabled,
+            "notificationSoundEnabled": sound.enabled,
             "notifyOnApproval": approvalInputAlertsEnabled,
             "notifyOnInput": approvalInputAlertsEnabled,
             "notifyOnCompletion": completionAlertsEnabled,
             "notifyOnFailure": completionAlertsEnabled,
-            "notifyOnUpdateAvailable": updateAlerts,
+            "notifyOnUpdateAvailable": updateAlerts.enabled,
             "notifyOnBackground": defaults.bool(
                 forKey: TalariaRelayNotifications.backgroundAlertsEnabledKey
             )
@@ -457,23 +494,47 @@ public final class TalariaRelayClient: Sendable {
         }
         let path = "v1/devices/\(credentials.deviceID)"
         let data = try JSONSerialization.data(withJSONObject: body)
-        // The next full registration must reassert an unconfirmed choice, even after leaving Settings or relaunching.
-        if let updateAvailableAlertsEnabled { defaults.set(updateAvailableAlertsEnabled, forKey: unconfirmedKey) }
+        let values = [updateAlerts, sound]
+        let edits = values.filter { $0.requested != nil }
+        // A refresh of this registration can reassert an unconfirmed choice after relaunch.
+        for edit in edits { defaults.set(edit.requested, forKey: edit.unconfirmedKey) }
         do {
             try await send(path: path, method: "PUT", body: data)
-        } catch let firstError where updateAvailableAlertsEnabled != nil {
+        } catch let firstError where !edits.isEmpty {
             if (firstError as? ClientError)?.definitivelyRefusedWrite == true {
-                defaults.set(previousUnconfirmed, forKey: unconfirmedKey)
+                for edit in edits { defaults.set(edit.previousUnconfirmed, forKey: edit.unconfirmedKey) }
                 throw firstError
             }
-            guard !Task.isCancelled else { throw firstError }
+            guard !Task.isCancelled, whileCurrent() else { throw firstError }
             // Relay has no device-preferences GET. Reasserting the same absolute preference is idempotent.
             do { try await send(path: path, method: "PUT", body: data) }
             catch { throw firstError }
         }
-        if let unconfirmed {
-            defaults.set(unconfirmed, forKey: TalariaRelayNotifications.updateAvailableAlertsEnabledKey)
-            defaults.removeObject(forKey: unconfirmedKey)
+        for value in values where value.unconfirmed != nil {
+            defaults.set(value.enabled, forKey: value.confirmedKey)
+            defaults.removeObject(forKey: value.unconfirmedKey)
+        }
+    }
+
+    private struct RegistrationPreferenceValue {
+        let confirmedKey: String
+        let unconfirmedKey: String
+        let previousUnconfirmed: Bool?
+        let requested: Bool?
+        let enabled: Bool
+
+        var unconfirmed: Bool? { requested ?? previousUnconfirmed }
+
+        init(
+            _ preference: TalariaRelayNotifications.RegistrationPreference,
+            requested: Bool?, registrationID: String, defaults: UserDefaults
+        ) {
+            confirmedKey = preference.confirmedKey(registrationID: registrationID)
+            unconfirmedKey = preference.unconfirmedKey(registrationID: registrationID)
+            previousUnconfirmed = defaults.object(forKey: unconfirmedKey) as? Bool
+            self.requested = requested
+            enabled = requested ?? previousUnconfirmed
+                ?? defaults.object(forKey: confirmedKey) as? Bool ?? preference.defaultValue
         }
     }
 

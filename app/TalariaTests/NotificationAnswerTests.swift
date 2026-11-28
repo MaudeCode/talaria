@@ -264,6 +264,7 @@ final class NotificationAnswerTests: XCTestCase {
         let quota = ProviderQuotaAlertService.request(.warning, sourceID: "qsrc_a", name: "Claude", remaining: nil, preferences: .init())
         let session = UNMutableNotificationContent()
         session.userInfo = [SessionNotificationRefresh.sessionIDKey: "session-1"]
+        session.sound = .default
         let otherChat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: Self.serverURL, sessionID: "session-2"))
 
         for visibleChats: Set<SessionNotificationRefresh.VisibleChat> in [[], [otherChat]] {
@@ -272,8 +273,15 @@ final class NotificationAnswerTests: XCTestCase {
             }
             XCTAssertEqual(presentation(quota.content), [.banner, .sound, .list])
             XCTAssertEqual(presentation(session), [.banner, .sound])
-            XCTAssertEqual(presentation(UNMutableNotificationContent()), [.banner, .sound])
+            XCTAssertEqual(presentation(UNMutableNotificationContent()), [.banner])
         }
+    }
+
+    func testSilentSessionNotificationKeepsItsBanner() {
+        let content = UNMutableNotificationContent()
+        content.userInfo = [SessionNotificationRefresh.sessionIDKey: "session-1"]
+
+        XCTAssertEqual(TalariaAppDelegate.foregroundPresentation(for: content, visibleChats: []), [.banner])
     }
 
     /// TAL-872: the chat on screen already shows its own news, so its notification stays silent; the list still refreshes.
