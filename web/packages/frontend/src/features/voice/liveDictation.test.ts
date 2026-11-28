@@ -20,12 +20,16 @@ class FakeSocket {
   static last: FakeSocket
   readonly sent: (string | ArrayBuffer)[] = []
   readyState = FakeSocket.CONNECTING
+  bufferedAmount = 0
   onopen: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
   onerror: (() => void) | null = null
   onclose: (() => void) | null = null
   constructor(readonly url: URL) { FakeSocket.last = this }
-  send(data: string | ArrayBuffer) { this.sent.push(data) }
+  send(data: string | ArrayBuffer) {
+    this.sent.push(data)
+    this.bufferedAmount += typeof data === 'string' ? new TextEncoder().encode(data).byteLength : data.byteLength
+  }
   close() {
     if (this.readyState === FakeSocket.CLOSED) return
     this.readyState = FakeSocket.CLOSED
@@ -98,13 +102,13 @@ class FakeAudioContext {
 const flush = () => new Promise((r) => setTimeout(r, 0))
 
 /** Start a dictation and wait until its socket exists (the microphone and worklet resolve first). */
-async function start() {
+async function start({ connect = true } = {}) {
   const texts: string[] = []
   const ends: unknown[] = []
   const handle = dictateLive((text) => texts.push(text), (error) => ends.push(error))
   await vi.waitFor(() => { expect(FakeTap.last).toBeDefined() })
   const ws = FakeSocket.last
-  ws.open()
+  if (connect) ws.open()
   return { handle, texts, ends, ws }
 }
 
@@ -211,6 +215,73 @@ describe('live dictation (TAL-802)', () => {
     handle.stop()
     await vi.waitFor(() => { expect(ends).toEqual([null]) })
     expect(texts).toEqual([exchange.events[0]?.text, 'from the recording'])
+  })
+
+  it.each([
+    { state: 'connecting', connect: false },
+    { state: 'open', connect: true },
+  ])('caps queued PCM on a $state socket and transcribes the recording once', async ({ connect }) => {
+    const { handle, texts, ends, ws } = await start({ connect })
+    const budget = 256 * 1024
+    const samples = new Float32Array(4096)
+    const pcmBytes = samples.length * Int16Array.BYTES_PER_ELEMENT
+    const emitPcm = () => FakeTap.last!.port.onmessage?.({ data: samples })
+    try {
+      if (connect) ws.bufferedAmount = budget - pcmBytes
+      else for (let bytes = 0; bytes < budget - pcmBytes; bytes += pcmBytes) emitPcm()
+      emitPcm()
+      expect(ws.readyState).toBe(connect ? FakeSocket.OPEN : FakeSocket.CONNECTING)
+      emitPcm()
+      expect(ws.readyState).toBe(FakeSocket.CLOSED)
+      expect(ws.audioBytes()).toBe(connect ? pcmBytes : 0)
+      expect(ws.bufferedAmount).toBe(connect ? budget : 0)
+      expect(api.transcribeRecording).not.toHaveBeenCalled()
+      ws.receive(exchange.events[2])
+      handle.stop()
+      handle.stop()
+      await vi.waitFor(() => { expect(ends).toEqual([null]) })
+      expect(texts).toEqual(['from the recording'])
+      expect(api.transcribeRecording).toHaveBeenCalledTimes(1)
+    } finally {
+      handle.cancel()
+    }
+  })
+
+  it('falls back when opening would move a full PCM queue over budget', async () => {
+    const { handle, texts, ends, ws } = await start({ connect: false })
+    const samples = new Float32Array(4096)
+    const budget = 256 * 1024
+    try {
+      for (let bytes = 0; bytes < budget; bytes += samples.length * Int16Array.BYTES_PER_ELEMENT) {
+        FakeTap.last!.port.onmessage?.({ data: samples })
+      }
+      ws.open()
+      expect(ws.bufferedAmount).toBeLessThanOrEqual(budget)
+      expect(ws.readyState).toBe(FakeSocket.CLOSED)
+      handle.stop()
+      await vi.waitFor(() => { expect(ends).toEqual([null]) })
+      expect(texts).toEqual(['from the recording'])
+      expect(api.transcribeRecording).toHaveBeenCalledTimes(1)
+    } finally {
+      handle.cancel()
+    }
+  })
+
+  it('discards the recording when cancelled after the stream exceeds its budget', async () => {
+    const { handle, texts, ends, ws } = await start()
+    try {
+      ws.bufferedAmount = 256 * 1024
+      FakeTap.last!.port.onmessage?.({ data: new Float32Array(4096) })
+      expect(ws.readyState).toBe(FakeSocket.CLOSED)
+      handle.cancel()
+      handle.stop()
+      await vi.waitFor(() => { expect(track.stop).toHaveBeenCalledTimes(1) })
+      expect(texts).toEqual([])
+      expect(ends).toEqual([])
+      expect(api.transcribeRecording).not.toHaveBeenCalled()
+    } finally {
+      handle.cancel()
+    }
   })
 
   it('reports the error when the fallback upload fails too', async () => {

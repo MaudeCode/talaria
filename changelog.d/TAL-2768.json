@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web dictation keeps recording when the live connection falls behind.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
