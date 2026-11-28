@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 import TalariaKit
 
 struct RelayLiveActivitySettingsSection: View {
@@ -42,11 +43,14 @@ struct RelayLiveActivitySettingsSection: View {
 
 struct RelayNotificationSettingsRow: View {
     @Bindable var authManager: AuthManager
+    let services: NotificationSettingsServices
+    let permissionStatus: UNAuthorizationStatus?
+    let authorizationChanged: @MainActor (UNAuthorizationStatus) -> Void
+    let completionAlertsEnabled: Bool
+    @Binding var notificationsEnabled: Bool
 
-    @State private var statusMessage: String?
-    @AppStorage(TalariaRelayNotifications.isEnabledKey) private var notificationsEnabled = false
+    @State private var permissionRequestFailed = false
     @AppStorage(TalariaRelayNotifications.backgroundAlertsEnabledKey) private var backgroundAlertsEnabled = false
-    @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var completionAlertsEnabled = false
 
     var body: some View {
         let registrationID = relayCredentials?.deviceRegistrationID
@@ -76,15 +80,28 @@ struct RelayNotificationSettingsRow: View {
             .id(registrationID)
 
             SettingsFootnote(
-                statusMessage
+                permissionMessage
                     ?? (registrationID != nil
                         ? String(localized: "Delivered for servers connected to Talaria Relay.")
                         : String(localized: "Connect a server to Talaria Relay to enable remote alerts."))
             )
+            if permissionStatus == .denied {
+                NotificationSettingsLink(setting: .notificationsApprovalInputAlerts)
+            }
         }
         .onChange(of: backgroundAlertsEnabled) {
             Task { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
         }
+    }
+
+    private var permissionMessage: String? {
+        if permissionStatus == .denied {
+            return String(localized: "Notifications are off in iOS Settings.")
+        }
+        if permissionRequestFailed, permissionStatus?.allowsSettingsToggleOn != true {
+            return String(localized: "Notification permission is required for relay alerts.")
+        }
+        return nil
     }
 
     private var notificationBinding: Binding<Bool> {
@@ -95,7 +112,7 @@ struct RelayNotificationSettingsRow: View {
                     Task { await enableNotifications() }
                 } else {
                     notificationsEnabled = false
-                    Task { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
+                    Task { await services.refreshRelay() }
                 }
             }
         )
@@ -118,9 +135,14 @@ struct RelayNotificationSettingsRow: View {
             return
         }
         let granted = await ResponseCompletionNotificationService.requestAuthorization()
-        notificationsEnabled = granted
-        statusMessage = granted ? nil : String(localized: "Notification permission is required for relay alerts.")
-        await TalariaAggregateLiveActivityManager.shared.refreshAfterNotificationPreferenceChange(registerForRemoteNotifications: granted)
+        let status = await services.readAuthorization()
+        let enabled = granted && status.allowsSettingsToggleOn
+        notificationsEnabled = enabled
+        permissionRequestFailed = !enabled
+        authorizationChanged(status)
+        if enabled {
+            await TalariaAggregateLiveActivityManager.shared.refreshAfterNotificationPreferenceChange(registerForRemoteNotifications: true)
+        }
     }
 }
 

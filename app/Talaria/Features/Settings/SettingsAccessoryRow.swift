@@ -4,8 +4,9 @@ import TalariaKit
 struct SettingsAccessoryRow: View {
     let title: String
     var value: String?
-    let systemImage: String
-    var accessorySystemImage = "chevron.forward"
+    let systemImage: String?
+    var accessorySystemImage: String? = "chevron.forward"
+    var accessibilityIdentifier: String? = nil
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -50,7 +51,7 @@ struct SettingsAccessoryRow: View {
         .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .indexedSettingsRow(title: title)
+        .indexedSettingsRow(title: title, identifier: accessibilityIdentifier)
     }
 
     private var leadingLabel: some View {
@@ -58,10 +59,13 @@ struct SettingsAccessoryRow: View {
             .layoutPriority(1)
     }
 
+    @ViewBuilder
     private var accessoryIcon: some View {
-        Image(systemName: accessorySystemImage)
-            .font(AppFont.caption(weight: .semibold))
-            .foregroundStyle(.tertiary)
-            .accessibilityHidden(true)
+        if let accessorySystemImage {
+            Image(systemName: accessorySystemImage)
+                .font(AppFont.caption(weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
     }
 }
