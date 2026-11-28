@@ -27,6 +27,7 @@ import {
   makeLiveActivityUpdate,
   makeNotification,
   makeSessionStartedPush,
+  omitApnsSound,
   type ApnsRequest,
 } from "./lib/apnsPayload";
 import type { ActivityAggregate, ActivityAlert, SessionState } from "./lib/model";
@@ -822,24 +823,24 @@ export const claimJob = internalMutation({
       return { status: "stale" as const };
     }
     let request = job.request;
-    if (job.activityId) {
+    const activityId = job.activityId;
+    const [device, activity] = await Promise.all([
+      ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", job.userId).eq("deviceId", job.deviceId),
+        )
+        .unique(),
+      activityId ? ctx.db
+        .query("liveActivities")
+        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+          query.eq("userId", job.userId).eq("deviceId", job.deviceId).eq("activityId", activityId),
+        )
+        .unique() : null,
+    ]);
+    if (activityId) {
       const isDisplacementEnd = job.kind === "live_activity_end"
-        && job.stateFingerprint === `end:displaced:${job.deviceId}:${job.activityId}`;
-      const activityId = job.activityId;
-      const [activity, device] = await Promise.all([
-        ctx.db
-          .query("liveActivities")
-          .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
-            query.eq("userId", job.userId).eq("deviceId", job.deviceId).eq("activityId", activityId),
-          )
-          .unique(),
-        ctx.db
-          .query("devices")
-          .withIndex("by_user_id_and_device_id", (query) =>
-            query.eq("userId", job.userId).eq("deviceId", job.deviceId),
-          )
-          .unique(),
-      ]);
+        && job.stateFingerprint === `end:displaced:${job.deviceId}:${activityId}`;
       if (
         !activity ||
         (isDisplacementEnd ? activity.endedAt === undefined : activity.endedAt !== undefined) ||
@@ -894,12 +895,6 @@ export const claimJob = internalMutation({
         }
       }
     } else {
-      const device = await ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_device_id", (query) =>
-          query.eq("userId", job.userId).eq("deviceId", job.deviceId),
-        )
-        .unique();
       const expectedDeviceToken = job.kind === "live_activity_start"
         ? device?.pushToStartToken
         : device?.pushToken;
@@ -1018,6 +1013,10 @@ export const claimJob = internalMutation({
       attemptCount: job.attemptCount + 1,
       updatedAt: args.now,
     });
+    if (device.preferences.notificationSoundEnabled === false) {
+      // Keep the queued sound intact so a retry can use the latest preference.
+      request = { ...request, payloadJson: omitApnsSound(request.payloadJson, request.pushType) };
+    }
     return { status: "ready" as const, kind: job.kind, request };
   },
 });

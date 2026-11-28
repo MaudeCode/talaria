@@ -27,6 +27,16 @@ function notificationAlertText(alert: ActivityAlert) {
   return alert.localized ? { "title-loc-key": alert.title, "loc-key": alert.body } : { title: alert.title, body: alert.body };
 }
 
+export function omitApnsSound(payloadJson: string, pushType: ApnsRequest["pushType"]): string {
+  if (pushType === "background") return payloadJson;
+  const payload = JSON.parse(payloadJson) as { aps: { sound?: string; alert?: { sound?: string } } };
+  // APNs puts standalone notification sound in aps and Live Activity sound inside the alert.
+  const soundContainer = pushType === "alert" ? payload.aps : payload.aps.alert;
+  if (soundContainer?.sound === undefined) return payloadJson;
+  delete soundContainer.sound;
+  return JSON.stringify(payload);
+}
+
 const maximumContentStateBytes = 3_500;
 const liveActivityStaleAfterSeconds = 10 * 60;
 

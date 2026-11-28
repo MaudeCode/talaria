@@ -238,8 +238,8 @@ function parsePreferences(value: unknown): NotificationPreferences | null {
   if (!isRecord(value)) return null;
   const keys = Object.keys(defaultNotificationPreferences) as (keyof NotificationPreferences)[];
   if (keys.some((key) => typeof value[key] !== "boolean")) return null;
-  // Optional switches an older App omits; absent means off.
-  const optional = (["notifyOnBackground", "notifyOnUpdateAvailable"] as const).filter((key) => value[key] !== undefined);
+  const optional = (["notificationSoundEnabled", "notifyOnBackground", "notifyOnUpdateAvailable"] as const)
+    .filter((key) => value[key] !== undefined);
   if (optional.some((key) => typeof value[key] !== "boolean")) return null;
   return Object.fromEntries([...keys, ...optional].map((key) => [key, value[key]])) as unknown as NotificationPreferences;
 }

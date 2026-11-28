@@ -276,6 +276,7 @@ Each accepted notice queues one alert to every signed-in device of the user who 
   "preferences": {
     "liveActivitiesEnabled": true,
     "notificationsEnabled": false,
+    "notificationSoundEnabled": true,
     "notifyOnApproval": true,
     "notifyOnInput": true,
     "notifyOnCompletion": true,
@@ -289,6 +290,8 @@ Each accepted notice queues one alert to every signed-in device of the user who 
 `notifyOnBackground` is optional and defaults to `false`: completion alerts for turns a finished sub-agent or background process started (a state's `origin: "background"`) reach the device only while it is `true` and `notifyOnCompletion` is on.
 
 `notifyOnUpdateAvailable` is optional and defaults to `false`: a server notice that an update is available reaches the device only while it is `true` and the device's user owns the publisher (see [Send a server notice](#send-a-server-notice)).
+
+`notificationSoundEnabled` is optional and defaults to `true` for older clients and stored registrations. Set it to `false` to omit APNs sound from ordinary notifications and Live Activity start, update, and end alerts while keeping their visible content. Relay applies the device's current setting when it claims each delivery attempt, including retries.
 
 Every APNs token field (`pushToken`, `pushToStartToken`, and `activityPushToken` below) is 64 to 200 hexadecimal characters. The relay stores it lower-cased; any other value, including one with whitespace or a `/`, answers 400 `invalid_device`. Send either device token field as `null` to clear the stored token. The relay uses `pushToStartToken` to start the aggregate Live Activity when work begins while no aggregate activity is registered.
 

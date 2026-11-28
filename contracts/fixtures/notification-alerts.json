@@ -80,7 +80,7 @@
       "expected": "input"
     },
     {
-      "name": "running to completed",
+      "name": "running to completed with Relay notification sound off",
       "previous": "running",
       "next": "completed",
       "alertEligible": true,
@@ -88,7 +88,8 @@
         "notify_on_approval": true,
         "notify_on_input": true,
         "notify_on_completion": true,
-        "notify_on_failure": true
+        "notify_on_failure": true,
+        "notification_sound_enabled": false
       },
       "expected": "completion"
     },

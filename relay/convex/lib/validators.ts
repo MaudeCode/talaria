@@ -27,6 +27,7 @@ export const turnOriginValidator = v.union(v.literal("user"), v.literal("backgro
 export const preferencesValidator = v.object({
   liveActivitiesEnabled: v.boolean(),
   notificationsEnabled: v.boolean(),
+  notificationSoundEnabled: v.optional(v.boolean()),
   notifyOnApproval: v.boolean(),
   notifyOnInput: v.boolean(),
   notifyOnCompletion: v.boolean(),

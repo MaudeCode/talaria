@@ -16,7 +16,8 @@ interface Vector {
   inputHeadId?: string;
   previousDecisionReviewId?: string | null;
   decisionReviewId?: string;
-  preferences: Record<"notify_on_approval" | "notify_on_input" | "notify_on_completion" | "notify_on_failure", boolean>;
+  preferences: Record<"notify_on_approval" | "notify_on_input" | "notify_on_completion" | "notify_on_failure", boolean>
+    & { notification_sound_enabled?: boolean };
   expected: "approval" | "input" | "completion" | "failure" | "decision" | null;
 }
 
@@ -43,6 +44,7 @@ it.each(vectors)("shared alert rule: $name", (vector) => {
     notifyOnInput: vector.preferences.notify_on_input,
     notifyOnCompletion: vector.preferences.notify_on_completion,
     notifyOnFailure: vector.preferences.notify_on_failure,
+    notificationSoundEnabled: vector.preferences.notification_sound_enabled,
   };
   const alert = alertForTransition(vector.previous, next, preferences, vector.previousApprovalHeadId, vector.previousDecisionReviewId, vector.previousInputHeadId);
   if (vector.expected === null) expect(alert).toBeNull();
