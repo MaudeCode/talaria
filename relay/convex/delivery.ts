@@ -263,6 +263,28 @@ async function enqueueJob(
   });
 }
 
+export async function enqueueTestNotification(
+  ctx: MutationCtx,
+  device: Pick<PushableDevice, "_id" | "userId" | "deviceId" | "pushToken" | "bundleId" | "apsEnvironment">,
+  now: number,
+): Promise<void> {
+  await enqueueJob(ctx, {
+    userId: device.userId,
+    deviceId: device.deviceId,
+    kind: "notification",
+    request: makeNotification({
+      token: device.pushToken,
+      bundleId: device.bundleId,
+      environment: device.apsEnvironment,
+      alert: { title: "Talaria test notification", body: "Relay alerts reach this device." },
+      threadId: "relay-test-notification",
+      collapseId: `relay-test:${now}`,
+    }),
+    stateFingerprint: `notification:test:${device._id}:${now}`,
+    now,
+  });
+}
+
 export async function enqueueDisplacedActivityEnd(
   ctx: MutationCtx,
   activity: Doc<"liveActivities">,

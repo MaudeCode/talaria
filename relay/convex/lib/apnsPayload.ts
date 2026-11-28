@@ -172,9 +172,9 @@ export function makeNotification(input: {
   bundleId: string;
   environment: ApsEnvironment;
   alert: ActivityAlert;
-  // TAL-2665: a server notice belongs to no session.
-  row: Pick<AggregateRow, "publisherId" | "deepLink"> & Partial<AggregateRow>;
-  // One ID per chat: groups its alerts and lets the newest replace the previous one.
+  // Chat alerts carry a session, server notices carry a publisher, and device tests omit the row.
+  row?: Pick<AggregateRow, "publisherId" | "deepLink"> & Partial<AggregateRow>;
+  // Groups related alerts and replaces the previous one unless a separate collapse ID is supplied.
   threadId: string;
   // TAL-1970: an alert that must never replace or be replaced by the chat's others collapses under its own ID.
   collapseId?: string;
@@ -194,9 +194,9 @@ export function makeNotification(input: {
         ...(input.alert.interruptionLevel ? { "interruption-level": input.alert.interruptionLevel } : {}),
         ...(input.alert.category ? { category: input.alert.category } : {}),
       },
-      publisherId: input.row.publisherId,
-      sessionId: input.row.sessionId,
-      deepLink: input.alert.deepLink ?? input.row.deepLink,
+      publisherId: input.row?.publisherId,
+      sessionId: input.row?.sessionId,
+      deepLink: input.alert.deepLink ?? input.row?.deepLink,
       // TAL-1469: the request the banner's Deny or Reply answers; the App refuses it once another heads the queue.
       ...(input.alert.category && input.alert.headId
         ? { [input.alert.category === "talaria.approval" ? "approvalHeadId" : "inputHeadId"]: input.alert.headId }
