@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
-import { enqueueDisplacedActivityEnd } from "./delivery";
+import { enqueueDisplacedActivityEnd, enqueueTestNotification } from "./delivery";
 import type { ActivityMode } from "./lib/model";
 import {
   activityModeValidator,
@@ -13,6 +13,7 @@ import {
 
 const revocationBatchSize = 128;
 const activityReplacementLimit = 10;
+const testNotificationCooldownMs = 30_000;
 
 function findDevice(ctx: MutationCtx, userId: string, deviceId: string) {
   return ctx.db.query("devices")
@@ -157,6 +158,30 @@ export const upsertDevice = internalMutation({
     else await ctx.db.insert("devices", value);
     await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: args.userId });
     return { ok: true };
+  },
+});
+
+export const sendTestNotification = internalMutation({
+  args: { userId: v.string(), deviceId: v.string() },
+  returns: v.union(
+    v.object({ status: v.literal("queued") }),
+    v.object({ status: v.literal("not_found") }),
+    v.object({ status: v.literal("no_push_token") }),
+    v.object({ status: v.literal("rate_limited"), retryAfterMs: v.number() }),
+  ),
+  handler: async (ctx, { userId, deviceId }) => {
+    const device = await findDevice(ctx, userId, deviceId);
+    if (!device) return { status: "not_found" } as const;
+    const { pushToken, bundleId, apsEnvironment, lastTestNotificationAt } = device;
+    if (!pushToken || !bundleId || !apsEnvironment) return { status: "no_push_token" } as const;
+
+    const now = Date.now();
+    if (lastTestNotificationAt !== undefined && now < lastTestNotificationAt + testNotificationCooldownMs) {
+      return { status: "rate_limited", retryAfterMs: lastTestNotificationAt + testNotificationCooldownMs - now } as const;
+    }
+    await ctx.db.patch(device._id, { lastTestNotificationAt: now });
+    await enqueueTestNotification(ctx, { _id: device._id, userId, deviceId, pushToken, bundleId, apsEnvironment }, now);
+    return { status: "queued" } as const;
   },
 });
 

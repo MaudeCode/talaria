@@ -144,6 +144,7 @@ export default defineSchema({
     pushToStartToken: v.optional(v.string()),
     pushToStartIssuedAt: v.optional(v.number()),
     pushToStartDeferredAt: v.optional(v.number()),
+    lastTestNotificationAt: v.optional(v.number()),
     preferences: preferencesValidator,
     revokedAt: v.optional(v.number()),
     activityCleanupAt: v.optional(v.number()),

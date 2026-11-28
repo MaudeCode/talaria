@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Relay can send a test alert to a registered device.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

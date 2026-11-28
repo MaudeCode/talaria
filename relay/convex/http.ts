@@ -938,6 +938,28 @@ http.route({
 
 http.route({
   pathPrefix: "/v1/devices/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const parts = pathParts(request);
+    const deviceId = parts[2];
+    if (!deviceId || parts.length !== 4 || parts[3] !== "test-notification") {
+      return json(404, { error: "not_found" });
+    }
+    const auth = await authenticateUser(ctx, request);
+    if (!auth) return json(401, { error: "unauthorized" });
+    const result = await ctx.runMutation(internal.devices.sendTestNotification, { userId: auth.userId, deviceId });
+    switch (result.status) {
+      case "queued": return json(202, result);
+      case "not_found": return json(404, { error: result.status });
+      case "no_push_token": return json(409, { error: result.status });
+      case "rate_limited":
+        return json(429, { error: result.status }, { "retry-after": String(Math.ceil(result.retryAfterMs / 1_000)) });
+    }
+  }),
+});
+
+http.route({
+  pathPrefix: "/v1/devices/",
   method: "DELETE",
   handler: httpAction(async (ctx, request) => {
     const parts = pathParts(request);

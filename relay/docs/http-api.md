@@ -312,6 +312,18 @@ Set `seededLocally` to `true` only when the foreground app created a short-lived
 
 End an activity with `DELETE /v1/devices/{deviceId}/live-activities/{activityId}` and revoke a device with `DELETE /v1/devices/{deviceId}`. Revocation disables delivery immediately and ends all existing activity registrations for that device. A token cannot be claimed by another relay user.
 
+### Send a test notification
+
+`POST /v1/devices/{deviceId}/test-notification` uses the signed-in user's bearer token and takes no request body. It queues one ordinary APNs alert for the requested device with the title “Talaria test notification” and the body “Relay alerts reach this device.” The alert belongs to no publisher or session. Relay still checks the device's current token and notification preferences when sending it.
+
+| Status | Body | Meaning |
+| --- | --- | --- |
+| 202 | `{"status":"queued"}` | Relay queued the test. Delivery is asynchronous. |
+| 401 | `{"error":"unauthorized"}` | The bearer token is missing or invalid. |
+| 404 | `{"error":"not_found"}` | The device is unknown or belongs to another user. |
+| 409 | `{"error":"no_push_token"}` | The device has no usable ordinary APNs registration. |
+| 429 | `{"error":"rate_limited"}` | Relay queued a test for this device within 30 seconds. `Retry-After` gives the remaining wait in whole seconds, rounded up. |
+
 ## Publisher subscriptions and revocation
 
 Existing publishers are subscribed on every device by default. List the current device's publisher state with authenticated `GET /v1/devices/{deviceId}/publisher-subscriptions`. The response includes `canRevokeKeys` for publisher owners. Owned publishers remain listed for key management after the owner removes their grant.
