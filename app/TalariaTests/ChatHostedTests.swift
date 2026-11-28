@@ -25,7 +25,7 @@ final class ChatHostedTests: XCTestCase {
             throw URLError(.notConnectedToInternet)
         }]
         let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
-        let model = ChatViewModel(session: session, server: server, client: client, networkPath: nil)
+        let model = fixture.chatViewModel(session, client: client)
         await model.loadMessages(modelContext: fixture.cache.mainContext)
         model.setSendErrorMessage("Fixture send failed.")
 
@@ -40,7 +40,7 @@ final class ChatHostedTests: XCTestCase {
         let fixture = try FixtureApp(for: self)
         let session = try await fixture.session()
         let server = UITestFixtureEnvironment.serverURL
-        let model = ChatViewModel(session: session, server: server, client: fixture.client, networkPath: nil)
+        let model = fixture.chatViewModel(session)
         let draft = "Restored draft"
         let error = "Fixture send failed."
         fixture.environment.draftStore.setDraft(draft, for: .session(server: server, session: session))
@@ -954,7 +954,7 @@ final class ChatHostedTests: XCTestCase {
             """#, for: request)
         }]
         let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
-        let model = ChatViewModel(session: session, server: server, client: client, networkPath: nil)
+        let model = fixture.chatViewModel(session, client: client)
         await model.loadMessages()
         let window = try hostWindow(fixture.chat(session, viewModel: model, loadsInitialMessages: false))
 
@@ -2475,7 +2475,9 @@ final class ChatHostedTests: XCTestCase {
             .environment(\.chatBodyEvaluation, recorder)
         let window = try hostWindow(FoldHost(content: AnyView(chat), division: fold), size: CGSize(width: 900, height: 900))
         try await awaitFixtureApproval(in: window)
+        if keepsHostedScreenshots { attachHostedScreenshot(window, name: "approval-slot-before-tabletop") }
         HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        await awaitQuietWork(of: recorder, phase: "Tabletop approval layout")
         let foldInWindow = fold.offsetBy(dx: 0, dy: recorder.transcriptFrame.minY)
         let allow = try await requireElement(in: window, label: "Allow once")
         let moved = await awaitCondition { window.convert(allow.accessibilityFrame, from: nil).minY >= foldInWindow.maxY }
@@ -2484,7 +2486,6 @@ final class ChatHostedTests: XCTestCase {
             let button = try await requireElement(in: window, label: title)
             XCTAssertFalse(window.convert(button.accessibilityFrame, from: nil).intersects(foldInWindow), "\(title) crosses the fold")
         }
-        settle(0.3)
         attachHostedScreenshot(window, name: "approval-slot-tabletop")
     }
 

@@ -55,10 +55,10 @@ final class AgentBackupHostedTests: XCTestCase {
         let cancel = try XCTUnwrap(cancelElement, "Missing agent-backup-cancel in System settings")
         attachHostedScreenshot(window, name: "agent-backup-running")
         XCTAssertTrue(HostedAccessibility.activate(cancel))
-        let reconciled = await awaitCondition {
-            HostedAccessibility.elements(in: window, labelContaining: "Backup cancelled").count == 1
+        _ = try await requireElement(in: window, "Create Backup must return after cancellation is confirmed") {
+            HostedAccessibility.identifier(of: $0) == "agent-backup-create"
         }
-        XCTAssertTrue(reconciled)
+        XCTAssertEqual(HostedAccessibility.elements(in: window, labelContaining: "Backup cancelled").count, 1)
         XCTAssertEqual(server.discards.value, 1)
         XCTAssertNil(HostedAccessibility.element(in: window, identifier: "agent-backup-download"))
         attachHostedScreenshot(window, name: "agent-backup-cancelled")

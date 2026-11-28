@@ -711,9 +711,6 @@ struct ChatView: View {
                 ZStack(alignment: .bottom) {
                     BottomComposerMaterialFade(composerHeight: visibleComposerHeight)
                     composerAccessoryStack
-                        .onGeometryChange(for: CGFloat.self) { [visibleComposerHeight] in max(0, $0.size.height - visibleComposerHeight - 8) } action: {
-                            composerAccessoriesHeight = $0
-                        }
                     messageComposer(availableHeight: composerFrame.height)
                         .opacity(hidesComposerWhileFinding ? 0 : 1)
                         .allowsHitTesting(!hidesComposerWhileFinding)
@@ -2099,6 +2096,9 @@ struct ChatView: View {
             }
             .padding(.horizontal)
             .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.chat)
+            // The composer uses this height as its own size budget. Measure the chips before lifting them above it.
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerAccessoriesHeight = $0 }
             .padding(.bottom, visibleComposerHeight + 8)
             .zIndex(8)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsScrollToBottomButton)

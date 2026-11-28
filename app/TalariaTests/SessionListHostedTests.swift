@@ -3906,12 +3906,19 @@ final class SessionActionsHostedTests: XCTestCase {
         let fixture = try FixtureApp([UITestFixtureEnvironment.sessionFindArgument], for: self)
         let window = try await openChat(fixture, size: HostedSize.phone)
         let scroll = try XCTUnwrap(mountedTranscriptScrollView(in: window))
-        let controller = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator?.scrollPositionController)
+        let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
+        let controller = try XCTUnwrap(coordinator.scrollPositionController)
         let ready = await awaitCondition { controller.isIdle }
         XCTAssertTrue(ready)
-        scroll.contentOffset.y -= 50
-        let before = try XCTUnwrap(controller.readingBookmark)
+        coordinator.onFollowEvent(.userScrollBegin)
+        scroll.contentOffset.y -= scroll.bounds.height / 2
+        coordinator.onFollowEvent(.userScrollEnd(isAtBottom: false))
+        _ = try await requireElement(in: window, label: "Scroll to latest message",
+                                     "The transcript must show that the reader left the latest message")
         attachHostedScreenshot(window, name: "chat-find-before")
+        let settled = await awaitCondition { controller.isIdle && controller.readingBookmark?.atBottom == false }
+        let before = try XCTUnwrap(settled ? controller.readingBookmark : nil,
+                                   "The reader must settle away from the latest message before Find opens")
 
         try await searchFindFixture(in: window)
         try await requireVisibleFindText("Where is the café?", in: window)
