@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chat ages in the sidebar now count local calendar days.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

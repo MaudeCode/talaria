@@ -27,7 +27,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { groupSessionRows, SessionListItem, SessionListPanel } from './SessionListPanel'
+import { groupSessionRows, relativeTime, SessionListItem, SessionListPanel } from './SessionListPanel'
 import { useSessionListStream } from './useSessionListStream'
 import { stubAnimate } from '../../test/animate'
 
@@ -615,6 +615,27 @@ describe('session list date groups (TAL-306)', () => {
     const day = 86_400
     const recent = { ...rows.find((r) => r.session_id === 'tal306-newest')!, sort_ts: at / 1000 - 60, last_message_at: at / 1000 - 30 * day, updated_at: at / 1000 - 30 * day }
     expect(groupSessionRows([recent], at).map((g) => g.id)).toEqual(['today'])
+  })
+})
+
+describe('sidebar chat ages (TAL-2758)', () => {
+  beforeEach(() => { vi.stubEnv('TZ', 'America/New_York') })
+  afterEach(() => { vi.unstubAllEnvs() })
+
+  it.each([
+    ['early on the same older date', '2026-11-25T08:00:00-05:00', 'week', '2d'],
+    ['late on the same older date', '2026-11-25T20:00:00-05:00', 'week', '2d'],
+    ['just before local midnight', '2026-11-26T23:59:00-05:00', 'yesterday', '1d'],
+    ['at the start of the week group', '2026-11-20T00:00:00-05:00', 'week', '7d'],
+    ['just outside the week group', '2026-11-19T23:59:00-05:00', 'older', '1w'],
+    ['on the other side of fall-back', '2026-11-01T00:00:00-04:00', 'week', '2d', '2026-11-03T12:00:00-05:00'],
+    ['earlier this hour', '2026-11-27T11:42:00-05:00', 'today', '18m'],
+    ['earlier today', '2026-11-27T09:30:00-05:00', 'today', '2h'],
+  ])('formats and groups a chat %s', (_case, timestamp, group, label, clock = '2026-11-27T12:00:00-05:00') => {
+    const at = Date.parse(clock)
+    const sort_ts = Date.parse(timestamp) / 1000
+    expect(groupSessionRows([row('age', 'Chat age', { sort_ts })], at).map(({ id }) => id)).toEqual([group])
+    expect(relativeTime(sort_ts, at)).toBe(label)
   })
 })
 
