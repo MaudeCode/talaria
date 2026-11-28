@@ -91,8 +91,15 @@ authorized) and while the WebSocket is connected, and 503 otherwise. Use it as
 the readiness probe.
 
 From the bridge's host or private monitoring network, check feedback delivery
-with `curl -sS "http://127.0.0.1:${HEALTH_PORT}/deliveryz"`. Keep `HEALTH_PORT`
-private. The JSON `status` is `idle` (200) for an empty queue, `pending` (200)
+with the feedback operator bearer token:
+
+```sh
+printf 'Authorization: Bearer %s\n' "$FEEDBACK_OPERATOR_TOKEN" |
+  curl -sS --header @- "http://127.0.0.1:${HEALTH_PORT}/deliveryz"
+```
+
+The bridge shares one in-flight Relay read and reuses its result for five
+seconds. The JSON `status` is `idle` (200) for an empty queue, `pending` (200)
 when work is queued, or `degraded` (503) when a delivery failed or Relay's queue
 could not be read. Monitor `oldestPendingAgeMs` against your backlog threshold
 even when the response is 200. This age includes reports deferred for retry

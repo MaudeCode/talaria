@@ -709,6 +709,20 @@ describe("watch mode", () => {
 });
 
 describe("health endpoint", () => {
+  const statusCacheMs = 5_000;
+  const emptyQueue = { oldestPendingCreatedAt: null, lastSuccessfulDeliveryAt: null, failureStage: null };
+
+  async function deliveryProbe(relayUrl: string) {
+    const http = await serveHealth(0, () => true, {
+      config: { RELAY_URL: relayUrl, FEEDBACK_OPERATOR_TOKEN: operatorToken }, failureStage: null,
+    });
+    const origin = localOrigin(http);
+    const get = (token: string | null = operatorToken) => fetch(`${origin}/deliveryz`, {
+      headers: token === null ? {} : { authorization: `Bearer ${token}` },
+    });
+    return { http, origin, get };
+  }
+
   it("answers 503 until healthy, 200 while healthy, and 404 elsewhere", async () => {
     let healthy = false;
     const origin = localOrigin(await serveHealth(0, () => healthy));
@@ -724,6 +738,53 @@ describe("health endpoint", () => {
     expect((await get("/healthz", "POST")).status).toBe(404);
   });
 
+  it("rejects unauthenticated delivery probes before contacting Relay", async () => {
+    let reads = 0;
+    const relay = await server(async (_, response) => {
+      reads += 1;
+      response.end(JSON.stringify(emptyQueue));
+    });
+    const { get, origin } = await deliveryProbe(relay);
+    for (const token of [null, "wrong-token"]) {
+      const reflected = await get(token);
+      expect(reflected.status).toBe(401);
+      expect(await reflected.text()).toBe("");
+    }
+    expect(reads).toBe(0);
+    expect((await fetch(`${origin}/healthz`)).status).toBe(200);
+  });
+
+  it("shares an in-flight queue read and refreshes after the polling window", async () => {
+    const release = Promise.withResolvers<void>();
+    const arrived = Promise.withResolvers<void>();
+    let reads = 0;
+    const relay = await server(async (_, response) => {
+      reads += 1;
+      await release.promise;
+      response.end(JSON.stringify(emptyQueue));
+    });
+    const { http, get } = await deliveryProbe(relay);
+    let probes = 0;
+    http.on("request", () => { if (++probes === 3) arrived.resolve(); });
+    vi.useFakeTimers();
+    const requests = [get(), get(), get()];
+    try {
+      await Promise.race([arrived.promise, Promise.all(requests)]);
+      release.resolve();
+      expect((await Promise.all(requests)).map(({ status }) => status)).toEqual([200, 200, 200]);
+      expect(reads).toBe(1);
+      expect((await get()).status).toBe(200);
+      expect(reads).toBe(1);
+      await vi.advanceTimersByTimeAsync(statusCacheMs);
+      expect((await get()).status).toBe(200);
+      expect(reads).toBe(2);
+    } finally {
+      release.resolve();
+      await Promise.allSettled(requests);
+      vi.useRealTimers();
+    }
+  });
+
   it("reports a deferred backlog despite a newer delivery, then returns to idle after recovery", async () => {
     const now = 1_800_000_000_000;
     vi.useFakeTimers({ now });
@@ -731,10 +792,9 @@ describe("health endpoint", () => {
     const backend = convexTest(schema, relayModules);
     try {
       const f = await fixture([], new Map(), new Map(), (request, response) => forwardRelay(backend, request, response));
-      const config = { ...f.env, RELAY_URL: f.env.RELAY_URL.slice(0, -1) };
-      const origin = localOrigin(await serveHealth(0, () => true, { config, failureStage: null }));
+      const { origin, get } = await deliveryProbe(f.env.RELAY_URL.slice(0, -1));
       const status = async () => {
-        const response = await fetch(`${origin}/deliveryz`);
+        const response = await get();
         return { code: response.status, body: await response.json().catch(() => null) };
       };
       expect(await status()).toEqual({
@@ -751,16 +811,19 @@ describe("health endpoint", () => {
           });
         }
       });
+      await vi.advanceTimersByTimeAsync(statusCacheMs);
       expect(await status()).toEqual({
-        code: 200, body: { status: "pending", oldestPendingAgeMs: 60_000, lastSuccessfulDeliveryAt: null, failureStage: null },
+        code: 200, body: { status: "pending", oldestPendingAgeMs: 60_000 + statusCacheMs, lastSuccessfulDeliveryAt: null, failureStage: null },
       });
 
+      const newerDelivery = Date.now();
       f.failures.create.add(older.payload.requestId);
       expect((await f.run()).code).toBe(1);
       expect(await backend.query(api.feedback.pendingSignal, { token: operatorToken })).toEqual([]);
       expect((await fetch(`${origin}/healthz`)).status).toBe(200);
+      await vi.advanceTimersByTimeAsync(statusCacheMs);
       expect(await status()).toEqual({
-        code: 503, body: { status: "degraded", oldestPendingAgeMs: 60_000, lastSuccessfulDeliveryAt: now, failureStage: "ticket_creation" },
+        code: 503, body: { status: "degraded", oldestPendingAgeMs: 60_000 + 2 * statusCacheMs, lastSuccessfulDeliveryAt: newerDelivery, failureStage: "ticket_creation" },
       });
 
       f.failures.create.clear();
@@ -778,6 +841,7 @@ describe("health endpoint", () => {
       vi.setSystemTime(afterRetention);
       await backend.mutation(internal.cleanup.prune, {});
       expect(await backend.run((ctx) => ctx.db.query("feedbackReports").first())).toBeNull();
+      await vi.advanceTimersByTimeAsync(statusCacheMs);
       expect(await status()).toEqual(idle);
     } finally {
       await backend.finishAllScheduledFunctions(vi.runAllTimers);

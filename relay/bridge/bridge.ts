@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { ConvexClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { digestHeader, type DropReason, dropReasons, maxOutputBytes, outputExtensions, type OutputType } from "./attachments.ts";
+import { bearerVerifier } from "./bearer.ts";
 import { isReportFailureStage, type ReportFailureStage } from "./delivery-status.ts";
 
 type QueuedAttachment = {
@@ -383,7 +384,12 @@ async function deliveryStatus(monitor: DeliveryMonitor) {
   }
 }
 
+const deliveryStatusCacheMs = 5_000;
+
 export function serveHealth(port: number, healthy: () => boolean, monitor?: DeliveryMonitor): Promise<Server> {
+  const verifyOperator = monitor && bearerVerifier(monitor.config.FEEDBACK_OPERATOR_TOKEN);
+  let lastStatus: ReturnType<typeof deliveryStatus> | undefined;
+  let reuseUntil = 0;
   const server = createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/healthz") {
       const ok = healthy();
@@ -391,7 +397,15 @@ export function serveHealth(port: number, healthy: () => boolean, monitor?: Deli
       return;
     }
     if (request.method === "GET" && request.url === "/deliveryz" && monitor) {
-      const status = await deliveryStatus(monitor);
+      if (!verifyOperator?.(request.headers.authorization)) {
+        return void response.writeHead(401, { "www-authenticate": "Bearer" }).end();
+      }
+      if (!lastStatus || performance.now() >= reuseUntil) {
+        // Reuse the in-flight read and keep its result for the polling window after it settles.
+        reuseUntil = Infinity;
+        lastStatus = deliveryStatus(monitor).finally(() => { reuseUntil = performance.now() + deliveryStatusCacheMs; });
+      }
+      const status = await lastStatus;
       response.writeHead(status.status === "degraded" ? 503 : 200, {
         "content-type": "application/json", "cache-control": "no-store",
       }).end(JSON.stringify(status));
