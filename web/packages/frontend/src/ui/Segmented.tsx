@@ -1,5 +1,6 @@
 import { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { cn } from './cn'
+import { rovingIndex } from './rovingIndex'
 
 /** `display` (TAL-2146) draws the option, such as "Aa" at a font size; `label` stays its accessible name. */
 export interface SegmentedOption { value: string; label: string; display?: ReactNode }
@@ -14,10 +15,10 @@ export function Segmented({ id, label, options, value, onChange, disabled }: { i
   const selected = options.findIndex((o) => o.value === value)
   const stop = Math.max(0, selected)
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
-    const next = e.key === 'Home' ? 0 : e.key === 'End' ? options.length - 1 : step ? (stop + step + options.length) % options.length : null
-    const option = next === null ? undefined : options[next]
-    if (!option || next === null) return
+    const next = rovingIndex(e.key, stop, options.length, { vertical: true })
+    if (next === null) return
+    const option = options[next]
+    if (!option) return
     e.preventDefault()
     if (option.value !== value) onChange(option.value)
     buttons.current[next]?.focus()
