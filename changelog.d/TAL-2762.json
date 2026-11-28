@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Retry a shared conversation when a temporary error prevents it from loading.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

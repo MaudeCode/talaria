@@ -1,11 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
-import { Copy } from 'lucide-react'
+import { Copy, RefreshCw } from 'lucide-react'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
+import { isApiError } from '../../contracts/common'
 import { appUrl } from '../../lib/appRoot'
 import { copyWithToast } from '../../lib/clipboard'
-import { Button, buttonClass } from '../../ui/Button'
+import { Button, buttonClass, IconButton } from '../../ui/Button'
 import { SectionHeader } from '../../ui/List'
+import { ErrorState } from '../../ui/States'
 import { Toaster } from '../toast/Toaster'
 import { m } from '../../paraglide/messages.js'
 import { SharedTranscript } from './SharedTranscript'
@@ -15,11 +17,16 @@ import { useMarkdownRendererReady } from '../chat/render/Markdown'
 export function SharePage({ token }: { token: string }) {
   const share = useQuery({ queryKey: keys.share(token), queryFn: () => api.fetchShare(token), retry: false })
   const data = share.data?.share
+  const loadFailed = share.isLoadingError
+  const error = isApiError(share.error) ? share.error : null
+  const missing = loadFailed && error?.status === 404
+  const readFailed = loadFailed && !missing
+  const canRetry = error && (error.retryable || error.status === 408 || error.status === 429 || (error.status >= 500 && error.status < 600))
   // TAL-2410: the messages wait for the renderer, as a session's history does, so none reflows from raw text in view.
   const hasMessages = !!data?.messages?.length
   const rendererReady = useMarkdownRendererReady(hasMessages)
   const loading = share.isPending || (hasMessages && !rendererReady)
-  const title = data?.title ?? (share.isError ? m.share_unavailable_title() : m.loading())
+  const title = data?.title ?? (missing ? m.share_unavailable_title() : readFailed ? m.transcript() : m.loading())
   const copy = () => { copyWithToast(window.location.href) }
   return (
     <div className="share-shell min-h-full bg-bg text-text">
@@ -44,18 +51,30 @@ export function SharePage({ token }: { token: string }) {
           <h1 className="mb-2.5 mt-4 text-[32px] font-semibold leading-tight tracking-tight text-strong max-[720px]:text-[26px]" id="shareTitle">{title}</h1>
           <div className="text-[13px] leading-relaxed text-muted" id="shareMeta">
             {share.isPending && m.share_fetching()}
-            {share.isError && m.share_error_meta()}
+            {missing && m.share_error_meta()}
             {data && m.share_meta({ n: data.message_count ?? data.messages?.length ?? 0 })}
           </div>
         </section>
-        <SectionHeader className="mt-5">{m.transcript()}</SectionHeader>
+        {!readFailed && <SectionHeader className="mt-5">{m.transcript()}</SectionHeader>}
         <section className="share-transcript mt-3" id="shareTranscript">
           {loading && <div className="px-4 py-10 text-center text-muted">{m.loading()}</div>}
-          {share.isError && (
+          {missing && (
             <div className="px-4 py-10 text-center text-muted" role="alert">
               <strong className="text-text">{m.share_error_title()}</strong>
               <div className="mt-2">{m.share_error_detail()}</div>
             </div>
+          )}
+          {readFailed && (
+            <ErrorState>
+              <div className="flex items-center justify-between gap-3">
+                <span>{m.share_error_title()}</span>
+                {canRetry && (
+                  <IconButton variant="default" label={m.retry()} onClick={() => { void share.refetch() }}>
+                    <RefreshCw aria-hidden="true" />
+                  </IconButton>
+                )}
+              </div>
+            </ErrorState>
           )}
           {data && !loading && <SharedTranscript messages={data.messages ?? []} />}
         </section>
