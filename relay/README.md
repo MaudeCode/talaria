@@ -14,17 +14,31 @@ The relay accepts bounded semantic state only. It does not accept transcripts, p
 
 ## Local development
 
+Use Node 24 and the pnpm version pinned in `package.json`. To start a local
+Convex deployment, run these commands from `relay/`.
+
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 pnpm convex deployment select local
 pnpm dev
 ```
 
-Run all local checks:
+For the full Relay check, run this from the repository root with Python 3
+available. It installs dependencies from both lockfiles, runs the typecheck
+and tests, then validates Convex in a disposable anonymous deployment.
 
 ```sh
+scripts/check relay
+```
+
+To run the typecheck and tests directly from `relay/`, install both sets of
+dependencies first. The bridge and sanitizer suites load `sharp` from the
+bridge's npm install.
+
+```sh
+pnpm install --frozen-lockfile
+npm ci --prefix bridge --no-audit --no-fund
 pnpm check
-pnpm convex dev --once --typecheck enable
 ```
 
 ## Production configuration
