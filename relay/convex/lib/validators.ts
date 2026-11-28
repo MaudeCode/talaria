@@ -176,6 +176,7 @@ export const deliveryJobKindValidator = v.union(
   v.literal("live_activity_end"),
   v.literal("live_activity_start"),
   v.literal("notification"),
+  v.literal("badge"),
   v.literal("background"),
 );
 

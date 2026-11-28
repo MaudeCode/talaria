@@ -47,7 +47,7 @@ FIXTURE_READERS = {
     "relay": {"app-registration.json", "feedback-attachment-limits.json", "feedback-report.json",
               "feedback-report-agent.json", "notification-alerts.json", "publisher-server-notice.json", "publisher-session-started.json",
               "publisher-snapshot.json", "relay-approval-alert.json", "relay-pairing.json", "relay-server-notice-push.json",
-              "relay-session-started-push.json", "relay-snapshot.json"},
+              "relay-session-started-push.json", "relay-snapshot.json", "relay-waiting-badge-push.json"},
 }
 JOBS = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend", "web_sidecar"},
         "web-agent-image": {"web_agent_image"},
@@ -174,10 +174,12 @@ def path_suites(path):
     # Only Web's drift check reads the OpenAPI document; the contracts probe covers what the App decodes (TAL-1674).
     if path == "contracts/web-api.openapi.json":
         return {"web_server", "contracts"}
-    if path == "contracts/fixtures/relay-pairing.json":
-        return {"relay"}  # The Relay HTTP contract fixture is consumed by the Relay suite.
     if path == "contracts/fixtures/notification-alerts.json":
         return {"web_server", "relay"}  # The two server alert-policy suites share these vectors.
+    if path in {"contracts/fixtures/relay-pairing.json", "contracts/fixtures/relay-waiting-badge-push.json"}:
+        return {"relay"}
+    if path == "contracts/fixtures/relay-approval-alert.json":
+        return {"relay", "web_server", "contracts"}  # Web produces the snapshot and TalariaKit reads the resulting push.
     if path.startswith("contracts/fixtures/"):
         name = path.removeprefix("contracts/fixtures/")
         return {"web_server", "web_frontend", "contracts"} | {suite for suite, names in FIXTURE_READERS.items() if name in names}

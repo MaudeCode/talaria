@@ -227,11 +227,12 @@ final class ApprovalNotificationTests: XCTestCase {
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent(
             "contracts/fixtures/relay-approval-alert.json"))) as? [String: Any])
         let alert = try XCTUnwrap(fixture["notificationAlert"] as? [String: String])
+        let badge = try XCTUnwrap(fixture["notificationBadge"] as? Int)
         // TAL-1469: Relay names the App's Deny-only category, since its alert never shows what the approval runs.
         XCTAssertEqual(fixture["notificationCategory"] as? String, "talaria.approval")
         // The payload relay/convex/lib/apnsPayload.ts `makeNotification` sends for an approval head.
         let push: [AnyHashable: Any] = [
-            "aps": ["alert": alert, "sound": "default", "interruption-level": "time-sensitive"],
+            "aps": ["alert": alert, "badge": badge, "sound": "default", "interruption-level": "time-sensitive"],
             "publisherId": "https://approval-alert.test", "sessionId": "session-abc", "deepLink": "/sessions/session-abc",
         ]
         let url = try XCTUnwrap(SessionNotificationRefresh.sessionURL(userInfo: push))

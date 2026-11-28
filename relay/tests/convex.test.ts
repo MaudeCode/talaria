@@ -3028,7 +3028,7 @@ describe("Convex relay state", () => {
           ? [{ publisherId: "https://hermes.example", sessionId: "session-1", previousPhase: "running" }]
           : undefined,
       });
-      const jobs = () => backend.run(async (ctx) => ctx.db.query("deliveryJobs").collect());
+      const jobs = () => backend.run(async (ctx) => (await ctx.db.query("deliveryJobs").collect()).filter((job) => job.kind !== "badge"));
       return { backend, recompute, jobs };
     }
 

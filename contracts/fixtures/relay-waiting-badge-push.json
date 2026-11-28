@@ -1,0 +1,7 @@
+{
+  "pushType": "alert",
+  "priority": "10",
+  "payload": {
+    "aps": { "badge": 0 }
+  }
+}

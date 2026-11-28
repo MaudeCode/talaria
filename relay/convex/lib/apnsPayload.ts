@@ -11,6 +11,24 @@ export interface ApnsRequest {
   collapseId?: string;
 }
 
+export function withBadge(payload: Record<string, unknown>, badge: number): Record<string, unknown> {
+  const aps = payload.aps as Record<string, unknown> | undefined;
+  return { ...payload, aps: { ...aps, badge } };
+}
+
+export function makeBadgePush(input: { token: string; bundleId: string; environment: ApsEnvironment; badge: number }): ApnsRequest {
+  return {
+    token: input.token,
+    topic: input.bundleId,
+    environment: input.environment,
+    // APNs uses the alert push type for icon badges, even without a banner or sound.
+    pushType: "alert",
+    priority: "10",
+    collapseId: "talaria.waiting-badge",
+    payload: withBadge({}, input.badge),
+  };
+}
+
 // The standalone notification carries a Time Sensitive alert, so the activity stays silent and the user hears it once.
 export function liveActivityAlert(alert: ActivityAlert | null | undefined): ActivityAlert | null {
   return alert && !alert.interruptionLevel ? alert : null;

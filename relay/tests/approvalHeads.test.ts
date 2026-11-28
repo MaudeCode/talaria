@@ -15,6 +15,7 @@ const now = 1_800_000_000_000;
 const publisherId = "https://hermes.example";
 const fixture = JSON.parse(readFileSync(new URL("../../contracts/fixtures/relay-approval-alert.json", import.meta.url), "utf8")) as {
   notificationAlert: Record<string, string>;
+  notificationBadge: number;
 };
 
 // Fake timers hold convex-test's scheduler, so the APNs workpool never claims and fails a queued job behind a test's back.
@@ -221,7 +222,7 @@ describe("approval queue heads", () => {
   });
 
   it("alerts once for each approval that becomes the head while the session keeps waiting", async () => {
-    const { publish, notifications } = await seed();
+    const { backend, publish, notifications } = await seed();
     await publish("running");
     await publish("waiting_for_approval", "head-first");
     await publish("waiting_for_approval", "head-first");
@@ -233,6 +234,9 @@ describe("approval queue heads", () => {
     await publish("waiting_for_approval", "head-second");
     const delivered = await notifications();
     expect(delivered).toHaveLength(2);
+    const claim = await backend.mutation(internal.delivery.claimJob, { jobId: delivered[1]!.id, now });
+    if (claim.status !== "ready") throw new Error("the current approval notification was not claimable");
+    expect(JSON.parse(claim.request.payloadJson)).toMatchObject({ aps: { badge: fixture.notificationBadge } });
     for (const { payload } of delivered) {
       expect(payload.aps).toMatchObject({ alert: fixture.notificationAlert, "interruption-level": "time-sensitive" });
       expect(payload).toMatchObject({ publisherId, sessionId: "session-1", deepLink: "/sessions/session-1" });

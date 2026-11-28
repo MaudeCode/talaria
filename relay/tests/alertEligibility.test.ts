@@ -1,13 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
+import type { Doc } from "../convex/_generated/dataModel";
 import { sha256 } from "../convex/lib/crypto";
 import { defaultNotificationPreferences, type NotificationPreferences, type SessionPhase } from "../convex/lib/model";
 import { type Backend, now, readState, publish, publisherId, runScheduledRecomputes, seed, snapshotState } from "./relayFixture";
 
 async function jobs(backend: Backend) {
   const rows = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").order("asc").collect());
-  return rows.map((job) => ({ kind: job.kind, status: job.status, aps: (JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> }).aps }));
+  return rows.filter((job) => job.kind !== "badge").map((job) => ({
+    kind: job.kind, status: job.status, aps: (JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> }).aps,
+  }));
+}
+
+function expectedClaimedRequest(job: Doc<"deliveryJobs">, badge: number) {
+  if (job.kind !== "notification") return job.request;
+  const payload = JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> };
+  return { ...job.request, payloadJson: JSON.stringify({ ...payload, aps: { ...payload.aps, badge } }) };
 }
 
 describe("publisher alert eligibility", () => {
@@ -95,7 +104,8 @@ describe("publisher alert eligibility", () => {
     });
     await runScheduledRecomputes(backend);
     const rows = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").collect());
-    expect(rows.map((job) => JSON.parse(job.request.payloadJson))).toEqual([
+    const notifications = rows.filter((job) => job.kind === "notification");
+    expect(notifications.map((job) => JSON.parse(job.request.payloadJson))).toEqual([
       expect.objectContaining({ aps: expect.objectContaining({ category: "talaria.input" }), inputHeadId: "question-head-1" }),
     ]);
   });
@@ -493,7 +503,7 @@ describe("clarification delivery", () => {
     expect(job).toMatchObject({ status: "queued" });
     await publishQuestion(backend, "snapshot", 3, "question-1");
     await expect(backend.mutation(internal.delivery.claimJob, { jobId: job!._id, now: now + 4 }))
-      .resolves.toMatchObject({ status: "ready", request: job!.request });
+      .resolves.toMatchObject({ status: "ready", request: expectedClaimedRequest(job!, 1) });
   });
 
   it("keeps a muted question consumed and lets the next eligible head alert", async () => {
@@ -570,20 +580,20 @@ describe.each([false, true])("claim preferences, retry=%s", (retry) => {
   });
 
   const categories = [
-    ["waiting_for_approval", "notifyOnApproval"],
-    ["waiting_for_input", "notifyOnInput"],
-    ["completed", "notifyOnCompletion"],
-    ["failed", "notifyOnFailure"],
+    ["waiting_for_approval", "notifyOnApproval", 1],
+    ["waiting_for_input", "notifyOnInput", 1],
+    ["completed", "notifyOnCompletion", 0],
+    ["failed", "notifyOnFailure", 0],
   ] as const;
 
   const soundClaims = [
-    ...categories.map(([phase]) => ({ kind: "notification", phase } as const)),
-    { kind: "live_activity_start", phase: "waiting_for_input" },
-    { kind: "live_activity_update", phase: "completed" },
-    { kind: "live_activity_end", phase: "waiting_for_input" },
+    ...categories.map(([phase, , badge]) => ({ kind: "notification", phase, badge } as const)),
+    { kind: "live_activity_start", phase: "waiting_for_input", badge: 0 },
+    { kind: "live_activity_update", phase: "completed", badge: 0 },
+    { kind: "live_activity_end", phase: "waiting_for_input", badge: 0 },
   ] as const;
 
-  it.each(soundClaims)("applies the current sound preference to $kind for $phase", async ({ kind, phase }) => {
+  it.each(soundClaims)("applies the current sound preference to $kind for $phase", async ({ kind, phase, badge }) => {
     const backend = await seed({
       pushToken: kind === "notification" ? "push-token" : undefined,
       pushToStartToken: kind === "live_activity_start" ? "start-token" : undefined,
@@ -603,14 +613,15 @@ describe.each([false, true])("claim preferences, retry=%s", (retry) => {
       }
     });
     await runScheduledRecomputes(backend);
-    const queued = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+    const queued = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect())).filter((job) => job.kind !== "badge");
     expect(queued.map((job) => job.kind)).toEqual([kind]);
     const [job] = queued;
-    const audible = JSON.parse(job!.request.payloadJson);
+    const expected = expectedClaimedRequest(job!, badge);
+    const audible = JSON.parse(expected.payloadJson);
     const soundPath = kind === "notification" ? "aps.sound" : "aps.alert.sound";
     expect(audible).toHaveProperty(soundPath, "default");
     const claim = (at: number) => backend.mutation(internal.delivery.claimJob, { jobId: job!._id, now: at });
-    if (retry) await expect(claim(now + 2)).resolves.toMatchObject({ status: "ready", request: job!.request });
+    if (retry) await expect(claim(now + 2)).resolves.toMatchObject({ status: "ready", request: expected });
 
     const register = (notificationSoundEnabled?: boolean) => backend.fetch("/v1/devices/device-1", {
       method: "PUT",
@@ -632,7 +643,7 @@ describe.each([false, true])("claim preferences, retry=%s", (retry) => {
 
     // A later attempt uses the current registration, even when an older client omits the preference.
     expect((await register(retry ? true : undefined)).status).toBe(200);
-    await expect(claim(now + 5)).resolves.toMatchObject({ status: "ready", request: job!.request });
+    await expect(claim(now + 5)).resolves.toMatchObject({ status: "ready", request: expected });
   });
 
   describe.each([false, true])("activity=%s", (activity) => {
@@ -657,12 +668,12 @@ describe.each([false, true])("claim preferences, retry=%s", (retry) => {
       expect(retried).toMatchObject({ status: "ready", request: claimed.request });
     });
 
-    it.each(categories)("keeps enabled %s delivery", async (phase) => {
+    it.each(categories)("keeps enabled %s delivery", async (phase, _preference, badge) => {
       const { backend, job } = await queuedAlert(activity, phase);
       // Activity alerts have their own policy and do not depend on ordinary notifications.
       await changePreferences(backend, activity ? { notificationsEnabled: false } : { liveActivitiesEnabled: false });
       const claimed = await backend.mutation(internal.delivery.claimJob, { jobId: job._id, now: now + 4 });
-      expect(claimed).toMatchObject({ status: "ready", request: job.request });
+      expect(claimed).toMatchObject({ status: "ready", request: expectedClaimedRequest(job, badge) });
       expect(await backend.run(async (ctx) => ctx.db.get(job._id))).toMatchObject({ status: "running", attemptCount: retry ? 2 : 1 });
     });
   });

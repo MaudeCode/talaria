@@ -309,6 +309,7 @@ export default defineSchema({
     .index("by_user_id_and_activity_id_and_state_fingerprint_and_status", ["userId", "activityId", "stateFingerprint", "status"])
     // Session-started pushes use the prefix without status to also see finished jobs.
     .index("by_user_id_and_device_id_and_state_fingerprint_and_status", ["userId", "deviceId", "stateFingerprint", "status"])
+    .index("by_user_id_and_device_id_and_kind", ["userId", "deviceId", "kind"])
     .index("by_status_and_updated_at", ["status", "updatedAt"]),
 
   // The current notice survives job pruning, with one receipt per update target and recipient.
