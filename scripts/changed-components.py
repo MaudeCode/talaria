@@ -176,6 +176,8 @@ def path_suites(path):
         return {"web_server", "contracts"}
     if path == "contracts/fixtures/relay-pairing.json":
         return {"relay"}  # The Relay HTTP contract fixture is consumed by the Relay suite.
+    if path == "contracts/fixtures/notification-alerts.json":
+        return {"web_server", "relay"}  # The two server alert-policy suites share these vectors.
     if path.startswith("contracts/fixtures/"):
         name = path.removeprefix("contracts/fixtures/")
         return {"web_server", "web_frontend", "contracts"} | {suite for suite, names in FIXTURE_READERS.items() if name in names}

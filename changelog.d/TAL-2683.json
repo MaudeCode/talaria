@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Relay can deliver visible notifications and Live Activity alerts with sound turned off for a device.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

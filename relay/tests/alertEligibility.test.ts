@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
+import { sha256 } from "../convex/lib/crypto";
 import { defaultNotificationPreferences, type NotificationPreferences, type SessionPhase } from "../convex/lib/model";
 import { type Backend, now, readState, publish, publisherId, runScheduledRecomputes, seed, snapshotState } from "./relayFixture";
 
@@ -574,6 +575,65 @@ describe.each([false, true])("claim preferences, retry=%s", (retry) => {
     ["completed", "notifyOnCompletion"],
     ["failed", "notifyOnFailure"],
   ] as const;
+
+  const soundClaims = [
+    ...categories.map(([phase]) => ({ kind: "notification", phase } as const)),
+    { kind: "live_activity_start", phase: "waiting_for_input" },
+    { kind: "live_activity_update", phase: "completed" },
+    { kind: "live_activity_end", phase: "waiting_for_input" },
+  ] as const;
+
+  it.each(soundClaims)("applies the current sound preference to $kind for $phase", async ({ kind, phase }) => {
+    const backend = await seed({
+      pushToken: kind === "notification" ? "push-token" : undefined,
+      pushToStartToken: kind === "live_activity_start" ? "start-token" : undefined,
+      activity: kind === "live_activity_update" || kind === "live_activity_end",
+    });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "sound", receivedAt: now + 1, snapshotId: "sound",
+      states: [snapshotState("session-1", 2, phase), snapshotState("session-2", 1, "running")],
+    });
+    const tokenHash = await sha256("sound-test-session");
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("relayUsers", { userId: "user-1", appleSubjectHash: "sound-test-user", createdAt: now, updatedAt: now });
+      await ctx.db.insert("userSessions", { userId: "user-1", sessionId: "login-1", tokenHash, expiresAt: now + 60_000, createdAt: now });
+      // The states can disappear while a recompute with their transition snapshot is queued.
+      if (kind === "live_activity_end") {
+        for (const state of await ctx.db.query("sessionStates").collect()) await ctx.db.delete(state._id);
+      }
+    });
+    await runScheduledRecomputes(backend);
+    const queued = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+    expect(queued.map((job) => job.kind)).toEqual([kind]);
+    const [job] = queued;
+    const audible = JSON.parse(job!.request.payloadJson);
+    const soundPath = kind === "notification" ? "aps.sound" : "aps.alert.sound";
+    expect(audible).toHaveProperty(soundPath, "default");
+    const claim = (at: number) => backend.mutation(internal.delivery.claimJob, { jobId: job!._id, now: at });
+    if (retry) await expect(claim(now + 2)).resolves.toMatchObject({ status: "ready", request: job!.request });
+
+    const register = (notificationSoundEnabled?: boolean) => backend.fetch("/v1/devices/device-1", {
+      method: "PUT",
+      headers: { authorization: "Bearer sound-test-session", "content-type": "application/json" },
+      body: JSON.stringify({
+        label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "production",
+        preferences: { ...defaultNotificationPreferences, notificationsEnabled: true, notificationSoundEnabled },
+      }),
+    });
+    expect((await register(false)).status).toBe(200);
+    const muted = await claim(now + 4);
+    expect(muted).toMatchObject({ status: "ready", kind });
+    if (muted.status !== "ready") throw new Error("muted alert was not claimable");
+    const payload = JSON.parse(muted.request.payloadJson);
+    expect(payload).not.toHaveProperty(soundPath);
+    if (kind === "notification") delete audible.aps.sound;
+    else delete audible.aps.alert.sound;
+    expect(payload).toEqual(audible);
+
+    // A later attempt uses the current registration, even when an older client omits the preference.
+    expect((await register(retry ? true : undefined)).status).toBe(200);
+    await expect(claim(now + 5)).resolves.toMatchObject({ status: "ready", request: job!.request });
+  });
 
   describe.each([false, true])("activity=%s", (activity) => {
     it.each(categories)("rechecks %s against %s", async (phase, preference) => {

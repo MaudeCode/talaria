@@ -141,6 +141,8 @@ export interface ActivityAggregate {
 export interface NotificationPreferences {
   liveActivitiesEnabled: boolean;
   notificationsEnabled: boolean;
+  // Older registrations omit this field and keep the default APNs sound.
+  notificationSoundEnabled?: boolean;
   notifyOnApproval: boolean;
   notifyOnInput: boolean;
   notifyOnCompletion: boolean;
