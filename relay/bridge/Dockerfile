@@ -5,7 +5,7 @@ RUN apk add --no-cache ffmpeg
 WORKDIR /bridge
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
-COPY attachments.ts bridge.ts sanitizer.ts ./
+COPY attachments.ts bridge.ts delivery-status.ts sanitizer.ts ./
 USER node
 # Bridge mode. `node sanitizer.ts` selects sanitizer mode, which runs as its own secret-free container.
 CMD ["node", "bridge.ts"]

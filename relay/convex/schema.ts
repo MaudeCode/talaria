@@ -15,6 +15,7 @@ import {
   aggregateRowValidator,
   feedbackAttachmentRefusalValidator,
   feedbackAttachmentTypeValidator,
+  feedbackDeliveryFailureStageValidator,
   feedbackPayloadValidator,
   feedbackTierValidator,
 } from "./lib/validators";
@@ -336,11 +337,16 @@ export default defineSchema({
     deliveredAt: v.optional(v.number()),
     queuedAt: v.optional(v.number()),
     retryAt: v.optional(v.number()),
+    deliveryFailureStage: v.optional(feedbackDeliveryFailureStageValidator),
   })
     .index("by_request_id", ["requestId"])
     .index("by_status_and_created_at", ["status", "createdAt"])
+    .index("by_status_and_delivery_failure_stage", ["status", "deliveryFailureStage"])
     .index("by_status_and_retry_at_and_queued_at_and_created_at", ["status", "retryAt", "queuedAt", "createdAt"])
     .index("by_status_and_delivered_at", ["status", "deliveredAt"]),
+
+  // Acknowledgement advances this singleton without retaining the delivered report.
+  feedbackDeliveryState: defineTable({ lastSuccessfulDeliveryAt: v.number() }),
 
   feedbackDiagnosticChunks: defineTable({
     reportId: v.id("feedbackReports"),

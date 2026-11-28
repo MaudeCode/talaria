@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { convexTest } from "convex-test";
@@ -9,7 +9,7 @@ import type Sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { serveHealth, watch } from "../bridge/bridge.ts";
-import { api } from "../convex/_generated/api";
+import { api, internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import schema from "../convex/schema";
 import { mediaStubs, sanitizerToken, startSanitizer } from "./sanitizerProcess.ts";
@@ -28,6 +28,10 @@ async function server(handler: (request: IncomingMessage, response: ServerRespon
     void handler(request, response).catch(() => { response.writeHead(500).end(); });
   });
   await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
+  return localOrigin(http);
+}
+
+function localOrigin(http: Server) {
   cleanups.push(() => new Promise<void>((resolve, reject) => http.close((error) => error ? reject(error) : resolve())));
   const address = http.address();
   if (!address || typeof address === "string") throw new Error("Expected a TCP address");
@@ -38,6 +42,16 @@ async function body(request: IncomingMessage) {
   let text = "";
   for await (const chunk of request) text += chunk;
   return JSON.parse(text);
+}
+
+async function forwardRelay(backend: Pick<ReturnType<typeof convexTest>, "fetch">, request: IncomingMessage, response: ServerResponse) {
+  const forwarded = await backend.fetch(request.url!, {
+    method: request.method,
+    headers: { authorization: request.headers.authorization!, "content-type": "application/json" },
+    body: request.headers["content-length"] ? JSON.stringify(await body(request)) : undefined,
+  });
+  response.writeHead(forwarded.status, Object.fromEntries(forwarded.headers))
+    .end(Buffer.from(await forwarded.arrayBuffer()));
 }
 
 // The real sanitizer runs as its own process with only its token, its decoders stubbed (tests/sanitizerProcess.ts).
@@ -177,7 +191,7 @@ async function fixture(
     response.end(JSON.stringify({ id: ticket.id, key: failures.malformedKey ? intakeKey : ticket.key }));
   });
   // No PATH: the bridge launches no media tool.
-  const env: Record<string, string> = {
+  const env = {
     RELAY_URL: `${relay}/`, FEEDBACK_OPERATOR_TOKEN: operatorToken,
     KANVIL_URL: `${kanvil}/`, KANVIL_INTAKE_KEY: intakeKey, KANVIL_PROJECT_ID: "synthetic-project",
     SANITIZER_URL: `${sanitizer.url}/`, SANITIZER_TOKEN: sanitizerToken,
@@ -322,7 +336,7 @@ it("maps other to research and escapes metadata without requiring diagnostics", 
 it("continues after Kanvil failure, leaves the report pending and retries without duplicates", async () => {
   const f = await fixture();
   f.failures.create.add(f.reports[0]!.payload.requestId);
-  expect((await f.run()).code).toBe(1);
+  expect(await f.run()).toEqual({ code: 1, output: "Feedback bridge: delivery failed at ticket_creation\n" });
   expect(f.acks).toEqual([{ reportId: f.reports[1]!.reportId, ticketKey: "INBOX-1" }]);
   f.failures.create.clear();
   f.retryDeferred();
@@ -337,7 +351,7 @@ it("continues after Kanvil failure, leaves the report pending and retries withou
 it("retries the identical create after an ack failure and acknowledges the original ticket key", async () => {
   const f = await fixture([report()]);
   f.failures.ack = f.reports[0]!.reportId;
-  expect((await f.run()).code).toBe(1);
+  expect(await f.run()).toEqual({ code: 1, output: "Feedback bridge: delivery failed at acknowledgement\n" });
   f.failures.ack = "";
   f.retryDeferred();
   expect((await f.run()).code).toBe(0);
@@ -350,7 +364,7 @@ it("retries the identical create after an ack failure and acknowledges the origi
 it("returns failure for queue errors or malformed create responses without leaking secrets or acknowledging", async () => {
   const f = await fixture([report()]);
   f.failures.pending = true;
-  expect((await f.run()).code).toBe(1);
+  expect(await f.run()).toEqual({ code: 1, output: "Feedback bridge: delivery failed at queue_read\n" });
   expect(f.creates).toEqual([]);
   f.failures.pending = false;
   f.failures.malformedKey = true;
@@ -406,13 +420,7 @@ it("delivers a newer report after restart despite a full failing batch, then rec
         response.writeHead(503).end();
         return;
       }
-      const forwarded = await backend.fetch(request.url!, {
-        method: request.method,
-        headers: { authorization: request.headers.authorization!, "content-type": "application/json" },
-        body: request.headers["content-length"] ? JSON.stringify(await body(request)) : undefined,
-      });
-      response.writeHead(forwarded.status, Object.fromEntries(forwarded.headers))
-        .end(Buffer.from(await forwarded.arrayBuffer()));
+      await forwardRelay(backend, request, response);
     });
     const older = items.map(({ payload }) => payload.requestId);
     f.failures.create = new Set(older.slice(1));
@@ -551,9 +559,7 @@ it("leaves a report pending after a failed upload and uploads only what is missi
     { contentType: "image/webp", data: await image(30, 20).webp().toBuffer() },
   ]);
   f.failures.upload = 2;
-  const failed = await f.run();
-  expect(failed.code).toBe(1);
-  expect(failed.output).not.toContain("http://");
+  expect(await f.run()).toEqual({ code: 1, output: "Feedback bridge: delivery failed at attachment_transfer\n" });
   expect(f.uploads.map((item) => item.name)).toEqual(["attachment-0.png"]);
   expect(f.acks).toEqual([]);
   f.retryDeferred();
@@ -589,7 +595,9 @@ it.each<[string, (response: ServerResponse) => void]>([
     answer(response);
   });
   const f = await attachedFixture([{ contentType: "image/png", data: await image(20, 20).png().toBuffer() }]);
-  expect((await run({ ...f.env, SANITIZER_URL: fake })).code).toBe(1);
+  expect(await run({ ...f.env, SANITIZER_URL: fake })).toEqual({
+    code: 1, output: "Feedback bridge: delivery failed at sanitization\n",
+  });
   expect(tokens).toEqual([`Bearer ${sanitizerToken}`]);
   expect([f.creates, f.uploads, f.acks]).toEqual([[], [], []]);
 });
@@ -703,11 +711,8 @@ describe("watch mode", () => {
 describe("health endpoint", () => {
   it("answers 503 until healthy, 200 while healthy, and 404 elsewhere", async () => {
     let healthy = false;
-    const server = await serveHealth(0, () => healthy);
-    cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
-    const address = server.address();
-    if (!address || typeof address === "string") throw new Error("Expected a TCP address");
-    const get = (path: string, method = "GET") => fetch(`http://127.0.0.1:${address.port}${path}`, { method });
+    const origin = localOrigin(await serveHealth(0, () => healthy));
+    const get = (path: string, method = "GET") => fetch(`${origin}${path}`, { method });
     expect((await get("/healthz")).status).toBe(503);
     healthy = true;
     const ok = await get("/healthz");
@@ -717,5 +722,67 @@ describe("health endpoint", () => {
     expect((await get("/healthz")).status).toBe(503);
     expect((await get("/")).status).toBe(404);
     expect((await get("/healthz", "POST")).status).toBe(404);
+  });
+
+  it("reports a deferred backlog despite a newer delivery, then returns to idle after recovery", async () => {
+    const now = 1_800_000_000_000;
+    vi.useFakeTimers({ now });
+    vi.stubEnv("FEEDBACK_OPERATOR_TOKEN_SHA256", createHash("sha256").update(operatorToken).digest("hex"));
+    const backend = convexTest(schema, relayModules);
+    try {
+      const f = await fixture([], new Map(), new Map(), (request, response) => forwardRelay(backend, request, response));
+      const config = { ...f.env, RELAY_URL: f.env.RELAY_URL.slice(0, -1) };
+      const origin = localOrigin(await serveHealth(0, () => true, { config, failureStage: null }));
+      const status = async () => {
+        const response = await fetch(`${origin}/deliveryz`);
+        return { code: response.status, body: await response.json().catch(() => null) };
+      };
+      expect(await status()).toEqual({
+        code: 200, body: { status: "idle", oldestPendingAgeMs: null, lastSuccessfulDeliveryAt: null, failureStage: null },
+      });
+
+      const older = report("bug", "ios");
+      await backend.run(async (ctx) => {
+        for (const [item, createdAt] of [[older, now - 60_000], [report("bug", "ios"), now]] as const) {
+          const { requestId } = item.payload;
+          await ctx.db.insert("feedbackReports", {
+            requestId, payloadHash: requestId, installHash: "synthetic", tier: "unverified",
+            payload: item.payload, status: "pending", createdAt,
+          });
+        }
+      });
+      expect(await status()).toEqual({
+        code: 200, body: { status: "pending", oldestPendingAgeMs: 60_000, lastSuccessfulDeliveryAt: null, failureStage: null },
+      });
+
+      f.failures.create.add(older.payload.requestId);
+      expect((await f.run()).code).toBe(1);
+      expect(await backend.query(api.feedback.pendingSignal, { token: operatorToken })).toEqual([]);
+      expect((await fetch(`${origin}/healthz`)).status).toBe(200);
+      expect(await status()).toEqual({
+        code: 503, body: { status: "degraded", oldestPendingAgeMs: 60_000, lastSuccessfulDeliveryAt: now, failureStage: "ticket_creation" },
+      });
+
+      f.failures.create.clear();
+      await backend.finishAllScheduledFunctions(vi.runAllTimers);
+      expect((await f.run()).code).toBe(0);
+      const deliveredAt = Date.now();
+      const idle = {
+        code: 200, body: { status: "idle", oldestPendingAgeMs: null, lastSuccessfulDeliveryAt: deliveredAt, failureStage: null },
+      };
+      expect(await status()).toEqual(idle);
+
+      // Delivery metadata must outlive the report and its contents.
+      const afterRetention = new Date(deliveredAt);
+      afterRetention.setUTCDate(afterRetention.getUTCDate() + 8);
+      vi.setSystemTime(afterRetention);
+      await backend.mutation(internal.cleanup.prune, {});
+      expect(await backend.run((ctx) => ctx.db.query("feedbackReports").first())).toBeNull();
+      expect(await status()).toEqual(idle);
+    } finally {
+      await backend.finishAllScheduledFunctions(vi.runAllTimers);
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    }
   });
 });

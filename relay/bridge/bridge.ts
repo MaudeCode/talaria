@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { ConvexClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { digestHeader, type DropReason, dropReasons, maxOutputBytes, outputExtensions, type OutputType } from "./attachments.ts";
+import { isReportFailureStage, type ReportFailureStage } from "./delivery-status.ts";
 
 type QueuedAttachment = {
   index: number;
@@ -145,9 +146,10 @@ async function sanitized(config: Config, input: Buffer, contentType: string, ind
   return { index, kept: { name: `attachment-${index}.${outputExtensions[kept]}`, contentType: kept, data } };
 }
 
-async function collect(config: Config, report: FeedbackReport): Promise<Outcome[]> {
+async function collect(config: Config, report: FeedbackReport, setStage: (stage: ReportFailureStage) => void): Promise<Outcome[]> {
   const outcomes: Outcome[] = [];
   for (const attachment of [...report.attachments ?? []].sort((a, b) => a.index - b.index)) {
+    setStage("attachment_transfer");
     const { index, contentType } = attachment;
     if (!Number.isSafeInteger(index) || index < 0) throw new Error();
     if (attachment.status !== "stored") {
@@ -164,6 +166,7 @@ async function collect(config: Config, report: FeedbackReport): Promise<Outcome[
       outcomes.push({ index, dropped: "failed validation" });
       continue;
     }
+    setStage("sanitization");
     outcomes.push(await sanitized(config, input, contentType, index));
   }
   return outcomes;
@@ -173,6 +176,11 @@ const required = [
   "RELAY_URL", "FEEDBACK_OPERATOR_TOKEN", "KANVIL_URL", "KANVIL_INTAKE_KEY", "KANVIL_PROJECT_ID", "SANITIZER_URL", "SANITIZER_TOKEN",
 ] as const;
 type Config = Record<typeof required[number], string> & { RELAY_SYNC_URL?: string; HEALTH_PORT?: number };
+type FailureStage = ReportFailureStage | "queue_read";
+type DeliveryMonitor = {
+  config: Pick<Config, "RELAY_URL" | "FEEDBACK_OPERATOR_TOKEN">;
+  failureStage: FailureStage | null;
+};
 
 // Exit code 2 for a missing or invalid variable, naming only the variable.
 function readConfig(): Config | number {
@@ -207,7 +215,7 @@ function readConfig(): Config | number {
 }
 
 // Delivers one batch of up to 50 eligible reports: 0 when all were delivered or none were ready, 1 otherwise.
-async function deliver(config: Config): Promise<number> {
+async function deliver(config: Config, monitor?: DeliveryMonitor): Promise<number> {
   let reports: FeedbackReport[];
   try {
     const response = await request(`${config.RELAY_URL}/v1/feedback/pending?limit=50`, config.FEEDBACK_OPERATOR_TOKEN);
@@ -215,15 +223,20 @@ async function deliver(config: Config): Promise<number> {
     if (!Array.isArray(pending.reports) || pending.reports.length > 50) throw new Error();
     reports = pending.reports;
   } catch {
-    console.error("Feedback bridge: pending queue request failed");
+    if (monitor) monitor.failureStage = "queue_read";
+    console.error("Feedback bridge: delivery failed at queue_read");
     return 1;
   }
+  if (monitor?.failureStage === "queue_read") monitor.failureStage = null;
   let failed = false;
+  let unrecordedFailure: ReportFailureStage | null = null;
   for (const report of reports) {
+    let stage: ReportFailureStage = "attachment_transfer";
     try {
       const { payload } = report;
       // Every outcome is settled before the ticket exists, so a retry sends the identical request.
-      const outcomes = await collect(config, report);
+      const outcomes = await collect(config, report, (next) => { stage = next; });
+      stage = "ticket_creation";
       const project = `${config.KANVIL_URL}/api/v1/projects/${encodeURIComponent(config.KANVIL_PROJECT_ID)}`;
       const response = await request(
         `${project}/tickets`,
@@ -241,16 +254,17 @@ async function deliver(config: Config): Promise<number> {
       if (typeof ticket.key !== "string" || !/^[A-Z][A-Z0-9]{0,15}-[1-9][0-9]{0,9}$/.test(ticket.key)) throw new Error();
       const kept: Array<{ name: string; contentType: OutputType | "application/json"; data: Buffer }> =
         outcomes.flatMap((outcome) => "kept" in outcome ? [outcome.kept] : []);
-      if (report.hasDiagnosticReports) {
-        const response = await request(
-          `${config.RELAY_URL}/v1/feedback/${encodeURIComponent(report.reportId)}/diagnostic-reports`, config.FEEDBACK_OPERATOR_TOKEN,
-        );
-        const data = await download(response, 2 * 1024 * 1024);
-        if (!data?.length) throw new Error("Diagnostic reports unavailable");
-        kept.push({ name: "app-diagnostic-reports.json", contentType: "application/json", data });
-      }
-      if (kept.length) {
+      if (kept.length || report.hasDiagnosticReports) {
         if (typeof ticket.id !== "string" || !ticket.id) throw new Error();
+        stage = "attachment_transfer";
+        if (report.hasDiagnosticReports) {
+          const response = await request(
+            `${config.RELAY_URL}/v1/feedback/${encodeURIComponent(report.reportId)}/diagnostic-reports`, config.FEEDBACK_OPERATOR_TOKEN,
+          );
+          const data = await download(response, 2 * 1024 * 1024);
+          if (!data?.length) throw new Error("Diagnostic reports unavailable");
+          kept.push({ name: "app-diagnostic-reports.json", contentType: "application/json", data });
+        }
         const files = `${project}/tickets/${encodeURIComponent(ticket.id)}/attachments`;
         // A retry after a partial upload sends only the files the ticket does not have yet.
         const existing = await (await request(files, config.KANVIL_INTAKE_KEY)).json() as Array<{ name?: unknown }>;
@@ -262,6 +276,7 @@ async function deliver(config: Config): Promise<number> {
           await uploaded.body?.cancel();
         }
       }
+      stage = "acknowledgement";
       const ack = await request(
         `${config.RELAY_URL}/v1/feedback/${encodeURIComponent(report.reportId)}/ack`, config.FEEDBACK_OPERATOR_TOKEN,
         { ticketKey: ticket.key },
@@ -269,18 +284,22 @@ async function deliver(config: Config): Promise<number> {
       await ack.body?.cancel();
     } catch {
       // Never log response bodies, payloads, URLs or exceptions, which can contain secrets.
-      console.error("Feedback bridge: report delivery failed; left pending for retry");
+      console.error(`Feedback bridge: delivery failed at ${stage}`);
       failed = true;
       try {
         const deferred = await request(
-          `${config.RELAY_URL}/v1/feedback/${encodeURIComponent(report.reportId)}/defer`, config.FEEDBACK_OPERATOR_TOKEN, {},
+          `${config.RELAY_URL}/v1/feedback/${encodeURIComponent(report.reportId)}/defer`, config.FEEDBACK_OPERATOR_TOKEN,
+          { failureStage: stage },
         );
         await deferred.body?.cancel();
       } catch {
+        unrecordedFailure ??= stage;
+        if (monitor) monitor.failureStage = unrecordedFailure;
         console.error("Feedback bridge: could not defer failed report");
       }
     }
   }
+  if (monitor) monitor.failureStage = unrecordedFailure;
   return failed ? 1 : 0;
 }
 
@@ -339,12 +358,46 @@ export function watch(subscribe: Subscribe, run: () => Promise<unknown>, stop: A
   });
 }
 
-/** `GET /healthz` answers 200 while `healthy()` holds and 503 otherwise; any other request is 404. */
-export function serveHealth(port: number, healthy: () => boolean): Promise<Server> {
-  const server = createServer((request, response) => {
-    if (request.method !== "GET" || request.url !== "/healthz") return void response.writeHead(404).end();
-    const ok = healthy();
-    response.writeHead(ok ? 200 : 503, { "content-type": "text/plain" }).end(ok ? "ok" : "unavailable");
+function isNullableTimestamp(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isSafeInteger(value) && value >= 0);
+}
+
+async function deliveryStatus(monitor: DeliveryMonitor) {
+  const { config } = monitor;
+  try {
+    const response = await request(`${config.RELAY_URL}/v1/feedback/queue-status`, config.FEEDBACK_OPERATOR_TOKEN, undefined, 5_000);
+    const { oldestPendingCreatedAt, lastSuccessfulDeliveryAt, failureStage: recordedFailure } =
+      JSON.parse((await download(response, 1_024))?.toString() ?? "") as Record<string, unknown>;
+    if (!isNullableTimestamp(oldestPendingCreatedAt) || !isNullableTimestamp(lastSuccessfulDeliveryAt)
+      || (recordedFailure !== null && !isReportFailureStage(recordedFailure))) throw new Error();
+
+    const oldestPendingAgeMs = oldestPendingCreatedAt === null ? null : Math.max(0, Date.now() - oldestPendingCreatedAt);
+    const failureStage = monitor.failureStage === "queue_read"
+      ? "queue_read" : recordedFailure ?? (oldestPendingAgeMs === null ? null : monitor.failureStage);
+    return {
+      status: failureStage ? "degraded" : oldestPendingAgeMs === null ? "idle" : "pending",
+      oldestPendingAgeMs, lastSuccessfulDeliveryAt, failureStage,
+    };
+  } catch {
+    return { status: "degraded", oldestPendingAgeMs: null, lastSuccessfulDeliveryAt: null, failureStage: "queue_read" };
+  }
+}
+
+export function serveHealth(port: number, healthy: () => boolean, monitor?: DeliveryMonitor): Promise<Server> {
+  const server = createServer(async (request, response) => {
+    if (request.method === "GET" && request.url === "/healthz") {
+      const ok = healthy();
+      response.writeHead(ok ? 200 : 503, { "content-type": "text/plain" }).end(ok ? "ok" : "unavailable");
+      return;
+    }
+    if (request.method === "GET" && request.url === "/deliveryz" && monitor) {
+      const status = await deliveryStatus(monitor);
+      response.writeHead(status.status === "degraded" ? 503 : 200, {
+        "content-type": "application/json", "cache-control": "no-store",
+      }).end(JSON.stringify(status));
+      return;
+    }
+    response.writeHead(404).end();
   });
   return new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -364,14 +417,15 @@ async function main(): Promise<number> {
   process.once("SIGTERM", () => stop.abort());
   // Healthy once Relay has answered the subscription (the token is authorized) and while the socket is up.
   let subscribed = false;
+  const monitor: DeliveryMonitor = { config, failureStage: null };
   const health = config.HEALTH_PORT === undefined ? undefined
-    : await serveHealth(config.HEALTH_PORT, () => subscribed && client.connectionState().isWebSocketConnected);
+    : await serveHealth(config.HEALTH_PORT, () => subscribed && client.connectionState().isWebSocketConnected, monitor);
   const code = await watch(
     (onIds, onError) => client.onUpdate(pendingSignal, { token: config.FEEDBACK_OPERATOR_TOKEN }, (ids) => {
       subscribed = true;
       onIds(ids);
     }, onError),
-    () => deliver(config),
+    () => deliver(config, monitor),
     stop.signal,
   );
   await new Promise((resolve) => health ? health.close(resolve) : resolve(undefined));
