@@ -928,6 +928,17 @@ final class UITestFixtureURLProtocol: URLProtocol {
         ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.serverUpdatesArgument)
     }
 
+    private static let fixtureUpdateInbox: Data = {
+        var failed = FixtureServerUpdate(target: "agent", tabID: "update-inbox", stage: .failed).notification
+        failed["detail"] = "The build could not resolve a required package.\nCheck the build log before retrying the update."
+        var finished = FixtureServerUpdate(target: "webui", tabID: "update-inbox", stage: .finished).notification
+        finished["detail"] = NSNull()
+        return json([
+            "scope_id": "ui-fixture-scope", "notifications": [failed, finished], "unread_count": 0,
+            "clearable_count": 0, "can_clear": false, "tab_update": NSNull()
+        ])
+    }()
+
     private static func fixtureApplyUpdate(_ request: URLRequest) -> Data {
         let body = requestJSON(request)
         guard let target = body["target"] as? String, let tabID = body["tab_id"] as? String else {
@@ -1451,6 +1462,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 update?.finishAt = .now.advanced(by: .seconds(3))
                 return json(update?.notification ?? [:])
             }
+        case "/api/update-notifications" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.updateNotificationsArgument):
+            return fixtureUpdateInbox
         case "/api/update-notifications":
             return json(["scope_id": "ui-fixture-scope", "notifications": [], "unread_count": 0, "clearable_count": 0, "can_clear": false])
         case "/api/toolsets":

@@ -217,15 +217,37 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
     }
 
     func testSharedRecoveringNotificationDecodesWithoutEndingTheUpdate() throws {
+        let fixture = try sharedContractFixture("update-notifications")
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let response = try decoder.decode(UpdateNotificationsResponse.self, from: sharedContractFixture("update-notifications"))
+        let response = try decoder.decode(UpdateNotificationsResponse.self, from: fixture)
         let recovering = try XCTUnwrap(response.notifications.first { $0.phase == "recovering" })
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture) as? [String: Any])
+        let rows = try XCTUnwrap(payload["notifications"] as? [[String: Any]])
+        let detail = try XCTUnwrap(rows.first { $0["id"] as? String == recovering.id }?["detail"] as? String)
         XCTAssertEqual(recovering.phase, "recovering")
         XCTAssertTrue(recovering.active)
         XCTAssertFalse(recovering.canDismiss)
         XCTAssertEqual(recovering.message, "Attempting recovery")
-        XCTAssertTrue(recovering.detail?.contains("gateway resume failed") == true)
+        XCTAssertEqual(recovering.detail, detail)
+    }
+
+    func testUpdateNotificationDecodesMultilineAndOmittedDetail() throws {
+        let fixture = try sharedContractFixture("update-notifications")
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture) as? [String: Any])
+        let rows = try XCTUnwrap(payload["notifications"] as? [[String: Any]])
+        var row = try XCTUnwrap(rows.first { $0["phase"] as? String == "recovering" })
+        let detail = "The gateway did not restart.\nCheck the service log."
+        row["phase"] = "failed"
+        row["detail"] = detail
+
+        let decoder = APIClient.responseDecoder()
+        let failed = try decoder.decode(UpdateNotificationRecord.self, from: JSONSerialization.data(withJSONObject: row))
+        XCTAssertEqual(failed.detail, detail)
+
+        row.removeValue(forKey: "detail")
+        let older = try decoder.decode(UpdateNotificationRecord.self, from: JSONSerialization.data(withJSONObject: row))
+        XCTAssertNil(older.detail)
     }
 
     func testUpdateNotificationTimestampAcceptsServerFractionalSeconds() {

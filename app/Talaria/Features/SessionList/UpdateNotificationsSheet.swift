@@ -249,6 +249,14 @@ private struct UpdateNotificationRow: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let detail = notification.detail, !detail.isEmpty {
+                    Text(verbatim: detail)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
                 ForEach(notification.actions) { action in
                     UpdateNotificationActionButton(action: action, isPerforming: isPerforming(action)) { perform(action) }
                 }
