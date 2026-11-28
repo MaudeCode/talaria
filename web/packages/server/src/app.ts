@@ -377,6 +377,9 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           }
           options.context.ctx.deps.log(`[webui] ERROR ${options.context.ctx.method} ${loggedUrl(options.context.ctx.req.url)}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
           if (storageFull(error)) throw new HttpError(507, STORAGE_FULL.error, { condition: STORAGE_FULL.condition })
+          if (options.path[0] === 'share' && options.path[1] === 'read') {
+            throw new HttpError(500, 'Could not load shared conversation', { retryable: true })
+          }
           throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Internal server error' })
         }
       },

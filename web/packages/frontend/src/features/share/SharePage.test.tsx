@@ -16,14 +16,14 @@ function renderShare() {
 
 afterEach(resetClientForTests)
 
-it.each(['network', '503'])('retries a %s failure and shows the recovered transcript', async (failure) => {
+it.each(['network', 'server-marked'])('retries a %s failure and shows the recovered transcript', async (failure) => {
   let available = false
   const message = 'The shared transcript is back.'
   configureClient({ transport: createMemoryAdapter({ routes: {
     [path]: () => {
       if (available) return [200, { share: { title: 'Shared conversation', message_count: 1, messages: [{ role: 'user', content: message }] } }]
       if (failure === 'network') throw new TypeError('Failed to fetch')
-      return [503, { error: 'Service unavailable' }]
+      return [500, { error: 'Could not load shared conversation', retryable: true }]
     },
   } }) })
   renderShare()
@@ -36,6 +36,18 @@ it.each(['network', '503'])('retries a %s failure and shows the recovered transc
 
   expect(await screen.findByText(message)).toBeVisible()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it('shows a load error without Retry when an HTTP response supplies no retry decision', async () => {
+  configureClient({ transport: createMemoryAdapter({ routes: {
+    [path]: () => [503, { error: 'Service unavailable' }],
+  } }) })
+  renderShare()
+
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent(m.share_error_title())
+  expect(screen.queryByText(m.share_error_detail())).not.toBeInTheDocument()
+  expect(within(alert).queryByRole('button', { name: m.retry() })).not.toBeInTheDocument()
 })
 
 it('explains a missing share without offering Retry', async () => {

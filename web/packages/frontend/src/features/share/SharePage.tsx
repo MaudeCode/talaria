@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Copy, RefreshCw } from 'lucide-react'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { isApiError } from '../../contracts/common'
+import { ErrorBodySchema, isApiError } from '../../contracts/common'
 import { appUrl } from '../../lib/appRoot'
 import { copyWithToast } from '../../lib/clipboard'
 import { Button, buttonClass, IconButton } from '../../ui/Button'
@@ -21,7 +21,9 @@ export function SharePage({ token }: { token: string }) {
   const error = isApiError(share.error) ? share.error : null
   const missing = loadFailed && error?.status === 404
   const readFailed = loadFailed && !missing
-  const canRetry = error && (error.retryable || error.status === 408 || error.status === 429 || (error.status >= 500 && error.status < 600))
+  const canRetry = error?.kind === 'http'
+    ? ErrorBodySchema.safeParse(error.body).data?.retryable === true
+    : error?.retryable === true
   // TAL-2410: the messages wait for the renderer, as a session's history does, so none reflows from raw text in view.
   const hasMessages = !!data?.messages?.length
   const rendererReady = useMarkdownRendererReady(hasMessages)

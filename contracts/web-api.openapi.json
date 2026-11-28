@@ -84850,6 +84850,31 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Unexpected share read failure. The retryable field allows the client to offer a manual retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "retryable"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
           }
         }
       }

@@ -27,6 +27,18 @@ describe('open server (no auth)', () => {
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
 
+  it('marks unexpected public share read failures retryable without exposing their cause', async () => {
+    const loadShare = vi.spyOn(s.deps.sessions, 'loadShare').mockRejectedValueOnce(new Error('private storage detail'))
+    try {
+      const res = await s.get('/api/share/synthetic-token')
+      expect(res.status).toBe(500)
+      expect(res.headers.get('x-robots-tag')).toBe('noindex, nofollow')
+      expect(await res.json()).toEqual({ error: 'Could not load shared conversation', retryable: true })
+    } finally {
+      loadShare.mockRestore()
+    }
+  })
+
   it('/health reports ok with release identity and the accept-loop counters', async () => {
     const res = await s.get('/health')
     expect(res.status).toBe(200)
