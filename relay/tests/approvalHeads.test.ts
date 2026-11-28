@@ -14,7 +14,6 @@ const modules = import.meta.glob("../convex/**/*.ts");
 const now = 1_800_000_000_000;
 const publisherId = "https://hermes.example";
 const fixture = JSON.parse(readFileSync(new URL("../../contracts/fixtures/relay-approval-alert.json", import.meta.url), "utf8")) as {
-  notificationAlert: Record<string, string>;
   notificationBadge: number;
 };
 
@@ -156,7 +155,7 @@ describe("agent notices (TAL-1970)", () => {
     const delivered = await notifications();
     // The run's completion still alerts on its own.
     expect(delivered.map(({ payload }) => payload.deepLink)).toEqual(["/sessions/session-1", "/sessions/session-1"]);
-    expect((delivered[1]!.payload.aps.alert as { body: string }).body.startsWith("Completed on ")).toBe(true);
+    expect(delivered[1]!.payload.aps.alert).toMatchObject({ "loc-key": "Completed on %@" });
     expect(delivered[0]!.payload.aps).toMatchObject({ alert: { title: info.title, body: info.body }, "interruption-level": "active" });
 
     expect(await claim(backend, delivered[0]!.id)).toMatchObject({ status: "ready" });
@@ -238,9 +237,11 @@ describe("approval queue heads", () => {
     if (claim.status !== "ready") throw new Error("the current approval notification was not claimable");
     expect(JSON.parse(claim.request.payloadJson)).toMatchObject({ aps: { badge: fixture.notificationBadge } });
     for (const { payload } of delivered) {
-      expect(payload.aps).toMatchObject({ alert: fixture.notificationAlert, "interruption-level": "time-sensitive" });
+      expect(payload.aps).toMatchObject({
+        alert: { title: "Private session title", "loc-key": "Approval needed on %@", "loc-args": ["Home"] },
+        "interruption-level": "time-sensitive",
+      });
       expect(payload).toMatchObject({ publisherId, sessionId: "session-1", deepLink: "/sessions/session-1" });
-      expect(JSON.stringify(payload)).not.toContain("Private session title");
     }
   });
 

@@ -26,7 +26,7 @@ interface NoticeVector { name: string; previousAgentNotifyIds: string[]; agentNo
 interface ServerNoticeVector { name: string; owner: boolean; preferences: { notify_on_update_available?: boolean }; expected: boolean }
 
 const { vectors, agentNotify, serverNotice } = JSON.parse(readFileSync(new URL("../../contracts/fixtures/notification-alerts.json", import.meta.url), "utf8")) as { vectors: Vector[]; agentNotify: NoticeVector[]; serverNotice: ServerNoticeVector[] };
-const bodyPrefix = { input: "Input needed", completion: "Completed", failure: "Failed" } as const;
+const bodyKeys = { approval: "Approval needed on %@", input: "Input needed on %@", completion: "Completed on %@", failure: "Failed on %@" } as const;
 const now = 1_800_000_000_000;
 
 it.each(vectors)("shared alert rule: $name", (vector) => {
@@ -49,8 +49,7 @@ it.each(vectors)("shared alert rule: $name", (vector) => {
   const alert = alertForTransition(vector.previous, next, preferences, vector.previousApprovalHeadId, vector.previousDecisionReviewId, vector.previousInputHeadId);
   if (vector.expected === null) expect(alert).toBeNull();
   else if (vector.expected === "decision") expect(alert).toMatchObject({ title: "Decision review ready", body: "Release choices", deepLink: `/decisions/${String(vector.decisionReviewId)}` });
-  else if (vector.expected === "approval") expect(alert?.body).toBe("An agent run is waiting for your approval.");
-  else expect(alert?.body.startsWith(`${bodyPrefix[vector.expected]} on `)).toBe(true);
+  else expect(alert?.body).toEqual({ key: bodyKeys[vector.expected], args: [next.publisherLabel] });
 });
 
 // TAL-1970: each notice the state did not hold alerts with the agent's words, whatever alertEligible says.

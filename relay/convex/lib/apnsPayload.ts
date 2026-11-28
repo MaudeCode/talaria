@@ -34,15 +34,16 @@ export function liveActivityAlert(alert: ActivityAlert | null | undefined): Acti
   return alert && !alert.interruptionLevel ? alert : null;
 }
 
-// iOS looks a localized alert's keys up in the App's Localizable strings and shows an unknown key as written.
-function liveActivityAlertText(alert: ActivityAlert) {
-  return alert.localized
-    ? { title: { "loc-key": alert.title }, body: { "loc-key": alert.body } }
-    : { title: alert.title, body: alert.body };
+function localizedBody(body: Exclude<ActivityAlert["body"], string>) {
+  return { "loc-key": body.key, "loc-args": body.args };
 }
 
-function notificationAlertText(alert: ActivityAlert) {
-  return alert.localized ? { "title-loc-key": alert.title, "loc-key": alert.body } : { title: alert.title, body: alert.body };
+function liveActivityAlertText({ title, body }: ActivityAlert) {
+  return { title, body: typeof body === "string" ? body : localizedBody(body) };
+}
+
+function notificationAlertText({ title, body }: ActivityAlert) {
+  return { title, ...(typeof body === "string" ? { body } : localizedBody(body)) };
 }
 
 export function omitApnsSound(payloadJson: string, pushType: ApnsRequest["pushType"]): string {
@@ -55,6 +56,7 @@ export function omitApnsSound(payloadJson: string, pushType: ApnsRequest["pushTy
   return JSON.stringify(payload);
 }
 
+const maximumApnsPayloadBytes = 4_096;
 const maximumContentStateBytes = 3_500;
 const liveActivityStaleAfterSeconds = 10 * 60;
 
@@ -87,15 +89,24 @@ export function nativeSessionRequest(request: ApnsRequest): ApnsRequest {
 
 // TAL-2336: a row outweighs its current call, so the last row's call goes before any row does; the first row, which a
 // per-session activity shows, keeps its call longest.
-function fitActivityAggregate(aggregate: ActivityAggregate): ActivityAggregate {
+function fitActivityAggregate(aggregate: ActivityAggregate, maximumBytes: number): ActivityAggregate {
   const fitted = { ...aggregate, rows: [...aggregate.rows] };
-  const fits = () => new TextEncoder().encode(JSON.stringify(fitted)).byteLength <= maximumContentStateBytes;
+  const fits = () => new TextEncoder().encode(JSON.stringify(fitted)).byteLength <= maximumBytes;
   for (let index = fitted.rows.length - 1; index > 0 && !fits(); index--) {
     const { currentTool: _dropped, ...row } = fitted.rows[index]!;
     fitted.rows[index] = row;
   }
   while (fitted.rows.length > 0 && !fits()) fitted.rows.pop();
   return fitted;
+}
+
+function liveActivityPayload(aps: Record<string, unknown>, aggregate: ActivityAggregate | null) {
+  if (!aggregate) return { aps };
+  // Count the envelope and alert in UTF-8, excluding the four bytes the aggregate replaces.
+  const empty = { aps: { ...aps, "content-state": null } };
+  const overhead = new TextEncoder().encode(JSON.stringify(empty)).byteLength - 4;
+  const budget = Math.min(maximumContentStateBytes, maximumApnsPayloadBytes - overhead);
+  return { aps: { ...aps, "content-state": fitActivityAggregate(aggregate, budget) } };
 }
 
 export function makeLiveActivityUpdate(input: {
@@ -112,22 +123,18 @@ export function makeLiveActivityUpdate(input: {
       || row.phase === "waiting_for_input"
       || row.phase === "failed",
   );
-  const aggregate = fitActivityAggregate(input.aggregate);
   return {
     token: input.token,
     topic: `${input.bundleId}.push-type.liveactivity`,
     environment: input.environment,
     pushType: "liveactivity",
     priority: input.alert || requiresImmediateDelivery ? "10" : "5",
-    payload: {
-      aps: {
-        timestamp: input.nowEpochSeconds,
-        event: "update",
-        "content-state": aggregate,
-        "stale-date": input.nowEpochSeconds + liveActivityStaleAfterSeconds,
-        ...(alert ? { alert: { ...liveActivityAlertText(alert), sound: "default" } } : {}),
-      },
-    },
+    payload: liveActivityPayload({
+      timestamp: input.nowEpochSeconds,
+      event: "update",
+      "stale-date": input.nowEpochSeconds + liveActivityStaleAfterSeconds,
+      ...(alert ? { alert: { ...liveActivityAlertText(alert), sound: "default" } } : {}),
+    }, input.aggregate),
   };
 }
 
@@ -137,31 +144,32 @@ export function makeLiveActivityStart(input: {
   environment: ApsEnvironment;
   aggregate: ActivityAggregate;
   nowEpochSeconds: number;
-  alert: ActivityAlert;
+  alert: ActivityAlert | null;
 }): ApnsRequest {
-  const aggregate = fitActivityAggregate(input.aggregate);
+  // Delivery starts only nonempty aggregates. Its first visible row supplies the server for the mandatory alert.
+  const alert = input.alert ?? {
+    title: input.aggregate.title,
+    body: { key: "Work in progress on %@", args: [input.aggregate.rows[0]!.publisherLabel] },
+  };
   return {
     token: input.token,
     topic: `${input.bundleId}.push-type.liveactivity`,
     environment: input.environment,
     pushType: "liveactivity",
     priority: "10",
-    payload: {
-      aps: {
-        timestamp: input.nowEpochSeconds,
-        event: "start",
-        "content-state": aggregate,
-        "stale-date": input.nowEpochSeconds + liveActivityStaleAfterSeconds,
-        "attributes-type": "TalariaAggregateActivityAttributes",
-        attributes: {},
-        "input-push-token": 1,
-        // APNs requires an alert on push-to-start.
-        alert: {
-          ...liveActivityAlertText(input.alert),
-          ...(liveActivityAlert(input.alert) ? { sound: "default" } : {}),
-        },
+    payload: liveActivityPayload({
+      timestamp: input.nowEpochSeconds,
+      event: "start",
+      "stale-date": input.nowEpochSeconds + liveActivityStaleAfterSeconds,
+      "attributes-type": "TalariaAggregateActivityAttributes",
+      attributes: {},
+      "input-push-token": 1,
+      // APNs requires an alert on push-to-start.
+      alert: {
+        ...liveActivityAlertText(alert),
+        ...(liveActivityAlert(alert) ? { sound: "default" } : {}),
       },
-    },
+    }, input.aggregate),
   };
 }
 
@@ -174,7 +182,6 @@ export function makeLiveActivityEnd(input: {
   dismissalDelaySeconds?: number;
   alert?: ActivityAlert | null;
 }): ApnsRequest {
-  const aggregate = input.aggregate ? fitActivityAggregate(input.aggregate) : null;
   const alert = liveActivityAlert(input.alert);
   return {
     token: input.token,
@@ -182,16 +189,13 @@ export function makeLiveActivityEnd(input: {
     environment: input.environment,
     pushType: "liveactivity",
     priority: "10",
-    payload: {
-      aps: {
-        timestamp: input.nowEpochSeconds,
-        event: "end",
-        ...(aggregate ? { "content-state": aggregate } : {}),
-        ...(alert ? { alert: { ...liveActivityAlertText(alert), sound: "default" } } : {}),
-        "dismissal-date": input.nowEpochSeconds
-          + (input.dismissalDelaySeconds ?? (aggregate ? 5 * 60 : 15)),
-      },
-    },
+    payload: liveActivityPayload({
+      timestamp: input.nowEpochSeconds,
+      event: "end",
+      ...(alert ? { alert: { ...liveActivityAlertText(alert), sound: "default" } } : {}),
+      "dismissal-date": input.nowEpochSeconds
+        + (input.dismissalDelaySeconds ?? (input.aggregate ? 5 * 60 : 15)),
+    }, input.aggregate),
   };
 }
 

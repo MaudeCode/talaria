@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Relay notifications and Live Activity alerts use your iPhone’s language, and approval alerts name the chat and server.",
+      "highlight": false,
+      "components": ["relay", "app"]
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -44,6 +45,38 @@ const aggregate: ActivityAggregate = {
   ],
 };
 
+it("ships every Relay notification body format in each App language", () => {
+  const app = new URL("../../app/", import.meta.url);
+  const project = readFileSync(new URL("Talaria.xcodeproj/project.pbxproj", app), "utf8");
+  const regions = project.match(/knownRegions\s*=\s*\(([^)]+)\)/)?.[1];
+  expect(regions).toBeDefined();
+  const languages = regions!.split(",").map((region) => region.trim().replaceAll('"', ""))
+    .filter((region) => region !== "" && region !== "Base");
+  expect(languages).toContain("en");
+  const catalog = JSON.parse(readFileSync(new URL("Talaria/Resources/Localizable.xcstrings", app), "utf8")) as {
+    strings: Record<string, { localizations?: Record<string, { stringUnit?: { value?: string } }> }>;
+  };
+  const keys = (["waiting_for_approval", "waiting_for_input", "completed", "failed"] as const).map((phase) => {
+    const alert = alertForState({ ...attentionState, phase }, defaultNotificationPreferences);
+    if (!alert || typeof alert.body === "string") throw new Error(`Missing localized body for ${phase}`);
+    return alert.body.key;
+  });
+  const start = makeLiveActivityStart({
+    token: "synthetic", bundleId: "dev.kil.talaria", environment: "sandbox",
+    aggregate, nowEpochSeconds: 100, alert: null,
+  });
+  const { alert } = start.payload.aps as { alert: { body: { "loc-key": string } } };
+  keys.push(alert.body["loc-key"]);
+
+  for (const key of keys) {
+    for (const language of languages) {
+      const value = catalog.strings[key]?.localizations?.[language]?.stringUnit?.value;
+      expect(value?.replace("%@", "").trim(), `${key} (${language})`).toBeTruthy();
+      expect(value?.match(/%@/g), `${key} (${language}) server name placeholder`).toHaveLength(1);
+    }
+  }
+});
+
 describe("ActivityKit payloads", () => {
   it("starts an aggregate activity with a new update token", () => {
     const request = makeLiveActivityStart({
@@ -52,7 +85,7 @@ describe("ActivityKit payloads", () => {
       environment: "production",
       aggregate,
       nowEpochSeconds: 100,
-      alert: { title: "Talaria", body: "1 active session" },
+      alert: null,
     });
 
     expect(request).toMatchObject({
@@ -67,10 +100,28 @@ describe("ActivityKit payloads", () => {
           "input-push-token": 1,
           "content-state": aggregate,
           "stale-date": 700,
-          alert: { title: "Talaria", body: "1 active session", sound: "default" },
+          alert: { title: "Talaria", body: { "loc-key": "Work in progress on %@", "loc-args": ["Home"] }, sound: "default" },
         },
       },
     });
+  });
+
+  it("keeps a push-to-start below APNs' size limit when its localized alert names a long chat and server", () => {
+    const states: SessionState[] = Array.from({ length: 5 }, (_, index) => ({
+      ...attentionState, publisherId: "https://publisher.example.com", publisherLabel: "界".repeat(80),
+      sessionId: `session-${String(index)}-${"s".repeat(32)}`, streamId: `stream-${"r".repeat(32)}`,
+      title: "界".repeat(120), deepLink: `/sessions/session-${String(index)}-${"s".repeat(32)}`,
+      startedAt: 1_799_999_000_000, toolCount: 9_999, activityAt: 1_800_000_000_000,
+      planCompleted: 9_999, planTotal: 9_999, workerCount: 9_999,
+    }));
+    const request = makeLiveActivityStart({
+      token: "push-to-start-token", bundleId: "dev.kil.talaria", environment: "sandbox",
+      aggregate: makeAggregate(states, 1_800_000_000_000)!, nowEpochSeconds: 1_800_000_000,
+      alert: alertForState({ ...states[0]!, phase: "waiting_for_approval" }, defaultNotificationPreferences)!,
+    });
+
+    expect(new TextEncoder().encode(JSON.stringify(request.payload)).byteLength).toBeLessThanOrEqual(4_096);
+    expect(request.payload.aps).toHaveProperty("content-state.rows.0.sessionId", states[0]!.sessionId);
   });
 
   it("uses low priority for routine updates and advances stale-date", () => {
@@ -249,6 +300,23 @@ describe("ActivityKit payloads", () => {
     expect(notification(completion).payload.aps).not.toHaveProperty("interruption-level");
   });
 
+  it.each([
+    ["waiting_for_approval", "Approval needed on %@"],
+    ["waiting_for_input", "Input needed on %@"],
+    ["completed", "Completed on %@"],
+    ["failed", "Failed on %@"],
+  ] as const)("localizes the %s notification body with the server name", (phase, key) => {
+    const alert = alertForState({ ...attentionState, phase }, defaultNotificationPreferences)!;
+    const request = makeNotification({
+      token: "device-token", bundleId: "dev.kil.talaria", environment: "sandbox",
+      alert, row: aggregate.rows[0]!, threadId: "chat-1",
+    });
+
+    expect(request.payload.aps).toHaveProperty("alert", {
+      title: "Build relay", "loc-key": key, "loc-args": ["Home"],
+    });
+  });
+
   it("keeps Time Sensitive alerts off activity updates and ends, and silences their push-to-start", () => {
     const approval = alertForState({ ...attentionState, phase: "waiting_for_approval" }, defaultNotificationPreferences)!;
     const common = { token: "activity-token", bundleId: "dev.kil.talaria", environment: "sandbox" as const, nowEpochSeconds: 100 };
@@ -256,7 +324,7 @@ describe("ActivityKit payloads", () => {
     expect(makeLiveActivityUpdate({ ...common, aggregate, alert: approval }).payload.aps).not.toHaveProperty("alert");
     expect(makeLiveActivityEnd({ ...common, aggregate, alert: approval }).payload.aps).not.toHaveProperty("alert");
     expect((makeLiveActivityStart({ ...common, aggregate, alert: approval }).payload.aps as Record<string, unknown>).alert)
-      .toEqual({ title: { "loc-key": "Approval required" }, body: { "loc-key": "An agent run is waiting for your approval." } });
+      .toEqual({ title: "Build relay", body: { "loc-key": "Approval needed on %@", "loc-args": ["Home"] } });
   });
 });
 

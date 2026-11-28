@@ -19,10 +19,9 @@ const pairingFixture = JSON.parse(readFileSync(new URL("../../contracts/fixtures
   ownerSubscription: { publisherId: string; label: string; subscribed: boolean; canRevokeKeys: boolean };
 };
 const modules = import.meta.glob("../convex/**/*.ts");
-// Approval alerts name only the App's Localizable keys, never the session.
 const localizedApprovalAlert = {
-  title: { "loc-key": "Approval required" },
-  body: { "loc-key": "An agent run is waiting for your approval." },
+  title: "Build relay",
+  body: { "loc-key": "Approval needed on %@", "loc-args": ["Home"] },
 };
 
 // Fake timers hold convex-test's scheduler and the APNs workpool, so no queued job runs or logs behind a test's back,
@@ -2615,6 +2614,9 @@ describe("Convex relay state", () => {
       await recompute();
       const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
       expect(jobs.map((job) => job.kind)).toEqual(["live_activity_start"]);
+      expect(JSON.parse(jobs[0]!.request.payloadJson).aps.alert).toEqual({
+        title: "Talaria", body: { "loc-key": "Work in progress on %@", "loc-args": ["Home"] }, sound: "default",
+      });
       expect((await device()).pushToStartIssuedAt).toBeDefined();
     });
 
@@ -3105,7 +3107,7 @@ describe("Convex relay state", () => {
     });
 
     it.each([
-      ["waiting_for_approval", { "title-loc-key": "Approval required", "loc-key": "An agent run is waiting for your approval." }],
+      ["waiting_for_approval", { title: localizedApprovalAlert.title, ...localizedApprovalAlert.body }],
     ] as const)("sends a silent activity update and a Time Sensitive notification for %s", async (phase, alert) => {
       const jobs = await deliverTransition(phase, { activity: true });
 
@@ -3133,13 +3135,15 @@ describe("Convex relay state", () => {
     });
 
     it.each([
-      ["failed", "Failed on Home"],
-    ] as const)("keeps the %s alert on the activity without a standalone duplicate", async (phase, body) => {
+      ["failed", "Failed on %@"],
+    ] as const)("keeps the %s alert on the activity without a standalone duplicate", async (phase, key) => {
       const jobs = await deliverTransition(phase, { activity: true });
 
       const activityJobs = jobs.filter((job) => job.kind.startsWith("live_activity_"));
       expect(activityJobs).toHaveLength(1);
-      expect(activityJobs[0]!.aps.alert).toEqual({ title: "Build relay", body, sound: "default" });
+      expect(activityJobs[0]!.aps.alert).toEqual({
+        title: "Build relay", body: { "loc-key": key, "loc-args": ["Home"] }, sound: "default",
+      });
       expect(activityJobs[0]!.aps).not.toHaveProperty("interruption-level");
       expect(jobs.filter((job) => job.kind === "notification")).toHaveLength(0);
     });

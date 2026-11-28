@@ -339,7 +339,7 @@ it("updates, fences and clears a relay-pushed Live Activity's plan and worker co
   expect((await contentStates()).at(-1)).toMatchObject({ planCompleted: 0, planTotal: 0, workerCount: 0 });
 });
 
-it("alerts a Web publisher's approval queue head with only the shared localized keys", async () => {
+it("alerts a Web publisher's approval queue head with the chat title and localized server line", async () => {
   const { backend, signedPut } = await relayWithPublisher();
   await backend.run(async (ctx) => {
     const device = (await ctx.db.query("devices").collect())[0]!;
@@ -348,7 +348,7 @@ it("alerts a Web publisher's approval queue head with only the shared localized 
     });
   });
   const { snapshot, notificationAlert, notificationCategory } = JSON.parse(fixture("relay-approval-alert")) as {
-    snapshot: { snapshotId: string; states: Record<string, unknown>[] }; notificationAlert: Record<string, string>;
+    snapshot: { snapshotId: string; states: Record<string, unknown>[] }; notificationAlert: Record<string, unknown>;
     notificationCategory: string;
   };
   const path = publisherPath("prf_default", "snapshot");
@@ -368,7 +368,7 @@ it("alerts a Web publisher's approval queue head with only the shared localized 
   expect(payload.aps.alert).toEqual(notificationAlert);
   expect(payload.aps.category).toBe(notificationCategory);
   expect(payload.approvalHeadId).toBe(snapshot.states[0]!.approvalHeadId);
-  expect(notifications[0]!.request.payloadJson).not.toContain("Contract fixture");
+  expect(notifications[0]!.request.payloadJson).not.toContain("npm publish");
   // The head is bounded and opaque; anything else rejects the whole snapshot.
   for (const head of ["", "x".repeat(65), "has/slash", 7]) {
     for (const field of ["approvalHeadId", "inputHeadId"]) {
@@ -382,10 +382,10 @@ it("alerts a Web publisher's approval queue head with only the shared localized 
 // unless the device turns background alerts on; its approval and failure alerts, and user turns, still alert.
 it.each([
   ["mutes a background completion by default", "background", "completed", {}, []],
-  ["alerts a background completion once the device opts in", "background", "completed", { notifyOnBackground: true }, ["Completed on Contract publisher"]],
-  ["still alerts a background failure", "background", "failed", {}, ["Failed on Contract publisher"]],
-  ["still alerts a background approval", "background", "waiting_for_approval", {}, ["An agent run is waiting for your approval."]],
-  ["still alerts a user completion", "user", "completed", {}, ["Completed on Contract publisher"]],
+  ["alerts a background completion once the device opts in", "background", "completed", { notifyOnBackground: true }, ["Completed on %@"]],
+  ["still alerts a background failure", "background", "failed", {}, ["Failed on %@"]],
+  ["still alerts a background approval", "background", "waiting_for_approval", {}, ["Approval needed on %@"]],
+  ["still alerts a user completion", "user", "completed", {}, ["Completed on %@"]],
 ] as const)("%s", async (_, origin, phase, preferences, expected) => {
   const { backend, signedPut } = await relayWithPublisher();
   await backend.run(async (ctx) => {
