@@ -47,7 +47,8 @@ FIXTURE_READERS = {
     "relay": {"app-registration.json", "feedback-attachment-limits.json", "feedback-report.json",
               "feedback-report-agent.json", "notification-alerts.json", "publisher-server-notice.json", "publisher-session-started.json",
               "publisher-snapshot.json", "relay-approval-alert.json", "relay-pairing.json", "relay-server-notice-push.json",
-              "relay-session-started-push.json", "relay-snapshot.json", "relay-waiting-badge-push.json"},
+              "relay-session-started-push.json", "relay-snapshot.json", "relay-waiting-badge-push.json",
+              "relay-waiting-badge-snapshot.json"},
 }
 JOBS = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend", "web_sidecar"},
         "web-agent-image": {"web_agent_image"},
@@ -180,6 +181,8 @@ def path_suites(path):
         return {"relay"}
     if path == "contracts/fixtures/relay-approval-alert.json":
         return {"relay", "web_server", "contracts"}  # Web produces the snapshot and TalariaKit reads the resulting push.
+    if path == "contracts/fixtures/relay-waiting-badge-snapshot.json":
+        return {"relay", "contracts"}  # Relay produces this response and TalariaKit decodes it.
     if path.startswith("contracts/fixtures/"):
         name = path.removeprefix("contracts/fixtures/")
         return {"web_server", "web_frontend", "contracts"} | {suite for suite, names in FIXTURE_READERS.items() if name in names}

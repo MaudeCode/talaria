@@ -70,7 +70,9 @@ public enum TalariaRelayConnectionState: Equatable, Sendable {
 public enum TalariaRelayConfigurationStore {
     #if DEBUG
     private static let fixtureCredentials = OSAllocatedUnfairLock<TalariaRelayCredentials?>(initialState: {
-        guard ProcessInfo.processInfo.arguments.contains(UITestFixtureLaunch.relayRecoveryArgument) else { return nil }
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains(UITestFixtureLaunch.relayRecoveryArgument)
+                || arguments.contains(UITestFixtureLaunch.approvalBadgeArgument) else { return nil }
         return TalariaRelayCredentials(
             baseURL: UITestFixtureLaunch.serverURL, deviceID: "fixture-device", userID: "fixture-owner",
             appleUserID: "fixture-apple", sessionToken: "fixture-relay-session", expiresAt: .distantFuture,
@@ -211,8 +213,10 @@ public final class TalariaRelayClient: Sendable {
         var cursor: String?
     }
 
-    struct SnapshotResponse: Decodable {
-        var aggregate: TalariaAggregateActivityAttributes.ContentState?
+    public struct SnapshotResponse: Decodable, Sendable {
+        public let aggregate: TalariaAggregateActivityAttributes.ContentState?
+        /// Older Relay releases omit this field. The display rows can be capped.
+        public let waitingCount: Int?
     }
 
     public struct PublisherSubscription: Decodable, Equatable, Sendable {
@@ -539,16 +543,26 @@ public final class TalariaRelayClient: Sendable {
     }
 
     public func snapshot() async throws -> TalariaAggregateActivityAttributes.ContentState? {
+        try await fetchSnapshot(includesWaitingCount: false).aggregate
+    }
+
+    public func activitySnapshot() async throws -> SnapshotResponse {
+        try await fetchSnapshot(includesWaitingCount: true)
+    }
+
+    private func fetchSnapshot(includesWaitingCount: Bool) async throws -> SnapshotResponse {
         var components = URLComponents(
             url: Self.endpoint(credentials.baseURL, "v1/activity-snapshot"),
             resolvingAgainstBaseURL: false
         )
-        components?.queryItems = [URLQueryItem(name: "mode", value: "all_running")]
+        var query = [URLQueryItem(name: "mode", value: "all_running")]
+        if includesWaitingCount { query.append(URLQueryItem(name: "includeWaitingCount", value: "true")) }
+        components?.queryItems = query
         guard let url = components?.url else { throw ClientError.invalidURL }
         var request = authenticatedRequest(url: url, method: "GET")
         request.setValue(credentials.deviceID, forHTTPHeaderField: "X-Talaria-Device-Id")
         let data = try await Self.responseData(for: request, session: session)
-        return try JSONDecoder().decode(SnapshotResponse.self, from: data).aggregate
+        return try JSONDecoder().decode(SnapshotResponse.self, from: data)
     }
 
     func completions(cursor: String? = nil) async throws -> CompletionPage {

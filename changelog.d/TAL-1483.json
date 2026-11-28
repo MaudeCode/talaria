@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Talaria icon shows how many chats are waiting for your approval or input.",
+      "highlight": true,
+      "components": ["app"],
+      "announcement": {
+        "title": "Chats that need you",
+        "description": "The Talaria icon counts chats waiting for an approval or reply.",
+        "icon": "notifications"
+      }
+    }
+  ]
+}

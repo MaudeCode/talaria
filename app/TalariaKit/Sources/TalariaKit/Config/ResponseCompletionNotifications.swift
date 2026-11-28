@@ -109,7 +109,7 @@ public struct UserNotificationResponseCompletionScheduler: ResponseCompletionNot
 
     public func requestAuthorization() async -> Bool {
         await withCheckedContinuation { continuation in
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
                 continuation.resume(returning: granted)
             }
         }

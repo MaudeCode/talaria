@@ -987,6 +987,9 @@ final class UITestFixtureURLProtocol: URLProtocol {
         switch url.path {
         case "/v1/devices/fixture-device" where request.httpMethod == "PUT":
             return json(["ok": true])
+        case "/v1/activity-snapshot" where ProcessInfo.processInfo.arguments.contains(UITestFixtureLaunch.approvalBadgeArgument):
+            let state = chatState.snapshot()
+            return json(["aggregate": NSNull(), "waitingCount": state.started && !state.approvalAnswered ? 1 : 0])
         case "/v1/devices/fixture-device/publisher-subscriptions":
             let revoked = relayKeysRevoked.withLock { $0 }
             let publishers: [[String: Any]] = revoked ? [] : [[
@@ -2698,7 +2701,15 @@ final class UITestFixtureURLProtocol: URLProtocol {
                     "duration": 0.1,
                     "id": "ui-fixture-tool"
                 ]),
-                ("token", ["text": " Fixture finished."]),
+                ("token", ["text": " Fixture finished."])
+            ])
+            if ProcessInfo.processInfo.arguments.contains(UITestFixtureLaunch.approvalBadgeArgument) {
+                Self.chatState.settle()
+                send(events: [("done", [:]), ("stream_end", [:])])
+                finish()
+                return
+            }
+            send(events: [
                 ("clarify", [
                     "clarify_id": "ui-fixture-clarify",
                     "session_id": Self.sessionID,

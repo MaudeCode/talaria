@@ -354,7 +354,7 @@ without a publisher registration for that origin receives `404 publisher_not_own
 
 ## Foreground snapshot
 
-`GET /v1/activity-snapshot?mode=all_running` also requires `X-Talaria-Device-Id`. Talaria uses it only to seed or end an activity while foregrounded; APNs owns later updates while suspended.
+`GET /v1/activity-snapshot?mode=all_running` also requires `X-Talaria-Device-Id`. Add `includeWaitingCount=true` to request the device-wide `waitingCount` along with `aggregate`. The count includes chats waiting for approval or input across the device's subscriptions before activity rows are capped. An empty snapshot returns `waitingCount: 0` when requested. The App uses the count when it refreshes the icon badge. APNs updates the badge while the App is suspended.
 
 
 ## Retained completions

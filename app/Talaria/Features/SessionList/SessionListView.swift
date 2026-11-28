@@ -2284,6 +2284,7 @@ struct SessionListView: View {
     }
 
     private func loadSessions(includingActiveProfile: Bool = false) async {
+        async let badgeRefresh: Void = AppIconBadge.shared.refresh()
         await SessionListLoad.refresh(
             loadRows: {
                 // Rows carry `sessionRowTransition`, but it only plays when the array is
@@ -2307,6 +2308,7 @@ struct SessionListView: View {
                 if includingActiveProfile { await viewModel.loadActiveProfile() }
             }
         )
+        await badgeRefresh
     }
 
     private func togglePinned(_ session: SessionSummary) async {
