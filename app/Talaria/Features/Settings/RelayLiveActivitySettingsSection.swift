@@ -199,8 +199,12 @@ private struct RelayTestNotificationRow: View {
         state = .sending
         Task {
             do {
-                try await TalariaRelayClient(credentials: credentials).sendTestNotification()
+                try await TalariaRelayClient(credentials: credentials).sendTestNotification {
+                    resolveCredentials() == credentials
+                }
                 state = .queued
+            } catch is CancellationError {
+                state = .idle
             } catch {
                 state = .failed(Self.errorText(error))
             }

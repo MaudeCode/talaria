@@ -148,16 +148,37 @@ final class ScreenGalleryHostedTests: XCTestCase {
     ) async throws {
         let relay = try XCTUnwrap(URL(string: "https://relay-test-notification.invalid"))
         _ = try pairRelayForSettings(relay: relay)
-        defaults.set("fixture-push-token", forKey: TalariaRelayNotifications.pushTokenKey)
+        let tokenKey = TalariaRelayNotifications.pushTokenKey
+        let alertsKey = TalariaRelayNotifications.isEnabledKey
+        let previousToken = UserDefaults.standard.object(forKey: tokenKey)
+        let previousAlerts = UserDefaults.standard.object(forKey: alertsKey)
+        defer {
+            UserDefaults.standard.set(previousToken, forKey: tokenKey)
+            UserDefaults.standard.set(previousAlerts, forKey: alertsKey)
+        }
+        defaults.set("fixture-push-token", forKey: tokenKey)
+        UserDefaults.standard.set("fixture-push-token", forKey: tokenKey)
+        UserDefaults.standard.set(true, forKey: alertsKey)
+
         let requests = LockedTestValue<[URLRequest]>([])
+        let alertsRegistered = LockedTestValue(false)
+        let registeredBeforePost = LockedTestValue<[Bool]>([])
         let host = try XCTUnwrap(relay.host)
         DeferredMockURLProtocol.setOnRequest({ load in
-            guard load.request.url?.path == "/v1/devices/fixture-device/test-notification" else {
+            switch (load.request.httpMethod, load.request.url?.path) {
+            case ("PUT", "/v1/devices/fixture-device"):
+                let body = UITestFixtureURLProtocol.requestJSON(load.request)
+                let preferences = body["preferences"] as? [String: Bool]
+                alertsRegistered.value = body["pushToken"] as? String == "fixture-push-token"
+                    && preferences?["notificationsEnabled"] == true
+                load.complete(withJSON: #"{"ok":true}"#)
+            case ("POST", "/v1/devices/fixture-device/test-notification"):
+                registeredBeforePost.value.append(alertsRegistered.value)
+                requests.value.append(load.request)
+                respond(load)
+            default:
                 load.complete(withJSON: #"{"error":"not_found"}"#, statusCode: 404)
-                return
             }
-            requests.value.append(load.request)
-            respond(load)
         }, forHost: host)
         let previousHook = UITestURLSessionHook.configure
         UITestURLSessionHook.configure = { $0.protocolClasses = [DeferredMockURLProtocol.self] }
@@ -175,6 +196,7 @@ final class ScreenGalleryHostedTests: XCTestCase {
         _ = try await requireElementScrolling(in: window, "Expected Relay to show \(message)") {
             $0.accessibilityLabel?.contains(message) == true
         }
+        XCTAssertEqual(registeredBeforePost.value, [true], "Relay must have the current token and alerts enabled before the test POST")
         XCTAssertEqual(requests.value.count, 1)
         XCTAssertEqual(requests.value.first?.httpMethod, "POST")
         XCTAssertEqual(requests.value.first?.value(forHTTPHeaderField: "Authorization"), "Bearer fixture-relay-session")

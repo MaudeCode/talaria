@@ -637,7 +637,15 @@ public final class TalariaRelayClient: Sendable {
         try await send(path: "v1/devices/\(credentials.deviceID)/live-activities/\(activityID)", method: "DELETE")
     }
 
-    public func sendTestNotification() async throws {
+    @MainActor public func sendTestNotification(whileCurrent: @MainActor @escaping () -> Bool) async throws {
+        // Relay can discard the test if its device record still has notifications disabled.
+        try await configureDevice(
+            pushToStartEnabled: TalariaLiveActivityMode.current == .allRunning,
+            whileCurrent: whileCurrent
+        )
+        try Task.checkCancellation()
+        guard whileCurrent() else { throw CancellationError() }
+
         struct Response: Decodable { let status: String }
         let url = Self.endpoint(credentials.baseURL, "v1/devices/\(credentials.deviceID)/test-notification")
         let request = authenticatedRequest(url: url, method: "POST")
